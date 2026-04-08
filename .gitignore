@@ -1,0 +1,9 @@
+node_modules
+.next
+coverage
+playwright-report
+test-results
+.prisma
+.env
+.env.local
+.env.test.local
