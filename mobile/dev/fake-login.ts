@@ -1,7 +1,7 @@
 import type { OwnerProfile } from '@/types/api';
 
 export const DEV_FAKE_LOGIN = {
-  enabled: true,
+  enabled: false,
   credentials: {
     email: 'ios@noetic.dev',
     password: 'noetic-ios-demo',
@@ -12,7 +12,7 @@ export const DEV_FAKE_LOGIN = {
     handle: 'ios-demo',
     displayName: 'iOS Demo User',
     bio: 'Temporary simulator account for local UI testing.',
-    publicNotes: 'Delete mobile/dev/fake-login.ts and remove AuthContext import to restore normal login.',
+    publicNotes: 'Dev fake-login path is disabled by default; use seeded backend credentials to test full network flows.',
     avatarUrl: null,
     followersCount: 42,
     followingCount: 17,

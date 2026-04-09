@@ -13,10 +13,15 @@ const TRACKING_PARAMS = new Set([
 ]);
 
 function normalizeYouTubeUrl(url: URL) {
+  const pathname = url.pathname.replace(/^\/+/, "");
+  const segments = pathname.split("/").filter(Boolean);
+  const [first, second] = segments;
+
   const videoId =
     url.hostname === "youtu.be"
-      ? url.pathname.replace(/^\//, "")
-      : url.searchParams.get("v");
+      ? first
+      : url.searchParams.get("v") ??
+        ((first === "shorts" || first === "embed" || first === "live") ? second : null);
 
   if (!videoId) {
     return null;
