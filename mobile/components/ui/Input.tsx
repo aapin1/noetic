@@ -44,9 +44,9 @@ export const Input = forwardRef<TextInput, Props>(
             ref={ref}
             style={[
               styles.input,
-              leftIcon && styles.inputWithLeftIcon,
-              rightIcon && styles.inputWithRightIcon,
-              multiline && styles.multilineInput,
+              Boolean(leftIcon) && styles.inputWithLeftIcon,
+              Boolean(rightIcon) && styles.inputWithRightIcon,
+              Boolean(multiline) && styles.multilineInput,
               style,
             ]}
             placeholderTextColor={Colors.mutedText}
@@ -55,6 +55,7 @@ export const Input = forwardRef<TextInput, Props>(
             multiline={multiline}
             numberOfLines={numberOfLines}
             textAlignVertical={multiline ? 'top' : 'center'}
+            contextMenuHidden={false}
             {...props}
           />
           {rightIcon && <View style={styles.rightIcon}>{rightIcon}</View>}

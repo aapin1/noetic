@@ -67,7 +67,35 @@ describe("metadata helpers", () => {
     expect(metadata.publishedAt?.toISOString()).toBe("2024-01-02T03:04:05.000Z");
   });
 
-  it("fetches youtube metadata through oembed", async () => {
+  it("fetches youtube metadata from a watch URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        title: "A Great Lecture",
+        author_name: "Dr. Smith",
+        thumbnail_url: "https://img.youtube.com/vi/abc123/hqdefault.jpg",
+        provider_name: "YouTube",
+      }),
+    } as Response);
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchMetadata("https://www.youtube.com/watch?v=abc123&feature=share");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Dabc123&format=json",
+    );
+    expect(result.requiresManualInput).toBe(false);
+    expect(result.metadata).toMatchObject({
+      title: "A Great Lecture",
+      canonicalUrl: "https://www.youtube.com/watch?v=abc123",
+      sourceName: "YouTube",
+      sourceDomain: "youtube.com",
+      contentType: "video",
+    });
+  });
+
+  it("fetches youtube metadata from a youtu.be short URL", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -86,13 +114,31 @@ describe("metadata helpers", () => {
       "https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Dabc123&format=json",
     );
     expect(result.requiresManualInput).toBe(false);
-    expect(result.metadata).toMatchObject({
-      title: "A Great Lecture",
-      canonicalUrl: "https://www.youtube.com/watch?v=abc123",
-      sourceName: "YouTube",
-      sourceDomain: "youtube.com",
-      contentType: "video",
-    });
+    expect(result.metadata?.canonicalUrl).toBe("https://www.youtube.com/watch?v=abc123");
+    expect(result.metadata?.title).toBe("A Great Lecture");
+  });
+
+  it("fetches youtube metadata from a shorts URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        title: "A Great Lecture",
+        author_name: "Dr. Smith",
+        thumbnail_url: "https://img.youtube.com/vi/abc123/hqdefault.jpg",
+        provider_name: "YouTube",
+      }),
+    } as Response);
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchMetadata("https://www.youtube.com/shorts/abc123?feature=share");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Dabc123&format=json",
+    );
+    expect(result.requiresManualInput).toBe(false);
+    expect(result.metadata?.canonicalUrl).toBe("https://www.youtube.com/watch?v=abc123");
+    expect(result.metadata?.title).toBe("A Great Lecture");
   });
 
   it("falls back to manual input when an html fetch fails", async () => {

@@ -10,6 +10,7 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinkIcon } from 'lucide-react-native';
+import * as Clipboard from 'expo-clipboard';
 import { api } from '@/lib/api';
 import { Colors, FontFamily, FontSize, Spacing } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
@@ -33,6 +34,14 @@ export default function StarterLinksScreen() {
       next[idx] = { url, status: 'idle' };
       return next;
     });
+  };
+
+  const pasteLink = async (idx: number) => {
+    const clipboardText = (await Clipboard.getStringAsync()).trim();
+    if (!clipboardText) {
+      return;
+    }
+    updateLink(idx, clipboardText);
   };
 
   const previewLink = async (idx: number) => {
@@ -125,6 +134,16 @@ export default function StarterLinksScreen() {
                   onSubmitEditing={() => previewLink(idx)}
                   leftIcon={<LinkIcon size={16} color={Colors.mutedText} />}
                 />
+                <View style={styles.linkActionsRow}>
+                  <Button
+                    label="Paste"
+                    onPress={() => {
+                      void pasteLink(idx);
+                    }}
+                    variant="tertiary"
+                    size="sm"
+                  />
+                </View>
                 {link.status === 'loading' && (
                   <ActivityIndicator size="small" color={Colors.accentGold} style={styles.indicator} />
                 )}
@@ -186,6 +205,12 @@ const styles = StyleSheet.create({
   header: { marginBottom: Spacing[6] },
   subtitle: { marginTop: Spacing[2] },
   linkRow: { marginBottom: Spacing[2] },
+  linkActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    marginTop: -Spacing[2],
+    marginBottom: Spacing[2],
+  },
   indicator: { alignSelf: 'flex-start', marginTop: -Spacing[3], marginBottom: Spacing[2] },
   preview: {
     backgroundColor: 'rgba(120,211,157,0.1)',

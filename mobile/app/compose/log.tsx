@@ -11,6 +11,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeftIcon, LinkIcon } from 'lucide-react-native';
+import * as Clipboard from 'expo-clipboard';
 import { api } from '@/lib/api';
 import { Colors, FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { ONBOARDING_TOPICS } from '@/constants/theme';
@@ -47,6 +48,16 @@ export default function LogScreen() {
   const [visibility, setVisibility] = useState('PUBLIC');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  const handlePasteUrl = async () => {
+    const clipboardText = (await Clipboard.getStringAsync()).trim();
+    if (!clipboardText) {
+      setUrlError('Clipboard is empty. Copy a link first.');
+      return;
+    }
+    setUrlError('');
+    setUrl(clipboardText);
+  };
 
   const handleFetchUrl = async () => {
     if (!url.trim()) return;
@@ -143,6 +154,16 @@ export default function LogScreen() {
                 leftIcon={<LinkIcon size={16} color={Colors.mutedText} />}
                 error={urlError}
               />
+              <View style={styles.urlActionsRow}>
+                <Button
+                  label="Paste"
+                  onPress={() => {
+                    void handlePasteUrl();
+                  }}
+                  variant="tertiary"
+                  size="sm"
+                />
+              </View>
               <Button
                 label="Fetch content"
                 onPress={handleFetchUrl}
@@ -300,7 +321,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing[2],
-    marginBottom: Spacing[5],
+    marginBottom: Spacing[4],
+  },
+  urlActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    marginTop: -Spacing[1],
+    marginBottom: Spacing[2],
   },
   ratingBtn: {
     width: 38,
