@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, View, ViewProps } from 'react-native';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 
-type Variant = 'default' | 'elevated' | 'flat';
+type Variant = 'default' | 'elevated' | 'flat' | 'hairline';
 
 interface Props extends ViewProps {
   variant?: Variant;
@@ -10,12 +11,34 @@ interface Props extends ViewProps {
 }
 
 export function Card({ variant = 'default', padding = 'md', style, children, ...props }: Props) {
+  const c = useThemeColors();
+  const variantStyle = useMemo(() => {
+    switch (variant) {
+      case 'flat':
+        return { backgroundColor: 'transparent' };
+      case 'hairline':
+        return {
+          backgroundColor: 'transparent',
+          borderTopWidth: 1,
+          borderBottomWidth: 1,
+          borderColor: c.border,
+          borderRadius: 0,
+        };
+      default:
+        return {
+          backgroundColor: c.surface,
+          borderWidth: 1,
+          borderColor: c.border,
+        };
+    }
+  }, [c, variant]);
+
   return (
     <View
       style={[
         styles.base,
-        styles[variant],
-        padding !== 'none' && styles[`padding_${padding}`],
+        variantStyle,
+        padding !== 'none' && padStyles[`padding_${padding}`],
         style,
       ]}
       {...props}
@@ -27,29 +50,12 @@ export function Card({ variant = 'default', padding = 'md', style, children, ...
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: Radius['3xl'],
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
+    borderRadius: Radius.md,
   },
-  default: {
-    backgroundColor: Colors.surface,
-    ...Shadow.soft,
-  },
-  elevated: {
-    backgroundColor: Colors.elevatedSurface,
-    ...Shadow.medium,
-  },
-  flat: {
-    backgroundColor: Colors.surface,
-  },
+});
 
-  padding_sm: {
-    padding: Spacing[3],
-  },
-  padding_md: {
-    padding: Spacing[5],
-  },
-  padding_lg: {
-    padding: Spacing[6],
-  },
+const padStyles = StyleSheet.create({
+  padding_sm: { padding: Spacing[3] },
+  padding_md: { padding: Spacing[5] },
+  padding_lg: { padding: Spacing[6] },
 });

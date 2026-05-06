@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Colors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 
@@ -20,7 +20,7 @@ export function EmptyState({ title, body, ctaLabel, onCta, icon }: Props) {
         {title}
       </Text>
       {body && (
-        <Text variant="body" color="secondary" style={styles.body}>
+        <Text variant="serif" color="secondary" style={styles.body}>
           {body}
         </Text>
       )}
@@ -46,16 +46,15 @@ const styles = StyleSheet.create({
   },
   icon: {
     marginBottom: Spacing[5],
-    opacity: 0.5,
+    opacity: 0.6,
   },
   title: {
     textAlign: 'center',
-    color: Colors.primaryText,
   },
   body: {
     textAlign: 'center',
-    marginTop: Spacing[2],
-    maxWidth: 280,
+    marginTop: Spacing[3],
+    maxWidth: 320,
   },
   cta: {
     marginTop: Spacing[6],

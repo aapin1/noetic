@@ -1,37 +1,36 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { Platform, StyleSheet, View } from 'react-native';
-import {
-  HomeIcon,
-  BellIcon,
-  SearchIcon,
-  UserIcon,
-} from 'lucide-react-native';
-import { Colors, FontFamily, FontSize } from '@/constants/theme';
+import { Platform } from 'react-native';
+import { Brain, GitGraphIcon, LineChartIcon, UserIcon } from 'lucide-react-native';
+import { FontFamily, FontSize } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 
 function TabBarIcon({ color, icon: Icon }: { color: string; icon: React.ElementType }) {
-  return <Icon size={22} color={color} strokeWidth={1.8} />;
+  return <Icon size={20} color={color} strokeWidth={1.35} />;
 }
 
 export default function TabsLayout() {
+  const c = useThemeColors();
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: Colors.primaryText,
-        tabBarInactiveTintColor: Colors.mutedText,
+        tabBarActiveTintColor: c.text,
+        tabBarInactiveTintColor: c.faint,
         tabBarLabelStyle: {
           fontFamily: FontFamily.mono,
           fontSize: FontSize.xs,
+          letterSpacing: 1.1,
           marginBottom: Platform.OS === 'ios' ? 0 : 4,
-          letterSpacing: 0.5,
+          textTransform: 'uppercase',
         },
         tabBarStyle: {
-          backgroundColor: Colors.background,
+          backgroundColor: c.tabBar,
           borderTopWidth: 1,
-          borderTopColor: Colors.cardBorder,
-          height: Platform.OS === 'ios' ? 84 : 64,
-          paddingTop: 8,
+          borderTopColor: c.border,
+          height: Platform.OS === 'ios' ? 86 : 68,
+          paddingTop: 10,
         },
         tabBarItemStyle: {
           paddingVertical: 4,
@@ -41,28 +40,28 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Feed',
-          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={HomeIcon} />,
+          title: 'Capture',
+          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={Brain} />,
         }}
       />
       <Tabs.Screen
-        name="search"
+        name="memory"
         options={{
-          title: 'Search',
-          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={SearchIcon} />,
+          title: 'Memory',
+          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={GitGraphIcon} />,
         }}
       />
       <Tabs.Screen
-        name="notifications"
+        name="trends"
         options={{
-          title: 'Activity',
-          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={BellIcon} />,
+          title: 'Drift',
+          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={LineChartIcon} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: 'You',
           tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={UserIcon} />,
         }}
       />

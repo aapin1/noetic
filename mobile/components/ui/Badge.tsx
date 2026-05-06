@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Colors, FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
+import { FontSize, Radius, Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 
-type Variant = 'topic' | 'contentType' | 'pill' | 'count';
+type Variant = 'topic' | 'contentType' | 'pill' | 'count' | 'edge';
 
 interface Props {
   label: string;
@@ -14,17 +15,54 @@ interface Props {
 }
 
 export function Badge({ label, variant = 'topic', selected = false, onPress, small = false }: Props) {
+  const c = useThemeColors();
+  const box = useMemo(
+    () => ({
+      topic: {
+        backgroundColor: 'transparent' as const,
+        borderColor: c.border,
+      },
+      contentType: {
+        backgroundColor: 'transparent' as const,
+        borderColor: c.border,
+      },
+      pill: {
+        backgroundColor: c.borderSubtle,
+        borderColor: 'transparent' as const,
+      },
+      count: {
+        backgroundColor: c.inverse,
+        borderColor: 'transparent' as const,
+      },
+      edge: {
+        backgroundColor: 'transparent' as const,
+        borderColor: c.text,
+        borderRadius: Radius.xs,
+      },
+      selected: {
+        backgroundColor: c.inverse,
+        borderColor: c.inverse,
+      },
+    }),
+    [c],
+  );
+
   const inner = (
     <View
       style={[
         styles.base,
-        styles[variant],
-        selected && styles.selected,
+        box[variant],
+        selected && box.selected,
         small && styles.small,
+        variant === 'edge' && styles.edgePad,
       ]}
     >
-      <Text style={[styles.label, selected && styles.labelSelected, small && styles.labelSmall]}>
-        {label}
+      <Text
+        variant="monoSmall"
+        color={selected ? 'inverse' : 'secondary'}
+        style={small ? styles.labelSmall : undefined}
+      >
+        {variant === 'edge' ? label.toUpperCase() : label}
       </Text>
     </View>
   );
@@ -49,43 +87,17 @@ const styles = StyleSheet.create({
   base: {
     borderRadius: Radius.full,
     paddingHorizontal: Spacing[3],
-    paddingVertical: Spacing[1],
+    paddingVertical: 4,
     borderWidth: 1,
   },
-  topic: {
-    backgroundColor: Colors.accentGoldLight,
-    borderColor: 'rgba(200,165,91,0.2)',
-  },
-  contentType: {
-    backgroundColor: Colors.accentVioletLight,
-    borderColor: 'rgba(140,123,255,0.2)',
-  },
-  pill: {
-    backgroundColor: Colors.elevatedSurface,
-    borderColor: Colors.cardBorder,
-  },
-  count: {
-    backgroundColor: Colors.accentGold,
-    borderColor: 'transparent',
-    minWidth: 20,
-    alignItems: 'center',
-  },
-  selected: {
-    backgroundColor: Colors.accentGold,
-    borderColor: Colors.accentGold,
+  edgePad: {
+    paddingHorizontal: Spacing[2],
+    paddingVertical: 2,
+    borderRadius: Radius.xs,
   },
   small: {
     paddingHorizontal: Spacing[2],
     paddingVertical: 2,
-  },
-  label: {
-    fontFamily: FontFamily.bodyMedium,
-    fontSize: FontSize.xs,
-    color: Colors.secondaryText,
-    letterSpacing: 0.2,
-  },
-  labelSelected: {
-    color: Colors.primaryText,
   },
   labelSmall: {
     fontSize: 10,

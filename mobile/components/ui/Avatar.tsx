@@ -1,56 +1,44 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
-import { Colors, FontFamily, Radius } from '@/constants/theme';
+import { FontFamily } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 
 type Size = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
 interface Props {
   uri?: string | null;
-  displayName?: string;
+  displayName?: string | null;
   size?: Size;
 }
 
 const sizeMap: Record<Size, number> = {
-  xs: 24,
-  sm: 32,
-  md: 40,
+  xs: 22,
+  sm: 30,
+  md: 38,
   lg: 56,
   xl: 80,
 };
 
 const fontSizeMap: Record<Size, number> = {
   xs: 9,
-  sm: 12,
-  md: 15,
-  lg: 20,
-  xl: 28,
+  sm: 11,
+  md: 13,
+  lg: 18,
+  xl: 26,
 };
 
-function getInitials(displayName?: string): string {
-  if (!displayName) return '?';
+function getInitials(displayName?: string | null): string {
+  if (!displayName) return '·';
   const parts = displayName.trim().split(/\s+/);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function getColorForName(name?: string): string {
-  const palette = [
-    '#C8A55B',
-    '#8C7BFF',
-    '#78D39D',
-    '#E8A06C',
-    '#6CB5E8',
-  ];
-  if (!name) return palette[0];
-  const idx = name.charCodeAt(0) % palette.length;
-  return palette[idx];
-}
-
 export function Avatar({ uri, displayName, size = 'md' }: Props) {
+  const c = useThemeColors();
   const dimension = sizeMap[size];
-  const bg = getColorForName(displayName);
   const initials = getInitials(displayName);
 
   return (
@@ -61,17 +49,14 @@ export function Avatar({ uri, displayName, size = 'md' }: Props) {
           width: dimension,
           height: dimension,
           borderRadius: dimension / 2,
-          backgroundColor: bg,
+          borderColor: c.border,
         },
       ]}
     >
       {uri ? (
         <Image
           source={{ uri }}
-          style={[
-            styles.image,
-            { width: dimension, height: dimension, borderRadius: dimension / 2 },
-          ]}
+          style={{ width: dimension, height: dimension, borderRadius: dimension / 2 }}
           contentFit="cover"
           transition={200}
         />
@@ -79,7 +64,7 @@ export function Avatar({ uri, displayName, size = 'md' }: Props) {
         <Text
           style={[
             styles.initials,
-            { fontSize: fontSizeMap[size] },
+            { fontSize: fontSizeMap[size], color: c.text, fontFamily: FontFamily.mono },
           ]}
         >
           {initials}
@@ -94,15 +79,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: Colors.cardBorder,
-  },
-  image: {
-    position: 'absolute',
+    borderWidth: 1,
+    backgroundColor: 'transparent',
   },
   initials: {
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.white,
-    letterSpacing: 0.5,
+    letterSpacing: 1.4,
   },
 });

@@ -7,7 +7,8 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { Colors, Radius } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 
 interface Props {
   width?: number | `${number}%`;
@@ -16,14 +17,15 @@ interface Props {
   style?: ViewStyle;
 }
 
-export function Skeleton({ width = '100%', height = 16, radius = Radius.sm, style }: Props) {
-  const opacity = useSharedValue(0.4);
+export function Skeleton({ width = '100%', height = 14, radius = Radius.xs, style }: Props) {
+  const c = useThemeColors();
+  const opacity = useSharedValue(0.45);
 
   useEffect(() => {
     opacity.value = withRepeat(
       withSequence(
-        withTiming(1, { duration: 800 }),
-        withTiming(0.4, { duration: 800 }),
+        withTiming(0.85, { duration: 1100 }),
+        withTiming(0.45, { duration: 1100 }),
       ),
       -1,
       false,
@@ -35,6 +37,7 @@ export function Skeleton({ width = '100%', height = 16, radius = Radius.sm, styl
   return (
     <Animated.View
       style={[
+        { backgroundColor: c.borderSubtle },
         styles.base,
         { width: width as number, height, borderRadius: radius },
         animStyle,
@@ -45,23 +48,13 @@ export function Skeleton({ width = '100%', height = 16, radius = Radius.sm, styl
 }
 
 export function SkeletonCard({ style }: { style?: ViewStyle }) {
+  const c = useThemeColors();
   return (
-    <View style={[styles.card, style]}>
-      <View style={styles.cardHeader}>
-        <Skeleton width={40} height={40} radius={Radius.full} />
-        <View style={styles.cardHeaderText}>
-          <Skeleton width="50%" height={13} />
-          <Skeleton width="35%" height={11} style={{ marginTop: 6 }} />
-        </View>
-      </View>
-      <Skeleton width="90%" height={18} style={{ marginTop: 16 }} />
-      <Skeleton width="70%" height={14} style={{ marginTop: 8 }} />
-      <Skeleton width="100%" height={12} style={{ marginTop: 12 }} />
-      <Skeleton width="80%" height={12} style={{ marginTop: 6 }} />
-      <View style={styles.cardFooter}>
-        <Skeleton width={60} height={24} radius={Radius.full} />
-        <Skeleton width={60} height={24} radius={Radius.full} />
-      </View>
+    <View style={[styles.card, { borderTopColor: c.border }, style]}>
+      <Skeleton width="40%" height={11} />
+      <Skeleton width="92%" height={20} style={{ marginTop: 12 }} />
+      <Skeleton width="78%" height={14} style={{ marginTop: 10 }} />
+      <Skeleton width="60%" height={14} style={{ marginTop: 6 }} />
     </View>
   );
 }
@@ -70,10 +63,9 @@ export function SkeletonProfile() {
   return (
     <View style={styles.profileContainer}>
       <View style={styles.profileHero}>
-        <Skeleton width={80} height={80} radius={Radius.full} />
+        <Skeleton width={56} height={56} radius={Radius.full} />
         <Skeleton width="60%" height={22} style={{ marginTop: 16 }} />
         <Skeleton width="40%" height={14} style={{ marginTop: 8 }} />
-        <Skeleton width="80%" height={13} style={{ marginTop: 12 }} />
       </View>
       {[0, 1, 2].map((i) => (
         <SkeletonCard key={i} style={{ marginTop: 16 }} />
@@ -83,35 +75,18 @@ export function SkeletonProfile() {
 }
 
 const styles = StyleSheet.create({
-  base: {
-    backgroundColor: Colors.skeletonBase,
-  },
+  base: {},
   card: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius['3xl'],
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    padding: 20,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  cardHeaderText: {
-    flex: 1,
-    gap: 6,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 16,
+    backgroundColor: 'transparent',
+    paddingVertical: Spacing[5],
+    paddingHorizontal: Spacing[6],
+    borderTopWidth: 1,
   },
   profileContainer: {
-    padding: 20,
+    paddingHorizontal: Spacing[6],
   },
   profileHero: {
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingVertical: Spacing[6],
   },
 });

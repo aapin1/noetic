@@ -1,4 +1,4 @@
-import React, { forwardRef, useState } from 'react';
+import React, { forwardRef, useMemo, useState } from 'react';
 import {
   StyleSheet,
   TextInput,
@@ -6,7 +6,8 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { Colors, FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
+import { FontFamily, FontSize, Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 
 interface Props extends TextInputProps {
@@ -20,121 +21,113 @@ interface Props extends TextInputProps {
   numberOfLines?: number;
 }
 
-export const Input = forwardRef<TextInput, Props>(
-  ({ label, error, hint, leftIcon, rightIcon, containerStyle, style, multiline, numberOfLines, ...props }, ref) => {
-    const [focused, setFocused] = useState(false);
+export const Input = forwardRef<TextInput, Props>(function Input(
+  { label, error, hint, leftIcon, rightIcon, containerStyle, style, multiline, numberOfLines, ...props },
+  ref,
+) {
+  const c = useThemeColors();
+  const [focused, setFocused] = useState(false);
 
-    return (
-      <View style={[styles.container, containerStyle]}>
-        {label && (
-          <Text variant="label" color="secondary" style={styles.label}>
-            {label}
-          </Text>
-        )}
-        <View
+  const dynamic = useMemo(
+    () =>
+      StyleSheet.create({
+        inputWrapper: {
+          borderBottomColor: error ? c.danger : focused ? c.text : c.border,
+        },
+        input: {
+          color: c.text,
+        },
+      }),
+    [c, error, focused],
+  );
+
+  return (
+    <View style={[styles.container, containerStyle]}>
+      {label && (
+        <Text variant="label" color="muted" style={styles.label}>
+          {label}
+        </Text>
+      )}
+      <View
+        style={[
+          styles.inputWrapper,
+          dynamic.inputWrapper,
+          !!error && styles.errored,
+          multiline && styles.multilineWrapper,
+        ]}
+      >
+        {leftIcon && <View style={styles.leftIcon}>{leftIcon}</View>}
+        <TextInput
+          ref={ref}
           style={[
-            styles.inputWrapper,
-            focused && styles.focused,
-            !!error && styles.errored,
-            multiline && styles.multilineWrapper,
+            styles.input,
+            dynamic.input,
+            Boolean(leftIcon) && styles.inputWithLeftIcon,
+            Boolean(rightIcon) && styles.inputWithRightIcon,
+            Boolean(multiline) && styles.multilineInput,
+            style,
           ]}
-        >
-          {leftIcon && <View style={styles.leftIcon}>{leftIcon}</View>}
-          <TextInput
-            ref={ref}
-            style={[
-              styles.input,
-              Boolean(leftIcon) && styles.inputWithLeftIcon,
-              Boolean(rightIcon) && styles.inputWithRightIcon,
-              Boolean(multiline) && styles.multilineInput,
-              style,
-            ]}
-            placeholderTextColor={Colors.mutedText}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            multiline={multiline}
-            numberOfLines={numberOfLines}
-            textAlignVertical={multiline ? 'top' : 'center'}
-            contextMenuHidden={false}
-            {...props}
-          />
-          {rightIcon && <View style={styles.rightIcon}>{rightIcon}</View>}
-        </View>
-        {error && (
-          <Text variant="caption" color="danger" style={styles.errorText}>
-            {error}
-          </Text>
-        )}
-        {hint && !error && (
-          <Text variant="caption" color="muted" style={styles.hintText}>
-            {hint}
-          </Text>
-        )}
+          placeholderTextColor={c.faint}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          multiline={multiline}
+          numberOfLines={numberOfLines}
+          textAlignVertical={multiline ? 'top' : 'center'}
+          contextMenuHidden={false}
+          {...props}
+        />
+        {rightIcon && <View style={styles.rightIcon}>{rightIcon}</View>}
       </View>
-    );
-  },
-);
+      {error && (
+        <Text variant="caption" color="danger" style={styles.errorText}>
+          {error}
+        </Text>
+      )}
+      {hint && !error && (
+        <Text variant="caption" color="muted" style={styles.hintText}>
+          {hint}
+        </Text>
+      )}
+    </View>
+  );
+});
 
 Input.displayName = 'Input';
 
 const styles = StyleSheet.create({
-  container: {
-    marginBottom: Spacing[4],
-  },
-  label: {
-    marginBottom: Spacing[2],
-  },
+  container: { marginBottom: Spacing[5] },
+  label: { marginBottom: Spacing[2] },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.inputBackground,
-    borderWidth: 1.5,
-    borderColor: Colors.inputBorder,
-    borderRadius: Radius.lg,
-    minHeight: 48,
+    backgroundColor: 'transparent',
+    borderBottomWidth: 1,
+    minHeight: 44,
   },
   multilineWrapper: {
-    minHeight: 100,
+    minHeight: 96,
     alignItems: 'flex-start',
-    paddingVertical: Spacing[3],
+    paddingVertical: Spacing[2],
   },
-  focused: {
-    borderColor: Colors.inputFocusBorder,
-    backgroundColor: Colors.surface,
-  },
-  errored: {
-    borderColor: Colors.danger,
-  },
+  errored: {},
   input: {
     flex: 1,
-    paddingHorizontal: Spacing[4],
+    paddingHorizontal: 0,
     paddingVertical: Spacing[3],
-    fontFamily: FontFamily.body,
-    fontSize: FontSize.base,
-    color: Colors.primaryText,
-    minHeight: 48,
+    fontFamily: FontFamily.sans,
+    fontSize: FontSize.md,
+    minHeight: 44,
   },
-  inputWithLeftIcon: {
-    paddingLeft: Spacing[2],
-  },
-  inputWithRightIcon: {
-    paddingRight: Spacing[2],
-  },
+  inputWithLeftIcon: { paddingLeft: Spacing[2] },
+  inputWithRightIcon: { paddingRight: Spacing[2] },
   multilineInput: {
     minHeight: 80,
     paddingTop: 0,
   },
-  leftIcon: {
-    paddingLeft: Spacing[4],
-  },
-  rightIcon: {
-    paddingRight: Spacing[4],
-  },
+  leftIcon: { paddingRight: Spacing[2] },
+  rightIcon: { paddingLeft: Spacing[2] },
   errorText: {
-    marginTop: Spacing[1],
-    color: Colors.danger,
+    marginTop: Spacing[2],
   },
-  hintText: {
-    marginTop: Spacing[1],
-  },
+  hintText: { marginTop: Spacing[2] },
 });

@@ -1,47 +1,92 @@
 import { Platform } from 'react-native';
 
-export const Colors = {
-  background: '#F6F2E9',
-  surface: '#FBF8F2',
-  elevatedSurface: '#F2EBDD',
-  cardBorder: 'rgba(36,44,38,0.08)',
-  primaryText: '#1E241F',
-  secondaryText: '#5E665F',
-  mutedText: '#8A9088',
-  accentGold: '#C8A55B',
-  accentGoldLight: 'rgba(200,165,91,0.12)',
-  accentViolet: '#8C7BFF',
-  accentVioletLight: 'rgba(140,123,255,0.12)',
-  success: '#78D39D',
-  danger: '#E86C6C',
-  softHighlight: 'rgba(200,165,91,0.12)',
-  white: '#FFFFFF',
-  overlay: 'rgba(30,36,31,0.48)',
-  inputBackground: 'rgba(30,36,31,0.04)',
-  inputBorder: 'rgba(30,36,31,0.12)',
-  inputFocusBorder: '#C8A55B',
-  tabBarBackground: '#FBF8F2',
-  tabBarBorder: 'rgba(36,44,38,0.08)',
-  skeletonBase: 'rgba(30,36,31,0.06)',
-  skeletonHighlight: 'rgba(30,36,31,0.12)',
+/** Times-adjacent serif for headlines; system defaults elsewhere. */
+export const FontFamily = {
+  serif: Platform.select({
+    ios: 'Times New Roman',
+    android: 'serif',
+    default: 'Georgia',
+  }) as string,
+  serifItalic: Platform.select({
+    ios: 'Times New Roman',
+    android: 'serif',
+    default: 'Georgia',
+  }) as string,
+  sans: Platform.select({
+    ios: 'Helvetica Neue',
+    android: 'sans-serif',
+    default: 'sans-serif',
+  }) as string,
+  sansMedium: Platform.select({
+    ios: 'Helvetica Neue',
+    android: 'sans-serif',
+    default: 'sans-serif',
+  }) as string,
+  mono: Platform.select({
+    ios: 'Menlo',
+    android: 'monospace',
+    default: 'monospace',
+  }) as string,
 } as const;
 
-export const FontFamily = {
-  heading: 'Fraunces_700Bold',
-  headingRegular: 'Fraunces_400Regular',
-  headingLight: 'Fraunces_300Light',
-  body: 'Inter_400Regular',
-  bodyMedium: 'Inter_500Medium',
-  bodySemiBold: 'Inter_600SemiBold',
-  bodyBold: 'Inter_700Bold',
-  mono: 'IBMPlexMono_400Regular',
-  monoMedium: 'IBMPlexMono_500Medium',
-} as const;
+export type AppThemeColors = {
+  background: string;
+  surface: string;
+  elevated: string;
+  text: string;
+  textSecondary: string;
+  muted: string;
+  faint: string;
+  border: string;
+  borderSubtle: string;
+  inverse: string;
+  inverseText: string;
+  danger: string;
+  graphNode: string;
+  graphLine: string;
+  tabBar: string;
+};
+
+export const lightColors: AppThemeColors = {
+  background: '#F5F4F0',
+  surface: '#FFFFFF',
+  elevated: '#EBEAE6',
+  text: '#0A0A0A',
+  textSecondary: '#2A2A2A',
+  muted: '#5C5C5C',
+  faint: '#8A8A8A',
+  border: 'rgba(10,10,10,0.12)',
+  borderSubtle: 'rgba(10,10,10,0.06)',
+  inverse: '#0A0A0A',
+  inverseText: '#F8F8F6',
+  danger: '#6B1515',
+  graphNode: 'rgba(10,10,10,0.85)',
+  graphLine: 'rgba(10,10,10,0.15)',
+  tabBar: '#F5F4F0',
+};
+
+export const darkColors: AppThemeColors = {
+  background: '#060606',
+  surface: '#0E0E0E',
+  elevated: '#141414',
+  text: '#ECECEC',
+  textSecondary: '#C8C8C8',
+  muted: '#8E8E8E',
+  faint: '#5A5A5A',
+  border: 'rgba(255,255,255,0.12)',
+  borderSubtle: 'rgba(255,255,255,0.06)',
+  inverse: '#F0F0F0',
+  inverseText: '#0A0A0A',
+  danger: '#C47A7A',
+  graphNode: 'rgba(236,236,236,0.9)',
+  graphLine: 'rgba(255,255,255,0.12)',
+  tabBar: '#060606',
+};
 
 export const FontSize = {
-  xs: 11,
-  sm: 13,
-  base: 15,
+  xs: 10,
+  sm: 12,
+  base: 14,
   md: 16,
   lg: 18,
   xl: 22,
@@ -49,13 +94,22 @@ export const FontSize = {
   '3xl': 32,
   '4xl': 40,
   '5xl': 52,
+  display: 56,
 } as const;
 
 export const LineHeight = {
-  tight: 1.2,
-  snug: 1.35,
-  normal: 1.5,
-  relaxed: 1.65,
+  tight: 1.12,
+  snug: 1.22,
+  normal: 1.4,
+  relaxed: 1.55,
+} as const;
+
+export const LetterSpacing = {
+  tight: -0.5,
+  normal: 0,
+  wide: 0.8,
+  wider: 1.4,
+  label: 2,
 } as const;
 
 export const Spacing = {
@@ -69,75 +123,44 @@ export const Spacing = {
   8: 32,
   10: 40,
   12: 48,
+  14: 56,
   16: 64,
+  20: 80,
 } as const;
 
 export const Radius = {
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 20,
-  '2xl': 24,
-  '3xl': 28,
-  hero: 32,
+  none: 0,
+  xs: 4,
+  sm: 6,
+  md: 8,
+  lg: 12,
+  xl: 16,
+  '2xl': 20,
+  '3xl': 24,
   full: 9999,
-} as const;
-
-export const Shadow = {
-  soft: Platform.select({
-    ios: {
-      shadowColor: '#1E241F',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.06,
-      shadowRadius: 12,
-    },
-    android: { elevation: 3 },
-  }),
-  medium: Platform.select({
-    ios: {
-      shadowColor: '#1E241F',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.08,
-      shadowRadius: 20,
-    },
-    android: { elevation: 5 },
-  }),
-  strong: Platform.select({
-    ios: {
-      shadowColor: '#1E241F',
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.12,
-      shadowRadius: 28,
-    },
-    android: { elevation: 8 },
-  }),
 } as const;
 
 export const ONBOARDING_TOPICS = [
   'philosophy',
   'psychology',
   'economics',
-  'politics',
   'history',
-  'literature',
-  'film',
-  'music',
-  'art',
-  'design',
-  'technology',
-  'computer science',
-  'AI',
-  'startups',
   'science',
-  'mathematics',
-  'theology',
+  'literature',
   'law',
+  'technology',
+  'design',
+  'film',
+  'mathematics',
+  'politics',
+  'theology',
   'education',
-  'journalism',
-  'culture',
+  'art',
+  'AI',
   'writing',
-  'health',
-  'philosophy of mind',
+  'culture',
+  'medicine',
+  'architecture',
 ] as const;
 
-export type Topic = (typeof ONBOARDING_TOPICS)[number];
+export type OnboardingTopic = (typeof ONBOARDING_TOPICS)[number];

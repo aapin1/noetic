@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -10,9 +10,10 @@ import * as Haptics from 'expo-haptics';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withTiming,
 } from 'react-native-reanimated';
-import { Colors, FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
+import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 
 type Variant = 'primary' | 'secondary' | 'tertiary' | 'danger';
@@ -49,22 +50,35 @@ export function Button({
   accessibilityLabel,
   accessibilityHint,
 }: Props) {
-  const scale = useSharedValue(1);
+  const c = useThemeColors();
+  const opacity = useSharedValue(1);
+  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+  const dynamic = useMemo(() => {
+    const labelOnPrimary = variant === 'primary' || variant === 'danger' ? c.inverseText : c.text;
+    return {
+      labelColor: labelOnPrimary,
+      spinnerColor: labelOnPrimary,
+      bg:
+        variant === 'primary'
+          ? c.inverse
+          : variant === 'danger'
+            ? c.danger
+            : 'transparent',
+      border: variant === 'secondary' ? c.border : 'transparent',
+    };
+  }, [c, variant]);
 
   const handlePressIn = () => {
-    scale.value = withSpring(0.97, { damping: 15, stiffness: 300 });
+    opacity.value = withTiming(0.78, { duration: 120 });
   };
 
   const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+    opacity.value = withTiming(1, { duration: 180 });
   };
 
   const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.selectionAsync();
     onPress?.();
   };
 
@@ -75,9 +89,13 @@ export function Button({
       style={[
         animStyle,
         styles.base,
-        styles[variant],
         styles[size],
         fullWidth && styles.fullWidth,
+        {
+          backgroundColor: dynamic.bg,
+          borderColor: dynamic.border,
+          borderWidth: variant === 'secondary' ? 1 : 0,
+        },
         isDisabled && styles.disabled,
         style,
       ]}
@@ -91,18 +109,15 @@ export function Button({
       accessibilityState={{ disabled: isDisabled, busy: loading }}
     >
       {loading ? (
-        <ActivityIndicator
-          size="small"
-          color={variant === 'primary' ? Colors.primaryText : Colors.accentGold}
-        />
+        <ActivityIndicator size="small" color={dynamic.spinnerColor} />
       ) : (
         <View style={styles.inner}>
           {leftIcon && <View style={styles.iconLeft}>{leftIcon}</View>}
           <Text
             style={[
               styles.label,
-              styles[`label_${variant}`],
               styles[`label_${size}`],
+              { color: dynamic.labelColor, fontFamily: FontFamily.sansMedium },
             ]}
           >
             {label}
@@ -116,37 +131,15 @@ export function Button({
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: Radius['3xl'],
+    borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
   },
-  fullWidth: {
-    width: '100%',
-  },
-  inner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconLeft: { marginRight: 8 },
-  iconRight: { marginLeft: 8 },
-
-  primary: {
-    backgroundColor: Colors.accentGold,
-  },
-  secondary: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: Colors.accentGold,
-  },
-  tertiary: {
-    backgroundColor: 'transparent',
-  },
-  danger: {
-    backgroundColor: Colors.danger,
-  },
-
+  fullWidth: { width: '100%' },
+  inner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  iconLeft: { marginRight: 10 },
+  iconRight: { marginLeft: 10 },
   sm: {
     paddingHorizontal: Spacing[4],
     paddingVertical: Spacing[2],
@@ -155,40 +148,20 @@ const styles = StyleSheet.create({
   md: {
     paddingHorizontal: Spacing[6],
     paddingVertical: Spacing[3],
-    minHeight: 44,
+    minHeight: 46,
   },
   lg: {
     paddingHorizontal: Spacing[8],
     paddingVertical: Spacing[4],
-    minHeight: 52,
+    minHeight: 54,
   },
-
   disabled: {
-    opacity: 0.4,
+    opacity: 0.35,
   },
-
   label: {
-    fontFamily: FontFamily.bodySemiBold,
+    letterSpacing: 0.5,
   },
-  label_primary: {
-    color: Colors.primaryText,
-  },
-  label_secondary: {
-    color: Colors.accentGold,
-  },
-  label_tertiary: {
-    color: Colors.accentGold,
-  },
-  label_danger: {
-    color: Colors.white,
-  },
-  label_sm: {
-    fontSize: FontSize.sm,
-  },
-  label_md: {
-    fontSize: FontSize.base,
-  },
-  label_lg: {
-    fontSize: FontSize.md,
-  },
+  label_sm: { fontSize: FontSize.sm },
+  label_md: { fontSize: FontSize.base },
+  label_lg: { fontSize: FontSize.md },
 });
