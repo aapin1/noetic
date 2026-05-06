@@ -2,22 +2,30 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Link, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 
 export default function NotFoundScreen() {
+  const c = useThemeColors();
   return (
     <>
       <Stack.Screen options={{ title: 'Not found', headerShown: true }} />
-      <SafeAreaView style={styles.safe} edges={['bottom']}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['bottom']}>
         <View style={styles.container}>
-          <Text variant="h1" style={styles.code}>404</Text>
-          <Text variant="h3" style={styles.title}>This page doesn't exist.</Text>
+          <Text variant="h1" style={[styles.code, { color: c.muted }]}>
+            404
+          </Text>
+          <Text variant="h3" style={styles.title}>
+            Nothing here.
+          </Text>
           <Text variant="body" color="secondary" style={styles.body}>
-            The profile, content, or page you're looking for may have moved or been removed.
+            That route is gone or never existed.
           </Text>
           <Link href="/(tabs)" style={styles.link}>
-            <Text variant="bodyMedium" color="accent">Return to feed →</Text>
+            <Text variant="bodyMedium" color="accent">
+              Back to capture →
+            </Text>
           </Link>
         </View>
       </SafeAreaView>
@@ -26,7 +34,7 @@ export default function NotFoundScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.background },
+  safe: { flex: 1 },
   container: {
     flex: 1,
     alignItems: 'center',
@@ -34,7 +42,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[8],
   },
   code: {
-    color: Colors.accentGold,
     marginBottom: Spacing[3],
   },
   title: {

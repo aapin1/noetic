@@ -1,188 +1,93 @@
 import React, { useCallback } from 'react';
-import {
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { SettingsIcon, EditIcon, ExternalLinkIcon } from 'lucide-react-native';
+import { SettingsIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
-import { useApiQuery } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api';
-import type { OwnerProfile } from '@/types/api';
-import { Colors, FontFamily, Spacing } from '@/constants/theme';
+import { useApiQuery } from '@/hooks/useApiQuery';
+import { Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Avatar } from '@/components/ui/Avatar';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { TasteGraph } from '@/components/profile/TasteGraph';
-import { SkeletonProfile } from '@/components/ui/Skeleton';
 
-export default function OwnProfileScreen() {
+export default function YouScreen() {
+  const c = useThemeColors();
   const router = useRouter();
   const { profile: authProfile, refreshProfile } = useAuth();
 
-  const { data, loading, refetch } = useApiQuery(
+  const { data: profile, loading, refetch } = useApiQuery(
     () => api.profile.me().then((r) => r.profile),
     [],
   );
 
-  const profile = data ?? authProfile;
+  const { data: capList } = useApiQuery(() => api.captures.list({ limit: 80 }), []);
+  const count = capList?.length ?? 0;
 
-  const topTopics = profile?.tasteVector
-    ? Object.entries(profile.tasteVector)
-        .filter(([k]) => k.startsWith('topic:'))
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 8)
-        .map(([k]) => k.replace('topic:', ''))
-    : [];
+  const p = profile ?? authProfile;
 
   const handleRefresh = useCallback(async () => {
     await refetch();
     await refreshProfile();
   }, [refetch, refreshProfile]);
 
-  if (loading && !profile) {
-    return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.header}>
-          <Text style={{ fontFamily: FontFamily.heading, fontSize: 18, color: Colors.primaryText, letterSpacing: 4 }}>
-            Profile
-          </Text>
-        </View>
-        <SkeletonProfile />
-      </SafeAreaView>
-    );
-  }
-
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={{ fontFamily: FontFamily.heading, fontSize: 18, color: Colors.primaryText, letterSpacing: 4 }}>
-          Profile
-        </Text>
-        <View style={styles.headerActions}>
-          <Pressable
-            onPress={() => router.push('/profile/edit' as never)}
-            style={styles.iconBtn}
-            accessibilityLabel="Edit profile"
-            accessibilityRole="button"
-          >
-            <EditIcon size={20} color={Colors.primaryText} />
-          </Pressable>
-          <Pressable
-            onPress={() => router.push('/settings')}
-            style={styles.iconBtn}
-            accessibilityLabel="Settings"
-            accessibilityRole="button"
-          >
-            <SettingsIcon size={20} color={Colors.primaryText} />
-          </Pressable>
-        </View>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
+      <View style={[styles.header, { borderBottomColor: c.border }]}>
+        <Text variant="wordmark">You</Text>
+        <Pressable onPress={() => router.push('/settings')} accessibilityLabel="Settings">
+          <SettingsIcon size={22} color={c.text} />
+        </Pressable>
       </View>
-
       <ScrollView
-        style={styles.scroll}
         contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
-            refreshing={loading}
-            onRefresh={handleRefresh}
-            tintColor={Colors.accentGold}
-          />
+          <RefreshControl refreshing={loading} onRefresh={() => void handleRefresh()} tintColor={c.text} />
         }
       >
         <View style={styles.hero}>
-          <Avatar
-            uri={profile?.avatarUrl}
-            displayName={profile?.displayName}
-            size="xl"
-          />
-          <Text variant="h3" style={styles.displayName}>{profile?.displayName}</Text>
-          <Text variant="mono" color="muted">@{profile?.handle}</Text>
-          {profile?.identitySummary && (
-            <Text variant="body" color="secondary" style={styles.summary}>
-              {profile.identitySummary}
+          <Avatar uri={p?.avatarUrl} displayName={p?.displayName} size="xl" />
+          <Text variant="h3" style={{ marginTop: Spacing[4] }}>
+            {p?.displayName ?? '—'}
+          </Text>
+          <Text variant="mono" color="muted">
+            @{p?.handle ?? '—'}
+          </Text>
+          {p?.identitySummary ? (
+            <Text variant="serif" color="secondary" style={{ marginTop: Spacing[3], textAlign: 'center' }}>
+              {p.identitySummary}
             </Text>
-          )}
-          {profile?.bio && !profile.identitySummary && (
-            <Text variant="body" color="secondary" style={styles.summary}>
-              {profile.bio}
-            </Text>
-          )}
+          ) : null}
         </View>
 
-        <View style={styles.stats}>
-          <Pressable
-            style={styles.stat}
-            onPress={() => router.push(`/profile/${profile?.handle}/followers` as never)}
-            accessibilityRole="button"
-            accessibilityLabel={`${profile?.followersCount} followers`}
-          >
-            <Text variant="h3" color="accent">{profile?.followersCount ?? 0}</Text>
-            <Text variant="caption" color="muted">followers</Text>
-          </Pressable>
-          <View style={styles.statDivider} />
-          <Pressable
-            style={styles.stat}
-            onPress={() => router.push(`/profile/${profile?.handle}/following` as never)}
-            accessibilityRole="button"
-            accessibilityLabel={`${profile?.followingCount} following`}
-          >
-            <Text variant="h3" color="accent">{profile?.followingCount ?? 0}</Text>
-            <Text variant="caption" color="muted">following</Text>
-          </Pressable>
-          {profile && 'logCount' in profile && (
-            <>
-              <View style={styles.statDivider} />
-              <View style={styles.stat}>
-                <Text variant="h3" color="accent">{(profile as OwnerProfile).logCount ?? 0}</Text>
-                <Text variant="caption" color="muted">logged</Text>
-              </View>
-            </>
-          )}
+        <View style={[styles.statCard, { borderColor: c.border }]}>
+          <Text variant="label" color="muted">
+            Memory activity
+          </Text>
+          <Text variant="h2" style={{ marginTop: Spacing[2] }}>
+            {count === 0 ? 'No captures yet' : `${count} in working set`}
+          </Text>
+          <Text variant="caption" color="muted" style={{ marginTop: Spacing[2] }}>
+            Count reflects recent items loaded from your private index (up to 80).
+          </Text>
         </View>
 
-        {topTopics.length > 0 && (
-          <View style={styles.section}>
-            <Text variant="label" color="muted" style={styles.sectionLabel}>Top topics</Text>
-            <View style={styles.topicsRow}>
-              {topTopics.map((t) => (
-                <Pressable key={t} onPress={() => router.push(`/topics/${t}`)}>
-                  <Badge label={t} variant="topic" />
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {profile?.tasteVector && Object.keys(profile.tasteVector).length > 2 && (
-          <View style={styles.section}>
-            <Text variant="label" color="muted" style={styles.sectionLabel}>Taste graph</Text>
-            <TasteGraph tasteVector={profile.tasteVector} size={260} />
-          </View>
-        )}
-
-        <View style={styles.section}>
-          <Button
-            label="View public profile"
-            onPress={() => router.push(`/profile/${profile?.handle}`)}
-            variant="secondary"
-            size="md"
-            rightIcon={<ExternalLinkIcon size={14} color={Colors.secondaryText} />}
-          />
-        </View>
+        <Button
+          label="Edit profile"
+          variant="secondary"
+          size="md"
+          fullWidth
+          onPress={() => router.push('/profile/edit' as never)}
+          style={{ marginTop: Spacing[6] }}
+        />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.background },
+  safe: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -190,36 +95,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[6],
     paddingVertical: Spacing[4],
     borderBottomWidth: 1,
-    borderBottomColor: Colors.cardBorder,
   },
-  headerActions: { flexDirection: 'row', gap: Spacing[2] },
-  iconBtn: { padding: Spacing[2] },
-  scroll: { flex: 1 },
-  content: { paddingBottom: Spacing[12] },
-  hero: {
-    alignItems: 'center',
-    paddingHorizontal: Spacing[6],
-    paddingVertical: Spacing[8],
-  },
-  displayName: { marginTop: Spacing[4] },
-  summary: { textAlign: 'center', marginTop: Spacing[2], maxWidth: 280 },
-  stats: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: Spacing[5],
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: Colors.cardBorder,
+  content: { paddingBottom: Spacing[16] },
+  hero: { alignItems: 'center', paddingHorizontal: Spacing[6], paddingVertical: Spacing[8] },
+  statCard: {
     marginHorizontal: Spacing[6],
-    gap: Spacing[8],
+    padding: Spacing[5],
+    borderWidth: 1,
+    borderRadius: 12,
   },
-  stat: { alignItems: 'center', gap: 2 },
-  statDivider: { width: 1, height: 32, backgroundColor: Colors.cardBorder },
-  section: {
-    paddingHorizontal: Spacing[6],
-    marginTop: Spacing[6],
-  },
-  sectionLabel: { marginBottom: Spacing[3] },
-  topicsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[2] },
 });

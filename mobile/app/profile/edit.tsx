@@ -12,12 +12,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeftIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
-import { Colors, FontFamily, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 
 export default function EditProfileScreen() {
+  const c = useThemeColors();
   const router = useRouter();
   const { profile, refreshProfile } = useAuth();
 
@@ -39,7 +41,10 @@ export default function EditProfileScreen() {
   }, [profile]);
 
   const handleSave = async () => {
-    if (!displayName.trim()) { setError('Display name is required.'); return; }
+    if (!displayName.trim()) {
+      setError('Display name is required.');
+      return;
+    }
     if (!handle.trim() || !/^[a-zA-Z0-9_]{2,24}$/.test(handle.trim())) {
       setError('Handle must be 2–24 characters: letters, numbers, underscores only.');
       return;
@@ -64,14 +69,12 @@ export default function EditProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <View style={styles.navBar}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top', 'bottom']}>
+      <View style={[styles.navBar, { borderBottomColor: c.border }]}>
         <Pressable onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="Cancel">
-          <ChevronLeftIcon size={22} color={Colors.primaryText} />
+          <ChevronLeftIcon size={22} color={c.text} />
         </Pressable>
-        <Text style={{ fontFamily: FontFamily.heading, fontSize: 16, color: Colors.primaryText }}>
-          Edit profile
-        </Text>
+        <Text variant="h4">Edit profile</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -86,14 +89,18 @@ export default function EditProfileScreen() {
           showsVerticalScrollIndicator={false}
         >
           {error ? (
-            <View style={styles.errorBanner}>
-              <Text variant="caption" color="danger">{error}</Text>
+            <View style={[styles.errorBanner, { borderColor: c.danger, backgroundColor: c.elevated }]}>
+              <Text variant="caption" color="danger">
+                {error}
+              </Text>
             </View>
           ) : null}
 
           {success ? (
-            <View style={styles.successBanner}>
-              <Text variant="caption" color="success">Profile saved!</Text>
+            <View style={[styles.successBanner, { borderColor: c.border, backgroundColor: c.elevated }]}>
+              <Text variant="caption" color="primary">
+                Saved.
+              </Text>
             </View>
           ) : null}
 
@@ -118,20 +125,18 @@ export default function EditProfileScreen() {
             label="Bio"
             value={bio}
             onChangeText={setBio}
-            placeholder="What you read, watch, and think about..."
+            placeholder="Optional orientation for the system…"
             multiline
             numberOfLines={3}
-            hint="Shown on your public profile."
           />
 
           <Input
-            label="Public notes"
+            label="Notes"
             value={publicNotes}
             onChangeText={setPublicNotes}
-            placeholder="Anything you want visitors to see..."
+            placeholder="Optional. Kept with your account."
             multiline
             numberOfLines={4}
-            hint="Optional. Visible to anyone who views your profile."
           />
 
           <Button
@@ -150,7 +155,7 @@ export default function EditProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.background },
+  safe: { flex: 1 },
   flex: { flex: 1 },
   navBar: {
     flexDirection: 'row',
@@ -159,7 +164,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[4],
     paddingVertical: Spacing[3],
     borderBottomWidth: 1,
-    borderBottomColor: Colors.cardBorder,
   },
   backBtn: { padding: Spacing[2] },
   scroll: { flex: 1 },
@@ -169,20 +173,16 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing[12],
   },
   errorBanner: {
-    backgroundColor: 'rgba(232,108,108,0.1)',
     borderRadius: 12,
     padding: Spacing[4],
     marginBottom: Spacing[4],
     borderWidth: 1,
-    borderColor: 'rgba(232,108,108,0.3)',
   },
   successBanner: {
-    backgroundColor: 'rgba(120,211,157,0.1)',
     borderRadius: 12,
     padding: Spacing[4],
     marginBottom: Spacing[4],
     borderWidth: 1,
-    borderColor: 'rgba(120,211,157,0.3)',
   },
   saveBtn: { marginTop: Spacing[4] },
 });
