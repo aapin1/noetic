@@ -58,6 +58,45 @@ enum DeviceProvider {
   EXPO
 }
 
+enum CaptureKind {
+  LINK
+  TEXT
+  QUOTE
+  IMAGE
+}
+
+enum InsightType {
+  PATTERN
+  TRAJECTORY
+  CONNECTION
+  REINFORCES
+  CONTRADICTS
+  NOVELTY
+  RECUR
+}
+
+enum MemoryEdgeType {
+  RECURS
+  REINFORCES
+  CONTRADICTS
+  EVOLVES_FROM
+  RELATED
+}
+
+enum InsightStyle {
+  DIRECT
+  REFLECTIVE
+  ANALYTICAL
+}
+
+enum CognitiveEventType {
+  CAPTURED
+  TOPIC_SHIFT
+  CONTRADICTION_DETECTED
+  PATTERN_DETECTED
+  NOVELTY_DETECTED
+}
+
 model User {
   id                  String             @id @default(cuid())
   email               String             @unique
@@ -88,6 +127,11 @@ model User {
   deviceTokens        DeviceToken[]
   comparisonCacheLeft ComparisonCache[]  @relation("ComparisonLeft")
   comparisonCacheRight ComparisonCache[] @relation("ComparisonRight")
+  capturedItems       CapturedItem[]
+  insights            Insight[]
+  memoryEdges         MemoryEdge[]
+  cognitiveEvents     CognitiveEvent[]
+  preference          UserPreference?
 }
 
 model Profile {
@@ -117,6 +161,7 @@ model Topic {
   userTopics  UserTopic[]
   contentTags ContentItemTopic[]
   logTags     LogEntryTopic[]
+  capturedTags CapturedItemTopic[]
 
   @@index([slug])
 }
@@ -179,6 +224,7 @@ model ContentItem {
   saves          Save[]
   shareEvents    ShareEvent[]
   activityEvents ActivityEvent[]
+  captures       CapturedItem[]
 
   @@index([title])
   @@index([canonicalUrl])
@@ -466,4 +512,99 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model CapturedItem {
+  id              String              @id @default(cuid())
+  userId          String
+  kind            CaptureKind
+  contentItemId   String?
+  rawText         String?             @db.Text
+  caption         String?             @db.Text
+  mediaUrl        String?
+  reaction        String?             @db.Text
+  summary         String?             @db.Text
+  keyIdea         String?             @db.Text
+  terms           Json
+  capturedAt      DateTime            @default(now())
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentItem     ContentItem?        @relation(fields: [contentItemId], references: [id], onDelete: SetNull)
+  insights        Insight[]
+  edgesFrom       MemoryEdge[]        @relation("EdgesFrom")
+  edgesTo         MemoryEdge[]        @relation("EdgesTo")
+  cognitiveEvents CognitiveEvent[]
+  topics          CapturedItemTopic[]
+
+  @@index([userId, capturedAt])
+  @@index([userId, kind])
+}
+
+model CapturedItemTopic {
+  capturedItemId String
+  topicId        String
+  weight         Float        @default(1)
+  capturedItem   CapturedItem @relation(fields: [capturedItemId], references: [id], onDelete: Cascade)
+  topic          Topic        @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@id([capturedItemId, topicId])
+  @@index([topicId])
+}
+
+model Insight {
+  id             String       @id @default(cuid())
+  userId         String
+  capturedItemId String
+  type           InsightType
+  headline       String       @db.Text
+  body           String       @db.Text
+  evidence       Json
+  strength       Float
+  createdAt      DateTime     @default(now())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  capturedItem   CapturedItem @relation(fields: [capturedItemId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([capturedItemId])
+}
+
+model MemoryEdge {
+  id         String         @id @default(cuid())
+  userId     String
+  fromItemId String
+  toItemId   String
+  type       MemoryEdgeType
+  weight     Float
+  createdAt  DateTime       @default(now())
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fromItem   CapturedItem   @relation("EdgesFrom", fields: [fromItemId], references: [id], onDelete: Cascade)
+  toItem     CapturedItem   @relation("EdgesTo", fields: [toItemId], references: [id], onDelete: Cascade)
+
+  @@unique([fromItemId, toItemId, type])
+  @@index([userId, createdAt])
+  @@index([toItemId])
+}
+
+model CognitiveEvent {
+  id             String              @id @default(cuid())
+  userId         String
+  capturedItemId String?
+  type           CognitiveEventType
+  payload        Json
+  occurredAt     DateTime            @default(now())
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  capturedItem   CapturedItem?       @relation(fields: [capturedItemId], references: [id], onDelete: SetNull)
+
+  @@index([userId, occurredAt])
+}
+
+model UserPreference {
+  id           String       @id @default(cuid())
+  userId       String       @unique
+  insightStyle InsightStyle @default(DIRECT)
+  preferences  Json?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

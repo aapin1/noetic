@@ -7,3 +7,7 @@ test-results
 .env
 .env.local
 .env.test.local
+
+# User-uploaded capture images (served from /public)
+public/capture-uploads/*
+!public/capture-uploads/.gitkeep
