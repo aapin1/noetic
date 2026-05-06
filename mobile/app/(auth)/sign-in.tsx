@@ -11,12 +11,14 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeftIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
-import { Colors, FontFamily, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 
 export default function SignInScreen() {
+  const c = useThemeColors();
   const router = useRouter();
   const { signIn } = useAuth();
   const [email, setEmail] = useState('');
@@ -42,7 +44,7 @@ export default function SignInScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -58,33 +60,27 @@ export default function SignInScreen() {
             accessibilityLabel="Go back"
             accessibilityRole="button"
           >
-            <ChevronLeftIcon size={20} color={Colors.primaryText} />
+            <ChevronLeftIcon size={20} color={c.text} />
           </Pressable>
 
           <View style={styles.header}>
-            <Text
-              style={{
-                fontFamily: FontFamily.heading,
-                fontSize: 22,
-                color: Colors.primaryText,
-                letterSpacing: 4,
-                marginBottom: 32,
-              }}
-            >
-              NOETIC
+            <Text variant="wordmark" style={styles.mark}>
+              noetic
             </Text>
             <Text variant="h1" style={styles.title}>
               Welcome back.
             </Text>
             <Text variant="body" color="secondary" style={styles.subtitle}>
-              Sign in to your intellectual profile.
+              Private memory. Same account.
             </Text>
           </View>
 
           <View style={styles.form}>
             {error ? (
-              <View style={styles.errorBanner}>
-                <Text variant="caption" color="danger">{error}</Text>
+              <View style={[styles.errorBanner, { borderColor: c.danger, backgroundColor: c.elevated }]}>
+                <Text variant="caption" color="danger">
+                  {error}
+                </Text>
               </View>
             ) : null}
 
@@ -118,21 +114,21 @@ export default function SignInScreen() {
               fullWidth
               loading={loading}
               style={styles.submitBtn}
-              accessibilityLabel="Sign in to NOETIC"
+              accessibilityLabel="Sign in to noetic"
             />
           </View>
 
           <View style={styles.footer}>
             <Text variant="body" color="secondary">
-              Don't have a profile?{' '}
+              New here?{' '}
             </Text>
             <Pressable
               onPress={() => router.replace('/(auth)/sign-up')}
               accessibilityRole="link"
-              accessibilityLabel="Create a profile"
+              accessibilityLabel="Create an account"
             >
               <Text variant="bodyMedium" color="accent">
-                Create one →
+                Create →
               </Text>
             </Pressable>
           </View>
@@ -143,7 +139,7 @@ export default function SignInScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.background },
+  safe: { flex: 1 },
   flex: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
@@ -160,6 +156,9 @@ const styles = StyleSheet.create({
     marginTop: Spacing[6],
     marginBottom: Spacing[8],
   },
+  mark: {
+    marginBottom: Spacing[8],
+  },
   title: {
     marginBottom: Spacing[2],
   },
@@ -168,9 +167,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   errorBanner: {
-    backgroundColor: 'rgba(232,108,108,0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(232,108,108,0.3)',
     borderRadius: 12,
     padding: Spacing[4],
     marginBottom: Spacing[4],

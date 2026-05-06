@@ -118,9 +118,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadProfile]);
 
   const signUp = useCallback(async (name: string, email: string, password: string) => {
-    await api.auth.register({ name, email, password });
-    await signIn(email, password);
-  }, [signIn]);
+    if (isDevFakeCredentials(email, password)) {
+      await storeToken(DEV_FAKE_LOGIN.token);
+      await storeUserId(DEV_FAKE_LOGIN.profile.id);
+      setState((prev) => ({
+        ...prev,
+        token: DEV_FAKE_LOGIN.token,
+        profile: DEV_FAKE_LOGIN.profile,
+        isLoading: false,
+        isAuthenticated: true,
+        hasProfile: true,
+      }));
+      return;
+    }
+    const { token, user } = await api.auth.register({ name, email, password });
+    await storeToken(token);
+    await storeUserId(user.id);
+    setState((prev) => ({ ...prev, token, isAuthenticated: true }));
+    await loadProfile();
+  }, [loadProfile]);
 
   const signOut = useCallback(async () => {
     await clearAuth();

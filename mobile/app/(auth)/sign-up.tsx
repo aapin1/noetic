@@ -11,12 +11,14 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeftIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
-import { Colors, FontFamily, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 
 export default function SignUpScreen() {
+  const c = useThemeColors();
   const router = useRouter();
   const { signUp } = useAuth();
   const [name, setName] = useState('');
@@ -27,10 +29,22 @@ export default function SignUpScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleSignUp = async () => {
-    if (!name.trim()) { setError('Your name is required.'); return; }
-    if (!email.trim()) { setError('Email is required.'); return; }
-    if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
-    if (password !== confirm) { setError('Passwords do not match.'); return; }
+    if (!name.trim()) {
+      setError('Your name is required.');
+      return;
+    }
+    if (!email.trim()) {
+      setError('Email is required.');
+      return;
+    }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+    if (password !== confirm) {
+      setError('Passwords do not match.');
+      return;
+    }
     setError('');
     setLoading(true);
     try {
@@ -44,7 +58,7 @@ export default function SignUpScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -60,33 +74,27 @@ export default function SignUpScreen() {
             accessibilityLabel="Go back"
             accessibilityRole="button"
           >
-            <ChevronLeftIcon size={20} color={Colors.primaryText} />
+            <ChevronLeftIcon size={20} color={c.text} />
           </Pressable>
 
           <View style={styles.header}>
-            <Text
-              style={{
-                fontFamily: FontFamily.heading,
-                fontSize: 22,
-                color: Colors.primaryText,
-                letterSpacing: 4,
-                marginBottom: 32,
-              }}
-            >
-              NOETIC
+            <Text variant="wordmark" style={styles.mark}>
+              noetic
             </Text>
             <Text variant="h1" style={styles.title}>
-              Create your profile.
+              Create an account.
             </Text>
             <Text variant="body" color="secondary" style={styles.subtitle}>
-              Your intellectual identity starts here.
+              Onboarding is short. Capture comes next.
             </Text>
           </View>
 
           <View style={styles.form}>
             {error ? (
-              <View style={styles.errorBanner}>
-                <Text variant="caption" color="danger">{error}</Text>
+              <View style={[styles.errorBanner, { borderColor: c.danger, backgroundColor: c.elevated }]}>
+                <Text variant="caption" color="danger">
+                  {error}
+                </Text>
               </View>
             ) : null}
 
@@ -132,25 +140,29 @@ export default function SignUpScreen() {
             />
 
             <Button
-              label="Create profile"
+              label="Continue"
               onPress={handleSignUp}
               variant="primary"
               size="lg"
               fullWidth
               loading={loading}
               style={styles.submitBtn}
-              accessibilityLabel="Create your NOETIC profile"
+              accessibilityLabel="Create your noetic account"
             />
           </View>
 
           <View style={styles.footer}>
-            <Text variant="body" color="secondary">Already have a profile? </Text>
+            <Text variant="body" color="secondary">
+              Already have an account?{' '}
+            </Text>
             <Pressable
               onPress={() => router.replace('/(auth)/sign-in')}
               accessibilityRole="link"
               accessibilityLabel="Sign in"
             >
-              <Text variant="bodyMedium" color="accent">Sign in →</Text>
+              <Text variant="bodyMedium" color="accent">
+                Sign in →
+              </Text>
             </Pressable>
           </View>
         </ScrollView>
@@ -160,7 +172,7 @@ export default function SignUpScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.background },
+  safe: { flex: 1 },
   flex: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
@@ -177,13 +189,14 @@ const styles = StyleSheet.create({
     marginTop: Spacing[6],
     marginBottom: Spacing[8],
   },
+  mark: {
+    marginBottom: Spacing[8],
+  },
   title: { marginBottom: Spacing[2] },
   subtitle: {},
   form: {},
   errorBanner: {
-    backgroundColor: 'rgba(232,108,108,0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(232,108,108,0.3)',
     borderRadius: 12,
     padding: Spacing[4],
     marginBottom: Spacing[4],
