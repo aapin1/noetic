@@ -1,4 +1,5 @@
-import { Visibility } from "@prisma/client";
+import { randomBytes } from "node:crypto";
+import { InsightStyle, Visibility } from "@prisma/client";
 import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { createApiToken, createPasswordHash } from "@/lib/auth";
@@ -79,16 +80,45 @@ export async function createAccessToken(args: {
 
 export async function createOnboardingProfile(args: {
   userId: string;
-  handle: string;
-  displayName: string;
+  handle?: string;
+  displayName?: string;
   bio?: string;
   publicNotes?: string;
   avatarUrl?: string;
   topics: string[];
+  insightStyle?: InsightStyle;
   db?: RootDbClient;
 }) {
   const db = args.db ?? prisma;
-  const handle = args.handle.toLowerCase();
+
+  const userRow = await db.user.findUnique({
+    where: { id: args.userId },
+    select: { name: true, email: true },
+  });
+
+  const displayName =
+    args.displayName?.trim() ||
+    userRow?.name?.trim() ||
+    (userRow?.email ? userRow.email.split("@")[0]! : null) ||
+    "Operator";
+
+  let handle = args.handle?.trim().toLowerCase();
+
+  if (!handle) {
+    let candidate = "";
+    for (let attempt = 0; attempt < 12; attempt++) {
+      candidate = `n_${randomBytes(4).toString("hex")}`;
+      const taken = await db.profile.findUnique({ where: { handle: candidate } });
+      if (!taken) {
+        handle = candidate;
+        break;
+      }
+    }
+    if (!handle) {
+      throw new AppError("HANDLE_GENERATION_FAILED", "Could not allocate a handle", 500);
+    }
+  }
+
   await assertHandleAvailable(db, handle, args.userId);
 
   return db.$transaction(async (tx: DbClient) => {
@@ -98,7 +128,7 @@ export async function createOnboardingProfile(args: {
       where: { userId: args.userId },
       update: {
         handle,
-        displayName: args.displayName,
+        displayName,
         bio: args.bio,
         publicNotes: args.publicNotes,
         avatarUrl: args.avatarUrl,
@@ -107,13 +137,21 @@ export async function createOnboardingProfile(args: {
       create: {
         userId: args.userId,
         handle,
-        displayName: args.displayName,
+        displayName,
         bio: args.bio,
         publicNotes: args.publicNotes,
         avatarUrl: args.avatarUrl,
         isOnboarded: true,
       },
     });
+
+    if (args.insightStyle) {
+      await tx.userPreference.upsert({
+        where: { userId: args.userId },
+        create: { userId: args.userId, insightStyle: args.insightStyle },
+        update: { insightStyle: args.insightStyle },
+      });
+    }
 
     if (topicRecords.length > 0) {
       await applyTopicWeights({
@@ -129,7 +167,7 @@ export async function createOnboardingProfile(args: {
       actorId: args.userId,
       type: "PROFILE_UPDATED",
       weight: 1,
-      visibility: Visibility.PUBLIC,
+      visibility: Visibility.PRIVATE,
       metadata: {
         profileId: profile.id,
         topicCount: topicRecords.length,

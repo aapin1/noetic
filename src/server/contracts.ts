@@ -15,13 +15,16 @@ export const tokenSchema = z.object({
   password: z.string().min(8).max(128),
 });
 
+export const insightStyleSchema = z.enum(["DIRECT", "REFLECTIVE", "ANALYTICAL"]);
+
 export const onboardingProfileSchema = z.object({
-  handle: z.string().min(3).max(40).regex(/^[a-z0-9_]+$/),
-  displayName: z.string().min(1).max(120),
+  handle: z.string().min(2).max(40).regex(/^[a-z0-9_]+$/).optional(),
+  displayName: z.string().min(1).max(120).optional(),
   bio: z.string().max(280).optional(),
   publicNotes: z.string().max(4000).optional(),
   avatarUrl: z.string().url().optional(),
-  topics: z.array(z.string().min(1).max(80)).max(20).default([]),
+  topics: z.array(z.string().min(1).max(80)).min(3).max(5),
+  insightStyle: insightStyleSchema.optional(),
 });
 
 export const updateProfileSchema = onboardingProfileSchema.partial().extend({
@@ -141,4 +144,45 @@ export const sendNotificationPayloadsSchema = z.object({
   recipientId: z.string().min(1).optional(),
 }).refine((value) => Boolean(value.notificationIds?.length || value.recipientId), {
   message: "notificationIds or recipientId is required",
+});
+
+export const captureKindSchema = z.enum(["LINK", "TEXT", "QUOTE", "IMAGE"]);
+
+export const captureSchema = z.object({
+  kind: captureKindSchema,
+  url: z.string().url().max(2048).optional(),
+  text: z.string().max(8000).optional(),
+  caption: z.string().max(2000).optional(),
+  mediaUrl: z.string().url().max(2048).optional(),
+  reaction: z.string().max(500).optional(),
+  topicHints: z.array(z.string().min(1).max(80)).max(8).optional(),
+}).superRefine((value, ctx) => {
+  if (value.kind === "LINK" && !value.url) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "url is required for LINK captures", path: ["url"] });
+  }
+
+  if ((value.kind === "TEXT" || value.kind === "QUOTE") && !value.text) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "text is required", path: ["text"] });
+  }
+
+  if (value.kind === "IMAGE" && !value.mediaUrl && !value.caption && !value.text) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "image captures require mediaUrl or caption", path: ["mediaUrl"] });
+  }
+});
+
+export const captureListSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+
+export const memoryGraphSchema = z.object({
+  limit: z.coerce.number().int().min(10).max(200).default(80),
+});
+
+export const memoryTrendsSchema = z.object({
+  window: z.enum(["week", "month"]).default("week"),
+});
+
+export const captureUploadSchema = z.object({
+  imageBase64: z.string().min(100).max(8_000_000),
+  mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]).optional(),
 });

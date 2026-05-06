@@ -1,3 +1,4 @@
+import { InsightStyle } from "@prisma/client";
 import { handleRoute, parseJson } from "@/lib/api";
 import { requireRequestUserId } from "@/lib/auth";
 import { onboardingProfileSchema } from "@/server/contracts";
@@ -17,7 +18,20 @@ export async function POST(request: Request) {
       publicNotes: input.publicNotes,
       avatarUrl: input.avatarUrl,
       topics,
+      insightStyle: input.insightStyle as InsightStyle | undefined,
     });
-    return getOwnerProfile(userId);
+    const composed = await getOwnerProfile(userId);
+    return {
+      profile: {
+        id: composed.user.id,
+        handle: composed.user.profile.handle,
+        displayName: composed.user.profile.displayName,
+        bio: composed.user.profile.bio,
+        publicNotes: composed.user.profile.publicNotes,
+        avatarUrl: composed.user.profile.avatarUrl,
+        identitySummary: composed.user.profile.identitySummary,
+        isOnboarded: composed.user.profile.isOnboarded,
+      },
+    };
   }, 201);
 }

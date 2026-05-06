@@ -154,6 +154,50 @@ export async function ingestUrl(url: string, db: DbClient = prisma) {
   };
 }
 
+/**
+ * Resolves a URL to a ContentItem when possible; if metadata fetch fails,
+ * creates a minimal manual item so capture stays one-tap.
+ */
+export async function ingestOrStubUrl(url: string, db: DbClient = prisma) {
+  const ingest = await ingestUrl(url, db);
+
+  if ("contentItem" in ingest && ingest.contentItem && !ingest.requiresManualInput) {
+    const row = ingest.contentItem;
+    return {
+      contentItemId: row.id,
+      contentTitle: row.title,
+      contentDescription: row.description ?? undefined,
+    };
+  }
+
+  const normalizedUrl = normalizeUrl(url);
+  let title = "Link";
+
+  try {
+    const parsed = new URL(normalizedUrl);
+    title = parsed.hostname.replace(/^www\./, "") || "Link";
+  } catch {
+    // keep generic title
+  }
+
+  const created = await createManualContentItem(
+    {
+      title,
+      description: normalizedUrl,
+      canonicalUrl: normalizedUrl,
+      originalUrl: normalizedUrl,
+      topics: [],
+    },
+    db,
+  );
+
+  return {
+    contentItemId: created.id,
+    contentTitle: created.title,
+    contentDescription: created.description ?? normalizedUrl,
+  };
+}
+
 export async function createManualContentItem(input: {
   title: string;
   description?: string;

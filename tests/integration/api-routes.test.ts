@@ -88,9 +88,22 @@ describe("POST /api/logs", () => {
 });
 
 describe("POST /api/profile/onboarding", () => {
-  it("creates the profile then returns the composed owner profile", async () => {
+  it("creates the profile then returns the owner profile payload", async () => {
     createOnboardingProfile.mockResolvedValue({ id: "profile_1" });
-    getOwnerProfile.mockResolvedValue({ profile: { handle: "ada" } });
+    getOwnerProfile.mockResolvedValue({
+      user: {
+        id: "user_1",
+        profile: {
+          handle: "ada_lovelace",
+          displayName: "Ada Lovelace",
+          bio: null,
+          publicNotes: null,
+          avatarUrl: null,
+          identitySummary: null,
+          isOnboarded: true,
+        },
+      },
+    });
 
     const response = await postOnboardingRoute(
       new Request("http://localhost/api/profile/onboarding", {
@@ -99,6 +112,7 @@ describe("POST /api/profile/onboarding", () => {
         body: JSON.stringify({
           handle: "ada_lovelace",
           displayName: "Ada Lovelace",
+          topics: ["philosophy", "science", "design"],
         }),
       }),
     );
@@ -110,13 +124,25 @@ describe("POST /api/profile/onboarding", () => {
       bio: undefined,
       publicNotes: undefined,
       avatarUrl: undefined,
-      topics: [],
+      topics: ["philosophy", "science", "design"],
+      insightStyle: undefined,
     });
     expect(getOwnerProfile).toHaveBeenCalledWith("user_1");
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toEqual({
       ok: true,
-      data: { profile: { handle: "ada" } },
+      data: {
+        profile: {
+          id: "user_1",
+          handle: "ada_lovelace",
+          displayName: "Ada Lovelace",
+          bio: null,
+          publicNotes: null,
+          avatarUrl: null,
+          identitySummary: null,
+          isOnboarded: true,
+        },
+      },
     });
   });
 });
