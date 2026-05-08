@@ -182,6 +182,13 @@ export const memoryTrendsSchema = z.object({
   window: z.enum(["week", "month"]).default("week"),
 });
 
+export const updatePreferencesSchema = z.object({
+  insightStyle: insightStyleSchema.optional(),
+  preferences: z.record(z.string(), z.unknown()).optional(),
+}).refine((value) => value.insightStyle !== undefined || value.preferences !== undefined, {
+  message: "At least one preference field is required",
+});
+
 export const captureUploadSchema = z.object({
   imageBase64: z.string().min(100).max(8_000_000),
   mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]).optional(),
