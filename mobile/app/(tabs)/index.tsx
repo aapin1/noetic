@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
-import { EncodingType, readAsStringAsync } from 'expo-file-system/legacy';
+import { EncodingType, readAsStringAsync } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import * as Linking from 'expo-linking';
 import { Image as ImageIcon, Link2, Quote, Type } from 'lucide-react-native';
@@ -27,6 +27,16 @@ type Mode = 'link' | 'text' | 'quote' | 'image';
 
 function looksLikeUrl(s: string) {
   return /^https?:\/\//i.test(s.trim());
+}
+
+function normalizeLinkInput(raw: string) {
+  const value = raw.trim();
+  if (!value) return value;
+  if (looksLikeUrl(value)) return value;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}([/:?#]|$)/i.test(value)) {
+    return `https://${value}`;
+  }
+  return value;
 }
 
 export default function CaptureScreen() {
@@ -129,7 +139,7 @@ export default function CaptureScreen() {
       let text: string | undefined;
       if (mode === 'link') {
         kind = 'LINK';
-        url = trimmed;
+        url = normalizeLinkInput(trimmed);
       } else if (mode === 'quote') {
         kind = 'QUOTE';
         text = trimmed;

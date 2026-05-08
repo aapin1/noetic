@@ -1,7 +1,7 @@
 import type { OwnerProfile } from '@/types/api';
 
 export const DEV_FAKE_LOGIN = {
-  enabled: true,
+  enabled: false,
   credentials: {
     email: 'ios@noetic.dev',
     password: 'noetic-ios-demo',

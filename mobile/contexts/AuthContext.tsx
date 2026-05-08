@@ -62,10 +62,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         hasProfile: true,
         isLoading: false,
       }));
-    } catch {
+    } catch (error) {
+      const code = (error as Error & { code?: string })?.code;
+
+      // Newly registered users have no profile yet until onboarding completes.
+      if (code === 'PROFILE_NOT_FOUND') {
+        setState((prev) => ({
+          ...prev,
+          profile: null,
+          isAuthenticated: true,
+          hasProfile: false,
+          isLoading: false,
+        }));
+        return;
+      }
+
+      await clearAuth();
       setState((prev) => ({
         ...prev,
+        token: null,
         profile: null,
+        isAuthenticated: false,
         hasProfile: false,
         isLoading: false,
       }));
