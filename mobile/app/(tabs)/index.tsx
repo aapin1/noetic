@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
+  Dimensions,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -8,373 +10,894 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
-import { EncodingType, readAsStringAsync } from 'expo-file-system';
-import * as ImagePicker from 'expo-image-picker';
-import * as Linking from 'expo-linking';
-import { Image as ImageIcon, Link2, Quote, Type } from 'lucide-react-native';
+import Svg, { Circle, G, Line, Text as SvgText } from 'react-native-svg';
 import { api } from '@/lib/api';
+import { useApiQuery } from '@/hooks/useApiQuery';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
-import { Button } from '@/components/ui/Button';
-import { Brain } from '@/components/Brain';
-import type { CaptureKind } from '@/types/api';
+import type { AppThemeColors } from '@/constants/theme';
+import type { CaptureKind, CaptureResponse, MemoryGraphResponse } from '@/types/api';
 
-type Mode = 'link' | 'text' | 'quote' | 'image';
+type GraphNode = MemoryGraphResponse['nodes'][number];
 
-function looksLikeUrl(s: string) {
-  return /^https?:\/\//i.test(s.trim());
-}
+const { width: SW, height: SH } = Dimensions.get('window');
+const TAB_H = Platform.OS === 'ios' ? 86 : 68;
+const FAB_SIZE = 54;
 
-function normalizeLinkInput(raw: string) {
-  const value = raw.trim();
-  if (!value) return value;
-  if (looksLikeUrl(value)) return value;
-  if (/^[a-z0-9.-]+\.[a-z]{2,}([/:?#]|$)/i.test(value)) {
-    return `https://${value}`;
+// ── Deterministic layout helpers ─────────────────────────────
+
+function hashId(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) {
+    h = (Math.imul(31, h) + id.charCodeAt(i)) | 0;
   }
-  return value;
+  return Math.abs(h) || 1;
 }
 
-export default function CaptureScreen() {
+function seededRng(seed: number) {
+  let v = seed % 233280 || 1;
+  return () => {
+    v = (v * 9301 + 49297) % 233280;
+    return v / 233280;
+  };
+}
+
+// Only clusters with ≥2 items are used as layout anchors — prevents
+// singleton topics from distorting the wheel geometry.
+const MAJOR_CLUSTER_MIN = 2;
+
+function layoutGraph(
+  nodes: MemoryGraphResponse['nodes'],
+  clusters: MemoryGraphResponse['clusters'],
+  w: number,
+  h: number,
+): Record<string, { x: number; y: number }> {
+  const pos: Record<string, { x: number; y: number }> = {};
+  if (nodes.length === 0) return pos;
+
+  const cx = w / 2;
+  const cy = h * 0.44;
+  const pad = 20;
+
+  const majorClusters = clusters.filter((cl) => cl.count >= MAJOR_CLUSTER_MIN);
+
+  if (majorClusters.length === 0) {
+    nodes.forEach((node, i) => {
+      const rng = seededRng(hashId(node.id));
+      const r = Math.min(w, h) * (0.14 + rng() * 0.3);
+      const angle = (i / nodes.length) * Math.PI * 2;
+      pos[node.id] = {
+        x: Math.max(pad, Math.min(w - pad, cx + r * Math.cos(angle))),
+        y: Math.max(pad, Math.min(h - pad, cy + r * Math.sin(angle))),
+      };
+    });
+    return pos;
+  }
+
+  // Place major cluster centres on a wheel
+  const centres: Record<string, { x: number; y: number }> = {};
+  const cr = Math.min(w, h) * 0.29;
+  majorClusters.forEach((cl, i) => {
+    const angle = (i / majorClusters.length) * Math.PI * 2 - Math.PI / 2;
+    centres[cl.topicId] = { x: cx + cr * Math.cos(angle), y: cy + cr * Math.sin(angle) };
+  });
+
+  // Build a lookup: topicId → cluster centre (using first major topic found)
+  const topicToCentre = new Map<string, { x: number; y: number }>(
+    Object.entries(centres),
+  );
+
+  nodes.forEach((node) => {
+    // Find the first topic on this node that has a major cluster centre
+    const anchorTopic = node.topics.find((t) => topicToCentre.has(t.topicId));
+    const centre = anchorTopic
+      ? topicToCentre.get(anchorTopic.topicId)!
+      : { x: cx, y: cy };
+    const rng = seededRng(hashId(node.id));
+    const jr = 16 + rng() * 42;
+    const ja = rng() * Math.PI * 2;
+    pos[node.id] = {
+      x: Math.max(pad, Math.min(w - pad, centre.x + jr * Math.cos(ja))),
+      y: Math.max(pad, Math.min(h - pad, centre.y + jr * Math.sin(ja))),
+    };
+  });
+  return pos;
+}
+
+function clusterLabelPositions(
+  clusters: MemoryGraphResponse['clusters'],
+  w: number,
+  h: number,
+) {
+  const major = clusters.filter((cl) => cl.count >= MAJOR_CLUSTER_MIN);
+  if (major.length === 0) return [];
+  const cx = w / 2;
+  const cy = h * 0.44;
+  const cr = Math.min(w, h) * 0.29;
+  return major.map((cl, i) => {
+    const angle = (i / major.length) * Math.PI * 2 - Math.PI / 2;
+    return { ...cl, x: cx + cr * Math.cos(angle), y: cy + cr * Math.sin(angle) };
+  });
+}
+
+// ── Step components ───────────────────────────────────────────
+
+type CaptureMode = 'link' | 'text' | 'quote';
+
+function normalizeLinkInput(raw: string): string {
+  const v = raw.trim();
+  if (!v) return v;
+  if (/^https?:\/\//i.test(v)) return v;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}([/:?#]|$)/i.test(v)) return `https://${v}`;
+  return v;
+}
+
+function Divider({ c }: { c: AppThemeColors }) {
+  return <View style={[sh.divider, { backgroundColor: c.border }]} />;
+}
+
+function StepOne({
+  mode, setMode, payload, setPayload, error, onNext, onClose, onPaste, c,
+}: {
+  mode: CaptureMode; setMode: (m: CaptureMode) => void;
+  payload: string; setPayload: (s: string) => void;
+  error: string; onNext: () => void; onClose: () => void; onPaste: () => void;
+  c: AppThemeColors;
+}) {
+  return (
+    <View>
+      <Text variant="serifLg" color="primary" style={sh.heading}>What are you saving?</Text>
+      <Text variant="monoSmall" color="muted" style={sh.sub}>A link, thought, or passage.</Text>
+
+      <Divider c={c} />
+
+      <View style={sh.modeRow}>
+        {(['link', 'text', 'quote'] as CaptureMode[]).map((m) => {
+          const active = mode === m;
+          return (
+            <Pressable
+              key={m}
+              onPress={() => setMode(m)}
+              style={[
+                sh.modeChip,
+                {
+                  borderColor: active ? c.text : c.borderSubtle,
+                  backgroundColor: active ? c.elevated : 'transparent',
+                },
+              ]}
+            >
+              <Text variant="monoSmall" style={{ color: active ? c.text : c.muted }}>
+                {m.toUpperCase()}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <View style={[sh.inputBox, { borderColor: c.border }]}>
+        <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>
+          {mode === 'link' ? 'URL_' : mode === 'quote' ? 'PASSAGE_' : 'THOUGHT_'}
+        </Text>
+        <TextInput
+          style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
+          value={payload}
+          onChangeText={setPayload}
+          placeholder={
+            mode === 'link'
+              ? 'https://...'
+              : mode === 'quote'
+              ? 'a passage worth preserving...'
+              : 'fragments are fine.'
+          }
+          placeholderTextColor={c.faint}
+          multiline={mode !== 'link'}
+          autoCapitalize={mode === 'link' ? 'none' : 'sentences'}
+          keyboardType={mode === 'link' ? 'url' : 'default'}
+          autoFocus
+        />
+        <Pressable onPress={onPaste} accessibilityLabel="Paste from clipboard">
+          <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>
+            paste from clipboard ↑
+          </Text>
+        </Pressable>
+      </View>
+
+      {!!error && (
+        <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
+      )}
+
+      <Divider c={c} />
+
+      <View style={sh.actions}>
+        <Pressable onPress={onClose} style={sh.secondaryBtn}>
+          <Text variant="monoSmall" style={{ color: c.muted }}>close ✕</Text>
+        </Pressable>
+        <Pressable onPress={onNext} style={[sh.primaryBtn, { backgroundColor: c.text }]}>
+          <Text variant="monoSmall" style={{ color: c.background }}>next →</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function StepTwo({
+  reaction, setReaction, error, busy, onBack, onCommit, c,
+}: {
+  reaction: string; setReaction: (s: string) => void;
+  error: string; busy: boolean; onBack: () => void; onCommit: () => void;
+  c: AppThemeColors;
+}) {
+  return (
+    <View>
+      <Text variant="serifLg" color="primary" style={sh.heading}>Your reaction.</Text>
+      <Text variant="monoSmall" color="muted" style={sh.sub}>
+        Optional. One line. Stays private.
+      </Text>
+
+      <Divider c={c} />
+
+      <View style={[sh.inputBox, { borderColor: c.border }]}>
+        <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>REACTION_</Text>
+        <TextInput
+          style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
+          value={reaction}
+          onChangeText={setReaction}
+          placeholder="a single reflex. or nothing."
+          placeholderTextColor={c.faint}
+          multiline
+          autoFocus
+        />
+      </View>
+
+      {!!error && (
+        <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
+      )}
+
+      <Divider c={c} />
+
+      <View style={sh.actions}>
+        <Pressable onPress={onBack} style={sh.secondaryBtn}>
+          <Text variant="monoSmall" style={{ color: c.muted }}>← back</Text>
+        </Pressable>
+        <Pressable
+          onPress={onCommit}
+          disabled={busy}
+          style={[sh.primaryBtn, { backgroundColor: c.text, opacity: busy ? 0.55 : 1 }]}
+        >
+          <Text variant="monoSmall" style={{ color: c.background }}>
+            {busy ? 'synthesizing...' : 'commit →'}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function StepThree({
+  result, onViewInsight, onBackToMap, c,
+}: {
+  result: CaptureResponse; onViewInsight: () => void; onBackToMap: () => void;
+  c: AppThemeColors;
+}) {
+  const topics = result.topics ?? [];
+  const topInsight = result.insights?.[0] ?? null;
+
+  return (
+    <View>
+      <Text
+        variant="monoSmall"
+        style={{ color: c.muted, textAlign: 'center', letterSpacing: 2.5, marginTop: Spacing[2] }}
+      >
+        ── committed to memory ──
+      </Text>
+
+      <Text variant="serifLg" color="primary" style={[sh.heading, { marginTop: Spacing[5] }]} numberOfLines={4}>
+        {result.title ?? result.rawText?.slice(0, 120) ?? 'Saved.'}
+      </Text>
+
+      <Divider c={c} />
+
+      {!!result.keyIdea && (
+        <View style={{ marginBottom: Spacing[4] }}>
+          <Text variant="monoSmall" style={{ color: c.muted, marginBottom: Spacing[2] }}>KEY IDEA_</Text>
+          <Text variant="serif" color="secondary">{result.keyIdea}</Text>
+        </View>
+      )}
+
+      {topics.length > 0 && (
+        <View style={{ marginBottom: Spacing[4] }}>
+          <Text variant="monoSmall" style={{ color: c.muted, marginBottom: Spacing[3] }}>
+            ANALYZED TOPICS_
+          </Text>
+          <View style={sh.chipRow}>
+            {topics.map((t) => (
+              <View key={t.topicId} style={[sh.chip, { borderColor: c.borderSubtle }]}>
+                <Text variant="monoSmall" style={{ color: c.muted }}>· {t.name}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {!!topInsight && (
+        <View style={{ marginBottom: Spacing[4] }}>
+          <Text variant="monoSmall" style={{ color: c.muted, marginBottom: Spacing[2] }}>INSIGHT_</Text>
+          <Text variant="serif" color="secondary">{topInsight.headline}</Text>
+        </View>
+      )}
+
+      <Divider c={c} />
+
+      <View style={sh.actions}>
+        <Pressable onPress={onBackToMap} style={sh.secondaryBtn}>
+          <Text variant="monoSmall" style={{ color: c.muted }}>← map</Text>
+        </Pressable>
+        <Pressable onPress={onViewInsight} style={[sh.primaryBtn, { backgroundColor: c.text }]}>
+          <Text variant="monoSmall" style={{ color: c.background }}>view insight →</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+// ── Node info card ────────────────────────────────────────────
+
+function NodeCard({
+  node, onClose, onViewInsight, c,
+}: {
+  node: GraphNode;
+  onClose: () => void;
+  onViewInsight: (id: string) => void;
+  c: AppThemeColors;
+}) {
+  const date = new Date(node.capturedAt);
+  const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+  return (
+    <View style={[nc.card, { backgroundColor: c.elevated, borderColor: c.border }]}>
+      <View style={nc.cardHeader}>
+        <View style={nc.cardMeta}>
+          <Text variant="monoSmall" style={{ color: c.faint }}>{node.kind.toLowerCase()}</Text>
+          <Text variant="monoSmall" style={{ color: c.faint }}>{dateStr}</Text>
+        </View>
+        <Pressable onPress={onClose} hitSlop={12} accessibilityLabel="Close">
+          <Text variant="monoSmall" style={{ color: c.muted }}>✕</Text>
+        </Pressable>
+      </View>
+
+      <Text variant="serifLg" color="primary" numberOfLines={3} style={nc.title}>
+        {node.label}
+      </Text>
+
+      {!!node.keyIdea && (
+        <Text variant="monoSmall" style={[nc.keyIdea, { color: c.muted }]} numberOfLines={3}>
+          {node.keyIdea}
+        </Text>
+      )}
+
+      {!!node.reaction && (
+        <Text variant="monoSmall" style={[nc.reaction, { color: c.muted }]} numberOfLines={2}>
+          "{node.reaction}"
+        </Text>
+      )}
+
+      {node.topics.length > 0 && (
+        <View style={nc.topics}>
+          {node.topics.slice(0, 6).map((t) => (
+            <View key={t.topicId} style={[nc.chip, { borderColor: c.borderSubtle }]}>
+              <Text variant="monoSmall" style={{ color: c.faint }}>· {t.name}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      <Pressable onPress={() => onViewInsight(node.id)} style={nc.insightLink}>
+        <Text variant="monoSmall" style={{ color: c.muted }}>view insight →</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const nc = StyleSheet.create({
+  card: {
+    borderTopWidth: 1,
+    paddingHorizontal: Spacing[6],
+    paddingTop: Spacing[4],
+    paddingBottom: Spacing[6],
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing[3],
+  },
+  cardMeta: { flexDirection: 'row', gap: Spacing[4] },
+  title: { marginBottom: Spacing[3] },
+  keyIdea: { marginBottom: Spacing[3], lineHeight: 16 },
+  reaction: { marginBottom: Spacing[3], fontStyle: 'italic' },
+  topics: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: Spacing[4] },
+  chip: {
+    borderWidth: 1,
+    borderRadius: Radius.xs,
+    paddingVertical: 2,
+    paddingHorizontal: Spacing[2],
+  },
+  insightLink: {},
+});
+
+// Shared step styles
+const sh = StyleSheet.create({
+  divider: { height: 1, marginVertical: Spacing[5] },
+  heading: { marginTop: Spacing[6], marginBottom: Spacing[2] },
+  sub: { opacity: 0.7 },
+  modeRow: { flexDirection: 'row', gap: Spacing[2], marginBottom: Spacing[4] },
+  modeChip: {
+    paddingVertical: Spacing[2],
+    paddingHorizontal: Spacing[3],
+    borderRadius: Radius.xs,
+    borderWidth: 1,
+  },
+  inputBox: { borderWidth: 1, borderRadius: Radius.xs, padding: Spacing[4], marginTop: Spacing[2] },
+  inputLabel: { marginBottom: Spacing[2] },
+  inputField: { minHeight: 72, paddingVertical: Spacing[1] },
+  actions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  secondaryBtn: { paddingVertical: Spacing[3], paddingHorizontal: Spacing[2] },
+  primaryBtn: {
+    paddingVertical: Spacing[3],
+    paddingHorizontal: Spacing[5],
+    borderRadius: Radius.xs,
+  },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[2] },
+  chip: {
+    borderWidth: 1,
+    borderRadius: Radius.xs,
+    paddingVertical: 3,
+    paddingHorizontal: Spacing[3],
+  },
+});
+
+// ── Main screen ───────────────────────────────────────────────
+
+export default function MapScreen() {
   const c = useThemeColors();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>('link');
+
+  const { data: graphData, loading: graphLoading, refetch: refetchGraph } = useApiQuery(
+    () => api.memory.graph({ limit: 80 }),
+    [],
+  );
+
+  const nodes = graphData?.nodes ?? [];
+  const edges = graphData?.edges ?? [];
+  const clusters = graphData?.clusters ?? [];
+  const pos = useMemo(() => layoutGraph(nodes, clusters, SW, SH), [nodes, clusters]);
+  const clusterLabels = useMemo(() => clusterLabelPositions(clusters, SW, SH), [clusters]);
+
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+
+  // Capture modal state
+  const [showCapture, setShowCapture] = useState(false);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [mode, setMode] = useState<CaptureMode>('link');
   const [payload, setPayload] = useState('');
   const [reaction, setReaction] = useState('');
+  const [captureResult, setCaptureResult] = useState<CaptureResponse | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [captureError, setCaptureError] = useState('');
 
-  const applyIncomingUrl = useCallback((raw: string) => {
-    const t = raw.trim();
-    if (!t) return;
-    if (looksLikeUrl(t)) {
-      setMode('link');
-      setPayload(t);
-      return;
-    }
-    setMode('text');
-    setPayload(t);
-  }, []);
+  const slideY = useRef(new Animated.Value(SH)).current;
+  const fabPulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const onUrl = ({ url }: { url: string }) => {
-      const parsed = Linking.parse(url);
-      const q = parsed.queryParams?.url;
-      if (typeof q === 'string') applyIncomingUrl(q);
-    };
-    void Linking.getInitialURL().then((u) => u && onUrl({ url: u }));
-    const sub = Linking.addEventListener('url', onUrl);
-    return () => sub.remove();
-  }, [applyIncomingUrl]);
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(fabPulse, { toValue: 1, duration: 2600, useNativeDriver: true }),
+        Animated.timing(fabPulse, { toValue: 0, duration: 2600, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [fabPulse]);
 
-  const pasteFromClipboard = async () => {
-    const t = (await Clipboard.getStringAsync()).trim();
-    if (!t) {
-      setError('Clipboard empty.');
-      return;
-    }
-    setError('');
-    applyIncomingUrl(t);
-  };
+  const openCapture = useCallback(() => {
+    setSelectedNode(null);
+    setStep(1);
+    setPayload('');
+    setReaction('');
+    setCaptureResult(null);
+    setCaptureError('');
+    setMode('link');
+    setShowCapture(true);
+    slideY.setValue(SH);
+    Animated.spring(slideY, { toValue: 0, useNativeDriver: true, damping: 22, stiffness: 170 }).start();
+  }, [slideY]);
 
-  const pickImage = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      setError('Photo library access denied.');
-      return;
-    }
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.85,
-      base64: true,
+  const closeCapture = useCallback(() => {
+    Animated.timing(slideY, { toValue: SH, duration: 260, useNativeDriver: true }).start(() => {
+      setShowCapture(false);
     });
-    if (res.canceled || !res.assets[0]) return;
-    const asset = res.assets[0];
-    setError('');
-    setBusy(true);
-    try {
-      const mime = asset.mimeType ?? 'image/jpeg';
-      const dataUrl = asset.base64 ? `data:${mime};base64,${asset.base64}` : '';
-      let mediaUrl: string;
-      if (dataUrl) {
-        const up = await api.captures.upload(dataUrl, mime);
-        mediaUrl = up.mediaUrl;
-      } else if (asset.uri) {
-        const b64 = await readAsStringAsync(asset.uri, {
-          encoding: EncodingType.Base64,
-        });
-        const up = await api.captures.upload(`data:${mime};base64,${b64}`, mime);
-        mediaUrl = up.mediaUrl;
-      } else {
-        throw new Error('Could not read image.');
-      }
-      const cap = await api.captures.create({
-        kind: 'IMAGE',
-        mediaUrl,
-        reaction: reaction.trim() || undefined,
-      });
-      router.push(`/insight/${cap.id}` as never);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Image capture failed.');
-    } finally {
-      setBusy(false);
-    }
-  };
+  }, [slideY]);
 
-  const commit = async () => {
-    setError('');
-    const trimmed = payload.trim();
-    if (!trimmed && mode !== 'image') {
-      setError('Add a link or thought first.');
+  const goNext = useCallback(() => {
+    if (!payload.trim()) {
+      setCaptureError('Enter a URL or thought first.');
       return;
     }
+    setCaptureError('');
+    setStep(2);
+  }, [payload]);
+
+  const commit = useCallback(async () => {
     setBusy(true);
+    setCaptureError('');
     try {
       let kind: CaptureKind = 'TEXT';
       let url: string | undefined;
       let text: string | undefined;
       if (mode === 'link') {
         kind = 'LINK';
-        url = normalizeLinkInput(trimmed);
+        url = normalizeLinkInput(payload);
       } else if (mode === 'quote') {
         kind = 'QUOTE';
-        text = trimmed;
+        text = payload.trim();
       } else {
         kind = 'TEXT';
-        text = trimmed;
+        text = payload.trim();
       }
-      const cap = await api.captures.create({
-        kind,
-        url,
-        text,
-        reaction: reaction.trim() || undefined,
-      });
-      setPayload('');
-      setReaction('');
-      router.push(`/insight/${cap.id}` as never);
+      const res = await api.captures.create({ kind, url, text, reaction: reaction.trim() || undefined });
+      setCaptureResult(res);
+      setStep(3);
+      void refetchGraph();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Capture failed.');
+      setCaptureError(e instanceof Error ? e.message : 'Capture failed.');
     } finally {
       setBusy(false);
     }
-  };
+  }, [mode, payload, reaction, refetchGraph]);
+
+  const pasteFromClipboard = useCallback(async () => {
+    const t = (await Clipboard.getStringAsync()).trim();
+    if (!t) return;
+    setPayload(t);
+    if (/^https?:\/\//i.test(t)) setMode('link');
+  }, []);
+
+  const ringOpacity = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [0.0, 0.45] });
+  const ringScale = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [1.0, 1.8] });
+  const isEmpty = !graphLoading && nodes.length === 0;
+  // When a node card is shown the FAB floats above it (~220px card estimate)
+  const fabBottom = selectedNode && !showCapture ? TAB_H + 240 : TAB_H + 20;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+    <View style={[styles.root, { backgroundColor: c.background }]}>
+
+      {/* ── Cognitive map SVG ── */}
+      <Svg width={SW} height={SH} style={StyleSheet.absoluteFill}>
+        <G>
+          {/* Ghost cluster watermarks */}
+          {clusterLabels.map((cl) => (
+            <SvgText
+              key={cl.topicId}
+              x={cl.x}
+              y={cl.y}
+              fontSize={13}
+              fontFamily={FontFamily.mono}
+              fill={c.text}
+              fillOpacity={0.045}
+              textAnchor="middle"
+            >
+              {cl.name.toUpperCase()}
+            </SvgText>
+          ))}
+
+          {/* Edges */}
+          {edges.map((e, i) => {
+            const a = pos[e.fromItemId];
+            const b = pos[e.toItemId];
+            if (!a || !b) return null;
+            return (
+              <Line
+                key={`e${i}`}
+                x1={a.x} y1={a.y}
+                x2={b.x} y2={b.y}
+                stroke={c.graphLine}
+                strokeWidth={0.55}
+                strokeOpacity={0.1 + e.weight * 0.26}
+              />
+            );
+          })}
+
+          {/* Nodes */}
+          {nodes.map((node) => {
+            const p = pos[node.id];
+            if (!p) return null;
+            const rng = seededRng(hashId(node.id));
+            const r = 2.0 + rng() * 2.2;
+            const opacity = 0.65 + rng() * 0.35;
+            return (
+              <Circle
+                key={node.id}
+                cx={p.x} cy={p.y} r={r}
+                fill={c.graphNode}
+                fillOpacity={opacity}
+              />
+            );
+          })}
+
+          {/* Ghost dots for empty state */}
+          {isEmpty && [
+            [0.28, 0.28], [0.58, 0.22], [0.72, 0.45], [0.62, 0.60],
+            [0.36, 0.58], [0.48, 0.38], [0.42, 0.50], [0.68, 0.33],
+            [0.30, 0.42], [0.55, 0.52], [0.44, 0.30], [0.65, 0.55],
+          ].map(([rx, ry], i) => (
+            <Circle key={`g${i}`} cx={SW * rx} cy={SH * ry} r={2} fill={c.graphNode} fillOpacity={0.1} />
+          ))}
+        </G>
+      </Svg>
+
+      {/* ── Node touch targets (invisible, on top of SVG) ── */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        {nodes.map((node) => {
+          const p = pos[node.id];
+          if (!p) return null;
+          const HIT = 22;
+          return (
+            <Pressable
+              key={node.id}
+              style={{
+                position: 'absolute',
+                width: HIT * 2,
+                height: HIT * 2,
+                left: p.x - HIT,
+                top: p.y - HIT,
+                borderRadius: HIT,
+              }}
+              onPress={() => setSelectedNode((prev) => prev?.id === node.id ? null : node)}
+              accessibilityLabel={node.label}
+              accessibilityRole="button"
+            />
+          );
+        })}
+      </View>
+
+      {/* ── Header ── */}
+      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
+        <Text variant="wordmark" color="primary">noetic</Text>
+        {graphLoading && (
+          <Text variant="monoSmall" style={{ color: c.muted, letterSpacing: 2 }}>·</Text>
+        )}
+      </View>
+
+      {/* ── Empty state hint ── */}
+      {isEmpty && (
+        <View style={styles.emptyHint}>
+          <Text variant="monoSmall" style={{ color: c.muted, textAlign: 'center', letterSpacing: 1.5 }}>
+            {'your memory map\nbegins with one save.'}
+          </Text>
+        </View>
+      )}
+
+      {/* ── Node / edge count ── */}
+      {nodes.length > 0 && (
+        <View style={[styles.metaLabel, { bottom: TAB_H + 72 }]}>
+          <Text variant="monoSmall" style={{ color: c.faint }}>
+            {`${nodes.length}n  ${edges.length}e  ${clusters.length}c`}
+          </Text>
+        </View>
+      )}
+
+      {/* ── Node info card ── */}
+      {selectedNode && !showCapture && (
+        <View
+          style={[
+            styles.nodeCardWrap,
+            { bottom: TAB_H, backgroundColor: c.elevated },
+          ]}
         >
-          <View style={styles.heroRow}>
-            <Text variant="wordmark" color="primary">
-              noetic
-            </Text>
-            <Brain size={72} density={48} intensity={0.9} />
-          </View>
+          <NodeCard
+            node={selectedNode}
+            onClose={() => setSelectedNode(null)}
+            onViewInsight={(id) => {
+              setSelectedNode(null);
+              router.push(`/insight/${id}` as never);
+            }}
+            c={c}
+          />
+        </View>
+      )}
 
-          <Text variant="h1" style={styles.lead}>
-            Capture once.
-          </Text>
-          <Text variant="serif" color="secondary" style={styles.sub}>
-            The system maps it. Insight follows immediately.
-          </Text>
+      {/* ── FAB ── */}
+      <View style={[styles.fabWrap, { bottom: fabBottom }]}>
+        <Animated.View
+          style={[
+            styles.fabRing,
+            { borderColor: c.text, opacity: ringOpacity, transform: [{ scale: ringScale }] },
+          ]}
+          pointerEvents="none"
+        />
+        <Pressable
+          onPress={openCapture}
+          style={[styles.fab, { backgroundColor: c.text }]}
+          accessibilityLabel="Capture new memory"
+          accessibilityRole="button"
+        >
+          <Text style={[styles.fabPlus, { color: c.background }]}>+</Text>
+        </Pressable>
+      </View>
 
-          <View style={[styles.modeRow, { borderColor: c.border }]}>
-            {(
-              [
-                ['link', 'Link', Link2] as const,
-                ['text', 'Thought', Type] as const,
-                ['quote', 'Quote', Quote] as const,
-                ['image', 'Image', ImageIcon] as const,
-              ] as const
-            ).map(([key, label, Icon]) => {
-              const active = mode === key;
-              return (
-                <Pressable
-                  key={key}
-                  onPress={() => {
-                    setMode(key);
-                    setError('');
-                  }}
-                  style={[
-                    styles.modeBtn,
-                    {
-                      borderColor: active ? c.text : c.borderSubtle,
-                      backgroundColor: active ? c.elevated : 'transparent',
-                    },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  accessibilityLabel={label}
-                >
-                  <Icon size={16} color={active ? c.text : c.muted} />
-                  <Text variant="caption" color={active ? 'primary' : 'muted'} style={styles.modeLabel}>
-                    {label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {mode === 'image' && (
-            <View style={[styles.captureCard, { borderColor: c.border, backgroundColor: c.surface }]}>
-              <Text variant="body" color="secondary">
-                Stored privately. Insight is synthesized from signal—even without a caption.
-              </Text>
-              <Button
-                label={busy ? 'Working…' : 'Choose image'}
-                onPress={() => void pickImage()}
-                variant="primary"
-                size="lg"
-                fullWidth
-                loading={busy}
-                style={{ marginTop: Spacing[4] }}
-              />
-            </View>
-          )}
-
-          {mode !== 'image' && (
-            <View style={[styles.captureCard, { borderColor: c.border, backgroundColor: c.surface }]}>
-              <Text variant="label" color="muted" style={{ marginBottom: Spacing[2] }}>
-                {mode === 'link' ? 'URL' : mode === 'quote' ? 'Quoted text' : 'Thought'}
-              </Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  { color: c.text, fontFamily: FontFamily.serif, borderColor: c.borderSubtle },
-                ]}
-                value={payload}
-                onChangeText={setPayload}
-                placeholder={
-                  mode === 'link'
-                    ? 'https://…'
-                    : mode === 'quote'
-                      ? 'Paste a passage…'
-                      : 'One line. Fragments are fine.'
-                }
-                placeholderTextColor={c.faint}
-                multiline
-                autoCapitalize={mode === 'link' ? 'none' : 'sentences'}
-                keyboardType={mode === 'link' ? 'url' : 'default'}
-              />
-              <Pressable
-                onPress={() => void pasteFromClipboard()}
-                style={styles.pasteBtn}
-                accessibilityRole="button"
-                accessibilityLabel="Paste from clipboard"
-              >
-                <Text variant="monoSmall" color="muted">
-                  Paste from clipboard
-                </Text>
-              </Pressable>
-            </View>
-          )}
-
-          <View style={{ marginTop: Spacing[4] }}>
-            <Text variant="label" color="muted" style={{ marginBottom: Spacing[2] }}>
-              Optional reaction (one line)
-            </Text>
-            <TextInput
-              style={[
-                styles.reaction,
-                { color: c.text, borderColor: c.border, fontFamily: FontFamily.sans },
+      {/* ── Capture modal ── */}
+      {showCapture && (
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            styles.modal,
+            { backgroundColor: c.background, transform: [{ translateY: slideY }] },
+          ]}
+        >
+          <KeyboardAvoidingView
+            style={styles.flex}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <ScrollView
+              contentContainerStyle={[
+                styles.modalScroll,
+                { paddingBottom: insets.bottom + 48 },
               ]}
-              value={reaction}
-              onChangeText={setReaction}
-              placeholder="A single reflex. Or leave empty."
-              placeholderTextColor={c.faint}
-            />
-          </View>
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Drag handle */}
+              <View style={[styles.dragZone, { paddingTop: insets.top + 14 }]}>
+                <View style={[styles.handle, { backgroundColor: c.border }]} />
+              </View>
 
-          {error ? (
-            <Text variant="caption" color="danger" style={{ marginTop: Spacing[3] }}>
-              {error}
-            </Text>
-          ) : null}
+              {/* Step progress */}
+              <View style={styles.stepRow}>
+                {([1, 2, 3] as const).map((s) => (
+                  <React.Fragment key={s}>
+                    <View
+                      style={[
+                        styles.stepDot,
+                        {
+                          backgroundColor: step >= s ? c.text : 'transparent',
+                          borderColor: step >= s ? c.text : c.border,
+                        },
+                      ]}
+                    />
+                    {s < 3 && (
+                      <View
+                        style={[
+                          styles.stepLine,
+                          { backgroundColor: step > s ? c.text : c.border },
+                        ]}
+                      />
+                    )}
+                  </React.Fragment>
+                ))}
+              </View>
 
-          {mode !== 'image' && (
-            <Button
-              label={busy ? 'Synthesizing…' : 'Commit to memory'}
-              onPress={() => void commit()}
-              variant="primary"
-              size="lg"
-              fullWidth
-              loading={busy}
-              style={{ marginTop: Spacing[6] }}
-            />
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+              <Text variant="monoSmall" style={[styles.stepLabel, { color: c.muted }]}>
+                {step === 1 ? '01 / CAPTURE' : step === 2 ? '02 / REACT' : '03 / COMMITTED'}
+              </Text>
+
+              <View style={styles.modalBody}>
+                {step === 1 && (
+                  <StepOne
+                    mode={mode}
+                    setMode={setMode}
+                    payload={payload}
+                    setPayload={setPayload}
+                    error={captureError}
+                    onNext={goNext}
+                    onClose={closeCapture}
+                    onPaste={() => void pasteFromClipboard()}
+                    c={c}
+                  />
+                )}
+                {step === 2 && (
+                  <StepTwo
+                    reaction={reaction}
+                    setReaction={setReaction}
+                    error={captureError}
+                    busy={busy}
+                    onBack={() => { setStep(1); setCaptureError(''); }}
+                    onCommit={() => void commit()}
+                    c={c}
+                  />
+                )}
+                {step === 3 && captureResult && (
+                  <StepThree
+                    result={captureResult}
+                    onViewInsight={() => {
+                      closeCapture();
+                      router.push(`/insight/${captureResult.id}` as never);
+                    }}
+                    onBackToMap={closeCapture}
+                    c={c}
+                  />
+                )}
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </Animated.View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
+  root: { flex: 1 },
   flex: { flex: 1 },
-  scroll: {
-    paddingHorizontal: Spacing[6],
-    paddingBottom: Spacing[14],
-  },
-  heroRow: {
+  header: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: Spacing[4],
+    paddingHorizontal: Spacing[6],
+    paddingBottom: Spacing[3],
   },
-  lead: {
-    marginTop: Spacing[6],
-  },
-  sub: {
-    marginTop: Spacing[3],
-    maxWidth: 320,
-  },
-  modeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing[2],
-    marginTop: Spacing[6],
-    paddingBottom: Spacing[4],
-    borderBottomWidth: 1,
-  },
-  modeBtn: {
-    flexDirection: 'row',
+  emptyHint: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: Spacing[2],
-    paddingHorizontal: Spacing[3],
-    borderRadius: Radius.full,
+    justifyContent: 'center',
+  },
+  metaLabel: {
+    position: 'absolute',
+    left: Spacing[6],
+  },
+  nodeCardWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+  },
+  fabWrap: {
+    position: 'absolute',
+    alignSelf: 'center',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  fabRing: {
+    position: 'absolute',
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: FAB_SIZE / 2,
     borderWidth: 1,
   },
-  modeLabel: { marginLeft: 2 },
-  captureCard: {
-    marginTop: Spacing[4],
-    borderWidth: 1,
-    borderRadius: Radius.lg,
-    padding: Spacing[5],
+  fab: {
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: FAB_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  input: {
-    borderWidth: 0,
-    borderBottomWidth: 1,
-    minHeight: 96,
-    fontSize: FontSize.md,
-    paddingVertical: Spacing[2],
+  fabPlus: {
+    fontSize: 26,
+    lineHeight: 30,
+    fontFamily: FontFamily.sans,
+    includeFontPadding: false,
   },
-  pasteBtn: { marginTop: Spacing[3], alignSelf: 'flex-start' },
-  reaction: {
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing[4],
-    paddingVertical: Spacing[3],
-    fontSize: FontSize.base,
+  modal: {
+    borderTopLeftRadius: Radius['2xl'],
+    borderTopRightRadius: Radius['2xl'],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    elevation: 24,
   },
+  modalScroll: { paddingHorizontal: Spacing[6] },
+  dragZone: { alignItems: 'center' },
+  handle: { width: 36, height: 4, borderRadius: 2, marginBottom: Spacing[4] },
+  stepRow: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing[2] },
+  stepDot: { width: 7, height: 7, borderRadius: 4, borderWidth: 1 },
+  stepLine: { flex: 1, height: 1, marginHorizontal: Spacing[2] },
+  stepLabel: { letterSpacing: 2.2, marginBottom: Spacing[1] },
+  modalBody: {},
 });

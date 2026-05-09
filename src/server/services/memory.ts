@@ -12,6 +12,8 @@ type GraphNode = {
   kind: string;
   topics: { topicId: string; name: string }[];
   capturedAt: Date;
+  reaction: string | null;
+  keyIdea: string | null;
 };
 
 type GraphEdge = {
@@ -83,6 +85,8 @@ export async function getMemoryGraph(args: {
       name: row.topic.name,
     })),
     capturedAt: item.capturedAt,
+    reaction: item.reaction,
+    keyIdea: item.keyIdea,
   }));
 
   const ids = new Set(nodes.map((node) => node.id));

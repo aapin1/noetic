@@ -90,6 +90,8 @@ export interface MemoryGraphResponse {
     kind: CaptureKind;
     topics: { topicId: string; name: string }[];
     capturedAt: string;
+    reaction: string | null;
+    keyIdea: string | null;
   }[];
   edges: {
     fromItemId: string;
