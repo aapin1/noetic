@@ -1,6 +1,5 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback } from 'react';
 import {
-  Dimensions,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -9,146 +8,118 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import Svg, { Circle, G, Line } from 'react-native-svg';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { Radius, Spacing } from '@/constants/theme';
+import { FontFamily, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { SkeletonCard } from '@/components/ui/Skeleton';
+import type { CaptureSummary } from '@/types/api';
 
-const W = Dimensions.get('window').width - Spacing[6] * 2;
-const H = 320;
+function CaptureRow({ item, onPress }: { item: CaptureSummary; onPress: () => void }) {
+  const c = useThemeColors();
+  const date = new Date(item.capturedAt);
+  const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-function layoutRadial(
-  ids: string[],
-): Record<string, { x: number; y: number }> {
-  const map: Record<string, { x: number; y: number }> = {};
-  const n = ids.length;
-  const cx = W / 2;
-  const cy = H / 2;
-  const r = Math.min(W, H) * 0.36;
-  ids.forEach((id, i) => {
-    const angle = (i / Math.max(n, 1)) * Math.PI * 2 - Math.PI / 2;
-    map[id] = { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
-  });
-  return map;
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.row, { borderBottomColor: c.border }]}
+      accessibilityRole="button"
+    >
+      <View style={styles.rowMeta}>
+        <Text variant="monoSmall" style={{ color: c.muted }}>{item.kind.toLowerCase()}</Text>
+        <Text variant="monoSmall" style={{ color: c.faint }}>{dateStr}</Text>
+      </View>
+
+      <Text variant="serif" color="primary" numberOfLines={2} style={styles.rowTitle}>
+        {item.title}
+      </Text>
+
+      {!!item.keyIdea && (
+        <Text variant="monoSmall" color="muted" numberOfLines={2} style={styles.rowIdea}>
+          {item.keyIdea}
+        </Text>
+      )}
+
+      {item.topics.length > 0 && (
+        <View style={styles.topicRow}>
+          {item.topics.slice(0, 4).map((t) => (
+            <View key={t.topicId} style={[styles.topicChip, { borderColor: c.borderSubtle }]}>
+              <Text variant="monoSmall" style={{ color: c.faint }}>
+                {t.name}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {!!item.leadInsight && (
+        <Text variant="monoSmall" style={[styles.insightLine, { color: c.muted }]} numberOfLines={1}>
+          {'↳ '}{item.leadInsight.headline}
+        </Text>
+      )}
+    </Pressable>
+  );
 }
 
-export default function MemoryScreen() {
+export default function LogScreen() {
   const c = useThemeColors();
   const router = useRouter();
-  const { data, loading, error, refetch } = useApiQuery(() => api.memory.graph({ limit: 60 }), []);
 
-  const nodes = data?.nodes ?? [];
-  const edges = data?.edges ?? [];
-  const pos = useMemo(() => layoutRadial(nodes.map((n) => n.id)), [nodes]);
+  const { data: captures, loading, refetch } = useApiQuery(
+    () => api.captures.list({ limit: 80 }),
+    [],
+  );
 
   const onRefresh = useCallback(() => void refetch(), [refetch]);
 
-  if (loading && !data) {
-    return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-        <View style={[styles.header, { borderBottomColor: c.border }]}>
-          <Text variant="wordmark">Memory</Text>
-        </View>
-        <SkeletonCard />
-        <SkeletonCard />
-      </SafeAreaView>
-    );
-  }
-
-  if (error) {
-    return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-        <EmptyState title="Graph unavailable" body="Check connectivity." ctaLabel="Retry" onCta={refetch} />
-      </SafeAreaView>
-    );
-  }
-
-  if (nodes.length === 0) {
-    return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-        <View style={[styles.header, { borderBottomColor: c.border }]}>
-          <Text variant="wordmark">Memory</Text>
-        </View>
-        <EmptyState
-          title="Empty graph"
-          body="Your captures form nodes here. One save starts the map."
-          ctaLabel="Capture"
-          onCta={() => router.push('/(tabs)')}
-        />
-      </SafeAreaView>
-    );
-  }
+  const isEmpty = !loading && (captures?.length ?? 0) === 0;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: c.border }]}>
-        <Text variant="wordmark">Memory</Text>
+        <Text variant="wordmark" color="primary">log</Text>
+        {captures && captures.length > 0 && (
+          <Text variant="monoSmall" style={{ color: c.faint, fontFamily: FontFamily.mono }}>
+            {captures.length}
+          </Text>
+        )}
       </View>
-      <ScrollView
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={onRefresh} tintColor={c.text} />}
-        contentContainerStyle={styles.content}
-      >
-        <Text variant="serif" color="secondary" style={styles.intro}>
-          Sparse map of what you have committed. Tap a node to open its insight.
-        </Text>
-        <View style={[styles.graphWrap, { borderColor: c.border }]}>
-          <Svg width={W} height={H}>
-            <G>
-              {edges.map((e, i) => {
-                const a = pos[e.fromItemId];
-                const b = pos[e.toItemId];
-                if (!a || !b) return null;
-                return (
-                  <Line
-                    key={`e-${i}`}
-                    x1={a.x}
-                    y1={a.y}
-                    x2={b.x}
-                    y2={b.y}
-                    stroke={c.graphLine}
-                    strokeWidth={0.8}
-                    strokeOpacity={0.35 + e.weight * 0.5}
-                  />
-                );
-              })}
-              {nodes.map((n) => {
-                const p = pos[n.id];
-                if (!p) return null;
-                return (
-                  <Circle
-                    key={n.id}
-                    cx={p.x}
-                    cy={p.y}
-                    r={5}
-                    fill={c.graphNode}
-                    fillOpacity={0.92}
-                  />
-                );
-              })}
-            </G>
-          </Svg>
-        </View>
 
-        <View style={styles.list}>
-          {nodes.slice(0, 12).map((n) => (
-            <Pressable
-              key={n.id}
-              onPress={() => router.push(`/insight/${n.id}` as never)}
-              style={[styles.row, { borderBottomColor: c.border }]}
-            >
-              <Text variant="bodyMedium" numberOfLines={2}>
-                {n.label}
-              </Text>
-              <Text variant="monoSmall" color="muted" style={{ marginTop: 4 }}>
-                {n.kind}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={onRefresh} tintColor={c.text} />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        {loading && !captures && (
+          <View style={styles.loadingWrap}>
+            {[0, 1, 2, 3].map((i) => (
+              <View key={i} style={[styles.skeletonRow, { borderBottomColor: c.border }]}>
+                <View style={[styles.skeletonLine, { width: '30%', backgroundColor: c.elevated }]} />
+                <View style={[styles.skeletonLine, { width: '85%', backgroundColor: c.elevated, marginTop: 10 }]} />
+                <View style={[styles.skeletonLine, { width: '60%', backgroundColor: c.elevated, marginTop: 6 }]} />
+              </View>
+            ))}
+          </View>
+        )}
+
+        {isEmpty && (
+          <View style={styles.emptyWrap}>
+            <Text variant="monoSmall" style={{ color: c.muted, textAlign: 'center', letterSpacing: 1.5 }}>
+              {'nothing here yet.\ncapture something from the map.'}
+            </Text>
+          </View>
+        )}
+
+        {captures?.map((item) => (
+          <CaptureRow
+            key={item.id}
+            item={item}
+            onPress={() => router.push(`/insight/${item.id}` as never)}
+          />
+        ))}
       </ScrollView>
     </SafeAreaView>
   );
@@ -157,19 +128,43 @@ export default function MemoryScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: Spacing[6],
     paddingVertical: Spacing[4],
     borderBottomWidth: 1,
   },
   content: { paddingBottom: Spacing[16] },
-  intro: { paddingHorizontal: Spacing[6], marginTop: Spacing[4], maxWidth: 340 },
-  graphWrap: {
-    marginHorizontal: Spacing[6],
-    marginTop: Spacing[5],
-    borderWidth: 1,
-    borderRadius: Radius.lg,
-    overflow: 'hidden',
+  row: {
+    paddingHorizontal: Spacing[6],
+    paddingVertical: Spacing[5],
+    borderBottomWidth: 1,
   },
-  list: { marginTop: Spacing[6], paddingHorizontal: Spacing[6] },
-  row: { paddingVertical: Spacing[4], borderBottomWidth: 1 },
+  rowMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: Spacing[2],
+  },
+  rowTitle: { marginBottom: Spacing[2] },
+  rowIdea: { marginBottom: Spacing[3], opacity: 0.75 },
+  topicRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: Spacing[2] },
+  topicChip: {
+    borderWidth: 1,
+    borderRadius: Radius.xs,
+    paddingVertical: 2,
+    paddingHorizontal: Spacing[2],
+  },
+  insightLine: { marginTop: Spacing[1] },
+  loadingWrap: {},
+  skeletonRow: {
+    paddingHorizontal: Spacing[6],
+    paddingVertical: Spacing[5],
+    borderBottomWidth: 1,
+  },
+  skeletonLine: { height: 12, borderRadius: Radius.xs },
+  emptyWrap: {
+    paddingTop: Spacing[20],
+    alignItems: 'center',
+  },
 });
