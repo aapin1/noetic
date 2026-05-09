@@ -1,8 +1,10 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
+import { Redirect } from 'expo-router';
 import { Platform } from 'react-native';
-import { Brain, GitGraphIcon, LineChartIcon, UserIcon } from 'lucide-react-native';
+import { GitGraphIcon, LineChartIcon, ListIcon, UserIcon } from 'lucide-react-native';
 import { FontFamily, FontSize } from '@/constants/theme';
+import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
 
 function TabBarIcon({ color, icon: Icon }: { color: string; icon: React.ElementType }) {
@@ -11,6 +13,11 @@ function TabBarIcon({ color, icon: Icon }: { color: string; icon: React.ElementT
 
 export default function TabsLayout() {
   const c = useThemeColors();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (!isLoading && !isAuthenticated) {
+    return <Redirect href="/" />;
+  }
 
   return (
     <Tabs
@@ -40,15 +47,15 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Capture',
-          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={Brain} />,
+          title: 'Map',
+          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={GitGraphIcon} />,
         }}
       />
       <Tabs.Screen
         name="memory"
         options={{
-          title: 'Memory',
-          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={GitGraphIcon} />,
+          title: 'Log',
+          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={ListIcon} />,
         }}
       />
       <Tabs.Screen

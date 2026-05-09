@@ -70,8 +70,8 @@ export default function SettingsScreen() {
       {
         text: 'Sign out',
         style: 'destructive',
-        onPress: () => {
-          signOut();
+        onPress: async () => {
+          await signOut();
           router.replace('/');
         },
       },
