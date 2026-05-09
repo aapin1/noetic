@@ -129,7 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const result = await api.auth.token({ email, password });
     await storeToken(result.token);
-    await storeUserId(result.userId);
+    await storeUserId(result.userId ?? result.user.id);
     setState((prev) => ({ ...prev, token: result.token, isAuthenticated: true }));
     await loadProfile();
   }, [loadProfile]);

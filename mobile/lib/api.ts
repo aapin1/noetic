@@ -62,7 +62,12 @@ export const api = {
       );
     },
     token(body: { email: string; password: string }) {
-      return request<{ token: string; userId: string }>('/api/auth/token', {
+      return request<{
+        token: string;
+        /** Present on current API; older servers may omit—use `user.id` as fallback. */
+        userId?: string;
+        user: { id: string; email: string; name: string | null; handle: string | null };
+      }>('/api/auth/token', {
         method: 'POST',
         body: JSON.stringify(body),
       });

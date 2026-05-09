@@ -23,8 +23,11 @@ export async function createTokenFromCredentials(email: string, password: string
     throw new AppError("INVALID_CREDENTIALS", "Invalid credentials", 401);
   }
 
+  const token = await createApiToken(user.id);
+
   return {
-    token: await createApiToken(user.id),
+    token,
+    userId: user.id,
     user: {
       id: user.id,
       email: user.email,
