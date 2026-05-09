@@ -407,6 +407,9 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     userId: payload.userId,
     tokens,
     hints: payload.topicHints,
+    title: contentTitle,
+    description: contentDescription,
+    combinedText,
   });
 
   const topicIdSet = new Set(classified.map((topic) => topic.topicId));
