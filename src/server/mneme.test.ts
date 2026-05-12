@@ -93,7 +93,7 @@ describe("metadata fetch by platform URLs", () => {
       ok: true,
       text: async () => `
         <html><head>
-          <meta property="og:title" content="Instagram post by noetic" />
+          <meta property="og:title" content="Instagram post by mneme" />
           <meta property="og:url" content="https://www.instagram.com/p/ABC123/" />
           <meta property="og:description" content="Visual note" />
           <meta property="og:site_name" content="Instagram" />

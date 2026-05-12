@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     const fname = `${userId.slice(0, 8)}_${Date.now()}_${randomBytes(4).toString("hex")}.${ext}`;
     await writeFile(path.join(dir, fname), buffer);
 
-    const base = getEnv().NOETIC_BASE_URL.replace(/\/$/, "");
+    const base = getEnv().MNEME_BASE_URL.replace(/\/$/, "");
     const mediaUrl = `${base}/capture-uploads/${encodeURIComponent(fname)}`;
 
     return { mediaUrl };

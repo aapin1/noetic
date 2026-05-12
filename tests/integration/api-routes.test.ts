@@ -205,10 +205,10 @@ describe("GET /api/search", () => {
   it("uses search defaults from the schema", async () => {
     searchEverything.mockResolvedValue({ users: [], contentItems: [], topics: [] });
 
-    const response = await getSearchRoute(new Request("http://localhost/api/search?query=noetic"));
+    const response = await getSearchRoute(new Request("http://localhost/api/search?query=mneme"));
 
     expect(searchEverything).toHaveBeenCalledWith({
-      query: "noetic",
+      query: "mneme",
       limit: 10,
     });
     expect(response.status).toBe(200);

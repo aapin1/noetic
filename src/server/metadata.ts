@@ -136,7 +136,7 @@ export async function fetchMetadata(url: string): Promise<{ metadata?: Extracted
 
   const response = await fetch(normalized, {
     headers: {
-      "user-agent": "NOETIC/1.0 (+https://noetic.app)",
+      "user-agent": "MNEME/1.0 (+https://mneme.app)",
       accept: "text/html,application/xhtml+xml",
     },
   });

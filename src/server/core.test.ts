@@ -42,26 +42,26 @@ describe("metadata helpers", () => {
             <meta property="og:title" content="Future of Reading" />
             <meta property="og:description" content="A long-form essay." />
             <meta property="og:image" content="/images/cover.png" />
-            <meta property="og:site_name" content="Noetic Journal" />
+            <meta property="og:site_name" content="Mneme Journal" />
             <meta property="og:type" content="article" />
             <meta name="author" content="Ada Lovelace" />
             <meta property="article:published_time" content="2024-01-02T03:04:05.000Z" />
           </head>
         </html>
       `,
-      "https://journal.noetic.app/post?utm_source=feed",
+      "https://journal.mneme.app/post?utm_source=feed",
     );
 
     expect(metadata).toMatchObject({
       title: "Future of Reading",
       description: "A long-form essay.",
-      canonicalUrl: "https://journal.noetic.app/essays/future-of-reading",
-      originalUrl: "https://journal.noetic.app/post?utm_source=feed",
-      imageUrl: "https://journal.noetic.app/images/cover.png",
-      siteName: "Noetic Journal",
+      canonicalUrl: "https://journal.mneme.app/essays/future-of-reading",
+      originalUrl: "https://journal.mneme.app/post?utm_source=feed",
+      imageUrl: "https://journal.mneme.app/images/cover.png",
+      siteName: "Mneme Journal",
       authorName: "Ada Lovelace",
-      sourceName: "Noetic Journal",
-      sourceDomain: "journal.noetic.app",
+      sourceName: "Mneme Journal",
+      sourceDomain: "journal.mneme.app",
       contentType: "article",
     });
     expect(metadata.publishedAt?.toISOString()).toBe("2024-01-02T03:04:05.000Z");
@@ -278,9 +278,9 @@ describe("buildIdentitySummary", () => {
 
 describe("rankTextMatch", () => {
   it("prioritizes exact, prefix, include, and miss cases correctly", () => {
-    expect(rankTextMatch("Noetic", "Noetic")).toBe(100);
-    expect(rankTextMatch("Noetic Journal", "noetic")).toBe(80);
-    expect(rankTextMatch("The Noetic Journal", "noetic")).toBe(50);
-    expect(rankTextMatch("Archive", "noetic")).toBe(0);
+    expect(rankTextMatch("Mneme", "Mneme")).toBe(100);
+    expect(rankTextMatch("Mneme Journal", "mneme")).toBe(80);
+    expect(rankTextMatch("The Mneme Journal", "mneme")).toBe(50);
+    expect(rankTextMatch("Archive", "mneme")).toBe(0);
   });
 });
