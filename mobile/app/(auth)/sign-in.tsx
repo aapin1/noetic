@@ -65,7 +65,7 @@ export default function SignInScreen() {
 
           <View style={styles.header}>
             <Text variant="wordmark" style={styles.mark}>
-              noetic
+              mneme
             </Text>
             <Text variant="h1" style={styles.title}>
               Welcome back.
@@ -114,7 +114,7 @@ export default function SignInScreen() {
               fullWidth
               loading={loading}
               style={styles.submitBtn}
-              accessibilityLabel="Sign in to noetic"
+              accessibilityLabel="Sign in to mneme"
             />
           </View>
 

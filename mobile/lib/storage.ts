@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
-const TOKEN_KEY = 'noetic_auth_token';
-const USER_ID_KEY = 'noetic_user_id';
+const TOKEN_KEY = 'mneme_auth_token';
+const USER_ID_KEY = 'mneme_user_id';
 
 /** SecureStore only accepts strings; coerce and validate so callers never hit opaque native errors. */
 function asSecureString(label: string, value: unknown): string {

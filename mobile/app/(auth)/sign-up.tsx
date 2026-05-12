@@ -79,7 +79,7 @@ export default function SignUpScreen() {
 
           <View style={styles.header}>
             <Text variant="wordmark" style={styles.mark}>
-              noetic
+              mneme
             </Text>
             <Text variant="h1" style={styles.title}>
               Create an account.
@@ -147,7 +147,7 @@ export default function SignUpScreen() {
               fullWidth
               loading={loading}
               style={styles.submitBtn}
-              accessibilityLabel="Create your noetic account"
+              accessibilityLabel="Create your mneme account"
             />
           </View>
 

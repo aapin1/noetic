@@ -3,19 +3,19 @@ import type { OwnerProfile } from '@/types/api';
 export const DEV_FAKE_LOGIN = {
   enabled: false,
   credentials: {
-    email: 'ios@noetic.dev',
-    password: 'noetic-ios-demo',
+    email: 'ios@mneme.dev',
+    password: 'mneme-ios-demo',
   },
-  token: 'noetic_dev_fake_token',
+  token: 'mneme_dev_fake_token',
   profile: {
-    id: 'dev-user-noetic',
+    id: 'dev-user-mneme',
     handle: 'ios-demo',
     displayName: 'iOS Demo User',
     bio: 'Local-only profile used for offline UI testing.',
     publicNotes: null,
     avatarUrl: null,
     identitySummary: null,
-    email: 'ios@noetic.dev',
+    email: 'ios@mneme.dev',
     isOnboarded: true,
   } satisfies OwnerProfile,
 } as const;

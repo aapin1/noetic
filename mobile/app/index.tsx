@@ -26,7 +26,7 @@ export default function LandingScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top', 'bottom']}>
       <View style={styles.inner}>
         <Text variant="wordmark" style={styles.mark}>
-          noetic
+          mneme
         </Text>
         <View style={styles.brain}>
           <Brain size={260} density={72} intensity={0.85} />
