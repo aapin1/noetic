@@ -99,15 +99,24 @@ export async function extractSemanticTopics(args: {
 }
 
 function styleSystemPrompt(style: InsightStyle): string {
+  const base = [
+    "You are an intelligent memory assistant embedded in mneme, a personal knowledge graph that tracks what a user reads, saves, and thinks about over time.",
+    "Your task: given a set of insight drafts about a piece of content the user just committed to their memory, rewrite each insight with a sharp headline and a substantive body.",
+    "The headline must be 1 sentence — specific, intellectually honest, and non-generic.",
+    "The body must be 2–3 sentences that: (1) explain what the pattern or connection means in context, (2) name a concrete implication or open question worth sitting with, and optionally (3) connect it to broader intellectual territory.",
+    "Constraints: never repeat the source title verbatim; no filler phrases like 'great capture' or 'interesting idea'; do not start with 'This capture' or 'This article'; if evidence is thin, say so honestly rather than overstating.",
+    "Return strictly valid JSON with this shape: {\"headlines\": [{\"index\": number, \"headline\": string, \"body\": string}]}. No markdown fences, no extra keys.",
+  ].join(" ");
+
   if (style === "REFLECTIVE") {
-    return "You are a reflective companion. Restate insight headlines as quiet, intelligent observations, never cheerful. 1 sentence, max 14 words.";
+    return base + " Tone: contemplative and personal. Speak directly to the user with 'you'. Use phrases like 'Notice this...' or 'Worth sitting with...'. Warm but never sentimental.";
   }
 
   if (style === "ANALYTICAL") {
-    return "You are a precise analyst. Restate insight headlines as concise factual statements with the embedded numbers. 1 sentence, max 16 words.";
+    return base + " Tone: precise and data-grounded. Use third person. Reference counts, ratios, and directional signals explicitly. No hedging unless uncertainty is real.";
   }
 
-  return "You are a sharp, restrained editor. Restate insight headlines in fewer than 12 words. No greetings. No exclamation points.";
+  return base + " Tone: sharp, direct, editorial. Declarative sentences. No hedging, no cheerfulness, no exclamation points.";
 }
 
 export async function polishInsights(args: {
@@ -169,7 +178,7 @@ export async function polishInsights(args: {
     }
 
     const parsed = JSON.parse(content) as {
-      headlines?: { index: number; headline: string }[];
+      headlines?: { index: number; headline: string; body?: string }[];
     };
 
     if (!parsed.headlines) {
@@ -179,12 +188,13 @@ export async function polishInsights(args: {
     return args.drafts.map((draft, index) => {
       const replacement = parsed.headlines?.find((entry) => entry.index === index);
       const headline = replacement?.headline?.trim();
+      const body = replacement?.body?.trim();
 
       if (!headline) {
         return draft;
       }
 
-      return { ...draft, headline };
+      return { ...draft, headline, ...(body ? { body } : {}) };
     });
   } catch {
     return args.drafts;

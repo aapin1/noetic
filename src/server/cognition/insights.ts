@@ -91,8 +91,8 @@ export function draftInsights(args: {
       type: InsightType.NOVELTY,
       headline: voice.novelty(dominantTopic),
       body: dominantTopic
-        ? `Your first capture under ${dominantTopic}. The map starts here.`
-        : "Your first capture. The map starts here.",
+        ? `This is your first saved item under ${dominantTopic} — the graph begins here. Every subsequent capture in this area will build connections back to this one. Save a few more on the same topic and patterns will start to emerge.`
+        : "This is your first capture in mneme — the memory graph starts here. As you add more items, the system will surface connections, recurring themes, and shifts in your thinking over time.",
       evidence: { dominantTopic },
       strength: 1,
     });
@@ -107,7 +107,7 @@ export function draftInsights(args: {
     drafts.push({
       type: InsightType.RECUR,
       headline: voice.recur(args.topNeighbors.length, recurrence.title),
-      body: `${args.topNeighbors.length} similar captures across your record.`,
+      body: `You have ${args.topNeighbors.length} semantically similar captures across your record, with "${recurrence.title}" being the closest match (similarity ${Number(recurrence.similarity.toFixed(2))}). Recurring encounters with the same ideas can signal either deep interest or an unresolved question that keeps pulling you back. It may be worth asking what new angle — if any — this capture adds.`,
       evidence: {
         capturedItemId: recurrence.capturedItemId,
         similarity: Number(recurrence.similarity.toFixed(3)),
@@ -120,7 +120,7 @@ export function draftInsights(args: {
     drafts.push({
       type: InsightType.REINFORCES,
       headline: voice.reinforces(reinforcement.title),
-      body: "Shared topic, similar phrasing.",
+      body: `This capture shares significant topic overlap and similar language with "${reinforcement.title}" (topic overlap ${Number(reinforcement.topicJaccard.toFixed(2))}, similarity ${Number(reinforcement.similarity.toFixed(2))}). Reinforcing evidence can strengthen a conviction — but it can also create an echo. Consider whether you are encountering genuinely new support or the same idea in a different package.`,
       evidence: {
         capturedItemId: reinforcement.capturedItemId,
         similarity: Number(reinforcement.similarity.toFixed(3)),
@@ -134,7 +134,7 @@ export function draftInsights(args: {
     drafts.push({
       type: InsightType.CONTRADICTS,
       headline: voice.contradicts(contradiction.title),
-      body: "Same topic, divergent terms.",
+      body: `This capture shares topics with "${contradiction.title}" but uses meaningfully different language and framing (polarity divergence detected). These two items are pulling in different directions within the same intellectual territory. That tension is worth examining — contradictions in your reading often mark the boundary of a real open question.`,
       evidence: {
         capturedItemId: contradiction.capturedItemId,
         similarity: Number(contradiction.similarity.toFixed(3)),
@@ -150,7 +150,7 @@ export function draftInsights(args: {
     drafts.push({
       type: InsightType.PATTERN,
       headline: voice.pattern(dominantCount.count, dominantCount.name),
-      body: "A recurring theme in your record.",
+      body: `You have returned to ${dominantCount.name} ${dominantCount.count} times across your saved items — a clear sustained interest. Repeated engagement with a topic is often the precursor to genuine expertise or a crystallised point of view. It may be worth asking: what is the unresolved question that keeps drawing you back here?`,
       evidence: {
         topicId: dominantCount.topicId,
         topic: dominantCount.name,
@@ -161,20 +161,22 @@ export function draftInsights(args: {
   }
 
   if (args.shift && Math.abs(args.shift.delta) >= 1) {
+    const direction = args.shift.delta > 0 ? "rising" : "declining";
     drafts.push({
       type: InsightType.TRAJECTORY,
       headline: args.shift.delta > 0 ? voice.trajectoryUp(args.shift.name) : voice.trajectoryDown(args.shift.name),
-      body: `${args.shift.recentCount} recent vs. ${args.shift.priorCount} prior captures.`,
+      body: `Your attention on ${args.shift.name} is ${direction}: ${args.shift.recentCount} captures in the recent window versus ${args.shift.priorCount} in the prior period (delta ${args.shift.delta > 0 ? "+" : ""}${args.shift.delta}). Trajectory shifts often precede a period of consolidation or a pivot. Whether this is deliberate or a drift is worth noticing.`,
       evidence: args.shift,
       strength: Math.min(1, Math.abs(args.shift.delta) / 5 + 0.3),
     });
   }
 
   if (args.topNeighbors.length > 0 && drafts.length < 2) {
+    const neighborTitles = args.topNeighbors.slice(0, 2).map((n) => `"${n.title}"`).join(" and ");
     drafts.push({
       type: InsightType.CONNECTION,
       headline: voice.connection(args.topNeighbors.slice(0, 2).map((n) => n.title)),
-      body: "Top connections in your memory graph.",
+      body: `This capture is most closely connected to ${neighborTitles} in your memory graph. These connections are based on shared topics and semantic similarity — they form a cluster of related thinking. Reviewing them together may surface a synthesis you haven't articulated yet.`,
       evidence: {
         neighbors: args.topNeighbors.slice(0, 3).map((n) => ({
           capturedItemId: n.capturedItemId,
@@ -191,8 +193,8 @@ export function draftInsights(args: {
       type: InsightType.NOVELTY,
       headline: voice.novelty(dominantTopic),
       body: dominantTopic
-        ? `Nothing in your record matches this yet under ${dominantTopic}.`
-        : "Nothing in your record matches this yet.",
+        ? `Nothing in your existing record closely matches this under ${dominantTopic}. That makes it a genuine new signal — a first data point in a direction your thinking hasn't gone before. Save more on this topic and the graph will start to show you where it connects.`
+        : "Nothing in your existing record closely matches this capture. It stands alone for now — a first node in a new region of your graph. As you add more, the system will find the threads that connect it to what you already know.",
       evidence: { dominantTopic },
       strength: 0.6,
     });
