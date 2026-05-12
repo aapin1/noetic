@@ -3,6 +3,7 @@ import {
   Animated as RNAnimated,
   Dimensions,
   KeyboardAvoidingView,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -14,13 +15,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import Svg, { Circle, Defs, G, Line, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
-import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
@@ -35,17 +29,17 @@ const { width: SW, height: SH } = Dimensions.get('window');
 const TAB_H = Platform.OS === 'ios' ? 86 : 68;
 const FAB_SIZE = 54;
 
-// Canvas is larger than screen so users can pan/explore
+// Virtual canvas — nodes are laid out in this space; SVG viewBox pans over it
 const CANVAS_W = SW * 2.2;
 const CANVAS_H = SH * 2.0;
-// Initial offset centers the canvas on screen
-const INITIAL_X = -((CANVAS_W - SW) / 2);
-const INITIAL_Y = -((CANVAS_H - SH) / 2);
-// Pan bounds: keep canvas edges visible
-const MIN_X = -(CANVAS_W - SW);
-const MAX_X = 0;
-const MIN_Y = -(CANVAS_H - SH);
-const MAX_Y = 0;
+// Initial viewBox origin so the center of the canvas is visible on screen
+const INIT_VB_X = (CANVAS_W - SW) / 2;
+const INIT_VB_Y = (CANVAS_H - SH) / 2;
+// ViewBox clamp bounds
+const MIN_VB_X = 0;
+const MAX_VB_X = CANVAS_W - SW;
+const MIN_VB_Y = 0;
+const MAX_VB_Y = CANVAS_H - SH;
 
 // Palette for cluster regions — subtle, desaturated hues
 const CLUSTER_PALETTE = [
@@ -494,8 +488,8 @@ const tb = StyleSheet.create({
 
 // ── Main screen ───────────────────────────────────────────────
 
-function clampX(v: number) { return Math.max(MIN_X, Math.min(MAX_X, v)); }
-function clampY(v: number) { return Math.max(MIN_Y, Math.min(MAX_Y, v)); }
+function clampVBX(v: number) { return Math.max(MIN_VB_X, Math.min(MAX_VB_X, v)); }
+function clampVBY(v: number) { return Math.max(MIN_VB_Y, Math.min(MAX_VB_Y, v)); }
 
 export default function MapScreen() {
   const c = useThemeColors();
@@ -543,54 +537,60 @@ export default function MapScreen() {
 
   const hasSearch = searchQuery.trim().length > 0;
 
-  // ── Pan / 2.5D shared values ───────────────────────────────
-  const translateX = useSharedValue(INITIAL_X);
-  const translateY = useSharedValue(INITIAL_Y);
-  const savedX = useSharedValue(INITIAL_X);
-  const savedY = useSharedValue(INITIAL_Y);
-  const tiltValue = useSharedValue(0);
+  // ── SVG viewBox pan (React state, no reanimated) ───────────
+  const savedVB = useRef({ x: INIT_VB_X, y: INIT_VB_Y });
+  const [vbPos, setVbPos] = useState({ x: INIT_VB_X, y: INIT_VB_Y });
+
+  const resetView = useCallback(() => {
+    savedVB.current = { x: INIT_VB_X, y: INIT_VB_Y };
+    setVbPos({ x: INIT_VB_X, y: INIT_VB_Y });
+  }, []);
+
+  const mapPan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gs) =>
+        Math.abs(gs.dx) > 5 || Math.abs(gs.dy) > 5,
+      onPanResponderMove: (_, gs) => {
+        setVbPos({
+          x: clampVBX(savedVB.current.x - gs.dx),
+          y: clampVBY(savedVB.current.y - gs.dy),
+        });
+      },
+      onPanResponderRelease: (_, gs) => {
+        const nx = clampVBX(savedVB.current.x - gs.dx);
+        const ny = clampVBY(savedVB.current.y - gs.dy);
+        savedVB.current = { x: nx, y: ny };
+        setVbPos({ x: nx, y: ny });
+      },
+    }),
+  ).current;
+
+  // ── 2.5D tilt (RNAnimated, stable) ────────────────────────
+  const tiltAnim = useRef(new RNAnimated.Value(0)).current;
   const [is25D, setIs25D] = useState(false);
 
   const toggle25D = useCallback(() => {
     const next = !is25D;
     setIs25D(next);
-    tiltValue.value = withTiming(next ? 1 : 0, { duration: 500 });
-  }, [is25D, tiltValue]);
+    RNAnimated.timing(tiltAnim, {
+      toValue: next ? 1 : 0,
+      duration: 500,
+      useNativeDriver: false,
+    }).start();
+  }, [is25D, tiltAnim]);
 
-  const resetView = useCallback(() => {
-    translateX.value = withSpring(INITIAL_X, { damping: 20, stiffness: 120 });
-    translateY.value = withSpring(INITIAL_Y, { damping: 20, stiffness: 120 });
-    savedX.value = INITIAL_X;
-    savedY.value = INITIAL_Y;
-  }, [translateX, translateY, savedX, savedY]);
-
-  const panGesture = Gesture.Pan()
-    .minDistance(6)
-    .onUpdate((e) => {
-      translateX.value = clampX(savedX.value + e.translationX);
-      translateY.value = clampY(savedY.value + e.translationY);
-    })
-    .onEnd((e) => {
-      // Momentum: apply a fraction of velocity
-      const momentumX = clampX(translateX.value + e.velocityX * 0.12);
-      const momentumY = clampY(translateY.value + e.velocityY * 0.12);
-      translateX.value = withSpring(momentumX, { damping: 28, stiffness: 160 });
-      translateY.value = withSpring(momentumY, { damping: 28, stiffness: 160 });
-      savedX.value = momentumX;
-      savedY.value = momentumY;
-    });
-
-  const mapAnimStyle = useAnimatedStyle(() => {
-    const tiltDeg = tiltValue.value * 12;
-    return {
-      transform: [
-        { perspective: 1200 },
-        { rotateX: `${tiltDeg}deg` },
-        { translateX: translateX.value },
-        { translateY: translateY.value },
-      ],
-    };
-  });
+  const tiltStyle = {
+    transform: [
+      { perspective: 1000 },
+      {
+        rotateX: tiltAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: ['0deg', '12deg'],
+        }),
+      },
+    ],
+  };
 
   // ── Node selection ─────────────────────────────────────────
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
@@ -713,11 +713,16 @@ export default function MapScreen() {
     <View style={[styles.root, { backgroundColor: c.background }]}>
 
       {/* ── Pannable map canvas ── */}
-      <GestureDetector gesture={panGesture}>
-        <Animated.View style={[{ width: CANVAS_W, height: CANVAS_H }, mapAnimStyle]}>
+      <RNAnimated.View style={[StyleSheet.absoluteFill, tiltStyle]}>
+        <View style={StyleSheet.absoluteFill} {...mapPan.panHandlers}>
 
-          {/* ── SVG cognitive map ── */}
-          <Svg width={CANVAS_W} height={CANVAS_H} style={{ position: 'absolute', top: 0, left: 0 }}>
+          {/* ── SVG cognitive map — screen-sized, viewBox pans over canvas ── */}
+          <Svg
+            width={SW}
+            height={SH}
+            viewBox={`${vbPos.x} ${vbPos.y} ${SW} ${SH}`}
+            style={StyleSheet.absoluteFill}
+          >
             <Defs>
               {/* Central ambient glow */}
               <RadialGradient id="ambientGlow" cx="50%" cy="44%" r="45%" fx="50%" fy="44%">
@@ -852,15 +857,19 @@ export default function MapScreen() {
             </G>
           </Svg>
 
-          {/* ── Node touch targets ── */}
+          {/* ── Node touch targets — positions converted to screen space ── */}
           <View
-            style={{ position: 'absolute', width: CANVAS_W, height: CANVAS_H }}
+            style={StyleSheet.absoluteFill}
             pointerEvents={toolMode === 'move' ? 'none' : 'box-none'}
           >
             {nodes.map((node) => {
               const p = pos[node.id];
               if (!p) return null;
+              const screenX = p.x - vbPos.x;
+              const screenY = p.y - vbPos.y;
               const HIT = 24;
+              // Skip nodes that are fully off-screen
+              if (screenX < -HIT || screenX > SW + HIT || screenY < -HIT || screenY > SH + HIT) return null;
               return (
                 <Pressable
                   key={node.id}
@@ -868,8 +877,8 @@ export default function MapScreen() {
                     position: 'absolute',
                     width: HIT * 2,
                     height: HIT * 2,
-                    left: p.x - HIT,
-                    top: p.y - HIT,
+                    left: screenX - HIT,
+                    top: screenY - HIT,
                     borderRadius: HIT,
                   }}
                   onPress={() => setSelectedNode((prev) => prev?.id === node.id ? null : node)}
@@ -880,8 +889,8 @@ export default function MapScreen() {
             })}
           </View>
 
-        </Animated.View>
-      </GestureDetector>
+        </View>
+      </RNAnimated.View>
 
       {/* ── Fixed overlay (header, toolbar, FAB, cards, capture) ── */}
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
