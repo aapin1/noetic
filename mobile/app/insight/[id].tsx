@@ -46,6 +46,25 @@ export default function InsightDetailScreen() {
   const url = data.contentItem?.canonicalUrl ?? null;
   const title = data.title;
 
+  // Normalise for deduplication — ignore case and whitespace
+  function norm(s: string | null | undefined) {
+    return (s ?? '').trim().toLowerCase();
+  }
+  const titleN = norm(title);
+  const summaryN = norm(data.summary);
+  const keyIdeaN = norm(data.keyIdea);
+  const reactionN = norm(data.reaction);
+
+  // Only show a field if it adds new information
+  const showSummary = !!data.summary && summaryN !== titleN;
+  const showKeyIdea = !!data.keyIdea && keyIdeaN !== titleN && keyIdeaN !== summaryN;
+  const showRawText = !!data.rawText && !data.summary && norm(data.rawText) !== titleN;
+  const showReaction =
+    !!data.reaction &&
+    reactionN !== titleN &&
+    reactionN !== summaryN &&
+    reactionN !== keyIdeaN;
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
       <View style={[styles.nav, { borderBottomColor: c.border }]}>
@@ -78,17 +97,17 @@ export default function InsightDetailScreen() {
             ))}
           </View>
           <Text variant="h2">{title}</Text>
-          {data.summary ? (
+          {showSummary ? (
             <Text variant="serif" color="secondary" style={{ marginTop: Spacing[4] }}>
               {data.summary}
             </Text>
           ) : null}
-          {data.keyIdea ? (
+          {showKeyIdea ? (
             <Text variant="h4" style={{ marginTop: Spacing[5] }}>
               Core idea
             </Text>
           ) : null}
-          {data.keyIdea ? (
+          {showKeyIdea ? (
             <Text variant="serif" color="secondary" style={{ marginTop: Spacing[2] }}>
               {data.keyIdea}
             </Text>
@@ -105,12 +124,12 @@ export default function InsightDetailScreen() {
               </Text>
             </Pressable>
           ) : null}
-          {data.rawText && !data.summary ? (
+          {showRawText ? (
             <Text variant="body" color="secondary" style={{ marginTop: Spacing[4] }}>
               {data.rawText}
             </Text>
           ) : null}
-          {data.reaction ? (
+          {showReaction ? (
             <Card variant="hairline" padding="md" style={{ marginTop: Spacing[6] }}>
               <Text variant="label" color="muted">
                 Your reaction
