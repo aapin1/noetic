@@ -1,24 +1,24 @@
 {
   "expo": {
-    "name": "NOETIC",
-    "slug": "noetic",
+    "name": "mneme",
+    "slug": "mneme",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "scheme": "noetic",
+    "scheme": "mneme",
     "splash": {
       "backgroundColor": "#F6F2E9",
       "resizeMode": "contain"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.noetic.mobile"
+      "bundleIdentifier": "app.mneme.mobile"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#F6F2E9"
       },
-      "package": "app.noetic.mobile"
+      "package": "app.mneme.mobile"
     },
     "web": {
       "bundler": "metro"

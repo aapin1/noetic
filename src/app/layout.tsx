@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 
 export const metadata = {
-  title: "NOETIC Backend",
-  description: "NOETIC backend API",
+  title: "MNEME Backend",
+  description: "MNEME backend API",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

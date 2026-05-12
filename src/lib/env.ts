@@ -5,7 +5,7 @@ const envSchema = z.object({
   DIRECT_URL: z.string().min(1),
   NEXTAUTH_URL: z.string().url(),
   NEXTAUTH_SECRET: z.string().min(10),
-  NOETIC_BASE_URL: z.string().url(),
+  MNEME_BASE_URL: z.string().url(),
   TEST_DATABASE_URL: z.string().min(1).optional(),
 });
 
@@ -23,7 +23,7 @@ export function getEnv(): AppEnv {
     DIRECT_URL: process.env.DIRECT_URL,
     NEXTAUTH_URL: process.env.NEXTAUTH_URL,
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
-    NOETIC_BASE_URL: process.env.NOETIC_BASE_URL,
+    MNEME_BASE_URL: process.env.MNEME_BASE_URL,
     TEST_DATABASE_URL: process.env.TEST_DATABASE_URL,
   });
 

@@ -1,35 +1,35 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: noetic-postgres
+    container_name: mneme-postgres
     environment:
-      POSTGRES_DB: noetic
+      POSTGRES_DB: mneme
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d noetic"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mneme"]
       interval: 5s
       timeout: 5s
       retries: 10
     volumes:
-      - noetic_postgres_data:/var/lib/postgresql/data
+      - mneme_postgres_data:/var/lib/postgresql/data
 
   postgres_test:
     image: postgres:16-alpine
-    container_name: noetic-postgres-test
+    container_name: mneme-postgres-test
     environment:
-      POSTGRES_DB: noetic_test
+      POSTGRES_DB: mneme_test
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
       - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d noetic_test"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mneme_test"]
       interval: 5s
       timeout: 5s
       retries: 10
 
 volumes:
-  noetic_postgres_data:
+  mneme_postgres_data:
