@@ -51,7 +51,7 @@ function ContradictionCardView({
           )}
         </Pressable>
         <Pressable
-          style={[styles.contradictSide, { borderColor: c.borderSubtle }]}
+          style={[styles.contradictSide, { borderColor: c.borderSubtle, borderRightWidth: 0 }]}
           onPress={onPressB}
         >
           <Text variant="monoSmall" color="muted">B</Text>
