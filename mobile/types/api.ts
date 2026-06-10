@@ -184,3 +184,58 @@ export interface IngestedMetadata {
   imageUrl?: string;
   requiresManualInput: boolean;
 }
+
+export interface ContradictionCard {
+  itemAId: string;
+  itemBId: string;
+  labelA: string;
+  labelB: string;
+  previewA: string;
+  previewB: string;
+  tension: string;
+}
+
+export interface ThreadSynthesis {
+  topicId: string;
+  topicName: string;
+  captureCount: number;
+  position: string;
+  openQuestion: string;
+}
+
+export interface ConvergenceSignal {
+  topicId: string;
+  topicName: string;
+  captureCount: number;
+  sourceCount: number;
+  signal: string;
+}
+
+export interface EvolutionPeriod {
+  month: string;
+  captureCount: number;
+  keyIdeas: string[];
+}
+
+export interface EvolutionArc {
+  topicId: string;
+  topicName: string;
+  captureCount: number;
+  periods: EvolutionPeriod[];
+}
+
+export interface DormantThread {
+  topicId: string;
+  topicName: string;
+  captureCount: number;
+  lastCapturedAt: string;
+  daysSilent: number;
+}
+
+export interface PersonalIntelligenceResponse {
+  contradictionCards: ContradictionCard[];
+  threadSyntheses: ThreadSynthesis[];
+  convergenceSignals: ConvergenceSignal[];
+  evolutionArcs: EvolutionArc[];
+  dormantThreads: DormantThread[];
+}

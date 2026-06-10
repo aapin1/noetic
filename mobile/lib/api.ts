@@ -11,6 +11,7 @@ import type {
   MemoryGraphResponse,
   MemoryTrendsResponse,
   OwnerProfile,
+  PersonalIntelligenceResponse,
   UserPreference,
 } from '@/types/api';
 
@@ -18,6 +19,21 @@ const BASE_URL =
   (Constants.expoConfig?.extra?.apiUrl as string | undefined) ??
   process.env.EXPO_PUBLIC_API_URL ??
   'http://localhost:3000';
+
+function getValidationMessage(issues: unknown): string | null {
+  if (!issues || typeof issues !== 'object') return null;
+
+  const fieldErrors = (issues as { fieldErrors?: unknown }).fieldErrors;
+  if (!fieldErrors || typeof fieldErrors !== 'object') return null;
+
+  for (const [field, messages] of Object.entries(fieldErrors)) {
+    if (!Array.isArray(messages) || messages.length === 0) continue;
+    const first = messages.find((message): message is string => typeof message === 'string');
+    if (first) return `${field}: ${first}`;
+  }
+
+  return null;
+}
 
 async function request<T>(
   path: string,
@@ -36,7 +52,11 @@ async function request<T>(
   const json = (await res.json()) as ApiResponse<T>;
 
   if (!json.ok) {
-    const err = new Error(json.error.message);
+    const message =
+      json.error.code === 'VALIDATION_ERROR'
+        ? getValidationMessage(json.error.issues) ?? json.error.message
+        : json.error.message;
+    const err = new Error(message);
     (err as Error & { code: string }).code = json.error.code;
     throw err;
   }
@@ -167,6 +187,9 @@ export const api = {
     },
     trends(params?: { window?: 'week' | 'month' }) {
       return request<MemoryTrendsResponse>(`/api/memory/trends${buildQuery(params ?? {})}`);
+    },
+    intelligence() {
+      return request<PersonalIntelligenceResponse>('/api/memory/intelligence');
     },
   },
 };
