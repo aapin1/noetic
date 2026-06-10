@@ -832,6 +832,7 @@ export default function MapScreen() {
   const [captureError, setCaptureError] = useState('');
   const [newNodeId, setNewNodeId] = useState<string | null>(null);
   const landingAnim = useRef(new RNAnimated.Value(0)).current;
+  const animatingRef = useRef(false);
 
   const slideY = useRef(new RNAnimated.Value(SH)).current;
   const fabPulse = useRef(new RNAnimated.Value(0)).current;
@@ -922,12 +923,16 @@ export default function MapScreen() {
   }, [toolMode]);
 
   useEffect(() => {
-    if (!newNodeId || !pos[newNodeId]) return;
+    if (!newNodeId || !pos[newNodeId] || animatingRef.current) return;
+    animatingRef.current = true;
     landingAnim.setValue(0);
     RNAnimated.sequence([
       RNAnimated.timing(landingAnim, { toValue: 1, duration: 450, useNativeDriver: true }),
       RNAnimated.timing(landingAnim, { toValue: 0, duration: 750, useNativeDriver: true }),
-    ]).start(() => setNewNodeId(null));
+    ]).start(() => {
+      animatingRef.current = false;
+      setNewNodeId(null);
+    });
   }, [newNodeId, pos, landingAnim]);
 
   const nodeColor = useCallback(
@@ -943,6 +948,38 @@ export default function MapScreen() {
 
   const vbW = SW / zoom;
   const vbH = SH / zoom;
+
+  const landingRing = newNodeId && pos[newNodeId] ? (() => {
+    const p = pos[newNodeId]!;
+    const screenX = (p.x - vbPos.x) * zoom;
+    const screenY = (p.y - vbPos.y) * zoom;
+    const ringSize = 44;
+    const newNodeRingScale = landingAnim.interpolate({
+      inputRange: [0, 0.4, 1],
+      outputRange: [0.5, 2.4, 3.8],
+    });
+    const newNodeRingOpacity = landingAnim.interpolate({
+      inputRange: [0, 0.25, 1],
+      outputRange: [0, 0.55, 0],
+    });
+    return (
+      <RNAnimated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          width: ringSize,
+          height: ringSize,
+          borderRadius: ringSize / 2,
+          borderWidth: 1.5,
+          borderColor: c.text,
+          left: screenX - ringSize / 2,
+          top: screenY - ringSize / 2,
+          transform: [{ scale: newNodeRingScale }],
+          opacity: newNodeRingOpacity,
+        }}
+      />
+    );
+  })() : null;
 
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
@@ -1183,37 +1220,7 @@ export default function MapScreen() {
         </View>
 
         {/* ── New node landing animation ── */}
-        {newNodeId && pos[newNodeId] && (() => {
-          const p = pos[newNodeId]!;
-          const screenX = (p.x - vbPos.x) * zoom;
-          const screenY = (p.y - vbPos.y) * zoom;
-          const ringSize = 44;
-          const ringScale = landingAnim.interpolate({
-            inputRange: [0, 0.4, 1],
-            outputRange: [0.5, 2.4, 3.8],
-          });
-          const ringOpacityAnim = landingAnim.interpolate({
-            inputRange: [0, 0.25, 1],
-            outputRange: [0, 0.55, 0],
-          });
-          return (
-            <RNAnimated.View
-              pointerEvents="none"
-              style={{
-                position: 'absolute',
-                width: ringSize,
-                height: ringSize,
-                borderRadius: ringSize / 2,
-                borderWidth: 1.5,
-                borderColor: c.text,
-                left: screenX - ringSize / 2,
-                top: screenY - ringSize / 2,
-                transform: [{ scale: ringScale }],
-                opacity: ringOpacityAnim,
-              }}
-            />
-          );
-        })()}
+        {landingRing}
 
       </RNAnimated.View>
 
