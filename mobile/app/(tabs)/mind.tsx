@@ -1,0 +1,388 @@
+import React, { useCallback } from 'react';
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { api } from '@/lib/api';
+import { useApiQuery } from '@/hooks/useApiQuery';
+import { Radius, Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
+import { Text } from '@/components/ui/Text';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { SkeletonCard } from '@/components/ui/Skeleton';
+import type {
+  ContradictionCard,
+  ThreadSynthesis,
+  ConvergenceSignal,
+  EvolutionArc,
+  DormantThread,
+} from '@/types/api';
+
+function ContradictionCardView({
+  card,
+  onPressA,
+  onPressB,
+}: {
+  card: ContradictionCard;
+  onPressA: () => void;
+  onPressB: () => void;
+}) {
+  const c = useThemeColors();
+  return (
+    <View style={[styles.card, { borderColor: c.border }]}>
+      <View style={styles.contradictRow}>
+        <Pressable
+          style={[styles.contradictSide, { borderColor: c.borderSubtle }]}
+          onPress={onPressA}
+        >
+          <Text variant="monoSmall" color="muted">A</Text>
+          <Text variant="bodyMedium" numberOfLines={2} style={{ marginTop: 4 }}>
+            {card.labelA}
+          </Text>
+          {!!card.previewA && (
+            <Text variant="monoSmall" color="muted" numberOfLines={3} style={{ marginTop: 4 }}>
+              {card.previewA}
+            </Text>
+          )}
+        </Pressable>
+        <Pressable
+          style={[styles.contradictSide, { borderColor: c.borderSubtle }]}
+          onPress={onPressB}
+        >
+          <Text variant="monoSmall" color="muted">B</Text>
+          <Text variant="bodyMedium" numberOfLines={2} style={{ marginTop: 4 }}>
+            {card.labelB}
+          </Text>
+          {!!card.previewB && (
+            <Text variant="monoSmall" color="muted" numberOfLines={3} style={{ marginTop: 4 }}>
+              {card.previewB}
+            </Text>
+          )}
+        </Pressable>
+      </View>
+      <View style={[styles.tensionRow, { borderTopColor: c.borderSubtle }]}>
+        <Text variant="monoSmall" color="muted" style={styles.tensionLabel}>tension</Text>
+        <Text variant="body" color="secondary" style={{ marginTop: Spacing[2] }}>
+          {card.tension}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function ThreadSynthesisView({ synthesis }: { synthesis: ThreadSynthesis }) {
+  const c = useThemeColors();
+  return (
+    <View style={[styles.card, { borderColor: c.border }]}>
+      <View style={styles.synthesisMeta}>
+        <Text variant="monoSmall" color="muted">{synthesis.topicName}</Text>
+        <Text variant="monoSmall" color="muted">{synthesis.captureCount} captures</Text>
+      </View>
+      <Text variant="bodyMedium" style={{ marginTop: Spacing[3], paddingHorizontal: Spacing[4] }}>
+        {synthesis.position}
+      </Text>
+      <View style={[styles.openQuestionRow, { borderTopColor: c.borderSubtle }]}>
+        <Text variant="monoSmall" color="muted" style={styles.openQuestionLabel}>open question</Text>
+        <Text variant="monoSmall" color="secondary" style={{ marginTop: Spacing[2] }}>
+          {synthesis.openQuestion}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function ConvergenceSignalView({ signal }: { signal: ConvergenceSignal }) {
+  const c = useThemeColors();
+  return (
+    <View style={[styles.card, { borderColor: c.border }]}>
+      <View style={styles.synthesisMeta}>
+        <Text variant="monoSmall" color="muted">{signal.topicName}</Text>
+        <Text variant="monoSmall" color="muted">{signal.sourceCount} sources</Text>
+      </View>
+      <Text variant="body" color="secondary" style={{ marginTop: Spacing[3], paddingHorizontal: Spacing[4], paddingBottom: Spacing[4] }}>
+        {signal.signal}
+      </Text>
+    </View>
+  );
+}
+
+function EvolutionArcView({ arc }: { arc: EvolutionArc }) {
+  const c = useThemeColors();
+  const maxCount = Math.max(1, ...arc.periods.map((p) => p.captureCount));
+
+  return (
+    <View style={[styles.card, { borderColor: c.border }]}>
+      <View style={styles.synthesisMeta}>
+        <Text variant="monoSmall" color="muted">{arc.topicName}</Text>
+        <Text variant="monoSmall" color="muted">{arc.captureCount} total</Text>
+      </View>
+      <View style={styles.arcRow}>
+        {arc.periods.map((period) => (
+          <View key={period.month} style={styles.arcPeriod}>
+            <View
+              style={[
+                styles.arcBar,
+                {
+                  height: 4 + (period.captureCount / maxCount) * 32,
+                  backgroundColor: c.text,
+                },
+              ]}
+            />
+            <Text variant="monoSmall" style={[styles.arcMonth, { color: c.faint }]}>
+              {period.month.slice(5)}
+            </Text>
+          </View>
+        ))}
+      </View>
+      {(arc.periods.at(-1)?.keyIdeas.length ?? 0) > 0 && (
+        <Text variant="monoSmall" color="muted" style={{ paddingHorizontal: Spacing[4], paddingBottom: Spacing[4] }}>
+          Recent: {arc.periods.at(-1)!.keyIdeas[0]}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function DormantThreadView({ thread }: { thread: DormantThread }) {
+  const c = useThemeColors();
+  return (
+    <View style={[styles.dormantRow, { borderBottomColor: c.border }]}>
+      <Text variant="bodyMedium">{thread.topicName}</Text>
+      <Text variant="monoSmall" color="muted" style={{ marginTop: 4 }}>
+        {thread.captureCount} captures · quiet for {thread.daysSilent} days
+      </Text>
+    </View>
+  );
+}
+
+export default function MindScreen() {
+  const c = useThemeColors();
+  const router = useRouter();
+  const { data, loading, error, refetch } = useApiQuery(
+    () => api.memory.intelligence(),
+    [],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      void refetch();
+    }, [refetch]),
+  );
+
+  const isEmpty =
+    !loading &&
+    !error &&
+    data !== null &&
+    data !== undefined &&
+    data.contradictionCards.length === 0 &&
+    data.threadSyntheses.length === 0 &&
+    data.convergenceSignals.length === 0 &&
+    data.evolutionArcs.length === 0 &&
+    data.dormantThreads.length === 0;
+
+  if (loading && !data) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
+        <View style={[styles.header, { borderBottomColor: c.border }]}>
+          <Text variant="wordmark">Mind</Text>
+        </View>
+        <SkeletonCard />
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
+        <View style={[styles.header, { borderBottomColor: c.border }]}>
+          <Text variant="wordmark">Mind</Text>
+        </View>
+        <EmptyState title="Mind unavailable" body={error} ctaLabel="Retry" onCta={refetch} />
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
+      <View style={[styles.header, { borderBottomColor: c.border }]}>
+        <Text variant="wordmark">Mind</Text>
+      </View>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={refetch} tintColor={c.text} />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        <Text variant="serif" color="secondary" style={styles.lead}>
+          What you didn't know you know.
+        </Text>
+
+        {isEmpty && (
+          <Text variant="body" color="muted" style={styles.emptyNote}>
+            Keep capturing. Tensions, threads, and patterns will surface once your map has enough depth.
+          </Text>
+        )}
+
+        {(data?.contradictionCards.length ?? 0) > 0 && (
+          <>
+            <Text variant="h3" style={styles.sectionHead}>Tensions</Text>
+            <Text variant="body" color="muted" style={styles.sectionSub}>
+              Two things you hold that pull in opposite directions.
+            </Text>
+            {data!.contradictionCards.map((card) => (
+              <ContradictionCardView
+                key={`${card.itemAId}-${card.itemBId}`}
+                card={card}
+                onPressA={() => router.push(`/insight/${card.itemAId}` as never)}
+                onPressB={() => router.push(`/insight/${card.itemBId}` as never)}
+              />
+            ))}
+          </>
+        )}
+
+        {(data?.threadSyntheses.length ?? 0) > 0 && (
+          <>
+            <Text variant="h3" style={styles.sectionHead}>Threads</Text>
+            <Text variant="body" color="muted" style={styles.sectionSub}>
+              Where your thinking on these topics appears to have landed.
+            </Text>
+            {data!.threadSyntheses.map((synthesis) => (
+              <ThreadSynthesisView key={synthesis.topicId} synthesis={synthesis} />
+            ))}
+          </>
+        )}
+
+        {(data?.convergenceSignals.length ?? 0) > 0 && (
+          <>
+            <Text variant="h3" style={styles.sectionHead}>Convergence</Text>
+            <Text variant="body" color="muted" style={styles.sectionSub}>
+              The same idea arriving from different directions.
+            </Text>
+            {data!.convergenceSignals.map((signal) => (
+              <ConvergenceSignalView key={signal.topicId} signal={signal} />
+            ))}
+          </>
+        )}
+
+        {(data?.evolutionArcs.length ?? 0) > 0 && (
+          <>
+            <Text variant="h3" style={styles.sectionHead}>Evolution</Text>
+            <Text variant="body" color="muted" style={styles.sectionSub}>
+              How your engagement with these topics has shifted over time.
+            </Text>
+            {data!.evolutionArcs.map((arc) => (
+              <EvolutionArcView key={arc.topicId} arc={arc} />
+            ))}
+          </>
+        )}
+
+        {(data?.dormantThreads.length ?? 0) > 0 && (
+          <>
+            <Text variant="h3" style={styles.sectionHead}>Dormant</Text>
+            <Text variant="body" color="muted" style={styles.sectionSub}>
+              Threads you were deep in — still waiting.
+            </Text>
+            {data!.dormantThreads.map((thread) => (
+              <DormantThreadView key={thread.topicId} thread={thread} />
+            ))}
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1 },
+  header: {
+    paddingHorizontal: Spacing[6],
+    paddingVertical: Spacing[4],
+    borderBottomWidth: 1,
+  },
+  content: {
+    paddingHorizontal: Spacing[6],
+    paddingBottom: Spacing[16],
+  },
+  lead: {
+    marginTop: Spacing[6],
+    maxWidth: 320,
+  },
+  emptyNote: {
+    marginTop: Spacing[6],
+    maxWidth: 320,
+  },
+  sectionHead: {
+    marginTop: Spacing[10],
+  },
+  sectionSub: {
+    marginTop: Spacing[2],
+    marginBottom: Spacing[4],
+    maxWidth: 320,
+  },
+  card: {
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    marginBottom: Spacing[4],
+    overflow: 'hidden',
+  },
+  contradictRow: {
+    flexDirection: 'row',
+  },
+  contradictSide: {
+    flex: 1,
+    padding: Spacing[4],
+    borderRightWidth: 0.5,
+  },
+  tensionRow: {
+    padding: Spacing[4],
+    borderTopWidth: 1,
+  },
+  tensionLabel: {
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
+  synthesisMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: Spacing[4],
+    paddingBottom: 0,
+  },
+  openQuestionRow: {
+    padding: Spacing[4],
+    marginTop: Spacing[4],
+    borderTopWidth: 1,
+  },
+  openQuestionLabel: {
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
+  arcRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 6,
+    paddingHorizontal: Spacing[4],
+    paddingTop: Spacing[4],
+    height: 60,
+  },
+  arcPeriod: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  arcBar: {
+    width: 16,
+    borderRadius: 2,
+  },
+  arcMonth: {
+    fontSize: 9,
+  },
+  dormantRow: {
+    paddingVertical: Spacing[4],
+    borderBottomWidth: 1,
+  },
+});

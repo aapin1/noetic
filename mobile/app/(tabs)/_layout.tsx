@@ -2,7 +2,7 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { Redirect } from 'expo-router';
 import { Platform } from 'react-native';
-import { GitGraphIcon, LineChartIcon, ListIcon, UserIcon } from 'lucide-react-native';
+import { GitGraphIcon, LineChartIcon, ListIcon, UserIcon, ZapIcon } from 'lucide-react-native';
 import { FontFamily, FontSize } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
@@ -63,6 +63,13 @@ export default function TabsLayout() {
         options={{
           title: 'Drift',
           tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={LineChartIcon} />,
+        }}
+      />
+      <Tabs.Screen
+        name="mind"
+        options={{
+          title: 'Mind',
+          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={ZapIcon} />,
         }}
       />
       <Tabs.Screen
