@@ -458,6 +458,7 @@ export async function generateConvergenceSignal(args: {
 }): Promise<string | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
+  if (args.captures.length < 2) return null;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
