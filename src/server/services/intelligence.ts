@@ -1,6 +1,19 @@
+import { MemoryEdgeType } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import type { DbClient } from "@/server/db";
+import {
+  generateContradictionTension,
+  generateThreadSynthesis,
+  generateConvergenceSignal,
+} from "@/server/cognition/llm";
+
 const DORMANT_ACTIVE_MIN = 3;
 const DORMANT_SILENT_DAYS = 21;
 const CONVERGENCE_SOURCE_MIN = 3;
+const CAPTURE_SCAN_LIMIT = 200;
+const CONTRADICTION_LIMIT = 10;
+const THREAD_SYNTHESIS_THRESHOLD = 3;
+const THREAD_SYNTHESIS_LIMIT = 5;
 
 export type LoadedCapture = {
   id: string;
@@ -149,4 +162,143 @@ export function findConvergenceCandidates(topicGroups: TopicGroup[]): TopicGroup
     const sources = new Set(group.captures.map((c) => c.sourceName ?? "__unknown__"));
     return sources.size >= CONVERGENCE_SOURCE_MIN;
   });
+}
+
+export async function getPersonalIntelligence(args: {
+  userId: string;
+  db?: DbClient;
+}): Promise<PersonalIntelligenceData> {
+  const db = args.db ?? prisma;
+
+  const [rawCaptures, contradictEdges] = await Promise.all([
+    db.capturedItem.findMany({
+      where: { userId: args.userId },
+      orderBy: { capturedAt: "desc" },
+      take: CAPTURE_SCAN_LIMIT,
+      include: {
+        contentItem: { include: { source: true } },
+        topics: { include: { topic: true } },
+      },
+    }),
+    db.memoryEdge.findMany({
+      where: { userId: args.userId, type: MemoryEdgeType.CONTRADICTS },
+      orderBy: { createdAt: "desc" },
+      take: CONTRADICTION_LIMIT,
+      include: {
+        fromItem: { include: { contentItem: true } },
+        toItem: { include: { contentItem: true } },
+      },
+    }),
+  ]);
+
+  const captures: LoadedCapture[] = rawCaptures.map((item) => ({
+    id: item.id,
+    label: item.contentItem?.title ?? item.rawText?.slice(0, 80) ?? "Untitled capture",
+    rawText: item.rawText,
+    keyIdea: item.keyIdea,
+    capturedAt: item.capturedAt,
+    sourceName: item.contentItem?.source?.name ?? item.contentItem?.siteName ?? null,
+    topics: item.topics.map((row) => ({ topicId: row.topicId, name: row.topic.name })),
+  }));
+
+  const allGroups = groupCapturesByTopic(captures, 2);
+  const threadCandidates = allGroups.filter((g) => g.captures.length >= THREAD_SYNTHESIS_THRESHOLD);
+
+  const now = new Date();
+  const dormantThreads = findDormantThreads(allGroups, now);
+  const evolutionArcs = threadCandidates.slice(0, 3).map(buildEvolutionArc);
+  const convergenceCandidates = findConvergenceCandidates(threadCandidates);
+
+  function edgeItemLabel(item: { rawText: string | null; contentItem: { title: string } | null }): string {
+    return item.contentItem?.title ?? item.rawText?.slice(0, 80) ?? "Untitled capture";
+  }
+
+  const [cardTensions, syntheses, firstConvergenceSignal] = await Promise.all([
+    Promise.all(
+      contradictEdges.map((edge) =>
+        generateContradictionTension({
+          labelA: edgeItemLabel(edge.fromItem),
+          textA: edge.fromItem.rawText ?? edge.fromItem.keyIdea ?? "",
+          labelB: edgeItemLabel(edge.toItem),
+          textB: edge.toItem.rawText ?? edge.toItem.keyIdea ?? "",
+        }),
+      ),
+    ),
+    Promise.all(
+      threadCandidates.slice(0, THREAD_SYNTHESIS_LIMIT).map((group) =>
+        generateThreadSynthesis({
+          topicName: group.topicName,
+          captures: group.captures.slice(0, 10).map((c) => ({
+            label: c.label,
+            keyIdea: c.keyIdea,
+            text: c.rawText ?? "",
+          })),
+        }),
+      ),
+    ),
+    convergenceCandidates.length > 0
+      ? generateConvergenceSignal({
+          topicName: convergenceCandidates[0].topicName,
+          captures: convergenceCandidates[0].captures.slice(0, 8).map((c) => ({
+            label: c.label,
+            source: c.sourceName,
+            keyIdea: c.keyIdea,
+          })),
+        })
+      : Promise.resolve(null),
+  ]);
+
+  const contradictionCards: ContradictionCard[] = contradictEdges
+    .map((edge, i) => {
+      const tension = cardTensions[i];
+      if (!tension) return null;
+      return {
+        itemAId: edge.fromItemId,
+        itemBId: edge.toItemId,
+        labelA: edgeItemLabel(edge.fromItem),
+        labelB: edgeItemLabel(edge.toItem),
+        previewA: (edge.fromItem.rawText ?? edge.fromItem.keyIdea ?? "").slice(0, 200),
+        previewB: (edge.toItem.rawText ?? edge.toItem.keyIdea ?? "").slice(0, 200),
+        tension,
+      };
+    })
+    .filter((c): c is ContradictionCard => c !== null);
+
+  const threadSyntheses: ThreadSynthesis[] = threadCandidates
+    .slice(0, THREAD_SYNTHESIS_LIMIT)
+    .map((group, i) => {
+      const synthesis = syntheses[i];
+      if (!synthesis) return null;
+      return {
+        topicId: group.topicId,
+        topicName: group.topicName,
+        captureCount: group.captures.length,
+        position: synthesis.position,
+        openQuestion: synthesis.openQuestion,
+      };
+    })
+    .filter((s): s is ThreadSynthesis => s !== null);
+
+  const convergenceSignals: ConvergenceSignal[] =
+    firstConvergenceSignal && convergenceCandidates.length > 0
+      ? [
+          {
+            topicId: convergenceCandidates[0].topicId,
+            topicName: convergenceCandidates[0].topicName,
+            captureCount: convergenceCandidates[0].captures.length,
+            sourceCount: new Set(
+              convergenceCandidates[0].captures.map((c) => c.sourceName ?? "__unknown__"),
+            ).size,
+            signal: firstConvergenceSignal,
+          },
+        ]
+      : [];
+
+  return {
+    contradictionCards,
+    threadSyntheses,
+    convergenceSignals,
+    evolutionArcs,
+    dormantThreads,
+  };
 }
