@@ -27,7 +27,7 @@ import {
   type TopicCount,
   type TrajectoryShift,
 } from "@/server/cognition/insights";
-import { polishInsights } from "@/server/cognition/llm";
+import { generateRecommendations, polishInsights, type Recommendation } from "@/server/cognition/llm";
 import { applyTopicWeights, incrementTasteProfileVersion } from "@/server/services/activity";
 
 const NEIGHBOR_LIMIT = 6;
@@ -348,10 +348,19 @@ async function computeNeighbors(args: {
   };
 }
 
+export function computeThreadContext(
+  topicCounts: TopicCount[],
+): { topicName: string; captureCount: number } | null {
+  if (topicCounts.length === 0 || topicCounts[0].count < 2) return null;
+  return { topicName: topicCounts[0].name, captureCount: topicCounts[0].count };
+}
+
 export async function captureItem(payload: CapturePayload): Promise<CapturedItemSummary & {
   insights: { id: string; type: string; headline: string; body: string; strength: number; evidence: unknown }[];
   related: CapturedItemSummary[];
   edges: { fromItemId: string; toItemId: string; type: string; weight: number }[];
+  threadContext: { topicName: string; captureCount: number } | null;
+  recommendations: Recommendation[];
 }> {
   const db = payload.db ?? prisma;
 
@@ -429,7 +438,12 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   const topicCounts = computeTopicCounts(neighborInfo.rawPriors, topicMap);
   const trajectory = computeTrajectory(neighborInfo.rawPriors, topicMap);
 
-  return prisma.$transaction(async (tx: DbClient) => {
+  const fallbackText = (payload.text ?? payload.caption ?? "").slice(0, 80);
+  const itemTitle = contentTitle ?? (fallbackText.length > 0 ? fallbackText : "Untitled capture");
+  const threadContext = computeThreadContext(topicCounts);
+
+  const [txResult, recommendations] = await Promise.all([
+    prisma.$transaction(async (tx: DbClient) => {
     const insightStyle = await ensureUserPreference(tx, payload.userId);
     const created = await tx.capturedItem.create({
       data: {
@@ -464,9 +478,6 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
       });
     }
 
-    const fallbackText = (payload.text ?? payload.caption ?? "").slice(0, 80);
-    const itemTitle = contentTitle ?? (fallbackText.length > 0 ? fallbackText : "Untitled capture");
-
     const drafts = draftInsights({
       style: insightStyle,
       itemTitle,
@@ -477,7 +488,17 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
       isFirstCapture,
     });
 
-    const polishedDrafts = await polishInsights({ style: insightStyle, itemTitle, drafts });
+    const polishedDrafts = await polishInsights({
+      style: insightStyle,
+      itemTitle,
+      contentText: combinedText,
+      topicNames: classified.map((topic) => topic.name),
+      neighborContext: neighborInfo.neighbors.map((n) => ({
+        title: n.title,
+        edgeType: n.edgeType,
+      })),
+      drafts,
+    });
 
     const insightRows = polishedDrafts.length > 0
       ? await Promise.all(polishedDrafts.map((draft) =>
@@ -603,7 +624,17 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
         weight: Number(neighbor.similarity.toFixed(4)),
       })),
     };
-  });
+  }),
+    generateRecommendations({
+      itemTitle,
+      contentText: combinedText,
+      topicNames: classified.map((t) => t.name),
+      threadContext: threadContext ?? undefined,
+      neighborTitles: neighborInfo.neighbors.slice(0, 3).map((n) => n.title),
+    }),
+  ]);
+
+  return { ...txResult, threadContext, recommendations };
 }
 
 export async function getCapture(args: { userId: string; capturedItemId: string; db?: DbClient }) {
@@ -652,7 +683,7 @@ export async function getCapture(args: { userId: string; capturedItemId: string;
 
 export async function listCaptures(args: { userId: string; limit?: number; db?: DbClient }) {
   const db = args.db ?? prisma;
-  const limit = Math.min(Math.max(args.limit ?? 20, 1), 50);
+  const limit = Math.min(Math.max(args.limit ?? 20, 1), 80);
   const items = await db.capturedItem.findMany({
     where: { userId: args.userId },
     orderBy: { capturedAt: "desc" },
