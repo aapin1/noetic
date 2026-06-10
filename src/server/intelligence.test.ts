@@ -174,3 +174,221 @@ describe("generateConvergenceSignal", () => {
     expect(result).toBeNull();
   });
 });
+
+import {
+  groupCapturesByTopic,
+  findDormantThreads,
+  buildEvolutionArc,
+  findConvergenceCandidates,
+  type LoadedCapture,
+  type TopicGroup,
+} from "@/server/services/intelligence";
+
+function makeCapture(overrides: Partial<LoadedCapture> & { topics: LoadedCapture["topics"] }): LoadedCapture {
+  return {
+    id: overrides.id ?? "c1",
+    label: overrides.label ?? "Untitled",
+    rawText: overrides.rawText ?? null,
+    keyIdea: overrides.keyIdea ?? null,
+    capturedAt: overrides.capturedAt ?? new Date("2026-01-15"),
+    sourceName: overrides.sourceName ?? null,
+    topics: overrides.topics,
+  };
+}
+
+// ── groupCapturesByTopic ──────────────────────────────────────────────────────
+
+describe("groupCapturesByTopic", () => {
+  it("returns empty when captures is empty", () => {
+    expect(groupCapturesByTopic([], 1)).toEqual([]);
+  });
+
+  it("returns empty when no group meets minCount", () => {
+    const captures = [
+      makeCapture({ id: "c1", topics: [{ topicId: "t1", name: "philosophy" }] }),
+    ];
+    expect(groupCapturesByTopic(captures, 2)).toEqual([]);
+  });
+
+  it("groups captures by topic correctly", () => {
+    const captures = [
+      makeCapture({ id: "c1", topics: [{ topicId: "t1", name: "philosophy" }] }),
+      makeCapture({ id: "c2", topics: [{ topicId: "t1", name: "philosophy" }] }),
+    ];
+    const result = groupCapturesByTopic(captures, 2);
+    expect(result).toHaveLength(1);
+    expect(result[0].topicId).toBe("t1");
+    expect(result[0].captures).toHaveLength(2);
+  });
+
+  it("a capture with multiple topics appears in each topic group", () => {
+    const captures = [
+      makeCapture({ id: "c1", topics: [{ topicId: "t1", name: "philosophy" }, { topicId: "t2", name: "ethics" }] }),
+      makeCapture({ id: "c2", topics: [{ topicId: "t1", name: "philosophy" }] }),
+    ];
+    const result = groupCapturesByTopic(captures, 1);
+    const t1 = result.find((g) => g.topicId === "t1");
+    const t2 = result.find((g) => g.topicId === "t2");
+    expect(t1?.captures).toHaveLength(2);
+    expect(t2?.captures).toHaveLength(1);
+  });
+
+  it("sorts groups by capture count descending", () => {
+    const captures = [
+      makeCapture({ id: "c1", topics: [{ topicId: "t2", name: "ethics" }] }),
+      makeCapture({ id: "c2", topics: [{ topicId: "t1", name: "philosophy" }] }),
+      makeCapture({ id: "c3", topics: [{ topicId: "t1", name: "philosophy" }] }),
+      makeCapture({ id: "c4", topics: [{ topicId: "t1", name: "philosophy" }] }),
+    ];
+    const result = groupCapturesByTopic(captures, 1);
+    expect(result[0].topicId).toBe("t1");
+    expect(result[1].topicId).toBe("t2");
+  });
+});
+
+// ── findDormantThreads ────────────────────────────────────────────────────────
+
+describe("findDormantThreads", () => {
+  const now = new Date("2026-06-10T12:00:00Z");
+
+  function makeGroup(topicId: string, captureDates: string[]): TopicGroup {
+    return {
+      topicId,
+      topicName: `Topic ${topicId}`,
+      captures: captureDates.map((d, i) =>
+        makeCapture({
+          id: `${topicId}-${i}`,
+          capturedAt: new Date(d),
+          topics: [{ topicId, name: `Topic ${topicId}` }],
+        }),
+      ),
+    };
+  }
+
+  it("returns empty when no groups are dormant", () => {
+    const groups = [makeGroup("t1", ["2026-06-08", "2026-06-07", "2026-06-06"])];
+    expect(findDormantThreads(groups, now)).toEqual([]);
+  });
+
+  it("returns a dormant thread when last capture is >21 days ago", () => {
+    const groups = [makeGroup("t1", ["2026-05-01", "2026-04-15", "2026-04-10"])];
+    const result = findDormantThreads(groups, now);
+    expect(result).toHaveLength(1);
+    expect(result[0].topicId).toBe("t1");
+    expect(result[0].daysSilent).toBe(40);
+  });
+
+  it("excludes groups with fewer than 3 captures", () => {
+    const groups = [makeGroup("t1", ["2026-04-01", "2026-03-01"])];
+    expect(findDormantThreads(groups, now)).toEqual([]);
+  });
+
+  it("sorts dormant threads by captureCount descending", () => {
+    const groups = [
+      makeGroup("t1", ["2026-04-01", "2026-03-01", "2026-02-01"]),
+      makeGroup("t2", ["2026-04-01", "2026-03-01", "2026-02-01", "2026-01-01", "2026-01-01"]),
+    ];
+    const result = findDormantThreads(groups, now);
+    expect(result[0].topicId).toBe("t2");
+  });
+
+  it("returns at most 3 dormant threads", () => {
+    const groups = Array.from({ length: 5 }, (_, i) =>
+      makeGroup(`t${i}`, ["2026-04-01", "2026-03-01", "2026-02-01"]),
+    );
+    expect(findDormantThreads(groups, now).length).toBeLessThanOrEqual(3);
+  });
+});
+
+// ── buildEvolutionArc ─────────────────────────────────────────────────────────
+
+describe("buildEvolutionArc", () => {
+  it("buckets captures into correct months", () => {
+    const group: TopicGroup = {
+      topicId: "t1",
+      topicName: "philosophy",
+      captures: [
+        makeCapture({ id: "c1", capturedAt: new Date("2026-03-10"), topics: [{ topicId: "t1", name: "philosophy" }] }),
+        makeCapture({ id: "c2", capturedAt: new Date("2026-03-20"), topics: [{ topicId: "t1", name: "philosophy" }] }),
+        makeCapture({ id: "c3", capturedAt: new Date("2026-04-05"), topics: [{ topicId: "t1", name: "philosophy" }] }),
+      ],
+    };
+    const arc = buildEvolutionArc(group);
+    expect(arc.periods).toHaveLength(2);
+    expect(arc.periods[0].month).toBe("2026-03");
+    expect(arc.periods[0].captureCount).toBe(2);
+    expect(arc.periods[1].month).toBe("2026-04");
+    expect(arc.periods[1].captureCount).toBe(1);
+  });
+
+  it("extracts keyIdeas (up to 3 per period)", () => {
+    const group: TopicGroup = {
+      topicId: "t1",
+      topicName: "philosophy",
+      captures: [
+        makeCapture({ id: "c1", capturedAt: new Date("2026-03-01"), keyIdea: "idea A", topics: [{ topicId: "t1", name: "philosophy" }] }),
+        makeCapture({ id: "c2", capturedAt: new Date("2026-03-02"), keyIdea: "idea B", topics: [{ topicId: "t1", name: "philosophy" }] }),
+        makeCapture({ id: "c3", capturedAt: new Date("2026-03-03"), keyIdea: "idea C", topics: [{ topicId: "t1", name: "philosophy" }] }),
+        makeCapture({ id: "c4", capturedAt: new Date("2026-03-04"), keyIdea: "idea D", topics: [{ topicId: "t1", name: "philosophy" }] }),
+      ],
+    };
+    const arc = buildEvolutionArc(group);
+    expect(arc.periods[0].keyIdeas).toHaveLength(3);
+  });
+
+  it("sorts periods chronologically (oldest first)", () => {
+    const group: TopicGroup = {
+      topicId: "t1",
+      topicName: "philosophy",
+      captures: [
+        makeCapture({ id: "c1", capturedAt: new Date("2026-05-01"), topics: [{ topicId: "t1", name: "philosophy" }] }),
+        makeCapture({ id: "c2", capturedAt: new Date("2026-02-01"), topics: [{ topicId: "t1", name: "philosophy" }] }),
+      ],
+    };
+    const arc = buildEvolutionArc(group);
+    expect(arc.periods[0].month).toBe("2026-02");
+    expect(arc.periods[1].month).toBe("2026-05");
+  });
+});
+
+// ── findConvergenceCandidates ─────────────────────────────────────────────────
+
+describe("findConvergenceCandidates", () => {
+  it("returns empty when no groups have 3+ distinct sources", () => {
+    const groups: TopicGroup[] = [{
+      topicId: "t1",
+      topicName: "philosophy",
+      captures: [
+        makeCapture({ id: "c1", sourceName: "Atlantic", topics: [{ topicId: "t1", name: "philosophy" }] }),
+        makeCapture({ id: "c2", sourceName: "Atlantic", topics: [{ topicId: "t1", name: "philosophy" }] }),
+      ],
+    }];
+    expect(findConvergenceCandidates(groups)).toEqual([]);
+  });
+
+  it("returns groups with 3+ distinct source names", () => {
+    const groups: TopicGroup[] = [{
+      topicId: "t1",
+      topicName: "philosophy",
+      captures: [
+        makeCapture({ id: "c1", sourceName: "Atlantic", topics: [{ topicId: "t1", name: "philosophy" }] }),
+        makeCapture({ id: "c2", sourceName: "Stanford SEP", topics: [{ topicId: "t1", name: "philosophy" }] }),
+        makeCapture({ id: "c3", sourceName: "Nature", topics: [{ topicId: "t1", name: "philosophy" }] }),
+      ],
+    }];
+    expect(findConvergenceCandidates(groups)).toHaveLength(1);
+  });
+
+  it("treats null sourceName as one shared 'unknown' source", () => {
+    const groups: TopicGroup[] = [{
+      topicId: "t1",
+      topicName: "philosophy",
+      captures: [
+        makeCapture({ id: "c1", sourceName: null, topics: [{ topicId: "t1", name: "philosophy" }] }),
+        makeCapture({ id: "c2", sourceName: null, topics: [{ topicId: "t1", name: "philosophy" }] }),
+        makeCapture({ id: "c3", sourceName: null, topics: [{ topicId: "t1", name: "philosophy" }] }),
+      ],
+    }];
+    expect(findConvergenceCandidates(groups)).toEqual([]);
+  });
+});
