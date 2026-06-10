@@ -68,10 +68,18 @@ export interface InsightCard {
   evidence: unknown;
 }
 
+export interface Recommendation {
+  title: string;
+  author: string;
+  why: string;
+}
+
 export interface CaptureResponse extends CapturedItem {
   insights: InsightCard[];
   related: RelatedItem[];
   edges: { fromItemId: string; toItemId: string; type: MemoryEdgeType; weight: number }[];
+  threadContext: { topicName: string; captureCount: number } | null;
+  recommendations: Recommendation[];
 }
 
 export interface CaptureDetail extends CapturedItem {
@@ -140,6 +148,7 @@ export interface MemoryTrendsResponse {
     type: string;
     payload: unknown;
     occurredAt: string;
+    capturedItemId: string | null;
   }[];
 }
 
