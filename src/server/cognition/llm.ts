@@ -308,3 +308,210 @@ export async function generateRecommendations(args: {
     clearTimeout(timer);
   }
 }
+
+export async function generateContradictionTension(args: {
+  labelA: string;
+  textA: string;
+  labelB: string;
+  textB: string;
+}): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  const systemPrompt = [
+    "Two saved captures appear to hold opposing positions on the same question.",
+    "Name the specific intellectual tension between them in 1-2 sentences.",
+    "Requirements:",
+    "- Name the exact claim in conflict, not the general topic area.",
+    "- Bad: 'These items disagree about free will.' Good: 'Item A grounds moral responsibility in the causal structure of neural events, while Item B holds that uncompelled choice is a necessary condition for culpability — the disagreement turns on whether causal inevitability eliminates genuine agency.'",
+    "- Do not start with 'These captures' or 'These items'.",
+    "Return strictly valid JSON (no markdown): {\"tension\": \"...\"}",
+  ].join("\n");
+
+  try {
+    const response = await fetch(OPENAI_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+        temperature: 0.3,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: JSON.stringify({
+              item_a: { title: args.labelA, text: args.textA.slice(0, 800) },
+              item_b: { title: args.labelB, text: args.textB.slice(0, 800) },
+            }),
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = payload.choices?.[0]?.message?.content;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { tension?: unknown };
+    if (typeof parsed.tension !== "string" || parsed.tension.trim().length === 0) return null;
+
+    return parsed.tension.trim();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function generateThreadSynthesis(args: {
+  topicName: string;
+  captures: { label: string; keyIdea: string | null; text: string }[];
+}): Promise<{ position: string; openQuestion: string } | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  if (args.captures.length < 5) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  const systemPrompt = [
+    "A user has been circling the same topic from multiple angles.",
+    "Based on what they've saved, state where their thinking appears to have landed — not a summary of what they read, but a claim about what they seem to believe.",
+    "",
+    "POSITION rules:",
+    "- One sentence. A specific intellectual claim, not a category description.",
+    "- Bad: 'The user has explored consciousness from many angles.' Good: 'The pattern suggests you hold that subjective experience is not reducible to physical processes, though you remain uncertain about what that irreducibility implies.'",
+    "- Address the user directly as 'you'.",
+    "",
+    "OPEN_QUESTION rules:",
+    "- One question the user hasn't yet asked themselves but that follows naturally from this position.",
+    "- Should feel generative — answerable with more thought or research.",
+    "",
+    "Return strictly valid JSON (no markdown): {\"position\": \"...\", \"open_question\": \"...\"}",
+  ].join("\n");
+
+  try {
+    const response = await fetch(OPENAI_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+        temperature: 0.4,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: JSON.stringify({
+              topic: args.topicName,
+              captures: args.captures.map((c) => ({
+                title: c.label,
+                key_idea: c.keyIdea ?? "",
+                excerpt: c.text.slice(0, 400),
+              })),
+            }),
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = payload.choices?.[0]?.message?.content;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { position?: unknown; open_question?: unknown };
+    if (
+      typeof parsed.position !== "string" || parsed.position.trim().length === 0 ||
+      typeof parsed.open_question !== "string" || parsed.open_question.trim().length === 0
+    ) return null;
+
+    return {
+      position: parsed.position.trim(),
+      openQuestion: parsed.open_question.trim(),
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function generateConvergenceSignal(args: {
+  topicName: string;
+  captures: { label: string; source: string | null; keyIdea: string | null }[];
+}): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  const systemPrompt = [
+    "A user has arrived at the same intellectual territory from multiple completely different sources.",
+    "Name the convergent insight in 1-2 sentences — the core idea they keep returning to, and why it's notable that it arrived from such different starting points.",
+    "Be specific about the divergent paths AND the convergent destination.",
+    "Address the user directly as 'you'.",
+    "Return strictly valid JSON (no markdown): {\"signal\": \"...\"}",
+  ].join("\n");
+
+  try {
+    const response = await fetch(OPENAI_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+        temperature: 0.4,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: JSON.stringify({
+              topic: args.topicName,
+              captures: args.captures.map((c) => ({
+                title: c.label,
+                source: c.source ?? "unknown",
+                key_idea: c.keyIdea ?? "",
+              })),
+            }),
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = payload.choices?.[0]?.message?.content;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { signal?: unknown };
+    if (typeof parsed.signal !== "string" || parsed.signal.trim().length === 0) return null;
+
+    return parsed.signal.trim();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
