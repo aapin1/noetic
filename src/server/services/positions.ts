@@ -146,7 +146,7 @@ export async function acknowledgeChallenge(args: {
     throw new AppError("ALREADY_ACKNOWLEDGED", "Challenge already acknowledged", 409);
   }
 
-  await prisma.$transaction(async (tx) => {
+  await db.$transaction(async (tx) => {
     await tx.positionChallenge.update({
       where: { id: args.challengeId },
       data: {
