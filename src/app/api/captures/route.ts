@@ -3,12 +3,13 @@ import { handleRoute, parseJson, parseSearchParams } from "@/lib/api";
 import { requireRequestUserId } from "@/lib/auth";
 import { captureListSchema, captureSchema } from "@/server/contracts";
 import { captureItem, listCaptures } from "@/server/services/cognition";
+import { checkCaptureAgainstPositions } from "@/server/services/positions";
 
 export async function POST(request: Request) {
   return handleRoute(async () => {
     const userId = await requireRequestUserId(request);
     const input = await parseJson(request, captureSchema);
-    return captureItem({
+    const capture = await captureItem({
       userId,
       kind: input.kind as CaptureKind,
       url: input.url,
@@ -18,6 +19,14 @@ export async function POST(request: Request) {
       reaction: input.reaction,
       topicHints: input.topicHints,
     });
+    const positionChallenge = await checkCaptureAgainstPositions({
+      userId,
+      capturedItemId: capture.id,
+      topicIds: capture.topics.map((t) => t.topicId),
+      captureTitle: capture.title,
+      captureText: capture.rawText ?? capture.summary ?? "",
+    });
+    return { ...capture, positionChallenge };
   }, 201);
 }
 
