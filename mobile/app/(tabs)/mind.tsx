@@ -21,6 +21,7 @@ import type {
   ConvergenceSignal,
   EvolutionArc,
   DormantThread,
+  UserPosition,
 } from '@/types/api';
 
 function ContradictionCardView({
@@ -75,8 +76,15 @@ function ContradictionCardView({
   );
 }
 
-function ThreadSynthesisView({ synthesis }: { synthesis: ThreadSynthesis }) {
+function ThreadSynthesisView({
+  synthesis,
+  position,
+}: {
+  synthesis: ThreadSynthesis;
+  position?: UserPosition;
+}) {
   const c = useThemeColors();
+  const router = useRouter();
   return (
     <View style={[styles.card, { borderColor: c.border }]}>
       <View style={styles.synthesisMeta}>
@@ -92,6 +100,27 @@ function ThreadSynthesisView({ synthesis }: { synthesis: ThreadSynthesis }) {
           {synthesis.openQuestion}
         </Text>
       </View>
+      <Pressable
+        style={[styles.positionCta, { borderTopColor: c.borderSubtle }]}
+        onPress={() => {
+          if (position) {
+            router.push({ pathname: '/position/[topicId]' as never, params: { topicId: synthesis.topicId } });
+          } else {
+            router.push({
+              pathname: '/position/create' as never,
+              params: {
+                topicId: synthesis.topicId,
+                topicName: synthesis.topicName,
+                captureCount: String(synthesis.captureCount),
+              },
+            });
+          }
+        }}
+      >
+        <Text variant="monoSmall" color="muted">
+          {position ? 'View position →' : 'Take a position →'}
+        </Text>
+      </Pressable>
     </View>
   );
 }
@@ -160,6 +189,52 @@ function DormantThreadView({ thread }: { thread: DormantThread }) {
   );
 }
 
+function PositionCard({
+  position,
+  onNavigate,
+  onTakePosition,
+}: {
+  position?: UserPosition;
+  onNavigate: () => void;
+  onTakePosition?: () => void;
+}) {
+  const c = useThemeColors();
+  const pending = position?.challenges.filter((ch) => !ch.acknowledged).length ?? 0;
+
+  if (!position) {
+    return (
+      <Pressable
+        style={[styles.card, styles.positionCta, { borderColor: c.border }]}
+        onPress={onTakePosition}
+      >
+        <Text variant="bodyMedium">Take a position →</Text>
+      </Pressable>
+    );
+  }
+
+  return (
+    <Pressable
+      style={[styles.card, { borderColor: c.border }]}
+      onPress={onNavigate}
+    >
+      <View style={styles.synthesisMeta}>
+        <Text variant="monoSmall" color="muted">{position.topic.name}</Text>
+        {pending > 0 && (
+          <Text variant="monoSmall" color="muted">{pending} challenge{pending !== 1 ? 's' : ''}</Text>
+        )}
+      </View>
+      <Text variant="body" numberOfLines={3} style={{ marginTop: Spacing[3], paddingHorizontal: Spacing[4] }}>
+        {position.statement}
+      </Text>
+      <View style={[styles.tensionRow, { borderTopColor: c.borderSubtle }]}>
+        <Text variant="monoSmall" color="muted">
+          {position.status === 'REVISED' ? 'Revised · ' : ''}{position.captureCountAtCreation} captures at creation
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
 export default function MindScreen() {
   const c = useThemeColors();
   const router = useRouter();
@@ -168,11 +243,18 @@ export default function MindScreen() {
     [],
   );
 
+  const { data: positions } = useApiQuery(
+    () => api.positions.list(),
+    [],
+  );
+
   useFocusEffect(
     useCallback(() => {
       void refetch();
     }, [refetch]),
   );
+
+  const positionByTopic = new Map((positions ?? []).map((p) => [p.topicId, p]));
 
   const isEmpty =
     !loading &&
@@ -253,7 +335,11 @@ export default function MindScreen() {
               Where your thinking on these topics appears to have landed.
             </Text>
             {data!.threadSyntheses.map((synthesis) => (
-              <ThreadSynthesisView key={synthesis.topicId} synthesis={synthesis} />
+              <ThreadSynthesisView
+                key={synthesis.topicId}
+                synthesis={synthesis}
+                position={positionByTopic.get(synthesis.topicId)}
+              />
             ))}
           </>
         )}
@@ -384,5 +470,10 @@ const styles = StyleSheet.create({
   dormantRow: {
     paddingVertical: Spacing[4],
     borderBottomWidth: 1,
+  },
+  positionCta: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: Spacing[4],
+    paddingVertical: Spacing[3],
   },
 });
