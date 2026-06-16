@@ -516,3 +516,73 @@ export async function generateConvergenceSignal(args: {
     clearTimeout(timer);
   }
 }
+
+export async function evaluatePositionTension(args: {
+  topicName: string;
+  positionStatement: string;
+  captureTitle: string;
+  captureText: string;
+}): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  const systemPrompt = [
+    `A user has stated a position on "${args.topicName}". They just captured something new on the same topic.`,
+    "Determine if the new capture genuinely challenges, complicates, or undermines the stated position.",
+    "If yes: name the specific tension in 1-2 sentences — what exactly in the capture conflicts with what exactly in the position.",
+    "If the capture reinforces or is neutral to the position, return has_tension: false.",
+    "",
+    "Rules:",
+    "- Only flag genuine intellectual tension, not superficial disagreement.",
+    "- Name the exact claim in the capture that conflicts with the exact aspect of the position.",
+    "- Do not start the tension with 'This capture' or 'The new capture'.",
+    "- Bad: 'They disagree about free will.' Good: 'The capture's causal-closure argument removes the space the position's agent-causation claim requires.'",
+    "",
+    "Return strictly valid JSON (no markdown): {\"tension\": \"...\" | null, \"has_tension\": true | false}",
+  ].join("\n");
+
+  try {
+    const response = await fetch(OPENAI_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: JSON.stringify({
+              position: args.positionStatement,
+              capture_title: args.captureTitle,
+              capture_text: args.captureText.slice(0, 800),
+            }),
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = payload.choices?.[0]?.message?.content;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { tension?: unknown; has_tension?: boolean };
+    if (!parsed.has_tension || typeof parsed.tension !== "string" || parsed.tension.trim().length === 0) return null;
+
+    return parsed.tension.trim();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
