@@ -13,6 +13,9 @@ import type {
   OwnerProfile,
   PersonalIntelligenceResponse,
   UserPreference,
+  UserPosition,
+  SocraticThread,
+  SocraticMessage,
 } from '@/types/api';
 
 const BASE_URL =
@@ -190,6 +193,39 @@ export const api = {
     },
     intelligence() {
       return request<PersonalIntelligenceResponse>('/api/memory/intelligence');
+    },
+  },
+
+  positions: {
+    list() {
+      return request<UserPosition[]>('/api/positions');
+    },
+    create(body: { topicId: string; statement: string; captureCountAtCreation: number }) {
+      return request<UserPosition>('/api/positions', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+    },
+    getByTopic(topicId: string) {
+      return request<UserPosition>(`/api/positions/${topicId}`);
+    },
+    acknowledge(challengeId: string, revision?: string) {
+      return request<{ acknowledged: boolean }>(
+        `/api/positions/challenges/${challengeId}`,
+        { method: 'PATCH', body: JSON.stringify({ revision }) },
+      );
+    },
+  },
+
+  socratic: {
+    getThread(topicId: string) {
+      return request<SocraticThread>(`/api/socratic/${topicId}`);
+    },
+    reply(topicId: string, content: string) {
+      return request<{ userMessage: SocraticMessage; companionMessage: SocraticMessage }>(
+        `/api/socratic/${topicId}/reply`,
+        { method: 'POST', body: JSON.stringify({ content }) },
+      );
     },
   },
 };

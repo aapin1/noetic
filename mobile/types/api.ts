@@ -80,6 +80,7 @@ export interface CaptureResponse extends CapturedItem {
   edges: { fromItemId: string; toItemId: string; type: MemoryEdgeType; weight: number }[];
   threadContext: { topicName: string; captureCount: number } | null;
   recommendations: Recommendation[];
+  positionChallenge: CapturePositionChallenge | null;
 }
 
 export interface CaptureDetail extends CapturedItem {
@@ -230,6 +231,61 @@ export interface DormantThread {
   captureCount: number;
   lastCapturedAt: string;
   daysSilent: number;
+}
+
+export interface PositionChallengeItem {
+  id: string;
+  positionId: string;
+  capturedItemId: string | null;
+  capturedItem: {
+    id: string;
+    rawText: string | null;
+    contentItem: { title: string } | null;
+  } | null;
+  tension: string;
+  acknowledged: boolean;
+  revised: boolean;
+  revision: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserPosition {
+  id: string;
+  userId: string;
+  topicId: string;
+  topic: { name: string; slug: string };
+  statement: string;
+  captureCountAtCreation: number;
+  status: 'ACTIVE' | 'REVISED' | 'ABANDONED';
+  challenges: PositionChallengeItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SocraticMessage {
+  id: string;
+  threadId: string;
+  role: 'USER' | 'COMPANION';
+  content: string;
+  createdAt: string;
+}
+
+export interface SocraticThread {
+  id: string;
+  userId: string;
+  topicId: string;
+  topic: { name: string };
+  messages: SocraticMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CapturePositionChallenge {
+  challengeId: string;
+  positionId: string;
+  topicName: string;
+  tension: string;
 }
 
 export interface PersonalIntelligenceResponse {
