@@ -97,6 +97,17 @@ enum CognitiveEventType {
   NOVELTY_DETECTED
 }
 
+enum PositionStatus {
+  ACTIVE
+  REVISED
+  ABANDONED
+}
+
+enum SocraticRole {
+  USER
+  COMPANION
+}
+
 model User {
   id                  String             @id @default(cuid())
   email               String             @unique
@@ -132,6 +143,8 @@ model User {
   memoryEdges         MemoryEdge[]
   cognitiveEvents     CognitiveEvent[]
   preference          UserPreference?
+  positions           UserPosition[]
+  socraticThreads     SocraticThread[]
 }
 
 model Profile {
@@ -162,6 +175,8 @@ model Topic {
   contentTags ContentItemTopic[]
   logTags     LogEntryTopic[]
   capturedTags CapturedItemTopic[]
+  positions        UserPosition[]
+  socraticThreads  SocraticThread[]
 
   @@index([slug])
 }
@@ -536,6 +551,7 @@ model CapturedItem {
   edgesTo         MemoryEdge[]        @relation("EdgesTo")
   cognitiveEvents CognitiveEvent[]
   topics          CapturedItemTopic[]
+  positionChallenges PositionChallenge[]
 
   @@index([userId, capturedAt])
   @@index([userId, kind])
@@ -607,4 +623,63 @@ model UserPreference {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserPosition {
+  id                     String              @id @default(cuid())
+  userId                 String
+  topicId                String
+  statement              String              @db.Text
+  captureCountAtCreation Int                 @default(0)
+  status                 PositionStatus      @default(ACTIVE)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  user                   User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topic                  Topic               @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  challenges             PositionChallenge[]
+
+  @@unique([userId, topicId])
+  @@index([userId, createdAt])
+}
+
+model PositionChallenge {
+  id             String       @id @default(cuid())
+  positionId     String
+  capturedItemId String
+  tension        String       @db.Text
+  acknowledged   Boolean      @default(false)
+  revised        Boolean      @default(false)
+  revision       String?      @db.Text
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  position       UserPosition @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  capturedItem   CapturedItem @relation(fields: [capturedItemId], references: [id], onDelete: Cascade)
+
+  @@unique([positionId, capturedItemId])
+  @@index([positionId, createdAt])
+}
+
+model SocraticThread {
+  id        String            @id @default(cuid())
+  userId    String
+  topicId   String
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topic     Topic             @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  messages  SocraticMessage[]
+
+  @@unique([userId, topicId])
+  @@index([userId, updatedAt])
+}
+
+model SocraticMessage {
+  id        String         @id @default(cuid())
+  threadId  String
+  role      SocraticRole
+  content   String         @db.Text
+  createdAt DateTime       @default(now())
+  thread    SocraticThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
 }
