@@ -171,7 +171,7 @@ export const captureSchema = z.object({
 });
 
 export const captureListSchema = z.object({
-  limit: z.coerce.number().int().min(1).max(50).default(20),
+  limit: z.coerce.number().int().min(1).max(80).default(20),
 });
 
 export const memoryGraphSchema = z.object({
@@ -192,4 +192,18 @@ export const updatePreferencesSchema = z.object({
 export const captureUploadSchema = z.object({
   imageBase64: z.string().min(100).max(8_000_000),
   mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]).optional(),
+});
+
+export const createPositionSchema = z.object({
+  topicId: z.string().min(1),
+  statement: z.string().min(10).max(2000),
+  captureCountAtCreation: z.number().int().min(0).default(0),
+});
+
+export const acknowledgeSchema = z.object({
+  revision: z.string().min(10).max(2000).optional(),
+});
+
+export const socraticReplySchema = z.object({
+  content: z.string().min(1).max(4000),
 });
