@@ -17,18 +17,25 @@ export async function createPosition(args: {
   if (existing) {
     throw new AppError("POSITION_EXISTS", "A position already exists for this topic", 409);
   }
-  return db.userPosition.create({
-    data: {
-      userId: args.userId,
-      topicId: args.topicId,
-      statement: args.statement.trim(),
-      captureCountAtCreation: args.captureCountAtCreation,
-    },
-    include: {
-      topic: { select: { name: true, slug: true } },
-      challenges: true,
-    },
-  });
+  try {
+    return await db.userPosition.create({
+      data: {
+        userId: args.userId,
+        topicId: args.topicId,
+        statement: args.statement.trim(),
+        captureCountAtCreation: args.captureCountAtCreation,
+      },
+      include: {
+        topic: { select: { name: true, slug: true } },
+        challenges: true,
+      },
+    });
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'P2002') {
+      throw new AppError("POSITION_EXISTS", "A position already exists for this topic", 409);
+    }
+    throw err;
+  }
 }
 
 export async function getPositionsForUser(args: { userId: string; db?: DbClient }) {
@@ -94,6 +101,7 @@ export async function checkCaptureAgainstPositions(args: {
   const positions = await db.userPosition.findMany({
     where: { userId: args.userId, topicId: { in: args.topicIds }, status: "ACTIVE" },
     include: { topic: { select: { name: true } } },
+    orderBy: { createdAt: "desc" },
     take: 1,
   });
 
@@ -109,12 +117,10 @@ export async function checkCaptureAgainstPositions(args: {
 
   if (!tension) return null;
 
-  const challenge = await db.positionChallenge.create({
-    data: {
-      positionId: position.id,
-      capturedItemId: args.capturedItemId,
-      tension,
-    },
+  const challenge = await db.positionChallenge.upsert({
+    where: { positionId_capturedItemId: { positionId: position.id, capturedItemId: args.capturedItemId } },
+    create: { positionId: position.id, capturedItemId: args.capturedItemId, tension },
+    update: {},
   });
 
   return {
@@ -133,6 +139,7 @@ export async function acknowledgeChallenge(args: {
 }) {
   const db = args.db ?? prisma;
 
+  // verify ownership outside tx (read-only, cheap)
   const challenge = await db.positionChallenge.findUnique({
     where: { id: args.challengeId },
     include: { position: { select: { userId: true, id: true } } },
@@ -142,11 +149,13 @@ export async function acknowledgeChallenge(args: {
     throw new AppError("CHALLENGE_NOT_FOUND", "Challenge not found", 404);
   }
 
-  if (challenge.acknowledged) {
-    throw new AppError("ALREADY_ACKNOWLEDGED", "Challenge already acknowledged", 409);
-  }
-
   await db.$transaction(async (tx) => {
+    const locked = await tx.positionChallenge.findUnique({
+      where: { id: args.challengeId },
+    });
+    if (!locked || locked.acknowledged) {
+      throw new AppError("ALREADY_ACKNOWLEDGED", "Challenge already acknowledged", 409);
+    }
     await tx.positionChallenge.update({
       where: { id: args.challengeId },
       data: {
@@ -155,7 +164,6 @@ export async function acknowledgeChallenge(args: {
         revision: args.revision?.trim() ?? null,
       },
     });
-
     if (args.revision) {
       await tx.userPosition.update({
         where: { id: challenge.position.id },
