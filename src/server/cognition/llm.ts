@@ -586,3 +586,156 @@ export async function evaluatePositionTension(args: {
     clearTimeout(timer);
   }
 }
+
+export async function generateSocraticOpening(args: {
+  topicName: string;
+  positionStatement: string | null;
+  captures: { label: string; keyIdea: string | null; text: string }[];
+}): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  const positionNote = args.positionStatement
+    ? `The user has stated a position: "${args.positionStatement}". Open by probing the assumption this position most depends on.`
+    : "The user has not yet stated a position. Open by identifying the unresolved tension in what they've captured.";
+
+  const systemPrompt = [
+    `You are the Socratic companion in Mneme, a personal memory map for a user exploring "${args.topicName}".`,
+    "Your role: engage them in genuine philosophical dialogue — not to teach, not to validate, but to find the precise point where their thinking is not yet resolved.",
+    "",
+    positionNote,
+    "",
+    "Rules:",
+    "- Do not summarize what they've read.",
+    "- Identify one specific tension or unresolved assumption in their captures.",
+    "- Ask exactly one question. Precise. Genuinely answerable with more thought.",
+    "- Do not start with 'Great!', affirmations, or 'You've been exploring'.",
+    "- 2–4 sentences maximum. The question is the last sentence.",
+    "",
+    "Return strictly valid JSON (no markdown): {\"challenge\": \"...\"}",
+  ].join("\n");
+
+  try {
+    const response = await fetch(OPENAI_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+        temperature: 0.5,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: JSON.stringify({
+              topic: args.topicName,
+              captures: args.captures.map((c) => ({
+                title: c.label,
+                key_idea: c.keyIdea ?? "",
+                excerpt: c.text.slice(0, 300),
+              })),
+            }),
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = payload.choices?.[0]?.message?.content;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { challenge?: unknown };
+    if (typeof parsed.challenge !== "string" || parsed.challenge.trim().length === 0) return null;
+
+    return parsed.challenge.trim();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function generateSocraticResponse(args: {
+  topicName: string;
+  positionStatement: string | null;
+  captures: { label: string; keyIdea: string | null }[];
+  conversationHistory: { role: "USER" | "COMPANION"; content: string }[];
+  userReply: string;
+}): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  const positionNote = args.positionStatement
+    ? `The user's stated position: "${args.positionStatement}".`
+    : "The user has not yet stated a position.";
+
+  const systemPrompt = [
+    `You are the Socratic companion in a personal memory map for a user exploring "${args.topicName}".`,
+    positionNote,
+    "You have read all their captures on this topic. You know their thinking better than they do.",
+    "",
+    "The user has just replied to your last challenge. Generate the next Socratic response.",
+    "",
+    "Rules:",
+    "- Do not repeat or paraphrase what the user said.",
+    "- Identify where their reply contains an unstated assumption, a loose move, or a productive contradiction with something they've captured.",
+    "- Acknowledge what's solid in their reply in one clause at most, then immediately pivot to the pressure point.",
+    "- Ask exactly one follow-up question. It must be more specific than the last one — zoom in, don't zoom out.",
+    "- 2–4 sentences maximum.",
+    "",
+    "Return strictly valid JSON (no markdown): {\"challenge\": \"...\"}",
+  ].join("\n");
+
+  const messages = [
+    { role: "system" as const, content: systemPrompt },
+    ...args.conversationHistory.map((m) => ({
+      role: m.role === "USER" ? ("user" as const) : ("assistant" as const),
+      content: m.content,
+    })),
+    { role: "user" as const, content: args.userReply },
+  ];
+
+  try {
+    const response = await fetch(OPENAI_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+        temperature: 0.5,
+        response_format: { type: "json_object" },
+        messages,
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = payload.choices?.[0]?.message?.content;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { challenge?: unknown };
+    if (typeof parsed.challenge !== "string" || parsed.challenge.trim().length === 0) return null;
+
+    return parsed.challenge.trim();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
