@@ -645,7 +645,7 @@ model UserPosition {
 model PositionChallenge {
   id             String       @id @default(cuid())
   positionId     String
-  capturedItemId String
+  capturedItemId String?
   tension        String       @db.Text
   acknowledged   Boolean      @default(false)
   revised        Boolean      @default(false)
@@ -653,10 +653,11 @@ model PositionChallenge {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   position       UserPosition @relation(fields: [positionId], references: [id], onDelete: Cascade)
-  capturedItem   CapturedItem @relation(fields: [capturedItemId], references: [id], onDelete: Cascade)
+  capturedItem   CapturedItem? @relation(fields: [capturedItemId], references: [id], onDelete: SetNull)
 
   @@unique([positionId, capturedItemId])
   @@index([positionId, createdAt])
+  @@index([capturedItemId])
 }
 
 model SocraticThread {
