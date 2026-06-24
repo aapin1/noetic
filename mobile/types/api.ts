@@ -114,6 +114,11 @@ export interface MemoryGraphResponse {
     count: number;
     itemIds: string[];
   }[];
+  positions: {
+    topicId: string;
+    statement: string;
+    status: 'ACTIVE' | 'REVISED' | 'ABANDONED';
+  }[];
 }
 
 export interface MemoryTrendsResponse {

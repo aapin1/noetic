@@ -57,6 +57,7 @@ export async function getMemoryGraph(args: {
   nodes: GraphNode[];
   edges: GraphEdge[];
   clusters: GraphCluster[];
+  positions: { topicId: string; statement: string; status: string }[];
 }> {
   const db = args.db ?? prisma;
   const limit = Math.min(Math.max(args.limit ?? GRAPH_LIMIT_DEFAULT, 10), 200);
@@ -121,6 +122,11 @@ export async function getMemoryGraph(args: {
     }
   }
 
+  const positions = await db.userPosition.findMany({
+    where: { userId: args.userId, status: { not: "ABANDONED" } },
+    select: { topicId: true, statement: true, status: true },
+  });
+
   return {
     nodes,
     edges: edges.map((edge) => ({
@@ -130,6 +136,7 @@ export async function getMemoryGraph(args: {
       weight: edge.weight,
     })),
     clusters: Array.from(clusterMap.values()).sort((a, b) => b.count - a.count),
+    positions,
   };
 }
 
@@ -244,6 +251,7 @@ export async function getMemoryTrends(args: {
       type: event.type,
       payload: event.payload,
       occurredAt: event.occurredAt,
+      capturedItemId: event.capturedItemId,
     })),
   };
 }

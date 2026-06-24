@@ -634,6 +634,7 @@ export default function MapScreen() {
   const nodes = graphData?.nodes ?? [];
   const edges = graphData?.edges ?? [];
   const clusters = graphData?.clusters ?? [];
+  const positionedTopics = new Set((graphData?.positions ?? []).map((p) => p.topicId));
 
   const rawPos = useMemo(() => layoutGraph(nodes, clusters, edges, LAYOUT_W, LAYOUT_H), [nodes, clusters, edges]);
   const pos = useMemo(() => applyLayoutOffset(rawPos), [rawPos]);
@@ -1084,6 +1085,21 @@ export default function MapScreen() {
                   letterSpacing={3.5}
                 >
                   {cl.name.toUpperCase()}
+                </SvgText>
+              ))}
+
+              {/* Position thesis node indicators */}
+              {clusterLabels.filter((cl) => positionedTopics.has(cl.topicId)).map((cl) => (
+                <SvgText
+                  key={`cl-position-${cl.topicId}`}
+                  x={cl.x}
+                  y={cl.y + 14}
+                  fontSize={8}
+                  fill={clusterColorMap.get(cl.topicId) ?? c.text}
+                  fillOpacity={0.8}
+                  textAnchor="middle"
+                >
+                  ◆
                 </SvgText>
               ))}
 
