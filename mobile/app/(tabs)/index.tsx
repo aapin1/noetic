@@ -634,7 +634,10 @@ export default function MapScreen() {
   const nodes = graphData?.nodes ?? [];
   const edges = graphData?.edges ?? [];
   const clusters = graphData?.clusters ?? [];
-  const positionedTopics = new Set((graphData?.positions ?? []).map((p) => p.topicId));
+  const positionedTopics = useMemo(
+    () => new Set((graphData?.positions ?? []).map((p) => p.topicId)),
+    [graphData?.positions],
+  );
 
   const rawPos = useMemo(() => layoutGraph(nodes, clusters, edges, LAYOUT_W, LAYOUT_H), [nodes, clusters, edges]);
   const pos = useMemo(() => applyLayoutOffset(rawPos), [rawPos]);

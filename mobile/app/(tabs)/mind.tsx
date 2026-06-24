@@ -250,7 +250,7 @@ export default function MindScreen() {
     [],
   );
 
-  const { data: positions } = useApiQuery(
+  const { data: positions, refetch: refetchPositions } = useApiQuery(
     () => api.positions.list(),
     [],
   );
@@ -258,7 +258,8 @@ export default function MindScreen() {
   useFocusEffect(
     useCallback(() => {
       void refetch();
-    }, [refetch]),
+      void refetchPositions();
+    }, [refetch, refetchPositions]),
   );
 
   const positionByTopic = new Map((positions ?? []).map((p) => [p.topicId, p]));
@@ -272,7 +273,8 @@ export default function MindScreen() {
     data.threadSyntheses.length === 0 &&
     data.convergenceSignals.length === 0 &&
     data.evolutionArcs.length === 0 &&
-    data.dormantThreads.length === 0;
+    data.dormantThreads.length === 0 &&
+    (positions ?? []).length === 0;
 
   if (loading && !data) {
     return (
@@ -503,6 +505,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     textTransform: 'uppercase',
     letterSpacing: 1,
+    marginTop: Spacing[10],
     marginBottom: Spacing[2],
     paddingHorizontal: Spacing[4],
   },
