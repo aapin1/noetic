@@ -199,6 +199,7 @@ function PositionCard({
   onTakePosition?: () => void;
 }) {
   const c = useThemeColors();
+  const router = useRouter();
   const pending = position?.challenges.filter((ch) => !ch.acknowledged).length ?? 0;
 
   if (!position) {
@@ -231,6 +232,12 @@ function PositionCard({
           {position.status === 'REVISED' ? 'Revised · ' : ''}{position.captureCountAtCreation} captures at creation
         </Text>
       </View>
+      <Pressable
+        onPress={() => router.push({ pathname: '/socratic/[topicId]' as never, params: { topicId: position.topicId } })}
+        style={[styles.positionCta, { borderTopColor: c.borderSubtle }]}
+      >
+        <Text variant="monoSmall" color="muted">Open Socratic dialogue →</Text>
+      </Pressable>
     </Pressable>
   );
 }
@@ -326,6 +333,23 @@ export default function MindScreen() {
               />
             ))}
           </>
+        )}
+
+        {(positions ?? []).length > 0 && (
+          <View>
+            <Text variant="monoSmall" color="muted" style={styles.sectionHeader}>
+              Positions
+            </Text>
+            {(positions ?? []).map((position) => (
+              <PositionCard
+                key={position.topicId}
+                position={position}
+                onNavigate={() =>
+                  router.push({ pathname: '/position/[topicId]' as never, params: { topicId: position.topicId } })
+                }
+              />
+            ))}
+          </View>
         )}
 
         {(data?.threadSyntheses.length ?? 0) > 0 && (
@@ -475,5 +499,11 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: Spacing[4],
     paddingVertical: Spacing[3],
+  },
+  sectionHeader: {
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: Spacing[2],
+    paddingHorizontal: Spacing[4],
   },
 });
