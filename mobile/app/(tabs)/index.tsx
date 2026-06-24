@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import Svg, {
   Circle,
@@ -26,10 +26,10 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
-import { Box, Hand, MousePointer2, Search } from 'lucide-react-native';
+import { Hand, MousePointer2, Search } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
+import { FontFamily, FontSize, Radius, Spacing, darkColors } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import type { AppThemeColors } from '@/constants/theme';
@@ -117,6 +117,7 @@ function layoutGraph(
 
   const majorClusters = clusters.filter((cl) => cl.count >= MAJOR_CLUSTER_MIN);
 
+  // ── Initial placement ─────────────────────────────────────────
   if (majorClusters.length === 0) {
     nodes.forEach((node, i) => {
       const rng = seededRng(hashId(node.id));
@@ -134,9 +135,7 @@ function layoutGraph(
       const angle = (i / majorClusters.length) * Math.PI * 2 - Math.PI / 2;
       centres[cl.topicId] = { x: cx + cr * Math.cos(angle), y: cy + cr * Math.sin(angle) };
     });
-
     const topicToCentre = new Map<string, { x: number; y: number }>(Object.entries(centres));
-
     nodes.forEach((node) => {
       const anchorTopic = node.topics.find((t) => topicToCentre.has(t.topicId));
       const centre = anchorTopic ? topicToCentre.get(anchorTopic.topicId)! : { x: cx, y: cy };
@@ -150,32 +149,86 @@ function layoutGraph(
     });
   }
 
-  // ── Edge-based attraction/repulsion ────────────────────────────────────────
-  // Apply multiple passes so transitively related nodes converge correctly.
-  const nodeSet = new Set(nodes.map((n) => n.id));
-  const PASSES = 3;
+  // ── Force-directed settle ─────────────────────────────────────
+  const nodeList = nodes.map((n) => n.id);
+  const nodeSet = new Set(nodeList);
+  const ITERATIONS = 20;
+  const K_REPEL = 1800;
+  const MAX_DISP = 40;
 
-  for (let pass = 0; pass < PASSES; pass++) {
+  const topicToNodes = new Map<string, string[]>();
+  for (const node of nodes) {
+    for (const t of node.topics) {
+      const arr = topicToNodes.get(t.topicId) ?? [];
+      arr.push(node.id);
+      topicToNodes.set(t.topicId, arr);
+    }
+  }
+
+  for (let iter = 0; iter < ITERATIONS; iter++) {
+    const damping = 1 - iter / ITERATIONS;
+    const disp: Record<string, { dx: number; dy: number }> = {};
+    for (const id of nodeList) disp[id] = { dx: 0, dy: 0 };
+
+    // Repulsion — all pairs push apart
+    for (let i = 0; i < nodeList.length; i++) {
+      for (let j = i + 1; j < nodeList.length; j++) {
+        const a = pos[nodeList[i]]!;
+        const b = pos[nodeList[j]]!;
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        const distSq = Math.max(1, dx * dx + dy * dy);
+        const force = K_REPEL / distSq;
+        const dist = Math.sqrt(distSq);
+        disp[nodeList[i]]!.dx += (dx / dist) * force;
+        disp[nodeList[i]]!.dy += (dy / dist) * force;
+        disp[nodeList[j]]!.dx -= (dx / dist) * force;
+        disp[nodeList[j]]!.dy -= (dy / dist) * force;
+      }
+    }
+
+    // Edge attraction
     for (const edge of edges) {
       if (!nodeSet.has(edge.fromItemId) || !nodeSet.has(edge.toItemId)) continue;
-      const a = pos[edge.fromItemId];
-      const b = pos[edge.toItemId];
-      if (!a || !b) continue;
-
+      const a = pos[edge.fromItemId]!;
+      const b = pos[edge.toItemId]!;
       const basePull = EDGE_PULL[edge.type] ?? 0.12;
-      // Scale pull by edge weight so stronger semantic links pull harder
       const factor = basePull * Math.min(edge.weight * 1.8, 1.0);
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      disp[edge.fromItemId]!.dx += dx * factor;
+      disp[edge.fromItemId]!.dy += dy * factor;
+      disp[edge.toItemId]!.dx -= dx * factor;
+      disp[edge.toItemId]!.dy -= dy * factor;
+    }
 
-      const midX = (a.x + b.x) / 2;
-      const midY = (a.y + b.y) / 2;
+    // Topic bonding — shared topic attracts even without explicit edge
+    for (const members of topicToNodes.values()) {
+      if (members.length < 2) continue;
+      for (let i = 0; i < members.length; i++) {
+        for (let j = i + 1; j < members.length; j++) {
+          const a = pos[members[i]]!;
+          const b = pos[members[j]]!;
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const factor = 0.06;
+          disp[members[i]]!.dx += dx * factor;
+          disp[members[i]]!.dy += dy * factor;
+          disp[members[j]]!.dx -= dx * factor;
+          disp[members[j]]!.dy -= dy * factor;
+        }
+      }
+    }
 
-      pos[edge.fromItemId] = {
-        x: Math.max(pad, Math.min(w - pad, a.x + (midX - a.x) * factor)),
-        y: Math.max(pad, Math.min(h - pad, a.y + (midY - a.y) * factor)),
-      };
-      pos[edge.toItemId] = {
-        x: Math.max(pad, Math.min(w - pad, b.x + (midX - b.x) * factor)),
-        y: Math.max(pad, Math.min(h - pad, b.y + (midY - b.y) * factor)),
+    // Apply with damping and clamping
+    for (const id of nodeList) {
+      const d = disp[id]!;
+      const mag = Math.sqrt(d.dx * d.dx + d.dy * d.dy);
+      const scale = mag > MAX_DISP ? (MAX_DISP / mag) * damping : damping;
+      const p = pos[id]!;
+      pos[id] = {
+        x: Math.max(pad, Math.min(w - pad, p.x + d.dx * scale)),
+        y: Math.max(pad, Math.min(h - pad, p.y + d.dy * scale)),
       };
     }
   }
@@ -430,84 +483,6 @@ function StepThree({
   );
 }
 
-// ── Node info card ──────────────────────────────────────────────
-
-function NodeCard({
-  node, onClose, onViewInsight, c,
-}: {
-  node: GraphNode; onClose: () => void; onViewInsight: (id: string) => void; c: AppThemeColors;
-}) {
-  const date = new Date(node.capturedAt);
-  const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-  return (
-    <View style={[nc.card, { backgroundColor: c.elevated, borderColor: c.border }]}>
-      <View style={nc.cardHeader}>
-        <View style={nc.cardMeta}>
-          <View style={[nc.kindBadge, { borderColor: c.borderSubtle }]}>
-            <Text variant="monoSmall" style={{ color: c.faint, fontSize: 9 }}>{node.kind.toLowerCase()}</Text>
-          </View>
-          <Text variant="monoSmall" style={{ color: c.faint }}>{dateStr}</Text>
-        </View>
-        <Pressable onPress={onClose} hitSlop={16} accessibilityLabel="Close">
-          <Text variant="monoSmall" style={{ color: c.muted, fontSize: 16 }}>✕</Text>
-        </Pressable>
-      </View>
-      <Text variant="serifLg" color="primary" numberOfLines={3} style={nc.title}>
-        {node.label}
-      </Text>
-      {!!node.keyIdea && (
-        <Text variant="monoSmall" style={[nc.keyIdea, { color: c.muted }]} numberOfLines={3}>
-          {node.keyIdea}
-        </Text>
-      )}
-      {!!node.reaction && (
-        <Text variant="monoSmall" style={[nc.reaction, { color: c.muted }]} numberOfLines={2}>
-          "{node.reaction}"
-        </Text>
-      )}
-      {node.topics.length > 0 && (
-        <View style={nc.topics}>
-          {node.topics.slice(0, 5).map((t) => (
-            <View key={t.topicId} style={[nc.chip, { borderColor: c.borderSubtle }]}>
-              <Text variant="monoSmall" style={{ color: c.faint }}>· {t.name}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-      <Pressable
-        onPress={() => onViewInsight(node.id)}
-        style={[nc.insightBtn, { backgroundColor: c.text }]}
-      >
-        <Text variant="monoSmall" style={{ color: c.background }}>view insight →</Text>
-      </Pressable>
-    </View>
-  );
-}
-
-const nc = StyleSheet.create({
-  card: {
-    borderTopWidth: 1,
-    paddingHorizontal: Spacing[6],
-    paddingTop: Spacing[4],
-    // Reserve space below the card content so it clears the tab bar
-    paddingBottom: TAB_H + Spacing[3],
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 16,
-  },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing[3] },
-  cardMeta: { flexDirection: 'row', gap: Spacing[3], alignItems: 'center' },
-  kindBadge: { borderWidth: 1, borderRadius: Radius.xs, paddingVertical: 2, paddingHorizontal: 6 },
-  title: { marginBottom: Spacing[3] },
-  keyIdea: { marginBottom: Spacing[3], lineHeight: 16 },
-  reaction: { marginBottom: Spacing[3], fontStyle: 'italic' },
-  topics: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: Spacing[4] },
-  chip: { borderWidth: 1, borderRadius: Radius.xs, paddingVertical: 2, paddingHorizontal: Spacing[2] },
-  insightBtn: { alignSelf: 'flex-start', paddingVertical: Spacing[2], paddingHorizontal: Spacing[4], borderRadius: Radius.xs },
-});
 
 const sh = StyleSheet.create({
   divider: { height: 1, marginVertical: Spacing[5] },
@@ -530,12 +505,10 @@ const sh = StyleSheet.create({
 type ToolMode = 'move' | 'select' | 'search';
 
 function Toolbar({
-  toolMode, setToolMode, is25D, toggle25D, c,
+  toolMode, setToolMode, c,
 }: {
   toolMode: ToolMode;
   setToolMode: (m: ToolMode) => void;
-  is25D: boolean;
-  toggle25D: () => void;
   c: AppThemeColors;
 }) {
   const iconColor = (active: boolean) => (active ? c.text : c.muted);
@@ -563,15 +536,6 @@ function Toolbar({
           </React.Fragment>
         );
       })}
-      <View style={[tb.sep, { backgroundColor: c.border }]} />
-      <Pressable
-        onPress={toggle25D}
-        style={[tb.btn, is25D && { backgroundColor: c.surface }]}
-        accessibilityLabel={is25D ? 'Flat view' : '2.5D sphere view'}
-        accessibilityRole="button"
-      >
-        <Box size={18} color={iconColor(is25D)} strokeWidth={1.5} />
-      </Pressable>
     </View>
   );
 }
@@ -631,14 +595,11 @@ export default function MapScreen() {
     [],
   );
 
+  useFocusEffect(useCallback(() => { void refetchGraph(); }, [refetchGraph]));
+
   const nodes = graphData?.nodes ?? [];
   const edges = graphData?.edges ?? [];
   const clusters = graphData?.clusters ?? [];
-  const positionedTopics = useMemo(
-    () => new Set((graphData?.positions ?? []).map((p) => p.topicId)),
-    [graphData?.positions],
-  );
-
   const rawPos = useMemo(() => layoutGraph(nodes, clusters, edges, LAYOUT_W, LAYOUT_H), [nodes, clusters, edges]);
   const pos = useMemo(() => applyLayoutOffset(rawPos), [rawPos]);
   const clusterLabels = useMemo(() => clusterLabelPositions(clusters, LAYOUT_W, LAYOUT_H), [clusters]);
@@ -675,8 +636,8 @@ export default function MapScreen() {
   const savedVB = useRef({ x: INIT_VB_X, y: INIT_VB_Y });
   const [vbPos, setVbPos] = useState({ x: INIT_VB_X, y: INIT_VB_Y });
 
-  const savedZoom = useRef(1.0);
-  const [zoom, setZoom] = useState(1.0);
+  const savedZoom = useRef(0.4);
+  const [zoom, setZoom] = useState(0.4);
 
   // Track pinch start state inside PanResponder (accessed via ref)
   const pinchStartRef = useRef<{ dist: number; zoom: number } | null>(null);
@@ -685,9 +646,44 @@ export default function MapScreen() {
     const nx = INIT_VB_X;
     const ny = INIT_VB_Y;
     savedVB.current = { x: nx, y: ny };
-    savedZoom.current = 1.0;
+    savedZoom.current = 0.4;
     setVbPos({ x: nx, y: ny });
-    setZoom(1.0);
+    setZoom(0.4);
+  }, []);
+
+  // ── Smooth camera transition ────────────────────────────────
+  const animCancelRef = useRef<(() => void) | null>(null);
+
+  const animateCamera = useCallback((targetX: number, targetY: number, targetZoom: number, duration = 900) => {
+    if (animCancelRef.current) animCancelRef.current();
+    const startX = savedVB.current.x;
+    const startY = savedVB.current.y;
+    const startZ = savedZoom.current;
+    const startTime = Date.now();
+    let frameId: number;
+    let cancelled = false;
+    const easeInOutCubic = (t: number) =>
+      t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const frame = () => {
+      if (cancelled) return;
+      const elapsed = Date.now() - startTime;
+      const t = Math.min(1, elapsed / duration);
+      const eased = easeInOutCubic(t);
+      const x = startX + (targetX - startX) * eased;
+      const y = startY + (targetY - startY) * eased;
+      const z = startZ + (targetZoom - startZ) * eased;
+      const vbW2 = SW / z;
+      const vbH2 = SH / z;
+      const cx = clampVBX(x, vbW2);
+      const cy = clampVBY(y, vbH2);
+      savedVB.current = { x: cx, y: cy };
+      savedZoom.current = z;
+      setVbPos({ x: cx, y: cy });
+      setZoom(z);
+      if (t < 1) frameId = requestAnimationFrame(frame);
+    };
+    frameId = requestAnimationFrame(frame);
+    animCancelRef.current = () => { cancelled = true; cancelAnimationFrame(frameId); };
   }, []);
 
   const centerOnNodes = useCallback(() => {
@@ -790,37 +786,38 @@ export default function MapScreen() {
     }),
   ).current;
 
-  // ── 2.5D tilt ──────────────────────────────────────────────
-  const tiltAnim = useRef(new RNAnimated.Value(0)).current;
-  const [is25D, setIs25D] = useState(false);
+  // ── Drawer state ────────────────────────────────────────────
+  const DRAWER_W = SW * 0.76;
+  type ClusterLabel = ReturnType<typeof clusterLabelPositions>[0];
+  const [drawerVisible, setDrawerVisible] = useState(false);
+  const [drawerCluster, setDrawerCluster] = useState<ClusterLabel | null>(null);
+  // right:0 anchors the drawer to the right edge; translateX:0 = fully visible, translateX:DRAWER_W = off-screen
+  const drawerX = useRef(new RNAnimated.Value(DRAWER_W)).current;
 
-  const toggle25D = useCallback(() => {
-    const next = !is25D;
-    setIs25D(next);
-    RNAnimated.timing(tiltAnim, {
-      toValue: next ? 1 : 0,
-      duration: 500,
-      useNativeDriver: false,
-    }).start();
-  }, [is25D, tiltAnim]);
+  const openDrawer = useCallback((cluster?: ClusterLabel | null) => {
+    if (cluster !== undefined) setDrawerCluster(cluster ?? null);
+    setDrawerVisible(true);
+    RNAnimated.timing(drawerX, { toValue: 0, duration: 320, useNativeDriver: true }).start();
+  }, [drawerX]);
 
-  const tiltStyle = {
-    transform: [
-      { perspective: 800 },
-      {
-        rotateX: tiltAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: ['0deg', '26deg'],
-        }),
-      },
-      {
-        scaleY: tiltAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [1, 1.14],
-        }),
-      },
-    ],
-  };
+  const closeDrawer = useCallback(() => {
+    RNAnimated.timing(drawerX, { toValue: DRAWER_W, duration: 260, useNativeDriver: true }).start(() => {
+      setDrawerVisible(false);
+      setDrawerCluster(null);
+      setSelectedNode(null);
+    });
+  }, [drawerX, DRAWER_W]);
+
+  const handleClusterTap = useCallback((cl: ClusterLabel) => {
+    const targetZoom = 1.8;
+    const vbW2 = SW / targetZoom;
+    const vbH2 = SH / targetZoom;
+    animateCamera(cl.x - vbW2 / 2, cl.y - vbH2 / 2, targetZoom);
+    setDrawerCluster(cl);
+    setSelectedNode(null);
+    openDrawer(cl);
+  }, [animateCamera, openDrawer]);
+
 
   // ── Node selection ──────────────────────────────────────────
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
@@ -853,6 +850,7 @@ export default function MapScreen() {
   }, [fabPulse]);
 
   const openCapture = useCallback(() => {
+    closeDrawer();
     setSelectedNode(null);
     setStep(1);
     setPayload('');
@@ -863,7 +861,7 @@ export default function MapScreen() {
     setShowCapture(true);
     slideY.setValue(SH);
     RNAnimated.spring(slideY, { toValue: 0, useNativeDriver: true, damping: 22, stiffness: 170 }).start();
-  }, [slideY]);
+  }, [closeDrawer, slideY]);
 
   const closeCapture = useCallback(() => {
     RNAnimated.timing(slideY, { toValue: SH, duration: 260, useNativeDriver: true }).start(() => {
@@ -945,9 +943,9 @@ export default function MapScreen() {
         const color = clusterColorMap.get(t.topicId);
         if (color) return color;
       }
-      return c.graphNode;
+      return darkColors.mapNode;
     },
-    [clusterColorMap, c.graphNode],
+    [clusterColorMap],
   );
 
   const vbW = SW / zoom;
@@ -986,14 +984,14 @@ export default function MapScreen() {
   })() : null;
 
   return (
-    <View style={[styles.root, { backgroundColor: c.background }]}>
+    <View style={[styles.root, { backgroundColor: darkColors.mapBackground }]}>
 
       {/* ── Static full-screen background — fills gaps exposed by 2.5D tilt ── */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <Svg width={SW} height={SH} style={StyleSheet.absoluteFill}>
           <Defs>
             <Pattern id="staticDotGrid" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
-              <Circle cx="16" cy="16" r="0.9" fill={c.text} fillOpacity={0.045} />
+              <Circle cx="16" cy="16" r="0.9" fill={darkColors.mapNode} fillOpacity={0.04} />
             </Pattern>
           </Defs>
           <Rect x="0" y="0" width={SW} height={SH} fill="url(#staticDotGrid)" />
@@ -1001,7 +999,7 @@ export default function MapScreen() {
       </View>
 
       {/* ── Pannable map canvas ── */}
-      <RNAnimated.View style={[StyleSheet.absoluteFill, tiltStyle]}>
+      <View style={StyleSheet.absoluteFill}>
         <View style={StyleSheet.absoluteFill} {...mapPan.panHandlers}>
 
           <Svg
@@ -1013,13 +1011,13 @@ export default function MapScreen() {
             <Defs>
               {/* Subtle dot grid repeating pattern */}
               <Pattern id="dotGrid" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
-                <Circle cx="16" cy="16" r="0.9" fill={c.text} fillOpacity={0.045} />
+                <Circle cx="16" cy="16" r="0.9" fill={darkColors.mapNode} fillOpacity={0.04} />
               </Pattern>
 
               {/* Warm ambient vignette */}
               <RadialGradient id="ambientGlow" cx="50%" cy="44%" r="48%" fx="50%" fy="44%">
-                <Stop offset="0%" stopColor={c.graphNode} stopOpacity={0.06} />
-                <Stop offset="100%" stopColor={c.graphNode} stopOpacity={0} />
+                <Stop offset="0%" stopColor={darkColors.mapNode} stopOpacity={0.06} />
+                <Stop offset="100%" stopColor={darkColors.mapNode} stopOpacity={0} />
               </RadialGradient>
 
               {/* Per-cluster fills */}
@@ -1048,8 +1046,8 @@ export default function MapScreen() {
 
               {/* Subtle background gradient — warm top, slightly cooler bottom */}
               <LinearGradient id="bgTone" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor={c.graphNode} stopOpacity={0.012} />
-                <Stop offset="100%" stopColor={c.graphNode} stopOpacity={0.03} />
+                <Stop offset="0%" stopColor={darkColors.mapNode} stopOpacity={0.012} />
+                <Stop offset="100%" stopColor={darkColors.mapNode} stopOpacity={0.03} />
               </LinearGradient>
             </Defs>
 
@@ -1075,36 +1073,27 @@ export default function MapScreen() {
                 );
               })}
 
-              {/* Cluster watermark labels */}
-              {clusterLabels.map((cl) => (
-                <SvgText
-                  key={`cl-label-${cl.topicId}`}
-                  x={cl.x} y={cl.y}
-                  fontSize={12}
-                  fontFamily={FontFamily.mono}
-                  fill={c.text}
-                  fillOpacity={0.09}
-                  textAnchor="middle"
-                  letterSpacing={3.5}
-                >
-                  {cl.name.toUpperCase()}
-                </SvgText>
-              ))}
-
-              {/* Position thesis node indicators */}
-              {clusterLabels.filter((cl) => positionedTopics.has(cl.topicId)).map((cl) => (
-                <SvgText
-                  key={`cl-position-${cl.topicId}`}
-                  x={cl.x}
-                  y={cl.y + 14}
-                  fontSize={8}
-                  fill={clusterColorMap.get(cl.topicId) ?? c.text}
-                  fillOpacity={0.8}
-                  textAnchor="middle"
-                >
-                  ◆
-                </SvgText>
-              ))}
+              {/* Cluster labels — large at low zoom, fade at high zoom */}
+              {clusterLabels.map((cl) => {
+                const clFontSize = Math.max(9, Math.min(22, 14 / zoom));
+                const clOpacity = zoom > 1.4
+                  ? Math.max(0, (1 - (zoom - 1.4) / 0.6) * 0.14)
+                  : 0.12 + (1 - zoom) * 0.10; // slightly more visible at low zoom
+                return (
+                  <SvgText
+                    key={`cl-label-${cl.topicId}`}
+                    x={cl.x} y={cl.y}
+                    fontSize={clFontSize}
+                    fontFamily={FontFamily.mono}
+                    fill={c.text}
+                    fillOpacity={Math.min(0.28, clOpacity)}
+                    textAnchor="middle"
+                    letterSpacing={3.5}
+                  >
+                    {cl.name.toUpperCase()}
+                  </SvgText>
+                );
+              })}
 
               {/* Edges */}
               {edges.map((e, i) => {
@@ -1117,14 +1106,14 @@ export default function MapScreen() {
                     key={`e${i}`}
                     x1={a.x} y1={a.y}
                     x2={b.x} y2={b.y}
-                    stroke={c.graphLine}
+                    stroke={darkColors.mapLine}
                     strokeWidth={0.7}
                     strokeOpacity={opacity}
                   />
                 );
               })}
 
-              {/* Nodes */}
+              {/* Nodes — fade in as zoom increases past 0.5 */}
               {nodes.map((node) => {
                 const p = pos[node.id];
                 if (!p) return null;
@@ -1135,52 +1124,21 @@ export default function MapScreen() {
 
                 const isHighlighted = hasSearch && highlightedIds.has(node.id);
                 const isDimmed = hasSearch && !highlightedIds.has(node.id);
-                const finalOpacity = isDimmed ? baseOpacity * 0.12 : baseOpacity;
 
-                if (is25D) {
-                  // Sphere rendering for 2.5D mode
-                  const sphereR = baseR * 1.55;
-                  return (
-                    <G key={node.id}>
-                      {/* Drop shadow */}
-                      <Circle
-                        cx={p.x + sphereR * 0.28}
-                        cy={p.y + sphereR * 0.42}
-                        r={sphereR * 1.15}
-                        fill={c.text}
-                        fillOpacity={isDimmed ? 0 : 0.09}
-                      />
-                      {/* Outer glow */}
-                      <Circle
-                        cx={p.x} cy={p.y} r={sphereR * 4.5}
-                        fill={color}
-                        fillOpacity={isDimmed ? 0 : (isHighlighted ? 0.12 : 0.04)}
-                      />
-                      {/* Sphere base */}
-                      <Circle
-                        cx={p.x} cy={p.y} r={sphereR}
-                        fill={isHighlighted ? color : color}
-                        fillOpacity={finalOpacity * 0.9}
-                      />
-                      {/* Sphere shine */}
-                      <Circle
-                        cx={p.x} cy={p.y} r={sphereR}
-                        fill="url(#sphereShine)"
-                        fillOpacity={isDimmed ? 0 : 0.85}
-                      />
-                    </G>
-                  );
-                }
+                // Nodes emerge as user zooms in
+                const zoomFade = zoom < 0.5 ? 0 : zoom < 0.9 ? (zoom - 0.5) / 0.4 : 1;
+                const finalOpacity = isDimmed
+                  ? baseOpacity * 0.12 * zoomFade
+                  : baseOpacity * zoomFade;
 
-                // Flat rendering
                 const glowR = isHighlighted ? baseR * 9 : baseR * 5.5;
                 return (
                   <G key={node.id}>
-                    <Circle cx={p.x} cy={p.y} r={glowR} fill={color} fillOpacity={isDimmed ? 0 : (isHighlighted ? 0.1 : 0.03)} />
-                    <Circle cx={p.x} cy={p.y} r={baseR * 2.8} fill={color} fillOpacity={isDimmed ? 0 : (isHighlighted ? 0.22 : 0.09)} />
+                    <Circle cx={p.x} cy={p.y} r={glowR} fill={color} fillOpacity={isDimmed ? 0 : (isHighlighted ? 0.1 : 0.03) * zoomFade} />
+                    <Circle cx={p.x} cy={p.y} r={baseR * 2.8} fill={color} fillOpacity={isDimmed ? 0 : (isHighlighted ? 0.22 : 0.09) * zoomFade} />
                     <Circle
                       cx={p.x} cy={p.y} r={isHighlighted ? baseR * 1.7 : baseR}
-                      fill={isHighlighted ? color : c.graphNode}
+                      fill={isHighlighted ? color : darkColors.mapNode}
                       fillOpacity={finalOpacity}
                     />
                   </G>
@@ -1198,7 +1156,7 @@ export default function MapScreen() {
                   cx={MAP_PAD + LAYOUT_W * rx}
                   cy={MAP_PAD + LAYOUT_H * ry}
                   r={2.5}
-                  fill={c.graphNode}
+                  fill={darkColors.mapNode}
                   fillOpacity={0.07}
                 />
               ))}
@@ -1228,8 +1186,37 @@ export default function MapScreen() {
                     top: screenY - HIT,
                     borderRadius: HIT,
                   }}
-                  onPress={() => setSelectedNode((prev) => prev?.id === node.id ? null : node)}
+                  onPress={() => {
+                    if (selectedNode?.id === node.id) {
+                      closeDrawer();
+                    } else {
+                      setSelectedNode(node);
+                      setDrawerCluster(null);
+                      openDrawer(null);
+                    }
+                  }}
                   accessibilityLabel={node.label}
+                  accessibilityRole="button"
+                />
+              );
+            })}
+            {/* Cluster label touch targets */}
+            {clusterLabels.map((cl) => {
+              const screenX = (cl.x - vbPos.x) * zoom;
+              const screenY = (cl.y - vbPos.y) * zoom;
+              if (screenX < -60 || screenX > SW + 60 || screenY < -30 || screenY > SH + 30) return null;
+              return (
+                <Pressable
+                  key={`cl-tap-${cl.topicId}`}
+                  style={{
+                    position: 'absolute',
+                    left: screenX - 52,
+                    top: screenY - 18,
+                    width: 104,
+                    height: 36,
+                  }}
+                  onPress={() => handleClusterTap(cl)}
+                  accessibilityLabel={`${cl.name} cluster`}
                   accessibilityRole="button"
                 />
               );
@@ -1241,7 +1228,7 @@ export default function MapScreen() {
         {/* ── New node landing animation ── */}
         {landingRing}
 
-      </RNAnimated.View>
+      </View>
 
       {/* ── Fixed overlay ── */}
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -1251,12 +1238,12 @@ export default function MapScreen() {
           style={[styles.header, { paddingTop: insets.top + 6 }]}
           pointerEvents="box-none"
         >
-          <Text variant="wordmark" color="primary">mneme</Text>
+          <Text variant="wordmark" color="primary">atlas</Text>
           <View style={styles.headerRight} pointerEvents="box-none">
             {graphLoading && (
               <Text variant="monoSmall" style={{ color: c.muted, letterSpacing: 2, marginRight: Spacing[3] }}>·</Text>
             )}
-            <Toolbar toolMode={toolMode} setToolMode={setToolMode} is25D={is25D} toggle25D={toggle25D} c={c} />
+            <Toolbar toolMode={toolMode} setToolMode={setToolMode} c={c} />
           </View>
         </View>
 
@@ -1295,14 +1282,20 @@ export default function MapScreen() {
         {/* ── Empty state ── */}
         {isEmpty && (
           <View style={styles.emptyHint} pointerEvents="none">
-            <Text variant="monoSmall" style={{ color: c.muted, textAlign: 'center', letterSpacing: 1.5 }}>
-              {'your memory map\nbegins with one save.'}
+            <Text variant="monoSmall" style={{ color: c.faint, textAlign: 'center', letterSpacing: 4, marginBottom: Spacing[5] }}>
+              · · ·
+            </Text>
+            <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[3] }}>
+              the atlas is empty
+            </Text>
+            <Text variant="monoSmall" style={{ color: c.faint, textAlign: 'center', lineHeight: 20 }}>
+              {'Save your first capture using\nthe + button below.'}
             </Text>
           </View>
         )}
 
         {/* ── Center + count (bottom-left) ── */}
-        {nodes.length > 0 && !showCapture && !selectedNode && (
+        {nodes.length > 0 && !showCapture && !drawerVisible && (
           <View style={[styles.mapMeta, { bottom: TAB_H + Spacing[5] }]} pointerEvents="box-none">
             <CenterFocusButton onPress={centerOnNodes} color={c.muted} borderColor={c.borderSubtle} />
             <Text variant="monoSmall" style={{ color: c.faint, marginLeft: Spacing[3] }}>
@@ -1311,26 +1304,104 @@ export default function MapScreen() {
           </View>
         )}
 
-        {/* ── Node info card — flush to bottom, content padded above tab bar ── */}
-        {selectedNode && !showCapture && (
-          <View
-            style={[styles.nodeCardWrap, { bottom: 0 }]}
-            pointerEvents="auto"
-          >
-            <NodeCard
-              node={selectedNode}
-              onClose={() => setSelectedNode(null)}
-              onViewInsight={(id) => {
-                setSelectedNode(null);
-                router.push(`/insight/${id}` as never);
-              }}
-              c={c}
+        {/* ── Right-side drawer for node / cluster details ── */}
+        {drawerVisible && !showCapture && (
+          <>
+            {/* Dim overlay on the left (pressable to dismiss) */}
+            <Pressable
+              style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.3)' }]}
+              onPress={closeDrawer}
+              accessibilityLabel="Close detail panel"
             />
-          </View>
+            <RNAnimated.View
+              style={[
+                styles.drawer,
+                {
+                  width: DRAWER_W,
+                  backgroundColor: c.background,
+                  borderLeftColor: c.border,
+                  transform: [{ translateX: drawerX }],
+                },
+              ]}
+              pointerEvents="auto"
+            >
+              <ScrollView
+                contentContainerStyle={[styles.drawerScroll, { paddingBottom: TAB_H + Spacing[8] }]}
+                showsVerticalScrollIndicator={false}
+              >
+                {/* Close row */}
+                <Pressable onPress={closeDrawer} style={styles.drawerClose}>
+                  <Text variant="monoSmall" style={{ color: c.muted }}>✕</Text>
+                </Pressable>
+
+                {/* Cluster detail */}
+                {drawerCluster && !selectedNode && (
+                  <View>
+                    <Text variant="h2" style={{ marginBottom: Spacing[2] }}>{drawerCluster.name}</Text>
+                    <Text variant="monoSmall" color="muted" style={{ marginBottom: Spacing[6] }}>
+                      {drawerCluster.count} {drawerCluster.count === 1 ? 'capture' : 'captures'}
+                    </Text>
+                    <View style={[styles.drawerHairline, { backgroundColor: c.border }]} />
+                    <Pressable
+                      onPress={() => router.push(`/position/${drawerCluster.topicId}` as never)}
+                      style={{ marginTop: Spacing[5] }}
+                    >
+                      <Text variant="monoSmall" color="muted">take a position →</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => router.push(`/socratic/${drawerCluster.topicId}` as never)}
+                      style={{ marginTop: Spacing[4] }}
+                    >
+                      <Text variant="monoSmall" color="muted">open dialogue →</Text>
+                    </Pressable>
+                  </View>
+                )}
+
+                {/* Node detail */}
+                {selectedNode && (
+                  <View>
+                    <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3] }}>
+                      {selectedNode.kind.toLowerCase()} · {new Date(selectedNode.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </Text>
+                    <Text variant="h3" style={{ marginBottom: Spacing[4] }} numberOfLines={4}>
+                      {selectedNode.label}
+                    </Text>
+                    {!!selectedNode.keyIdea && (
+                      <>
+                        <View style={[styles.drawerHairline, { backgroundColor: c.border }]} />
+                        <Text variant="monoSmall" style={{ color: c.muted, fontStyle: 'italic', marginTop: Spacing[3], marginBottom: Spacing[3] }} numberOfLines={3}>
+                          {selectedNode.keyIdea}
+                        </Text>
+                      </>
+                    )}
+                    {!!selectedNode.reaction && (
+                      <Text variant="monoSmall" style={{ color: c.muted, marginBottom: Spacing[4] }} numberOfLines={2}>
+                        "{selectedNode.reaction}"
+                      </Text>
+                    )}
+                    {selectedNode.topics.length > 0 && (
+                      <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[5] }}>
+                        {selectedNode.topics.slice(0, 4).map((t) => t.name).join(' · ')}
+                      </Text>
+                    )}
+                    <Pressable
+                      onPress={() => {
+                        closeDrawer();
+                        router.push(`/insight/${selectedNode.id}` as never);
+                      }}
+                      style={{ marginTop: Spacing[2] }}
+                    >
+                      <Text variant="monoSmall" color="muted">view insight →</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </ScrollView>
+            </RNAnimated.View>
+          </>
         )}
 
-        {/* ── FAB — only visible when no node card is open ── */}
-        {!showCapture && !selectedNode && (
+        {/* ── FAB — only visible when no drawer is open ── */}
+        {!showCapture && !drawerVisible && (
           <View style={[styles.fabWrap, { bottom: TAB_H + Spacing[5] }]} pointerEvents="box-none">
             <RNAnimated.View
               style={[styles.fabRing, { borderColor: c.text, opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
@@ -1476,10 +1547,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  nodeCardWrap: {
+  drawer: {
     position: 'absolute',
-    left: 0,
+    top: 0,
+    bottom: 0,
     right: 0,
+    borderLeftWidth: 1,
+  },
+  drawerScroll: {
+    paddingHorizontal: Spacing[6],
+    paddingTop: Spacing[8],
+  },
+  drawerClose: {
+    alignSelf: 'flex-end',
+    marginBottom: Spacing[6],
+    padding: Spacing[2],
+  },
+  drawerHairline: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: Spacing[4],
   },
   fabWrap: {
     position: 'absolute',

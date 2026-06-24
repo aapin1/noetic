@@ -293,6 +293,22 @@ export interface CapturePositionChallenge {
   tension: string;
 }
 
+export interface FeedItem {
+  id: string;
+  capturedAt: string;
+  title: string | null;
+  rawText: string | null;
+  keyIdea: string | null;
+  kind: CaptureKind;
+  topics: { topicId: string; name: string }[];
+  author: { id: string; handle: string; displayName: string; avatarUrl: string | null };
+}
+
+export interface FeedResponse {
+  items: FeedItem[];
+  nextCursor: string | null;
+}
+
 export interface PersonalIntelligenceResponse {
   contradictionCards: ContradictionCard[];
   threadSyntheses: ThreadSynthesis[];

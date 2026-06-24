@@ -1,17 +1,68 @@
-import React from 'react';
-import { Tabs } from 'expo-router';
+import React, { useState } from 'react';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Tabs, useRouter } from 'expo-router';
 import { Redirect } from 'expo-router';
-import { Platform } from 'react-native';
-import { GitGraphIcon, LineChartIcon, ListIcon, UserIcon, ZapIcon } from 'lucide-react-native';
-import { FontFamily, FontSize } from '@/constants/theme';
+import {
+  GitGraphIcon,
+  LineChartIcon,
+  ListIcon,
+  MessageCircleIcon,
+  UserIcon,
+  UsersIcon,
+  ZapIcon,
+} from 'lucide-react-native';
+import { FontFamily, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
+import { SocraticProvider, useSocratic } from '@/contexts/SocraticContext';
+import { api } from '@/lib/api';
 
 function TabBarIcon({ color, icon: Icon }: { color: string; icon: React.ElementType }) {
-  return <Icon size={20} color={color} strokeWidth={1.35} />;
+  return <Icon size={18} color={color} strokeWidth={1.2} />;
 }
 
-export default function TabsLayout() {
+function SocraticFab() {
+  const c = useThemeColors();
+  const router = useRouter();
+  const { topicId } = useSocratic();
+  const [loading, setLoading] = useState(false);
+
+  const handlePress = async () => {
+    if (loading) return;
+    let tid = topicId;
+    if (!tid) {
+      setLoading(true);
+      try {
+        const trends = await api.memory.trends();
+        tid = trends.themes[0]?.topicId ?? null;
+      } catch {
+        tid = null;
+      } finally {
+        setLoading(false);
+      }
+    }
+    if (!tid) return;
+    router.push({ pathname: '/socratic/[topicId]' as never, params: { topicId: tid } });
+  };
+
+  return (
+    <Pressable
+      onPress={() => void handlePress()}
+      disabled={loading}
+      style={[styles.fab, { borderColor: c.faint, backgroundColor: c.background }]}
+      accessibilityLabel="Open Socratic dialogue"
+      accessibilityRole="button"
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color={c.muted} />
+      ) : (
+        <MessageCircleIcon size={16} color={c.muted} strokeWidth={1.2} />
+      )}
+    </Pressable>
+  );
+}
+
+function TabsWithFab() {
   const c = useThemeColors();
   const { isAuthenticated, isLoading } = useAuth();
 
@@ -20,65 +71,98 @@ export default function TabsLayout() {
   }
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: c.text,
-        tabBarInactiveTintColor: c.faint,
-        tabBarLabelStyle: {
-          fontFamily: FontFamily.mono,
-          fontSize: FontSize.xs,
-          letterSpacing: 1.1,
-          marginBottom: Platform.OS === 'ios' ? 0 : 4,
-          textTransform: 'uppercase',
-        },
-        tabBarStyle: {
-          backgroundColor: c.tabBar,
-          borderTopWidth: 1,
-          borderTopColor: c.border,
-          height: Platform.OS === 'ios' ? 86 : 68,
-          paddingTop: 10,
-        },
-        tabBarItemStyle: {
-          paddingVertical: 4,
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Map',
-          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={GitGraphIcon} />,
+    <View style={styles.root}>
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarActiveTintColor: c.text,
+          tabBarInactiveTintColor: c.faint,
+          tabBarLabelStyle: {
+            fontFamily: FontFamily.mono,
+            fontSize: 9,
+            letterSpacing: 2,
+            marginBottom: Platform.OS === 'ios' ? 0 : 4,
+            textTransform: 'uppercase',
+          },
+          tabBarStyle: {
+            backgroundColor: c.tabBar,
+            borderTopWidth: 1,
+            borderTopColor: c.tabBarBorder,
+            height: Platform.OS === 'ios' ? 86 : 68,
+            paddingTop: 10,
+          },
+          tabBarItemStyle: {
+            paddingVertical: 4,
+          },
         }}
-      />
-      <Tabs.Screen
-        name="memory"
-        options={{
-          title: 'Log',
-          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={ListIcon} />,
-        }}
-      />
-      <Tabs.Screen
-        name="trends"
-        options={{
-          title: 'Drift',
-          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={LineChartIcon} />,
-        }}
-      />
-      <Tabs.Screen
-        name="mind"
-        options={{
-          title: 'Mind',
-          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={ZapIcon} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'You',
-          tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={UserIcon} />,
-        }}
-      />
-    </Tabs>
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: 'atlas',
+            tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={GitGraphIcon} />,
+          }}
+        />
+        <Tabs.Screen
+          name="memory"
+          options={{
+            title: 'archive',
+            tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={ListIcon} />,
+          }}
+        />
+        <Tabs.Screen
+          name="pulse"
+          options={{
+            title: 'pulse',
+            tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={UsersIcon} />,
+          }}
+        />
+        <Tabs.Screen
+          name="trends"
+          options={{
+            title: 'drift',
+            tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={LineChartIcon} />,
+          }}
+        />
+        <Tabs.Screen
+          name="mind"
+          options={{
+            title: 'mind',
+            tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={ZapIcon} />,
+          }}
+        />
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: 'you',
+            tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={UserIcon} />,
+          }}
+        />
+      </Tabs>
+      <SocraticFab />
+    </View>
   );
 }
+
+export default function TabsLayout() {
+  return (
+    <SocraticProvider>
+      <TabsWithFab />
+    </SocraticProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  fab: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 100 : 82,
+    right: Spacing[5],
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

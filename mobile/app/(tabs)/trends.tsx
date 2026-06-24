@@ -1,156 +1,219 @@
-import React, { useCallback, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import Svg, { Circle, G, Text as SvgText, Defs, RadialGradient, Stop, Rect } from 'react-native-svg';
+import { useFocusEffect } from 'expo-router';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { Radius, Spacing } from '@/constants/theme';
+import { Spacing, FontFamily } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
-import { Badge } from '@/components/ui/Badge';
-import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
+import type { MemoryTrendsResponse } from '@/types/api';
 
-export default function TrendsScreen() {
+const { width: SW } = Dimensions.get('window');
+const GALAXY_H = 280;
+const CLUSTER_PALETTE = [
+  '#6B9FD4','#9B84CC','#7EC8A0','#E8A87C','#E87878',
+  '#78C8C8','#C4A882','#A0B8D4','#CC84A0','#A8CC84',
+];
+
+type Theme = MemoryTrendsResponse['themes'][number];
+
+function computeGalaxyLayout(themes: Theme[], w: number, h: number) {
+  if (themes.length === 0) return [];
+  const cx = w / 2;
+  const cy = h / 2;
+  const maxTotal = Math.max(1, ...themes.map((t) => t.total));
+  const maxRadius = 48;
+  const minRadius = 12;
+
+  return themes.slice(0, 10).map((theme, i) => {
+    const r = minRadius + ((theme.total / maxTotal) * (maxRadius - minRadius));
+    const recencyRatio = theme.total > 0 ? theme.recent / theme.total : 0;
+    const orbitR = (1 - recencyRatio * 0.7) * (Math.min(w, h) * 0.38);
+    const angle = (i / Math.min(themes.length, 10)) * Math.PI * 2 - Math.PI / 2;
+    return {
+      ...theme,
+      x: cx + orbitR * Math.cos(angle),
+      y: cy + orbitR * Math.sin(angle),
+      r,
+      color: CLUSTER_PALETTE[i % CLUSTER_PALETTE.length] as string,
+    };
+  });
+}
+
+function TopicGalaxy({ data }: { data: MemoryTrendsResponse }) {
   const c = useThemeColors();
-  const router = useRouter();
+  const layout = useMemo(() => computeGalaxyLayout(data.themes, SW, GALAXY_H), [data.themes]);
+
+  if (layout.length === 0) {
+    return (
+      <View style={[styles.galaxyWrap, { height: GALAXY_H }]}>
+        <View style={styles.ghostCenter}>
+          <Text variant="monoSmall" style={{ color: c.faint, textAlign: 'center' }}>
+            {'your galaxy grows\nas you capture more'}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.galaxyWrap, { height: GALAXY_H }]}>
+      <Svg width={SW} height={GALAXY_H}>
+        <Defs>
+          <RadialGradient id="galaxyGlow" cx="50%" cy="50%" r="50%">
+            <Stop offset="0%" stopColor={c.text} stopOpacity={0.04} />
+            <Stop offset="100%" stopColor={c.text} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect x={0} y={0} width={SW} height={GALAXY_H} fill="url(#galaxyGlow)" />
+        {layout.map((item) => {
+          const showLabel = item.r >= 18;
+          return (
+            <G key={item.topicId}>
+              <Circle cx={item.x} cy={item.y} r={item.r * 2.2} fill={item.color} fillOpacity={0.06} />
+              <Circle cx={item.x} cy={item.y} r={item.r} fill={item.color} fillOpacity={0.72} />
+              {item.delta > 0 && (
+                <Circle cx={item.x} cy={item.y} r={item.r + 3} fill="none" stroke={item.color} strokeWidth={0.8} strokeOpacity={0.5} />
+              )}
+              {showLabel && (
+                <SvgText
+                  x={item.x}
+                  y={item.y + item.r + 11}
+                  fontSize={9}
+                  fontFamily={FontFamily.mono}
+                  fill={c.text}
+                  fillOpacity={0.5}
+                  textAnchor="middle"
+                  letterSpacing={1.5}
+                >
+                  {item.name.toUpperCase().slice(0, 14)}
+                </SvgText>
+              )}
+            </G>
+          );
+        })}
+      </Svg>
+    </View>
+  );
+}
+
+function PulseLine({ data }: { data: MemoryTrendsResponse }) {
+  const c = useThemeColors();
+  const rising = data.shifts.filter((s) => s.delta > 0).length;
+  const quieting = data.shifts.filter((s) => s.delta < 0).length;
+  const active = data.themes.length;
+  if (active === 0) return null;
+  const parts: string[] = [`${active} topic${active !== 1 ? 's' : ''} active`];
+  if (rising > 0) parts.push(`${rising} rising`);
+  if (quieting > 0) parts.push(`${quieting} quiet`);
+  return (
+    <Text variant="monoSmall" style={[styles.pulseLine, { color: c.muted }]}>
+      {parts.join('  ·  ')}
+    </Text>
+  );
+}
+
+function TensionRow({ ev }: { ev: MemoryTrendsResponse['events'][number] }) {
+  const c = useThemeColors();
+  const payload = ev.payload as Record<string, unknown> | null;
+  let text = '';
+  if (ev.type === 'CONTRADICTION_DETECTED') {
+    const count = typeof payload?.neighborCount === 'number' ? payload.neighborCount : 1;
+    text = count === 1
+      ? 'A new capture pulled against something you already hold.'
+      : `A new capture tensioned with ${count} nearby ideas.`;
+  } else if (ev.type === 'TOPIC_SHIFT') {
+    const name = typeof payload?.name === 'string' ? payload.name : 'a theme';
+    const delta = typeof payload?.delta === 'number' ? payload.delta : null;
+    if (delta !== null && delta > 0) text = `Attention moved toward ${name}.`;
+    else if (delta !== null && delta < 0) text = `${name} faded from recent attention.`;
+    else text = `Focus shifted around ${name}.`;
+  } else {
+    text = ev.type.replace(/_/g, ' ').toLowerCase();
+  }
+  return (
+    <View style={[styles.tensionRow, { borderBottomColor: c.border }]}>
+      <View style={[styles.tensionDot, { backgroundColor: c.muted }]} />
+      <Text variant="monoSmall" style={{ color: c.muted, flex: 1, lineHeight: 20 }}>{text}</Text>
+    </View>
+  );
+}
+
+export default function GalaxyScreen() {
+  const c = useThemeColors();
   const [windowKey, setWindowKey] = useState<'week' | 'month'>('week');
   const { data, loading, error, refetch } = useApiQuery(
     () => api.memory.trends({ window: windowKey }),
     [windowKey],
   );
-
-  const onRefresh = useCallback(() => void refetch(), [refetch]);
+  useFocusEffect(useCallback(() => { void refetch(); }, [refetch]));
 
   if (loading && !data) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
         <View style={[styles.header, { borderBottomColor: c.border }]}>
-          <Text variant="wordmark">Drift</Text>
+          <Text variant="wordmark" color="primary">drift</Text>
         </View>
         <SkeletonCard />
       </SafeAreaView>
     );
   }
 
-  if (error || !data) {
-    return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-        <EmptyState title="Trends unavailable" ctaLabel="Retry" onCta={refetch} />
-      </SafeAreaView>
-    );
-  }
-
-  const maxSpark = Math.max(1, ...data.sparkline.map((s) => s.count));
-
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: c.border }]}>
-        <Text variant="wordmark">Drift</Text>
-      </View>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={onRefresh} tintColor={c.text} />}
-      >
-        <View style={styles.windowToggle}>
+        <Text variant="wordmark" color="primary">drift</Text>
+        <View style={styles.toggle}>
           {(['week', 'month'] as const).map((w) => (
             <Pressable
               key={w}
               onPress={() => setWindowKey(w)}
-              style={[
-                styles.toggleBtn,
-                {
-                  borderColor: c.border,
-                  backgroundColor: windowKey === w ? c.elevated : 'transparent',
-                },
-              ]}
+              style={[styles.chip, windowKey === w && { borderBottomColor: c.text, borderBottomWidth: 1 }]}
             >
-              <Text variant="monoSmall" color={windowKey === w ? 'primary' : 'muted'}>
+              <Text variant="monoSmall" style={{ color: windowKey === w ? c.text : c.muted }}>
                 {w === 'week' ? '7d' : '30d'}
               </Text>
             </Pressable>
           ))}
         </View>
+      </View>
 
-        <Text variant="serif" color="secondary" style={styles.lead}>
-          {data.captureCount} captures in view. What your mind keeps returning to.
-        </Text>
-
-        <View style={[styles.sparkCard, { borderColor: c.border }]}>
-          <Text variant="label" color="muted" style={{ marginBottom: Spacing[3] }}>
-            Cadence
-          </Text>
-          <View style={styles.sparkRow}>
-            {data.sparkline.map((s) => (
-              <View
-                key={s.day}
-                style={[
-                  styles.bar,
-                  {
-                    height: 4 + (s.count / maxSpark) * 36,
-                    backgroundColor: s.count > 0 ? c.text : c.borderSubtle,
-                  },
-                ]}
-              />
-            ))}
-          </View>
-        </View>
-
-        <Text variant="h3" style={{ marginTop: Spacing[8] }}>
-          Shifts
-        </Text>
-        {data.shifts.length === 0 ? (
-          <Text variant="body" color="muted" style={{ marginTop: Spacing[2] }}>
-            No directional change yet. More captures will surface contrast.
-          </Text>
-        ) : (
-          data.shifts.map((t) => (
-            <View key={t.topicId} style={[styles.themeRow, { borderBottomColor: c.border }]}>
-              <Text variant="bodyMedium">{t.name}</Text>
-              <Text variant="monoSmall" color="muted">
-                Δ {t.delta > 0 ? '+' : ''}{t.delta}
-              </Text>
-            </View>
-          ))
-        )}
-
-        <Text variant="h3" style={{ marginTop: Spacing[8] }}>
-          Recurrent
-        </Text>
-        {data.recurring.map((t) => (
-          <View key={t.topicId} style={[styles.themeRow, { borderBottomColor: c.border }]}>
-            <Badge label={t.name} variant="topic" />
-            <Text variant="monoSmall" color="muted">
-              {t.total} touches
-            </Text>
-          </View>
-        ))}
-
-        <Text variant="h3" style={{ marginTop: Spacing[8] }}>
-            Events
-        </Text>
-        {data.events.length === 0 ? (
-          <Text variant="body" color="muted" style={{ marginTop: Spacing[2] }}>
-            No contradiction or topic-shift events logged in this window.
-          </Text>
-        ) : (
-          data.events.map((ev) => (
-            <Pressable
-              key={ev.id}
-              style={[styles.ev, { borderColor: c.border }]}
-              onPress={() => {
-                const p = ev.payload as { capturedItemId?: string } | null;
-                if (p?.capturedItemId) router.push(`/insight/${p.capturedItemId}` as never);
-              }}
-            >
-              <Text variant="monoSmall" color="muted">
-                {ev.type}
-              </Text>
-              <Text variant="caption" color="secondary" style={{ marginTop: 4 }} numberOfLines={3}>
-                {JSON.stringify(ev.payload)}
-              </Text>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void refetch()} tintColor={c.text} />}
+        showsVerticalScrollIndicator={false}
+      >
+        {error || !data ? (
+          <View style={styles.centered}>
+            <Text variant="monoSmall" style={{ color: c.muted }}>drift unavailable</Text>
+            <Pressable onPress={() => void refetch()} style={{ marginTop: Spacing[4] }}>
+              <Text variant="monoSmall" style={{ color: c.text }}>retry</Text>
             </Pressable>
-          ))
+          </View>
+        ) : (
+          <>
+            <TopicGalaxy data={data} />
+            <View style={[styles.divider, { borderTopColor: c.border }]} />
+            <PulseLine data={data} />
+            {data.events.length > 0 && (
+              <View style={styles.tensionsSection}>
+                <Text variant="label" style={[styles.sectionLabel, { color: c.faint }]}>tensions</Text>
+                {data.events.map((ev) => (
+                  <TensionRow key={ev.id} ev={ev} />
+                ))}
+              </View>
+            )}
+            {data.themes.length === 0 && (
+              <View style={styles.centered}>
+                <Text variant="monoSmall" style={{ color: c.faint, textAlign: 'center', lineHeight: 22 }}>
+                  {'Drift tracks how your attention\nshifts. Capture a few items\nacross topics to see it emerge.'}
+                </Text>
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -160,44 +223,24 @@ export default function TrendsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   header: {
-    paddingHorizontal: Spacing[6],
-    paddingVertical: Spacing[4],
-    borderBottomWidth: 1,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing[6], paddingVertical: Spacing[4],
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  content: { paddingHorizontal: Spacing[6], paddingBottom: Spacing[16] },
-  windowToggle: { flexDirection: 'row', gap: Spacing[2], marginTop: Spacing[4] },
-  toggleBtn: {
-    paddingHorizontal: Spacing[4],
-    paddingVertical: Spacing[2],
-    borderRadius: Radius.full,
-    borderWidth: 1,
+  toggle: { flexDirection: 'row', gap: Spacing[3] },
+  chip: { paddingBottom: 2 },
+  content: { paddingBottom: Spacing[16] },
+  galaxyWrap: { width: SW, overflow: 'hidden' },
+  ghostCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing[12] },
+  divider: { borderTopWidth: StyleSheet.hairlineWidth, marginHorizontal: Spacing[6], marginVertical: Spacing[4] },
+  pulseLine: { paddingHorizontal: Spacing[6], marginBottom: Spacing[4], letterSpacing: 0.8 },
+  tensionsSection: { paddingHorizontal: Spacing[6], paddingTop: Spacing[5] },
+  sectionLabel: { letterSpacing: 2, textTransform: 'uppercase', marginBottom: Spacing[3] },
+  tensionRow: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    paddingVertical: Spacing[4], gap: Spacing[3],
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  lead: { marginTop: Spacing[4], maxWidth: 340 },
-  sparkCard: {
-    marginTop: Spacing[6],
-    padding: Spacing[5],
-    borderWidth: 1,
-    borderRadius: Radius.lg,
-  },
-  sparkRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    height: 44,
-    gap: 2,
-  },
-  bar: { flex: 1, borderRadius: 1 },
-  themeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: Spacing[4],
-    borderBottomWidth: 1,
-  },
-  ev: {
-    marginTop: Spacing[3],
-    padding: Spacing[4],
-    borderWidth: 1,
-    borderRadius: Radius.md,
-  },
+  tensionDot: { width: 4, height: 4, borderRadius: 2, marginTop: 8 },
+  centered: { paddingTop: Spacing[10], paddingHorizontal: Spacing[6], alignItems: 'center' },
 });

@@ -6,6 +6,7 @@ import type {
   CaptureResponse,
   CaptureDetail,
   CaptureSummary,
+  FeedResponse,
   IngestedMetadata,
   InsightStyle,
   MemoryGraphResponse,
@@ -213,6 +214,29 @@ export const api = {
       return request<{ acknowledged: boolean }>(
         `/api/positions/challenges/${challengeId}`,
         { method: 'PATCH', body: JSON.stringify({ revision }) },
+      );
+    },
+  },
+
+  social: {
+    feed(params?: { cursor?: string; limit?: number }) {
+      return request<FeedResponse>(`/api/social/feed${buildQuery(params ?? {})}`);
+    },
+    follow(targetUserId: string) {
+      return request<{ following: boolean }>('/api/social/follow', {
+        method: 'POST',
+        body: JSON.stringify({ targetUserId }),
+      });
+    },
+    unfollow(targetUserId: string) {
+      return request<{ following: boolean }>('/api/social/unfollow', {
+        method: 'POST',
+        body: JSON.stringify({ targetUserId }),
+      });
+    },
+    searchUsers(query: string) {
+      return request<{ users: { id: string; handle: string; displayName: string; avatarUrl: string | null }[] }>(
+        `/api/social/users${buildQuery({ q: query })}`,
       );
     },
   },

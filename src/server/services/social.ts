@@ -1,4 +1,4 @@
-import { ActivityType, NotificationType, Visibility } from "@prisma/client";
+import { ActivityType, NotificationType, Visibility, type Prisma } from "@prisma/client";
 import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/server/db";
@@ -210,6 +210,73 @@ export async function saveContent(userId: string, contentItemId: string, db: DbC
     saved: true,
     save,
   };
+}
+
+export async function getFeed(args: {
+  userId: string;
+  cursor?: string;
+  limit?: number;
+  db?: DbClient;
+}) {
+  const db = args.db ?? prisma;
+  const limit = Math.min(args.limit ?? 20, 40);
+
+  const follows = await db.follow.findMany({
+    where: { followerId: args.userId },
+    select: { followingId: true },
+  });
+
+  const followedIds = follows.map((f) => f.followingId);
+
+  if (followedIds.length === 0) {
+    return { items: [], nextCursor: null };
+  }
+
+  const where: Prisma.CapturedItemWhereInput = {
+    userId: { in: followedIds },
+    ...(args.cursor
+      ? { capturedAt: { lt: new Date(args.cursor) } }
+      : {}),
+  };
+
+  const captures = await db.capturedItem.findMany({
+    where,
+    orderBy: { capturedAt: "desc" },
+    take: limit + 1,
+    include: {
+      contentItem: { select: { title: true } },
+      topics: { include: { topic: { select: { name: true } } } },
+      user: {
+        select: {
+          id: true,
+          profile: { select: { handle: true, displayName: true, avatarUrl: true } },
+        },
+      },
+    },
+  });
+
+  const hasMore = captures.length > limit;
+  const page = hasMore ? captures.slice(0, limit) : captures;
+  const nextCursor = hasMore ? page[page.length - 1]!.capturedAt.toISOString() : null;
+
+  const items = page.map((item) => ({
+    id: item.id,
+    capturedAt: item.capturedAt.toISOString(),
+    title: item.contentItem?.title ?? item.rawText?.slice(0, 120) ?? item.caption?.slice(0, 120) ?? null,
+    rawText: item.rawText,
+    keyIdea: item.keyIdea,
+    kind: item.kind,
+    topics: item.topics.map((row) => ({ topicId: row.topicId, name: row.topic.name })),
+
+    author: {
+      id: item.user.id,
+      handle: item.user.profile?.handle ?? item.user.id,
+      displayName: item.user.profile?.displayName ?? "Unknown",
+      avatarUrl: item.user.profile?.avatarUrl ?? null,
+    },
+  }));
+
+  return { items, nextCursor };
 }
 
 export async function commentOnReview(args: {
