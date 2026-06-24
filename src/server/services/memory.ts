@@ -57,7 +57,7 @@ export async function getMemoryGraph(args: {
   nodes: GraphNode[];
   edges: GraphEdge[];
   clusters: GraphCluster[];
-  positions: { topicId: string; statement: string; status: string }[];
+  positions: { topicId: string; statement: string; status: 'ACTIVE' | 'REVISED' | 'ABANDONED' }[];
 }> {
   const db = args.db ?? prisma;
   const limit = Math.min(Math.max(args.limit ?? GRAPH_LIMIT_DEFAULT, 10), 200);
@@ -251,7 +251,6 @@ export async function getMemoryTrends(args: {
       type: event.type,
       payload: event.payload,
       occurredAt: event.occurredAt,
-      capturedItemId: event.capturedItemId,
     })),
   };
 }
