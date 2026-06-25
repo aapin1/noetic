@@ -36,6 +36,7 @@ export async function extractSemanticTopics(args: {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.1,
+        max_tokens: 200,
         response_format: { type: "json_object" },
         messages: [
           {
@@ -175,6 +176,7 @@ export async function polishInsights(args: PolishContext): Promise<InsightDraft[
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.4,
+        max_tokens: 600,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -273,6 +275,7 @@ export async function generateRecommendations(args: {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.5,
+        max_tokens: 400,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -342,6 +345,7 @@ export async function generateContradictionTension(args: {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.3,
+        max_tokens: 150,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -411,6 +415,7 @@ export async function generateThreadSynthesis(args: {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.4,
+        max_tokens: 200,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -482,6 +487,7 @@ export async function generateConvergenceSignal(args: {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.4,
+        max_tokens: 150,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -555,6 +561,7 @@ export async function evaluatePositionTension(args: {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.2,
+        max_tokens: 150,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -629,6 +636,7 @@ export async function generateSocraticOpening(args: {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.5,
+        max_tokens: 200,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -718,6 +726,7 @@ export async function generateSocraticResponse(args: {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.5,
+        max_tokens: 200,
         response_format: { type: "json_object" },
         messages,
       }),
@@ -733,6 +742,72 @@ export async function generateSocraticResponse(args: {
     if (typeof parsed.challenge !== "string" || parsed.challenge.trim().length === 0) return null;
 
     return parsed.challenge.trim();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function generateCompanionResponse(args: {
+  contextBlock: string;
+  conversationHistory: { role: "USER" | "COMPANION"; content: string }[];
+  userMessage: string;
+}): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  const systemPrompt = [
+    "You are Mneme's knowledge companion — a personal AI with full access to the user's knowledge map.",
+    "You know every topic they've explored, every capture they've saved (numbered newest-first), their stated intellectual positions, and the semantic connections between captures.",
+    "",
+    args.contextBlock,
+    "",
+    "When asked how items connect: explain the specific intellectual bridge clearly (2–3 sentences naming the concept, argument, or mechanism), then ask one targeted follow-up question that zooms in on the most interesting tension or implication.",
+    "For open questions: answer directly from what you know about their map, then probe once.",
+    "",
+    "Rules:",
+    "- Reference captures by number when relevant: 'Capture #4...'",
+    "- Do not start with affirmations, 'Great question', or 'As your knowledge companion'.",
+    "- 3–5 sentences maximum before the follow-up question.",
+    "- Be specific — name the concept, argument, or mechanism, not just the category.",
+  ].join("\n");
+
+  const messages = [
+    { role: "system" as const, content: systemPrompt },
+    ...args.conversationHistory.map((m) => ({
+      role: m.role === "USER" ? ("user" as const) : ("assistant" as const),
+      content: m.content,
+    })),
+    { role: "user" as const, content: args.userMessage },
+  ];
+
+  try {
+    const response = await fetch(OPENAI_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+        temperature: 0.5,
+        max_tokens: 400,
+        messages,
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = payload.choices?.[0]?.message?.content;
+    if (!raw) return null;
+
+    return raw.trim();
   } catch {
     return null;
   } finally {

@@ -207,3 +207,7 @@ export const acknowledgeSchema = z.object({
 export const socraticReplySchema = z.object({
   content: z.string().min(1).max(4000),
 });
+
+export const companionReplySchema = z.object({
+  content: z.string().min(1).max(4000),
+});

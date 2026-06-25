@@ -6,6 +6,8 @@ import type {
   CaptureResponse,
   CaptureDetail,
   CaptureSummary,
+  CompanionMessage,
+  CompanionThread,
   FeedResponse,
   IngestedMetadata,
   InsightStyle,
@@ -248,6 +250,18 @@ export const api = {
     reply(topicId: string, content: string) {
       return request<{ userMessage: SocraticMessage; companionMessage: SocraticMessage }>(
         `/api/socratic/${topicId}/reply`,
+        { method: 'POST', body: JSON.stringify({ content }) },
+      );
+    },
+  },
+
+  companion: {
+    getThread() {
+      return request<CompanionThread>('/api/companion');
+    },
+    reply(content: string) {
+      return request<{ userMessage: CompanionMessage; companionMessage: CompanionMessage }>(
+        '/api/companion/reply',
         { method: 'POST', body: JSON.stringify({ content }) },
       );
     },

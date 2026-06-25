@@ -286,6 +286,22 @@ export interface SocraticThread {
   updatedAt: string;
 }
 
+export interface CompanionMessage {
+  id: string;
+  threadId: string;
+  role: 'USER' | 'COMPANION';
+  content: string;
+  createdAt: string;
+}
+
+export interface CompanionThread {
+  id: string;
+  userId: string;
+  messages: CompanionMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CapturePositionChallenge {
   challengeId: string;
   positionId: string;

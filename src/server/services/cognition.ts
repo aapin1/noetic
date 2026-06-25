@@ -411,15 +411,18 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   const summary = extractiveSummary(combinedText, 2);
   const keyIdea = extractKeyIdea(combinedText);
 
-  const classified = await classifyTopics({
-    db,
-    userId: payload.userId,
-    tokens,
-    hints: payload.topicHints,
-    title: contentTitle,
-    description: contentDescription,
-    combinedText,
-  });
+  const [classified, insightStyle] = await Promise.all([
+    classifyTopics({
+      db,
+      userId: payload.userId,
+      tokens,
+      hints: payload.topicHints,
+      title: contentTitle,
+      description: contentDescription,
+      combinedText,
+    }),
+    ensureUserPreference(db, payload.userId),
+  ]);
 
   const topicIdSet = new Set(classified.map((topic) => topic.topicId));
   const neighborInfo = await computeNeighbors({
@@ -442,9 +445,30 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   const itemTitle = contentTitle ?? (fallbackText.length > 0 ? fallbackText : "Untitled capture");
   const threadContext = computeThreadContext(topicCounts);
 
+  const drafts = draftInsights({
+    style: insightStyle,
+    itemTitle,
+    topicNames: classified.map((topic) => topic.name),
+    topNeighbors: neighborInfo.neighbors,
+    topicCounts,
+    shift: trajectory,
+    isFirstCapture,
+  });
+
+  const polishedDrafts = await polishInsights({
+    style: insightStyle,
+    itemTitle,
+    contentText: combinedText,
+    topicNames: classified.map((topic) => topic.name),
+    neighborContext: neighborInfo.neighbors.map((n) => ({
+      title: n.title,
+      edgeType: n.edgeType,
+    })),
+    drafts,
+  });
+
   const [txResult, recommendations] = await Promise.all([
     prisma.$transaction(async (tx: DbClient) => {
-    const insightStyle = await ensureUserPreference(tx, payload.userId);
     const created = await tx.capturedItem.create({
       data: {
         userId: payload.userId,
@@ -477,28 +501,6 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
         increment: 1,
       });
     }
-
-    const drafts = draftInsights({
-      style: insightStyle,
-      itemTitle,
-      topicNames: classified.map((topic) => topic.name),
-      topNeighbors: neighborInfo.neighbors,
-      topicCounts,
-      shift: trajectory,
-      isFirstCapture,
-    });
-
-    const polishedDrafts = await polishInsights({
-      style: insightStyle,
-      itemTitle,
-      contentText: combinedText,
-      topicNames: classified.map((topic) => topic.name),
-      neighborContext: neighborInfo.neighbors.map((n) => ({
-        title: n.title,
-        edgeType: n.edgeType,
-      })),
-      drafts,
-    });
 
     const insightRows = polishedDrafts.length > 0
       ? await Promise.all(polishedDrafts.map((draft) =>
