@@ -72,7 +72,7 @@ export default function InsightDetailScreen() {
           <ChevronLeftIcon size={22} color={c.text} />
         </Pressable>
         <Text variant="monoSmall" color="muted" numberOfLines={1} style={{ flex: 1, textAlign: 'center' }}>
-          Committed
+          insight
         </Text>
         <View style={{ width: 28 }} />
       </View>
@@ -103,12 +103,7 @@ export default function InsightDetailScreen() {
             </Text>
           ) : null}
           {showKeyIdea ? (
-            <Text variant="h4" style={{ marginTop: Spacing[5] }}>
-              Core idea
-            </Text>
-          ) : null}
-          {showKeyIdea ? (
-            <Text variant="serif" color="secondary" style={{ marginTop: Spacing[2] }}>
+            <Text variant="serif" color="secondary" style={{ marginTop: Spacing[5], fontStyle: 'italic' }}>
               {data.keyIdea}
             </Text>
           ) : null}

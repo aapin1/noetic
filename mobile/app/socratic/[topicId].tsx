@@ -9,16 +9,17 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeftIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
-import type { CompanionMessage, CompanionThread } from '@/types/api';
+import type { SocraticMessage, SocraticThread } from '@/types/api';
 
-function MessageBlock({ message }: { message: CompanionMessage }) {
+function MessageBlock({ message }: { message: SocraticMessage }) {
   const c = useThemeColors();
   const isUser = message.role === 'USER';
 
@@ -49,13 +50,14 @@ function MessageBlock({ message }: { message: CompanionMessage }) {
   );
 }
 
-export default function CompanionScreen() {
+export default function SocraticScreen() {
   const c = useThemeColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { topicId } = useLocalSearchParams<{ topicId: string }>();
 
-  const [thread, setThread] = useState<CompanionThread | null>(null);
-  const [messages, setMessages] = useState<CompanionMessage[]>([]);
+  const [thread, setThread] = useState<SocraticThread | null>(null);
+  const [messages, setMessages] = useState<SocraticMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reply, setReply] = useState('');
@@ -68,18 +70,19 @@ export default function CompanionScreen() {
   }, []);
 
   useEffect(() => {
+    if (!topicId) return;
     void (async () => {
       try {
-        const data = await api.companion.getThread();
+        const data = await api.socratic.getThread(topicId);
         setThread(data);
         setMessages(data.messages);
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to load companion');
+        setError(e instanceof Error ? e.message : 'Failed to load thread');
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [topicId]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -89,9 +92,9 @@ export default function CompanionScreen() {
 
   const handleSend = useCallback(async () => {
     const content = reply.trim();
-    if (!content || sending) return;
+    if (!content || sending || !topicId) return;
 
-    const optimisticUser: CompanionMessage = {
+    const optimisticUser: SocraticMessage = {
       id: `optimistic-${Date.now()}`,
       threadId: thread?.id ?? '',
       role: 'USER',
@@ -104,7 +107,7 @@ export default function CompanionScreen() {
     setMessages((prev) => [...prev, optimisticUser]);
 
     try {
-      const { userMessage, companionMessage } = await api.companion.reply(content);
+      const { userMessage, companionMessage } = await api.socratic.reply(topicId, content);
       setMessages((prev) => [
         ...prev.filter((m) => m.id !== optimisticUser.id),
         userMessage,
@@ -116,7 +119,9 @@ export default function CompanionScreen() {
     } finally {
       setSending(false);
     }
-  }, [reply, sending, thread?.id]);
+  }, [reply, sending, topicId, thread?.id]);
+
+  const topicName = thread?.topic.name ?? '';
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
@@ -125,7 +130,7 @@ export default function CompanionScreen() {
           <ChevronLeftIcon size={22} color={c.text} />
         </Pressable>
         <Text variant="monoSmall" color="muted" style={styles.headerTitle} numberOfLines={1}>
-          companion
+          dialogue{topicName ? ` · ${topicName.toLowerCase()}` : ''}
         </Text>
         <View style={{ width: 30 }} />
       </View>
@@ -164,7 +169,7 @@ export default function CompanionScreen() {
                 color="secondary"
                 style={{ fontStyle: 'italic', textAlign: 'center' }}
               >
-                Ask anything about your knowledge map.
+                The dialogue begins when you respond.
               </Text>
             ) : (
               messages.map((msg) => <MessageBlock key={msg.id} message={msg} />)
@@ -195,7 +200,7 @@ export default function CompanionScreen() {
               style={[styles.textInput, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.sm }]}
               value={reply}
               onChangeText={setReply}
-              placeholder="ask anything..."
+              placeholder="reply..."
               placeholderTextColor={c.faint}
               multiline
               maxLength={4000}

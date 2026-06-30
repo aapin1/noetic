@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
@@ -13,12 +13,29 @@ import { useApiQuery } from '@/hooks/useApiQuery';
 import { FontFamily, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { InfoModal } from '@/components/ui/InfoModal';
 import type { CaptureSummary } from '@/types/api';
 
 function CaptureRow({ item, onPress }: { item: CaptureSummary; onPress: () => void }) {
   const c = useThemeColors();
   const date = new Date(item.capturedAt);
   const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+  // For links, split "Title | Source" so the source appears as a byline
+  let displayTitle = item.title;
+  let displaySource: string | null = null;
+  if (item.kind === 'LINK' && item.title) {
+    const pipeIdx = item.title.lastIndexOf(' | ');
+    if (pipeIdx > 0) {
+      displayTitle = item.title.slice(0, pipeIdx);
+      displaySource = item.title.slice(pipeIdx + 3);
+    }
+  }
+
+  // Suppress keyIdea when it duplicates the full title
+  const normalizedTitle = (item.title ?? '').trim().toLowerCase();
+  const showKeyIdea =
+    !!item.keyIdea && item.keyIdea.trim().toLowerCase() !== normalizedTitle;
 
   return (
     <Pressable
@@ -32,10 +49,16 @@ function CaptureRow({ item, onPress }: { item: CaptureSummary; onPress: () => vo
       </View>
 
       <Text variant="serif" color="primary" numberOfLines={2} style={styles.rowTitle}>
-        {item.title}
+        {displayTitle}
       </Text>
 
-      {!!item.keyIdea && (
+      {!!displaySource && (
+        <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[2] }} numberOfLines={1}>
+          {displaySource}
+        </Text>
+      )}
+
+      {showKeyIdea && (
         <Text variant="monoSmall" color="muted" numberOfLines={2} style={styles.rowIdea}>
           {item.keyIdea}
         </Text>
@@ -65,6 +88,7 @@ function CaptureRow({ item, onPress }: { item: CaptureSummary; onPress: () => vo
 export default function LogScreen() {
   const c = useThemeColors();
   const router = useRouter();
+  const [infoVisible, setInfoVisible] = useState(false);
 
   const { data: captures, loading, refetch } = useApiQuery(
     () => api.captures.list({ limit: 80 }),
@@ -79,12 +103,23 @@ export default function LogScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: c.border }]}>
         <Text variant="wordmark" color="primary">log</Text>
-        {captures && captures.length > 0 && (
-          <Text variant="monoSmall" style={{ color: c.faint, fontFamily: FontFamily.mono }}>
-            {captures.length}
-          </Text>
-        )}
+        <View style={styles.headerRight}>
+          {captures && captures.length > 0 && (
+            <Text variant="monoSmall" style={{ color: c.faint, fontFamily: FontFamily.mono, marginRight: Spacing[3] }}>
+              {captures.length}
+            </Text>
+          )}
+          <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About archive">
+            <Text variant="monoSmall" style={{ color: c.faint }}>ⓘ</Text>
+          </Pressable>
+        </View>
       </View>
+      <InfoModal
+        visible={infoVisible}
+        onClose={() => setInfoVisible(false)}
+        title="archive"
+        body="A chronological record of everything you've saved — links, thoughts, and passages. Each entry shows its type, when it was captured, and the key idea Mneme extracted from it."
+      />
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -134,6 +169,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[6],
     paddingVertical: Spacing[4],
     borderBottomWidth: 1,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   content: { paddingBottom: Spacing[16] },
   row: {

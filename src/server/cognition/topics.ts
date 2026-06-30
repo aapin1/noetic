@@ -149,22 +149,5 @@ export async function classifyTopics(args: {
     if (topicMap.size >= max) break;
   }
 
-  if (topicMap.size === 0) {
-    const top = await args.db.userTopic.findMany({
-      where: { userId: args.userId },
-      orderBy: { weight: "desc" },
-      take: max,
-      include: { topic: true },
-    });
-    for (const row of top) {
-      topicMap.set(row.topicId, {
-        topicId: row.topicId,
-        name: row.topic.name,
-        slug: row.topic.slug,
-        score: 0.05,
-      });
-    }
-  }
-
   return Array.from(topicMap.values()).slice(0, max);
 }

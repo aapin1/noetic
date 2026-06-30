@@ -17,6 +17,7 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Avatar } from '@/components/ui/Avatar';
 import { SkeletonCard } from '@/components/ui/Skeleton';
+import { InfoModal } from '@/components/ui/InfoModal';
 import type { FeedItem } from '@/types/api';
 
 function FeedCard({ item }: { item: FeedItem }) {
@@ -92,6 +93,7 @@ function UserResult({
 
 export default function PulseScreen() {
   const c = useThemeColors();
+  const [infoVisible, setInfoVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ id: string; handle: string; displayName: string; avatarUrl: string | null }[]>([]);
   const [searching, setSearching] = useState(false);
@@ -158,7 +160,16 @@ export default function PulseScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: c.border }]}>
         <Text variant="wordmark" color="primary">pulse</Text>
+        <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About pulse">
+          <Text variant="monoSmall" style={{ color: c.faint }}>ⓘ</Text>
+        </Pressable>
       </View>
+      <InfoModal
+        visible={infoVisible}
+        onClose={() => setInfoVisible(false)}
+        title="pulse"
+        body="See what people you follow are reading and thinking about. Pulse is a slow, quiet feed — no likes or comments, just the ideas people choose to preserve."
+      />
 
       {loading && !data ? (
         <SkeletonCard />

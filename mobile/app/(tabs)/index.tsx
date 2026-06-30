@@ -26,38 +26,46 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
-import { Hand, MousePointer2, Search } from 'lucide-react-native';
+import { Crosshair, Hand, MousePointer2, Search } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { FontFamily, FontSize, Radius, Spacing, darkColors } from '@/constants/theme';
+import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { InfoModal } from '@/components/ui/InfoModal';
 import type { AppThemeColors } from '@/constants/theme';
-import type { CaptureKind, CaptureResponse, MemoryEdgeType, MemoryGraphResponse, Recommendation } from '@/types/api';
+import type { CaptureKind, CaptureResponse, MemoryEdgeType, MemoryGraphResponse } from '@/types/api';
 
 type GraphNode = MemoryGraphResponse['nodes'][number];
+type GraphEdge = MemoryGraphResponse['edges'][number];
 
 const { width: SW, height: SH } = Dimensions.get('window');
 const TAB_H = Platform.OS === 'ios' ? 86 : 68;
 const FAB_SIZE = 64;
 
-// Layout area — nodes are distributed within this space
+// Always-dark map colors (map is always dark regardless of theme)
+const MAP_BG = '#060606';
+const MAP_NODE = 'rgba(236,236,236,0.9)';
+const MAP_LINE = 'rgba(255,255,255,0.12)';
+
+// Layout area — nodes distributed within this space
 const LAYOUT_W = SW * 2.2;
 const LAYOUT_H = SH * 2.0;
 
-// Extra pannable padding around the layout area
+// Pannable padding around the layout area
 const MAP_PAD = SW * 1.4;
 
-// Total canvas — much larger than the layout area so there's always free space to pan into
+// Total canvas
 const CANVAS_W = LAYOUT_W + MAP_PAD * 2;
 const CANVAS_H = LAYOUT_H + MAP_PAD * 2;
 
-// Initial view centers on the layout area center
+// Initial view centers on the layout area
 const INIT_VB_X = MAP_PAD + (LAYOUT_W - SW) / 2;
 const INIT_VB_Y = MAP_PAD + (LAYOUT_H - SH) / 2;
 
 const ZOOM_MIN = 0.22;
 const ZOOM_MAX = 5.0;
+const SCRUBBER_H = 80;
 
 const CLUSTER_PALETTE = [
   '#6B9FD4',
@@ -72,7 +80,20 @@ const CLUSTER_PALETTE = [
   '#A8CC84',
 ];
 
-// ── Layout helpers ──────────────────────────────────────────────
+// Recent threshold: 14 days
+const RECENT_MS = 14 * 24 * 60 * 60 * 1000;
+
+// ── Types ─────────────────────────────────────────────────────────
+
+type LensMode = 'semantic' | 'temporal' | 'source';
+type ToolMode = 'move' | 'select' | 'discover' | 'search';
+type PositionMap = Record<string, { x: number; y: number }>;
+
+function intersect<T>(a: Set<T>, b: Set<T>): Set<T> {
+  return new Set([...a].filter((x) => b.has(x)));
+}
+
+// ── Layout helpers ─────────────────────────────────────────────────
 
 function hashId(id: string): number {
   let h = 0;
@@ -92,23 +113,23 @@ function seededRng(seed: number) {
 
 const MAJOR_CLUSTER_MIN = 2;
 
-// Edge attraction factors — how strongly connected nodes pull toward each other
 const EDGE_PULL: Record<string, number> = {
   RECURS: 0.42,
   REINFORCES: 0.30,
-  CONTRADICTS: -0.12, // slight repulsion keeps contradictions visually apart
+  CONTRADICTS: -0.12,
   EVOLVES_FROM: 0.22,
   RELATED: 0.14,
 };
 
+// Semantic (force-directed by topic)
 function layoutGraph(
-  nodes: MemoryGraphResponse['nodes'],
+  nodes: GraphNode[],
   clusters: MemoryGraphResponse['clusters'],
-  edges: MemoryGraphResponse['edges'],
+  edges: GraphEdge[],
   w: number,
   h: number,
-): Record<string, { x: number; y: number }> {
-  const pos: Record<string, { x: number; y: number }> = {};
+): PositionMap {
+  const pos: PositionMap = {};
   if (nodes.length === 0) return pos;
 
   const cx = w / 2;
@@ -117,7 +138,6 @@ function layoutGraph(
 
   const majorClusters = clusters.filter((cl) => cl.count >= MAJOR_CLUSTER_MIN);
 
-  // ── Initial placement ─────────────────────────────────────────
   if (majorClusters.length === 0) {
     nodes.forEach((node, i) => {
       const rng = seededRng(hashId(node.id));
@@ -135,7 +155,7 @@ function layoutGraph(
       const angle = (i / majorClusters.length) * Math.PI * 2 - Math.PI / 2;
       centres[cl.topicId] = { x: cx + cr * Math.cos(angle), y: cy + cr * Math.sin(angle) };
     });
-    const topicToCentre = new Map<string, { x: number; y: number }>(Object.entries(centres));
+    const topicToCentre = new Map(Object.entries(centres));
     nodes.forEach((node) => {
       const anchorTopic = node.topics.find((t) => topicToCentre.has(t.topicId));
       const centre = anchorTopic ? topicToCentre.get(anchorTopic.topicId)! : { x: cx, y: cy };
@@ -149,7 +169,6 @@ function layoutGraph(
     });
   }
 
-  // ── Force-directed settle ─────────────────────────────────────
   const nodeList = nodes.map((n) => n.id);
   const nodeSet = new Set(nodeList);
   const ITERATIONS = 20;
@@ -170,7 +189,6 @@ function layoutGraph(
     const disp: Record<string, { dx: number; dy: number }> = {};
     for (const id of nodeList) disp[id] = { dx: 0, dy: 0 };
 
-    // Repulsion — all pairs push apart
     for (let i = 0; i < nodeList.length; i++) {
       for (let j = i + 1; j < nodeList.length; j++) {
         const a = pos[nodeList[i]]!;
@@ -187,7 +205,6 @@ function layoutGraph(
       }
     }
 
-    // Edge attraction
     for (const edge of edges) {
       if (!nodeSet.has(edge.fromItemId) || !nodeSet.has(edge.toItemId)) continue;
       const a = pos[edge.fromItemId]!;
@@ -202,7 +219,6 @@ function layoutGraph(
       disp[edge.toItemId]!.dy -= dy * factor;
     }
 
-    // Topic bonding — shared topic attracts even without explicit edge
     for (const members of topicToNodes.values()) {
       if (members.length < 2) continue;
       for (let i = 0; i < members.length; i++) {
@@ -220,7 +236,6 @@ function layoutGraph(
       }
     }
 
-    // Apply with damping and clamping
     for (const id of nodeList) {
       const d = disp[id]!;
       const mag = Math.sqrt(d.dx * d.dx + d.dy * d.dy);
@@ -236,10 +251,80 @@ function layoutGraph(
   return pos;
 }
 
-function applyLayoutOffset(
-  raw: Record<string, { x: number; y: number }>,
-): Record<string, { x: number; y: number }> {
-  const result: Record<string, { x: number; y: number }> = {};
+// Temporal (chronological, left → right)
+function layoutTemporal(nodes: GraphNode[], w: number, h: number): PositionMap {
+  const pos: PositionMap = {};
+  if (nodes.length === 0) return pos;
+
+  const sorted = [...nodes].sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
+  const minTs = new Date(sorted[0]!.capturedAt).getTime();
+  const maxTs = new Date(sorted[sorted.length - 1]!.capturedAt).getTime();
+  const tsRange = Math.max(maxTs - minTs, 1);
+
+  const pad = 40;
+  const usableW = w - pad * 2;
+  const centerY = h * 0.5;
+  const jitterBand = h * 0.32;
+
+  sorted.forEach((node) => {
+    const rng = seededRng(hashId(node.id));
+    const ts = new Date(node.capturedAt).getTime();
+    const tPct = (ts - minTs) / tsRange;
+    const jitterX = (rng() - 0.5) * 32;
+    const jitterY = (rng() - 0.5) * jitterBand;
+    pos[node.id] = {
+      x: Math.max(pad, Math.min(w - pad, pad + tPct * usableW + jitterX)),
+      y: Math.max(pad, Math.min(h - pad, centerY + jitterY)),
+    };
+  });
+
+  return pos;
+}
+
+// Source (grouped by capture kind)
+function layoutSource(nodes: GraphNode[], w: number, h: number): PositionMap {
+  const pos: PositionMap = {};
+  if (nodes.length === 0) return pos;
+
+  const kinds: CaptureKind[] = ['LINK', 'TEXT', 'QUOTE'];
+  const byKind: Record<string, GraphNode[]> = { LINK: [], TEXT: [], QUOTE: [] };
+  for (const node of nodes) {
+    const bucket = byKind[node.kind] ?? byKind.TEXT;
+    bucket.push(node);
+  }
+
+  const regions = [
+    { cx: w * 0.2, cy: h * 0.5 },
+    { cx: w * 0.5, cy: h * 0.5 },
+    { cx: w * 0.8, cy: h * 0.5 },
+  ];
+  const pad = 30;
+
+  kinds.forEach((kind, ki) => {
+    const group = byKind[kind] ?? [];
+    const { cx, cy } = regions[ki]!;
+    const maxR = Math.min(w * 0.14, h * 0.28, 90);
+
+    group.forEach((node, i) => {
+      const rng = seededRng(hashId(node.id));
+      if (group.length === 1) {
+        pos[node.id] = { x: cx, y: cy };
+        return;
+      }
+      const angle = (i / group.length) * Math.PI * 2;
+      const r = 24 + rng() * maxR;
+      pos[node.id] = {
+        x: Math.max(pad, Math.min(w - pad, cx + r * Math.cos(angle))),
+        y: Math.max(pad, Math.min(h - pad, cy + r * Math.sin(angle))),
+      };
+    });
+  });
+
+  return pos;
+}
+
+function applyLayoutOffset(raw: PositionMap): PositionMap {
+  const result: PositionMap = {};
   for (const [id, p] of Object.entries(raw)) {
     result[id] = { x: p.x + MAP_PAD, y: p.y + MAP_PAD };
   }
@@ -273,7 +358,7 @@ function clampVBY(v: number, vbH = SH) {
   return Math.max(0, Math.min(CANVAS_H - vbH, v));
 }
 
-// ── Capture step components ─────────────────────────────────────
+// ── Capture step components ────────────────────────────────────────
 
 type CaptureMode = 'link' | 'text' | 'quote';
 
@@ -416,54 +501,27 @@ function StepThree({
   c: AppThemeColors;
 }) {
   const topConnections = result.related?.slice(0, 3) ?? [];
-  const { threadContext, recommendations } = result;
 
   return (
     <View>
-      <Text variant="monoSmall" style={{ color: c.muted, textAlign: 'center', letterSpacing: 2.5, marginTop: Spacing[2] }}>
-        ── committed to memory ──
-      </Text>
-      <Text variant="serifLg" color="primary" style={[sh.heading, { marginTop: Spacing[5] }]} numberOfLines={4}>
+      <Text variant="serifLg" color="primary" style={[sh.heading, { marginTop: Spacing[6] }]} numberOfLines={4}>
         {result.title ?? result.rawText?.slice(0, 120) ?? 'Saved.'}
       </Text>
-
-      {!!threadContext && threadContext.captureCount >= 2 && (
-        <View style={{ marginTop: Spacing[3], marginBottom: Spacing[2] }}>
-          <Text variant="monoSmall" style={{ color: c.muted }}>
-            capture {threadContext.captureCount} on {threadContext.topicName.toLowerCase()}.
-          </Text>
-        </View>
-      )}
 
       <Divider c={c} />
 
       {topConnections.length > 0 && (
-        <View style={{ marginBottom: Spacing[5] }}>
-          <Text variant="monoSmall" style={{ color: c.muted, marginBottom: Spacing[3] }}>CONNECTED TO_</Text>
+        <View style={{ marginBottom: Spacing[4] }}>
           {topConnections.map((item) => (
-            <View key={item.id} style={{ marginBottom: Spacing[3] }}>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: Spacing[2] }}>
-                <Text variant="monoSmall" style={{ color: c.faint, marginTop: 2 }}>
-                  {edgeLabel(item.edgeType ?? 'RELATED')} ·
-                </Text>
-                <Text variant="serif" color="secondary" style={{ flex: 1 }} numberOfLines={2}>
-                  {item.title}
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {!!recommendations && recommendations.length > 0 && (
-        <View style={{ marginBottom: Spacing[5] }}>
-          <Text variant="monoSmall" style={{ color: c.muted, marginBottom: Spacing[3] }}>WHERE TO GO NEXT_</Text>
-          {recommendations.map((rec: Recommendation, i: number) => (
-            <View key={i} style={{ marginBottom: Spacing[4] }}>
-              <Text variant="serif" color="primary" numberOfLines={2}>{rec.title}</Text>
-              <Text variant="monoSmall" style={{ color: c.faint, marginTop: Spacing[1] }}>{rec.author}</Text>
-              <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[2], lineHeight: 16 }} numberOfLines={3}>
-                {rec.why}
+            <View
+              key={item.id}
+              style={{ flexDirection: 'row', alignItems: 'baseline', gap: Spacing[3], marginBottom: Spacing[3] }}
+            >
+              <Text variant="monoSmall" style={{ color: c.faint, minWidth: 68 }} numberOfLines={1}>
+                {edgeLabel(item.edgeType ?? 'RELATED')}
+              </Text>
+              <Text variant="monoSmall" color="muted" style={{ flex: 1 }} numberOfLines={1}>
+                {item.title}
               </Text>
             </View>
           ))}
@@ -483,7 +541,6 @@ function StepThree({
   );
 }
 
-
 const sh = StyleSheet.create({
   divider: { height: 1, marginVertical: Spacing[5] },
   heading: { marginTop: Spacing[6], marginBottom: Spacing[2] },
@@ -496,13 +553,9 @@ const sh = StyleSheet.create({
   actions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   secondaryBtn: { paddingVertical: Spacing[3], paddingHorizontal: Spacing[2] },
   primaryBtn: { paddingVertical: Spacing[3], paddingHorizontal: Spacing[5], borderRadius: Radius.xs },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[2] },
-  chip: { borderWidth: 1, borderRadius: Radius.xs, paddingVertical: 3, paddingHorizontal: Spacing[3] },
 });
 
-// ── Toolbar ─────────────────────────────────────────────────────
-
-type ToolMode = 'move' | 'select' | 'search';
+// ── Toolbar ────────────────────────────────────────────────────────
 
 function Toolbar({
   toolMode, setToolMode, c,
@@ -512,26 +565,27 @@ function Toolbar({
   c: AppThemeColors;
 }) {
   const iconColor = (active: boolean) => (active ? c.text : c.muted);
-  const tools: { id: ToolMode; label: string; Icon: typeof Hand }[] = [
+  const tools: { id: ToolMode; label: string; Icon: React.ComponentType<{ size: number; color: string; strokeWidth: number }> }[] = [
     { id: 'move', label: 'Pan map', Icon: Hand },
     { id: 'select', label: 'Select point', Icon: MousePointer2 },
+    { id: 'discover', label: 'Discover connections', Icon: Crosshair },
     { id: 'search', label: 'Find on map', Icon: Search },
   ];
 
   return (
-    <View style={[tb.pill, { backgroundColor: c.elevated, borderColor: c.border }]}>
+    <View style={[tb.pill, { backgroundColor: 'rgba(10,10,10,0.72)', borderColor: 'rgba(255,255,255,0.12)' }]}>
       {tools.map((tool, i) => {
         const active = toolMode === tool.id;
         return (
           <React.Fragment key={tool.id}>
-            {i > 0 && <View style={[tb.sep, { backgroundColor: c.border }]} />}
+            {i > 0 && <View style={[tb.sep, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />}
             <Pressable
               onPress={() => setToolMode(tool.id)}
-              style={[tb.btn, active && { backgroundColor: c.surface }]}
+              style={[tb.btn, active && { backgroundColor: 'rgba(255,255,255,0.08)' }]}
               accessibilityLabel={tool.label}
               accessibilityRole="button"
             >
-              <tool.Icon size={18} color={iconColor(active)} strokeWidth={1.5} />
+              <tool.Icon size={17} color={iconColor(active)} strokeWidth={1.5} />
             </Pressable>
           </React.Fragment>
         );
@@ -550,18 +604,190 @@ const tb = StyleSheet.create({
   },
   btn: {
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sep: { width: 1, height: 20 },
+  sep: { width: 1, height: 18 },
 });
 
-function CenterFocusButton({
-  onPress,
-  color,
-  borderColor,
-}: {
+// ── Timeline scrubber (temporal lens) ─────────────────────────────
+
+const SLIDER_MARGIN = Spacing[6];
+
+interface TimelineScrubberProps {
+  nodes: GraphNode[];
+  clusters: MemoryGraphResponse['clusters'];
+  pct: number;
+  onChange: (p: number) => void;
+  c: AppThemeColors;
+}
+
+function TimelineScrubber({ nodes, clusters, pct, onChange, c }: TimelineScrubberProps) {
+  const sliderWidth = SW - SLIDER_MARGIN * 2;
+  const pctRef = useRef(pct);
+
+  const { minTs, maxTs, milestones } = useMemo(() => {
+    if (nodes.length === 0) return { minTs: 0, maxTs: 0, milestones: [] };
+    const timestamps = nodes.map((n) => new Date(n.capturedAt).getTime());
+    const min = Math.min(...timestamps);
+    const max = Math.max(...timestamps);
+    // Topic first-appearance milestones
+    const topicFirst: Record<string, number> = {};
+    for (const node of nodes) {
+      const ts = new Date(node.capturedAt).getTime();
+      for (const t of node.topics) {
+        if (topicFirst[t.topicId] === undefined || ts < topicFirst[t.topicId]!) {
+          topicFirst[t.topicId] = ts;
+        }
+      }
+    }
+    const ms = clusters
+      .filter((cl) => cl.count >= 2)
+      .map((cl) => ({
+        topicId: cl.topicId,
+        name: cl.name,
+        ts: topicFirst[cl.topicId] ?? 0,
+      }))
+      .filter((m) => m.ts > 0)
+      .map((m) => ({ ...m, pct: max === min ? 0 : (m.ts - min) / (max - min) }));
+    return { minTs: min, maxTs: max, milestones: ms };
+  }, [nodes, clusters]);
+
+  const cutoffDate = useMemo(() => {
+    if (minTs === maxTs) return new Date();
+    return new Date(minTs + (maxTs - minTs) * pct);
+  }, [minTs, maxTs, pct]);
+
+  const dateLabel = cutoffDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        const x = evt.nativeEvent.locationX;
+        const newPct = Math.max(0, Math.min(1, x / sliderWidth));
+        pctRef.current = newPct;
+        onChange(newPct);
+      },
+      onPanResponderMove: (evt, gs) => {
+        const startX = pctRef.current * sliderWidth;
+        const newX = startX + gs.dx;
+        const newPct = Math.max(0, Math.min(1, newX / sliderWidth));
+        onChange(newPct);
+      },
+    }),
+  ).current;
+
+  const thumbX = pct * sliderWidth;
+
+  return (
+    <View style={[tls.wrap, { borderTopColor: 'rgba(255,255,255,0.08)' }]}>
+      <Text style={[tls.label, { color: 'rgba(236,236,236,0.35)' }]}>
+        time
+      </Text>
+      <View style={tls.sliderRow}>
+        <View style={tls.trackWrap} {...pan.panHandlers}>
+          {/* Track */}
+          <View style={[tls.track, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
+          {/* Filled portion */}
+          <View style={[tls.fill, { width: thumbX, backgroundColor: 'rgba(255,255,255,0.22)' }]} />
+          {/* Milestone ticks */}
+          {milestones.map((m) => (
+            <View
+              key={m.topicId}
+              style={[tls.milestone, { left: m.pct * sliderWidth - 1, backgroundColor: 'rgba(255,255,255,0.4)' }]}
+            />
+          ))}
+          {/* Thumb */}
+          <View style={[tls.thumb, { left: thumbX - 6, backgroundColor: MAP_NODE }]} />
+        </View>
+        <Text style={[tls.dateLabel, { color: 'rgba(236,236,236,0.5)' }]}>
+          {dateLabel}
+        </Text>
+      </View>
+      <Text style={[tls.hint, { color: 'rgba(236,236,236,0.2)' }]}>
+        drag to travel through time
+      </Text>
+    </View>
+  );
+}
+
+const tls = StyleSheet.create({
+  wrap: {
+    position: 'absolute',
+    bottom: TAB_H,
+    left: 0,
+    right: 0,
+    paddingTop: Spacing[3],
+    paddingBottom: Spacing[4],
+    paddingHorizontal: SLIDER_MARGIN,
+    borderTopWidth: 1,
+    backgroundColor: 'rgba(6,6,6,0.88)',
+  },
+  label: {
+    fontFamily: FontFamily.mono,
+    fontSize: 8,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    marginBottom: Spacing[2],
+  },
+  sliderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[3],
+  },
+  trackWrap: {
+    flex: 1,
+    height: 20,
+    justifyContent: 'center',
+  },
+  track: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 2,
+    borderRadius: 1,
+  },
+  fill: {
+    position: 'absolute',
+    left: 0,
+    height: 2,
+    borderRadius: 1,
+  },
+  milestone: {
+    position: 'absolute',
+    width: 2,
+    height: 8,
+    top: 6,
+    borderRadius: 1,
+  },
+  thumb: {
+    position: 'absolute',
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    top: 4,
+  },
+  dateLabel: {
+    fontFamily: FontFamily.mono,
+    fontSize: 9,
+    letterSpacing: 0.5,
+    minWidth: 56,
+    textAlign: 'right',
+  },
+  hint: {
+    fontFamily: FontFamily.mono,
+    fontSize: 7,
+    letterSpacing: 1,
+    marginTop: Spacing[2],
+  },
+});
+
+// ── Center focus button ────────────────────────────────────────────
+
+function CenterFocusButton({ onPress, color, borderColor }: {
   onPress: () => void;
   color: string;
   borderColor: string;
@@ -583,12 +809,13 @@ function CenterFocusButton({
   );
 }
 
-// ── Main screen ─────────────────────────────────────────────────
+// ── Main screen ────────────────────────────────────────────────────
 
 export default function MapScreen() {
   const c = useThemeColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const [infoVisible, setInfoVisible] = useState(false);
 
   const { data: graphData, loading: graphLoading, refetch: refetchGraph } = useApiQuery(
     () => api.memory.graph({ limit: 80 }),
@@ -600,9 +827,112 @@ export default function MapScreen() {
   const nodes = graphData?.nodes ?? [];
   const edges = graphData?.edges ?? [];
   const clusters = graphData?.clusters ?? [];
-  const rawPos = useMemo(() => layoutGraph(nodes, clusters, edges, LAYOUT_W, LAYOUT_H), [nodes, clusters, edges]);
-  const pos = useMemo(() => applyLayoutOffset(rawPos), [rawPos]);
-  const clusterLabels = useMemo(() => clusterLabelPositions(clusters, LAYOUT_W, LAYOUT_H), [clusters]);
+
+  // ── Lens mode ──────────────────────────────────────────────────
+  const [lensMode, setLensMode] = useState<LensMode>('semantic');
+
+  // Compute all 3 layouts upfront
+  const semanticPos = useMemo(
+    () => applyLayoutOffset(layoutGraph(nodes, clusters, edges, LAYOUT_W, LAYOUT_H)),
+    [nodes, clusters, edges],
+  );
+  const temporalPos = useMemo(
+    () => applyLayoutOffset(layoutTemporal(nodes, LAYOUT_W, LAYOUT_H)),
+    [nodes],
+  );
+  const sourcePos = useMemo(
+    () => applyLayoutOffset(layoutSource(nodes, LAYOUT_W, LAYOUT_H)),
+    [nodes],
+  );
+
+  // Rendered positions (animated between lenses)
+  const renderPosRef = useRef<PositionMap>({});
+  const [renderPos, setRenderPos] = useState<PositionMap>({});
+  const lensAnimCancelRef = useRef<(() => void) | null>(null);
+
+  // Initialize on first data load
+  useEffect(() => {
+    if (nodes.length === 0) return;
+    const currentKeys = Object.keys(renderPosRef.current);
+    if (currentKeys.length === 0) {
+      // First load: snap to semantic
+      renderPosRef.current = semanticPos;
+      setRenderPos(semanticPos);
+    } else {
+      // New nodes added: instantly add them without animation
+      const targetPos = lensMode === 'semantic' ? semanticPos
+        : lensMode === 'temporal' ? temporalPos
+        : sourcePos;
+      const merged: PositionMap = { ...renderPosRef.current };
+      for (const [id, p] of Object.entries(targetPos)) {
+        if (!merged[id]) merged[id] = p;
+      }
+      // Remove nodes no longer in the graph
+      for (const id of Object.keys(merged)) {
+        if (!targetPos[id]) delete merged[id];
+      }
+      renderPosRef.current = merged;
+      setRenderPos({ ...merged });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes.length]);
+
+  const handleLensChange = useCallback((newLens: LensMode) => {
+    if (newLens === lensMode) return;
+
+    if (lensAnimCancelRef.current) {
+      lensAnimCancelRef.current();
+      lensAnimCancelRef.current = null;
+    }
+
+    const targetPos = newLens === 'semantic' ? semanticPos
+      : newLens === 'temporal' ? temporalPos
+      : sourcePos;
+
+    setLensMode(newLens);
+
+    if (Object.keys(renderPosRef.current).length === 0) {
+      renderPosRef.current = targetPos;
+      setRenderPos(targetPos);
+      return;
+    }
+
+    const fromPos: PositionMap = { ...renderPosRef.current };
+    const startTime = Date.now();
+    const duration = 720;
+    let cancelled = false;
+
+    const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+
+    const tick = () => {
+      if (cancelled) return;
+      const t = Math.min(1, (Date.now() - startTime) / duration);
+      const eased = easeOut(t);
+      const newPos: PositionMap = {};
+      for (const [id, target] of Object.entries(targetPos)) {
+        const from = fromPos[id] ?? target;
+        newPos[id] = {
+          x: from.x + (target.x - from.x) * eased,
+          y: from.y + (target.y - from.y) * eased,
+        };
+      }
+      renderPosRef.current = newPos;
+      setRenderPos(newPos);
+      if (t < 1) requestAnimationFrame(tick);
+    };
+
+    requestAnimationFrame(tick);
+    lensAnimCancelRef.current = () => { cancelled = true; };
+  }, [lensMode, semanticPos, temporalPos, sourcePos]);
+
+  // Use renderPos for display, fall back to semanticPos on first render
+  const pos = Object.keys(renderPos).length > 0 ? renderPos : semanticPos;
+
+  // ── Cluster label positions (semantic only for labels) ─────────
+  const clusterLabels = useMemo(
+    () => clusterLabelPositions(clusters, LAYOUT_W, LAYOUT_H),
+    [clusters],
+  );
 
   const clusterColorMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -612,7 +942,41 @@ export default function MapScreen() {
     return map;
   }, [clusterLabels]);
 
-  // ── Tool state ──────────────────────────────────────────────
+  // ── Terrain: edge counts + node lookup ────────────────────────
+  const nodeById = useMemo(() => {
+    const m = new Map<string, GraphNode>();
+    for (const n of nodes) m.set(n.id, n);
+    return m;
+  }, [nodes]);
+
+  const edgeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const edge of edges) {
+      counts[edge.fromItemId] = (counts[edge.fromItemId] ?? 0) + 1;
+      counts[edge.toItemId] = (counts[edge.toItemId] ?? 0) + 1;
+    }
+    return counts;
+  }, [edges]);
+
+  // Precompute per-node radius + base opacity (each node's RNG constructed once)
+  const nodeMetrics = useMemo(() => {
+    const m = new Map<string, { r: number; baseOpacity: number }>();
+    for (const node of nodes) {
+      const rng = seededRng(hashId(node.id));
+      const base = 2.2 + rng() * 1.8;
+      const deg = Math.min(edgeCounts[node.id] ?? 0, 8);
+      m.set(node.id, { r: base + deg * 0.45, baseOpacity: 0.65 + rng() * 0.35 });
+    }
+    return m;
+  }, [nodes, edgeCounts]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const isRecentNode = useCallback(
+    (node: GraphNode): boolean => Date.now() - new Date(node.capturedAt).getTime() < RECENT_MS,
+    [], // stable: RECENT_MS is a module constant, date.now() difference only matters per-session
+  );
+
+  // ── Tool state ─────────────────────────────────────────────────
   const [toolMode, setToolMode] = useState<ToolMode>('select');
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
@@ -632,26 +996,138 @@ export default function MapScreen() {
 
   const hasSearch = searchQuery.trim().length > 0;
 
-  // ── Viewport: pan + zoom ────────────────────────────────────
+  // ── Discovery mode ─────────────────────────────────────────────
+  const [discoveryNodeIds, setDiscoveryNodeIds] = useState<string[]>([]);
+  const [discoveryActive, setDiscoveryActive] = useState(false);
+
+  const discoveryResult = useMemo(() => {
+    if (!discoveryActive || discoveryNodeIds.length < 2) return null;
+
+    const selectedSet = new Set(discoveryNodeIds);
+    const connectedTo: Record<string, Set<string>> = {};
+
+    for (const id of discoveryNodeIds) {
+      connectedTo[id] = new Set();
+    }
+
+    for (const edge of edges) {
+      if (selectedSet.has(edge.fromItemId)) {
+        connectedTo[edge.fromItemId]!.add(edge.toItemId);
+      }
+      if (selectedSet.has(edge.toItemId)) {
+        connectedTo[edge.toItemId]!.add(edge.fromItemId);
+      }
+    }
+
+    // Shared neighbors: connected to ALL selected nodes
+    const [firstId, ...restIds] = discoveryNodeIds;
+    let sharedNeighbors = connectedTo[firstId!] ?? new Set<string>();
+    for (const id of restIds) {
+      sharedNeighbors = intersect(sharedNeighbors, connectedTo[id] ?? new Set<string>());
+    }
+    // Remove the selected nodes themselves from shared neighbors
+    for (const id of discoveryNodeIds) sharedNeighbors.delete(id);
+
+    const relevantNodeIds = new Set([...discoveryNodeIds, ...sharedNeighbors]);
+
+    const relevantEdges = edges.filter(
+      (e) => relevantNodeIds.has(e.fromItemId) && relevantNodeIds.has(e.toItemId),
+    );
+
+    // Shared topics between selected nodes
+    const topicSets = discoveryNodeIds.map((id) => {
+      const node = nodes.find((n) => n.id === id);
+      return new Set(node?.topics.map((t) => t.topicId) ?? []);
+    });
+    const [firstTopicSet, ...restTopicSets] = topicSets;
+    let sharedTopicIds = firstTopicSet ?? new Set<string>();
+    for (const ts of restTopicSets) {
+      sharedTopicIds = intersect(sharedTopicIds, ts);
+    }
+    const firstNode = nodes.find((n) => n.id === discoveryNodeIds[0]);
+    const sharedTopics = firstNode?.topics.filter((t) => sharedTopicIds.has(t.topicId)) ?? [];
+
+    return {
+      nodeIds: relevantNodeIds,
+      edges: relevantEdges,
+      sharedTopics,
+      sharedNeighborCount: sharedNeighbors.size,
+      directlyConnected: relevantEdges.some(
+        (e) =>
+          (e.fromItemId === discoveryNodeIds[0] && e.toItemId === discoveryNodeIds[1]) ||
+          (e.fromItemId === discoveryNodeIds[1] && e.toItemId === discoveryNodeIds[0]),
+      ),
+    };
+  }, [discoveryActive, discoveryNodeIds, edges, nodes]);
+
+  const discoveryEdgeKeys = useMemo(() => {
+    const s = new Set<string>();
+    for (const de of discoveryResult?.edges ?? []) {
+      s.add(`${de.fromItemId}:${de.toItemId}`);
+      s.add(`${de.toItemId}:${de.fromItemId}`);
+    }
+    return s;
+  }, [discoveryResult]);
+
+  const toggleDiscoveryNode = useCallback((nodeId: string) => {
+    setDiscoveryActive(false);
+    setDiscoveryNodeIds((prev) => {
+      if (prev.includes(nodeId)) return prev.filter((id) => id !== nodeId);
+      if (prev.length >= 5) return [...prev.slice(1), nodeId];
+      return [...prev, nodeId];
+    });
+  }, []);
+
+  const activateDiscovery = useCallback(() => {
+    if (discoveryNodeIds.length >= 2) {
+      setDiscoveryActive(true);
+      openDrawer(null);
+    }
+  }, [discoveryNodeIds.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const clearDiscovery = useCallback(() => {
+    setDiscoveryNodeIds([]);
+    setDiscoveryActive(false);
+  }, []);
+
+  // ── Timeline state (temporal lens) ────────────────────────────
+  const [timelinePct, setTimelinePct] = useState(1.0);
+
+  const nodeTimestamps = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const n of nodes) m.set(n.id, new Date(n.capturedAt).getTime());
+    return m;
+  }, [nodes]);
+
+  const timelineCutoffMs = useMemo(() => {
+    if (nodes.length === 0) return Infinity;
+    let minTs = Infinity, maxTs = -Infinity;
+    for (const ts of nodeTimestamps.values()) {
+      if (ts < minTs) minTs = ts;
+      if (ts > maxTs) maxTs = ts;
+    }
+    return minTs + (maxTs - minTs) * timelinePct;
+  }, [nodeTimestamps, timelinePct]);
+
+  // ── Focus mode ────────────────────────────────────────────────
+  const [focusedTopicId, setFocusedTopicId] = useState<string | null>(null);
+
+  // ── Viewport: pan + zoom ──────────────────────────────────────
   const savedVB = useRef({ x: INIT_VB_X, y: INIT_VB_Y });
   const [vbPos, setVbPos] = useState({ x: INIT_VB_X, y: INIT_VB_Y });
 
   const savedZoom = useRef(0.4);
   const [zoom, setZoom] = useState(0.4);
 
-  // Track pinch start state inside PanResponder (accessed via ref)
   const pinchStartRef = useRef<{ dist: number; zoom: number } | null>(null);
 
   const resetView = useCallback(() => {
-    const nx = INIT_VB_X;
-    const ny = INIT_VB_Y;
-    savedVB.current = { x: nx, y: ny };
+    savedVB.current = { x: INIT_VB_X, y: INIT_VB_Y };
     savedZoom.current = 0.4;
-    setVbPos({ x: nx, y: ny });
+    setVbPos({ x: INIT_VB_X, y: INIT_VB_Y });
     setZoom(0.4);
   }, []);
 
-  // ── Smooth camera transition ────────────────────────────────
   const animCancelRef = useRef<(() => void) | null>(null);
 
   const animateCamera = useCallback((targetX: number, targetY: number, targetZoom: number, duration = 900) => {
@@ -687,20 +1163,15 @@ export default function MapScreen() {
   }, []);
 
   const centerOnNodes = useCallback(() => {
-    if (nodes.length === 0) {
-      resetView();
-      return;
-    }
+    if (nodes.length === 0) { resetView(); return; }
 
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     let count = 0;
     for (const node of nodes) {
       const p = pos[node.id];
       if (!p) continue;
-      minX = Math.min(minX, p.x);
-      maxX = Math.max(maxX, p.x);
-      minY = Math.min(minY, p.y);
-      maxY = Math.max(maxY, p.y);
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
       count++;
     }
     if (count === 0) { resetView(); return; }
@@ -708,12 +1179,10 @@ export default function MapScreen() {
     const PAD = 72;
     const boundsW = maxX - minX + PAD * 2;
     const boundsH = maxY - minY + PAD * 2;
-
     const fitZoom = Math.min(SW / boundsW, (SH - TAB_H) / boundsH, 2.5);
     const newZoom = Math.max(ZOOM_MIN, fitZoom);
     const vbW = SW / newZoom;
     const vbH = SH / newZoom;
-
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
     const nx = clampVBX(centerX - vbW / 2, vbW);
@@ -727,8 +1196,7 @@ export default function MapScreen() {
 
   const mapPan = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: (evt) =>
-        evt.nativeEvent.touches.length >= 2,
+      onStartShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length >= 2,
       onMoveShouldSetPanResponder: (evt, gs) =>
         evt.nativeEvent.touches.length >= 2 ||
         Math.abs(gs.dx) > 4 || Math.abs(gs.dy) > 4,
@@ -738,10 +1206,7 @@ export default function MapScreen() {
         if (touches.length >= 2) {
           const dx = touches[0].pageX - touches[1].pageX;
           const dy = touches[0].pageY - touches[1].pageY;
-          pinchStartRef.current = {
-            dist: Math.sqrt(dx * dx + dy * dy),
-            zoom: savedZoom.current,
-          };
+          pinchStartRef.current = { dist: Math.sqrt(dx * dx + dy * dy), zoom: savedZoom.current };
         }
       },
 
@@ -755,12 +1220,10 @@ export default function MapScreen() {
           const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, raw));
           const vbW = SW / newZoom;
           const vbH = SH / newZoom;
-          const cx = clampVBX(savedVB.current.x, vbW);
-          const cy = clampVBY(savedVB.current.y, vbH);
           savedZoom.current = newZoom;
-          savedVB.current = { x: cx, y: cy };
+          savedVB.current = { x: clampVBX(savedVB.current.x, vbW), y: clampVBY(savedVB.current.y, vbH) };
           setZoom(newZoom);
-          setVbPos({ x: cx, y: cy });
+          setVbPos(savedVB.current);
           return;
         }
         const vbW = SW / savedZoom.current;
@@ -772,10 +1235,7 @@ export default function MapScreen() {
       },
 
       onPanResponderRelease: (evt, gs) => {
-        if (pinchStartRef.current) {
-          pinchStartRef.current = null;
-          return;
-        }
+        if (pinchStartRef.current) { pinchStartRef.current = null; return; }
         const vbW = SW / savedZoom.current;
         const vbH = SH / savedZoom.current;
         const nx = clampVBX(savedVB.current.x - gs.dx / savedZoom.current, vbW);
@@ -786,12 +1246,11 @@ export default function MapScreen() {
     }),
   ).current;
 
-  // ── Drawer state ────────────────────────────────────────────
+  // ── Drawer state ──────────────────────────────────────────────
   const DRAWER_W = SW * 0.76;
   type ClusterLabel = ReturnType<typeof clusterLabelPositions>[0];
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [drawerCluster, setDrawerCluster] = useState<ClusterLabel | null>(null);
-  // right:0 anchors the drawer to the right edge; translateX:0 = fully visible, translateX:DRAWER_W = off-screen
   const drawerX = useRef(new RNAnimated.Value(DRAWER_W)).current;
 
   const openDrawer = useCallback((cluster?: ClusterLabel | null) => {
@@ -805,6 +1264,7 @@ export default function MapScreen() {
       setDrawerVisible(false);
       setDrawerCluster(null);
       setSelectedNode(null);
+      setDiscoveryActive(false);
     });
   }, [drawerX, DRAWER_W]);
 
@@ -818,11 +1278,10 @@ export default function MapScreen() {
     openDrawer(cl);
   }, [animateCamera, openDrawer]);
 
-
-  // ── Node selection ──────────────────────────────────────────
+  // ── Node selection ────────────────────────────────────────────
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
 
-  // ── Capture state ───────────────────────────────────────────
+  // ── Capture state ─────────────────────────────────────────────
   const [showCapture, setShowCapture] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [mode, setMode] = useState<CaptureMode>('link');
@@ -852,12 +1311,8 @@ export default function MapScreen() {
   const openCapture = useCallback(() => {
     closeDrawer();
     setSelectedNode(null);
-    setStep(1);
-    setPayload('');
-    setReaction('');
-    setCaptureResult(null);
-    setCaptureError('');
-    setMode('link');
+    setStep(1); setPayload(''); setReaction('');
+    setCaptureResult(null); setCaptureError(''); setMode('link');
     setShowCapture(true);
     slideY.setValue(SH);
     RNAnimated.spring(slideY, { toValue: 0, useNativeDriver: true, damping: 22, stiffness: 170 }).start();
@@ -870,35 +1325,21 @@ export default function MapScreen() {
   }, [slideY]);
 
   const goNext = useCallback(() => {
-    if (!payload.trim()) {
-      setCaptureError('Enter a URL or thought first.');
-      return;
-    }
-    setCaptureError('');
-    setStep(2);
+    if (!payload.trim()) { setCaptureError('Enter a URL or thought first.'); return; }
+    setCaptureError(''); setStep(2);
   }, [payload]);
 
   const commit = useCallback(async () => {
-    setBusy(true);
-    setCaptureError('');
+    setBusy(true); setCaptureError('');
     try {
       let kind: CaptureKind = 'TEXT';
       let url: string | undefined;
       let text: string | undefined;
-      if (mode === 'link') {
-        kind = 'LINK';
-        url = normalizeLinkInput(payload);
-      } else if (mode === 'quote') {
-        kind = 'QUOTE';
-        text = payload.trim();
-      } else {
-        kind = 'TEXT';
-        text = payload.trim();
-      }
+      if (mode === 'link') { kind = 'LINK'; url = normalizeLinkInput(payload); }
+      else if (mode === 'quote') { kind = 'QUOTE'; text = payload.trim(); }
+      else { kind = 'TEXT'; text = payload.trim(); }
       const res = await api.captures.create({ kind, url, text, reaction: reaction.trim() || undefined });
-      setCaptureResult(res);
-      setStep(3);
-      setNewNodeId(res.id);
+      setCaptureResult(res); setStep(3); setNewNodeId(res.id);
       void refetchGraph();
     } catch (e) {
       setCaptureError(e instanceof Error ? e.message : 'Capture failed.');
@@ -922,7 +1363,11 @@ export default function MapScreen() {
     if (toolMode === 'search') {
       setTimeout(() => searchInputRef.current?.focus(), 120);
     }
-  }, [toolMode]);
+    // Exit discover mode if switching away
+    if (toolMode !== 'discover') {
+      clearDiscovery();
+    }
+  }, [toolMode, clearDiscovery]);
 
   useEffect(() => {
     if (!newNodeId || !pos[newNodeId] || animatingRef.current) return;
@@ -931,22 +1376,17 @@ export default function MapScreen() {
     RNAnimated.sequence([
       RNAnimated.timing(landingAnim, { toValue: 1, duration: 450, useNativeDriver: true }),
       RNAnimated.timing(landingAnim, { toValue: 0, duration: 750, useNativeDriver: true }),
-    ]).start(() => {
-      animatingRef.current = false;
-      setNewNodeId(null);
-    });
+    ]).start(() => { animatingRef.current = false; setNewNodeId(null); });
   }, [newNodeId, pos, landingAnim]);
 
-  const nodeColor = useCallback(
-    (node: GraphNode): string => {
-      for (const t of node.topics) {
-        const color = clusterColorMap.get(t.topicId);
-        if (color) return color;
-      }
-      return darkColors.mapNode;
-    },
-    [clusterColorMap],
-  );
+  const nodeColor = useCallback((node: GraphNode): string => {
+    const clusterColor = node.topics.reduce<string | undefined>(
+      (acc, t) => acc ?? clusterColorMap.get(t.topicId),
+      undefined,
+    );
+    if (clusterColor) return clusterColor;
+    return isRecentNode(node) ? '#D4B896' : MAP_NODE;
+  }, [clusterColorMap, isRecentNode]);
 
   const vbW = SW / zoom;
   const vbH = SH / zoom;
@@ -956,26 +1396,17 @@ export default function MapScreen() {
     const screenX = (p.x - vbPos.x) * zoom;
     const screenY = (p.y - vbPos.y) * zoom;
     const ringSize = 44;
-    const newNodeRingScale = landingAnim.interpolate({
-      inputRange: [0, 0.4, 1],
-      outputRange: [0.5, 2.4, 3.8],
-    });
-    const newNodeRingOpacity = landingAnim.interpolate({
-      inputRange: [0, 0.25, 1],
-      outputRange: [0, 0.55, 0],
-    });
+    const newNodeRingScale = landingAnim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0.5, 2.4, 3.8] });
+    const newNodeRingOpacity = landingAnim.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0, 0.55, 0] });
     return (
       <RNAnimated.View
         pointerEvents="none"
         style={{
           position: 'absolute',
-          width: ringSize,
-          height: ringSize,
+          width: ringSize, height: ringSize,
           borderRadius: ringSize / 2,
-          borderWidth: 1.5,
-          borderColor: c.text,
-          left: screenX - ringSize / 2,
-          top: screenY - ringSize / 2,
+          borderWidth: 1.5, borderColor: MAP_NODE,
+          left: screenX - ringSize / 2, top: screenY - ringSize / 2,
           transform: [{ scale: newNodeRingScale }],
           opacity: newNodeRingOpacity,
         }}
@@ -983,22 +1414,54 @@ export default function MapScreen() {
     );
   })() : null;
 
-  return (
-    <View style={[styles.root, { backgroundColor: darkColors.mapBackground }]}>
+  // Source kind labels for source lens mode
+  const kindLabels = lensMode === 'source' ? [
+    { kind: 'LINK' as CaptureKind, label: 'links', x: MAP_PAD + LAYOUT_W * 0.2, y: MAP_PAD + LAYOUT_H * 0.15 },
+    { kind: 'TEXT' as CaptureKind, label: 'thoughts', x: MAP_PAD + LAYOUT_W * 0.5, y: MAP_PAD + LAYOUT_H * 0.15 },
+    { kind: 'QUOTE' as CaptureKind, label: 'quotes', x: MAP_PAD + LAYOUT_W * 0.8, y: MAP_PAD + LAYOUT_H * 0.15 },
+  ] : [];
 
-      {/* ── Static full-screen background — fills gaps exposed by 2.5D tilt ── */}
+  // ── Node opacity: terrain + focus + discovery + timeline ───────
+  const getNodeOpacity = useCallback((node: GraphNode, baseOpacity: number, zoomFade: number) => {
+    // Search dimming
+    if (hasSearch && !highlightedIds.has(node.id)) {
+      return baseOpacity * 0.10 * zoomFade;
+    }
+    // Discovery dimming (when result is active)
+    if (discoveryResult && !discoveryResult.nodeIds.has(node.id)) {
+      return baseOpacity * 0.06 * zoomFade;
+    }
+    // Timeline cutoff (temporal lens)
+    if (lensMode === 'temporal') {
+      const ts = nodeTimestamps.get(node.id) ?? 0;
+      if (ts > timelineCutoffMs) {
+        return baseOpacity * 0.08 * zoomFade;
+      }
+    }
+    // Focus dimming
+    if (focusedTopicId && !node.topics.some((t) => t.topicId === focusedTopicId)) {
+      return baseOpacity * 0.06 * zoomFade;
+    }
+    return baseOpacity * zoomFade;
+  }, [hasSearch, highlightedIds, discoveryResult, lensMode, nodeTimestamps, timelineCutoffMs, focusedTopicId]);
+
+  // ── Render ────────────────────────────────────────────────────
+  return (
+    <View style={[styles.root, { backgroundColor: MAP_BG }]}>
+
+      {/* Static background dot grid */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <Svg width={SW} height={SH} style={StyleSheet.absoluteFill}>
           <Defs>
             <Pattern id="staticDotGrid" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
-              <Circle cx="16" cy="16" r="0.9" fill={darkColors.mapNode} fillOpacity={0.04} />
+              <Circle cx="16" cy="16" r="0.9" fill={MAP_NODE} fillOpacity={0.04} />
             </Pattern>
           </Defs>
           <Rect x="0" y="0" width={SW} height={SH} fill="url(#staticDotGrid)" />
         </Svg>
       </View>
 
-      {/* ── Pannable map canvas ── */}
+      {/* Pannable map canvas */}
       <View style={StyleSheet.absoluteFill}>
         <View style={StyleSheet.absoluteFill} {...mapPan.panHandlers}>
 
@@ -1009,84 +1472,63 @@ export default function MapScreen() {
             style={StyleSheet.absoluteFill}
           >
             <Defs>
-              {/* Subtle dot grid repeating pattern */}
               <Pattern id="dotGrid" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
-                <Circle cx="16" cy="16" r="0.9" fill={darkColors.mapNode} fillOpacity={0.04} />
+                <Circle cx="16" cy="16" r="0.9" fill={MAP_NODE} fillOpacity={0.04} />
               </Pattern>
-
-              {/* Warm ambient vignette */}
               <RadialGradient id="ambientGlow" cx="50%" cy="44%" r="48%" fx="50%" fy="44%">
-                <Stop offset="0%" stopColor={darkColors.mapNode} stopOpacity={0.06} />
-                <Stop offset="100%" stopColor={darkColors.mapNode} stopOpacity={0} />
+                <Stop offset="0%" stopColor={MAP_NODE} stopOpacity={0.06} />
+                <Stop offset="100%" stopColor={MAP_NODE} stopOpacity={0} />
               </RadialGradient>
-
-              {/* Per-cluster fills */}
               {clusterLabels.map((cl, i) => {
                 const color = CLUSTER_PALETTE[i % CLUSTER_PALETTE.length];
                 return (
-                  <RadialGradient
-                    key={`grad-${cl.topicId}`}
-                    id={`clGrad-${cl.topicId}`}
-                    cx="50%" cy="50%" r="50%"
-                    fx="50%" fy="50%"
-                  >
+                  <RadialGradient key={`grad-${cl.topicId}`} id={`clGrad-${cl.topicId}`} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
                     <Stop offset="0%" stopColor={color} stopOpacity={0.14} />
                     <Stop offset="55%" stopColor={color} stopOpacity={0.04} />
                     <Stop offset="100%" stopColor={color} stopOpacity={0} />
                   </RadialGradient>
                 );
               })}
-
-              {/* 2.5D sphere shine overlay — reused for all nodes */}
-              <RadialGradient id="sphereShine" cx="36%" cy="30%" r="68%" fx="36%" fy="30%">
-                <Stop offset="0%" stopColor="#FFFFFF" stopOpacity={0.78} />
-                <Stop offset="42%" stopColor="#FFFFFF" stopOpacity={0.04} />
-                <Stop offset="100%" stopColor="#000000" stopOpacity={0.22} />
-              </RadialGradient>
-
-              {/* Subtle background gradient — warm top, slightly cooler bottom */}
               <LinearGradient id="bgTone" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor={darkColors.mapNode} stopOpacity={0.012} />
-                <Stop offset="100%" stopColor={darkColors.mapNode} stopOpacity={0.03} />
+                <Stop offset="0%" stopColor={MAP_NODE} stopOpacity={0.012} />
+                <Stop offset="100%" stopColor={MAP_NODE} stopOpacity={0.03} />
               </LinearGradient>
             </Defs>
 
             <G>
-              {/* Dot grid background */}
               <Rect width={CANVAS_W} height={CANVAS_H} fill="url(#dotGrid)" />
-
-              {/* Warm tone wash */}
               <Rect width={CANVAS_W} height={CANVAS_H} fill="url(#bgTone)" />
-
-              {/* Ambient glow */}
               <Rect width={CANVAS_W} height={CANVAS_H} fill="url(#ambientGlow)" />
 
-              {/* Cluster region halos */}
-              {clusterLabels.map((cl) => {
+              {/* Cluster region halos — only in semantic mode */}
+              {lensMode === 'semantic' && clusterLabels.map((cl) => {
                 const clusterR = Math.min(LAYOUT_W, LAYOUT_H) * 0.16;
+                const dimmed = focusedTopicId && cl.topicId !== focusedTopicId;
                 return (
                   <Circle
                     key={`cl-area-${cl.topicId}`}
                     cx={cl.x} cy={cl.y} r={clusterR}
                     fill={`url(#clGrad-${cl.topicId})`}
+                    fillOpacity={dimmed ? 0.2 : 1}
                   />
                 );
               })}
 
-              {/* Cluster labels — large at low zoom, fade at high zoom */}
-              {clusterLabels.map((cl) => {
+              {/* Cluster labels (semantic mode only) */}
+              {lensMode === 'semantic' && clusterLabels.map((cl) => {
                 const clFontSize = Math.max(9, Math.min(22, 14 / zoom));
                 const clOpacity = zoom > 1.4
                   ? Math.max(0, (1 - (zoom - 1.4) / 0.6) * 0.14)
-                  : 0.12 + (1 - zoom) * 0.10; // slightly more visible at low zoom
+                  : 0.12 + (1 - zoom) * 0.10;
+                const dimmed = focusedTopicId && cl.topicId !== focusedTopicId;
                 return (
                   <SvgText
                     key={`cl-label-${cl.topicId}`}
                     x={cl.x} y={cl.y}
                     fontSize={clFontSize}
                     fontFamily={FontFamily.mono}
-                    fill={c.text}
-                    fillOpacity={Math.min(0.28, clOpacity)}
+                    fill="rgba(236,236,236,1)"
+                    fillOpacity={dimmed ? Math.min(0.05, clOpacity) : Math.min(0.28, clOpacity)}
                     textAnchor="middle"
                     letterSpacing={3.5}
                   >
@@ -1095,52 +1537,128 @@ export default function MapScreen() {
                 );
               })}
 
+              {/* Source kind labels */}
+              {kindLabels.map((kl) => {
+                const fontSize = Math.max(10, Math.min(20, 13 / zoom));
+                return (
+                  <SvgText
+                    key={`kl-${kl.kind}`}
+                    x={kl.x} y={kl.y}
+                    fontSize={fontSize}
+                    fontFamily={FontFamily.mono}
+                    fill="rgba(236,236,236,1)"
+                    fillOpacity={0.18}
+                    textAnchor="middle"
+                    letterSpacing={3}
+                  >
+                    {kl.label.toUpperCase()}
+                  </SvgText>
+                );
+              })}
+
+              {/* Temporal axis label */}
+              {lensMode === 'temporal' && nodes.length > 0 && (() => {
+                const fontSize = Math.max(8, Math.min(14, 10 / zoom));
+                return (
+                  <>
+                    <SvgText
+                      x={MAP_PAD + 20} y={MAP_PAD + LAYOUT_H * 0.85}
+                      fontSize={fontSize} fontFamily={FontFamily.mono}
+                      fill="rgba(236,236,236,1)" fillOpacity={0.15}
+                      letterSpacing={2}
+                    >
+                      OLDER
+                    </SvgText>
+                    <SvgText
+                      x={MAP_PAD + LAYOUT_W - 20} y={MAP_PAD + LAYOUT_H * 0.85}
+                      fontSize={fontSize} fontFamily={FontFamily.mono}
+                      fill="rgba(236,236,236,1)" fillOpacity={0.15}
+                      textAnchor="end" letterSpacing={2}
+                    >
+                      RECENT
+                    </SvgText>
+                  </>
+                );
+              })()}
+
               {/* Edges */}
               {edges.map((e, i) => {
                 const a = pos[e.fromItemId];
                 const b = pos[e.toItemId];
                 if (!a || !b) return null;
-                const opacity = 0.07 + e.weight * 0.24;
+
+                const isDiscoveryEdge = discoveryEdgeKeys.has(`${e.fromItemId}:${e.toItemId}`);
+                const baseOpacity = 0.07 + e.weight * 0.24;
+                let edgeOpacity = baseOpacity;
+                if (discoveryResult && !isDiscoveryEdge) edgeOpacity = baseOpacity * 0.04;
+                if (focusedTopicId) {
+                  const fromNode = nodeById.get(e.fromItemId);
+                  const toNode = nodeById.get(e.toItemId);
+                  const fromInFocus = fromNode?.topics.some((t) => t.topicId === focusedTopicId);
+                  const toInFocus = toNode?.topics.some((t) => t.topicId === focusedTopicId);
+                  if (!fromInFocus && !toInFocus) edgeOpacity *= 0.08;
+                }
+
                 return (
                   <Line
                     key={`e${i}`}
-                    x1={a.x} y1={a.y}
-                    x2={b.x} y2={b.y}
-                    stroke={darkColors.mapLine}
-                    strokeWidth={0.7}
-                    strokeOpacity={opacity}
+                    x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                    stroke={isDiscoveryEdge ? '#7EC8A0' : MAP_LINE}
+                    strokeWidth={isDiscoveryEdge ? 1.2 : 0.7}
+                    strokeOpacity={edgeOpacity}
                   />
                 );
               })}
 
-              {/* Nodes — fade in as zoom increases past 0.5 */}
+              {/* Nodes */}
               {nodes.map((node) => {
                 const p = pos[node.id];
                 if (!p) return null;
-                const rng = seededRng(hashId(node.id));
-                const baseR = 2.4 + rng() * 2.8;
-                const baseOpacity = 0.65 + rng() * 0.35;
+                const { r: baseR, baseOpacity } = nodeMetrics.get(node.id) ?? { r: 4, baseOpacity: 0.8 };
                 const color = nodeColor(node);
+                const recent = isRecentNode(node);
 
                 const isHighlighted = hasSearch && highlightedIds.has(node.id);
-                const isDimmed = hasSearch && !highlightedIds.has(node.id);
+                const isDiscoverySelected = discoveryNodeIds.includes(node.id);
+                const isDiscoveryRelevant = discoveryResult?.nodeIds.has(node.id);
 
-                // Nodes emerge as user zooms in
                 const zoomFade = zoom < 0.5 ? 0 : zoom < 0.9 ? (zoom - 0.5) / 0.4 : 1;
-                const finalOpacity = isDimmed
-                  ? baseOpacity * 0.12 * zoomFade
-                  : baseOpacity * zoomFade;
+                const finalOpacity = getNodeOpacity(node, baseOpacity, zoomFade);
 
-                const glowR = isHighlighted ? baseR * 9 : baseR * 5.5;
+                const glowR = isHighlighted || isDiscoverySelected ? baseR * 9 : baseR * 5.5;
+                const glowOp = (isHighlighted || isDiscoverySelected) ? 0.12 : (isDiscoveryRelevant ? 0.10 : 0.03);
+                const innerGlowOp = (isHighlighted || isDiscoverySelected) ? 0.28 : (isDiscoveryRelevant ? 0.20 : 0.09);
+
                 return (
                   <G key={node.id}>
-                    <Circle cx={p.x} cy={p.y} r={glowR} fill={color} fillOpacity={isDimmed ? 0 : (isHighlighted ? 0.1 : 0.03) * zoomFade} />
-                    <Circle cx={p.x} cy={p.y} r={baseR * 2.8} fill={color} fillOpacity={isDimmed ? 0 : (isHighlighted ? 0.22 : 0.09) * zoomFade} />
+                    <Circle cx={p.x} cy={p.y} r={glowR} fill={color} fillOpacity={finalOpacity === 0 ? 0 : glowOp * zoomFade} />
+                    <Circle cx={p.x} cy={p.y} r={baseR * 2.8} fill={color} fillOpacity={finalOpacity === 0 ? 0 : innerGlowOp * zoomFade} />
                     <Circle
-                      cx={p.x} cy={p.y} r={isHighlighted ? baseR * 1.7 : baseR}
-                      fill={isHighlighted ? color : darkColors.mapNode}
+                      cx={p.x} cy={p.y}
+                      r={(isHighlighted || isDiscoverySelected) ? baseR * 1.7 : baseR}
+                      fill={(isHighlighted || isDiscoverySelected || recent) ? color : MAP_NODE}
                       fillOpacity={finalOpacity}
                     />
+                    {/* Subtle ring around discovery selected nodes */}
+                    {isDiscoverySelected && (
+                      <Circle
+                        cx={p.x} cy={p.y} r={baseR * 2.2}
+                        fill="none"
+                        stroke="#7EC8A0"
+                        strokeWidth={0.8}
+                        strokeOpacity={0.6 * zoomFade}
+                      />
+                    )}
+                    {/* Subtle pulse ring for recent nodes */}
+                    {recent && !isDiscoverySelected && (
+                      <Circle
+                        cx={p.x} cy={p.y} r={baseR * 1.6}
+                        fill="none"
+                        stroke={color}
+                        strokeWidth={0.5}
+                        strokeOpacity={0.3 * zoomFade}
+                      />
+                    )}
                   </G>
                 );
               })}
@@ -1153,17 +1671,15 @@ export default function MapScreen() {
               ].map(([rx, ry], i) => (
                 <Circle
                   key={`g${i}`}
-                  cx={MAP_PAD + LAYOUT_W * rx}
-                  cy={MAP_PAD + LAYOUT_H * ry}
-                  r={2.5}
-                  fill={darkColors.mapNode}
-                  fillOpacity={0.07}
+                  cx={MAP_PAD + LAYOUT_W * rx!}
+                  cy={MAP_PAD + LAYOUT_H * ry!}
+                  r={2.5} fill={MAP_NODE} fillOpacity={0.07}
                 />
               ))}
             </G>
           </Svg>
 
-          {/* ── Node touch targets ── */}
+          {/* Node touch targets */}
           <View
             style={StyleSheet.absoluteFill}
             pointerEvents={toolMode === 'move' ? 'none' : 'box-none'}
@@ -1178,21 +1694,18 @@ export default function MapScreen() {
               return (
                 <Pressable
                   key={node.id}
-                  style={{
-                    position: 'absolute',
-                    width: HIT * 2,
-                    height: HIT * 2,
-                    left: screenX - HIT,
-                    top: screenY - HIT,
-                    borderRadius: HIT,
-                  }}
+                  style={{ position: 'absolute', width: HIT * 2, height: HIT * 2, left: screenX - HIT, top: screenY - HIT, borderRadius: HIT }}
                   onPress={() => {
-                    if (selectedNode?.id === node.id) {
-                      closeDrawer();
+                    if (toolMode === 'discover') {
+                      toggleDiscoveryNode(node.id);
                     } else {
-                      setSelectedNode(node);
-                      setDrawerCluster(null);
-                      openDrawer(null);
+                      if (selectedNode?.id === node.id) {
+                        closeDrawer();
+                      } else {
+                        setSelectedNode(node);
+                        setDrawerCluster(null);
+                        openDrawer(null);
+                      }
                     }
                   }}
                   accessibilityLabel={node.label}
@@ -1200,21 +1713,15 @@ export default function MapScreen() {
                 />
               );
             })}
-            {/* Cluster label touch targets */}
-            {clusterLabels.map((cl) => {
+            {/* Cluster label touch targets (semantic mode only) */}
+            {lensMode === 'semantic' && clusterLabels.map((cl) => {
               const screenX = (cl.x - vbPos.x) * zoom;
               const screenY = (cl.y - vbPos.y) * zoom;
               if (screenX < -60 || screenX > SW + 60 || screenY < -30 || screenY > SH + 30) return null;
               return (
                 <Pressable
                   key={`cl-tap-${cl.topicId}`}
-                  style={{
-                    position: 'absolute',
-                    left: screenX - 52,
-                    top: screenY - 18,
-                    width: 104,
-                    height: 36,
-                  }}
+                  style={{ position: 'absolute', left: screenX - 52, top: screenY - 18, width: 104, height: 36 }}
                   onPress={() => handleClusterTap(cl)}
                   accessibilityLabel={`${cl.name} cluster`}
                   accessibilityRole="button"
@@ -1225,103 +1732,198 @@ export default function MapScreen() {
 
         </View>
 
-        {/* ── New node landing animation ── */}
+        {/* New node landing animation */}
         {landingRing}
 
       </View>
 
-      {/* ── Fixed overlay ── */}
+      {/* Timeline scrubber (temporal lens) */}
+      {lensMode === 'temporal' && nodes.length > 0 && !showCapture && !drawerVisible && (
+        <TimelineScrubber
+          nodes={nodes}
+          clusters={clusters}
+          pct={timelinePct}
+          onChange={setTimelinePct}
+          c={c}
+        />
+      )}
+
+      {/* Fixed overlay */}
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
 
-        {/* ── Header ── */}
+        {/* Header */}
         <View
           style={[styles.header, { paddingTop: insets.top + 6 }]}
           pointerEvents="box-none"
         >
-          <Text variant="wordmark" color="primary">atlas</Text>
+          <View style={styles.headerLeft} pointerEvents="box-none">
+            <View pointerEvents="box-none">
+              <View style={styles.headerTitleRow} pointerEvents="box-none">
+                <Text variant="wordmark" color="primary">atlas</Text>
+                <Pressable
+                  onPress={() => setInfoVisible(true)}
+                  hitSlop={12}
+                  accessibilityLabel="About atlas"
+                  style={{ marginLeft: Spacing[3] }}
+                  pointerEvents="auto"
+                >
+                  <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.35)' }}>ⓘ</Text>
+                </Pressable>
+              </View>
+              {/* Lens picker */}
+              <View style={styles.lensRow} pointerEvents="box-none">
+                {(['semantic', 'temporal', 'source'] as LensMode[]).map((l, i) => {
+                  const label = l === 'temporal' ? 'time' : l;
+                  const active = lensMode === l;
+                  return (
+                    <React.Fragment key={l}>
+                      {i > 0 && (
+                        <Text style={styles.lensDot}>·</Text>
+                      )}
+                      <Pressable
+                        onPress={() => handleLensChange(l)}
+                        hitSlop={10}
+                        pointerEvents="auto"
+                        accessibilityLabel={`${label} lens`}
+                        accessibilityRole="button"
+                      >
+                        <Text style={[styles.lensLabel, { color: active ? 'rgba(236,236,236,0.65)' : 'rgba(236,236,236,0.22)' }]}>
+                          {label.toUpperCase()}
+                        </Text>
+                      </Pressable>
+                    </React.Fragment>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
           <View style={styles.headerRight} pointerEvents="box-none">
             {graphLoading && (
-              <Text variant="monoSmall" style={{ color: c.muted, letterSpacing: 2, marginRight: Spacing[3] }}>·</Text>
+              <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.3)', letterSpacing: 2, marginRight: Spacing[3] }}>·</Text>
             )}
             <Toolbar toolMode={toolMode} setToolMode={setToolMode} c={c} />
           </View>
         </View>
 
-        {/* ── Search bar ── */}
+        <InfoModal
+          visible={infoVisible}
+          onClose={() => setInfoVisible(false)}
+          title="atlas"
+          body="Your personal knowledge map. Each node is a capture. Connections emerge as ideas share topics, contradict, or evolve. Switch lenses to see your map through different projections — semantic clusters, time, or source type."
+        />
+
+        {/* Focus mode indicator */}
+        {focusedTopicId && !showCapture && (
+          <View style={[styles.focusBadge, { top: insets.top + 80, backgroundColor: 'rgba(10,10,10,0.85)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
+            <Text style={[styles.focusBadgeText, { color: 'rgba(236,236,236,0.5)' }]}>
+              {clusters.find((cl) => cl.topicId === focusedTopicId)?.name ?? ''}
+            </Text>
+            <Pressable onPress={() => setFocusedTopicId(null)} hitSlop={8} style={{ marginLeft: Spacing[2] }}>
+              <Text style={[styles.focusBadgeText, { color: 'rgba(236,236,236,0.35)' }]}>×</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Search bar */}
         {toolMode === 'search' && (
           <View
-            style={[styles.searchBar, { top: insets.top + 56, backgroundColor: c.elevated, borderColor: c.border }]}
+            style={[styles.searchBar, { top: insets.top + 80, backgroundColor: 'rgba(14,14,14,0.92)', borderColor: 'rgba(255,255,255,0.12)' }]}
             pointerEvents="auto"
           >
-            <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: c.faint, marginRight: Spacing[2], letterSpacing: 1.5 }}>
+            <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: 'rgba(236,236,236,0.35)', marginRight: Spacing[2], letterSpacing: 1.5 }}>
               FIND_
             </Text>
             <TextInput
               ref={searchInputRef}
-              style={{ flex: 1, fontFamily: FontFamily.mono, fontSize: FontSize.sm, color: c.text, paddingVertical: 0 }}
+              style={{ flex: 1, fontFamily: FontFamily.mono, fontSize: FontSize.sm, color: MAP_NODE, paddingVertical: 0 }}
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholder="topic or keyword..."
-              placeholderTextColor={c.faint}
+              placeholderTextColor="rgba(236,236,236,0.2)"
               autoCapitalize="none"
               returnKeyType="search"
             />
             {hasSearch && (
               <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-                <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: c.muted }}>✕</Text>
+                <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: 'rgba(236,236,236,0.4)' }}>✕</Text>
               </Pressable>
             )}
             {hasSearch && (
-              <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: c.muted, marginLeft: Spacing[3] }}>
+              <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: 'rgba(236,236,236,0.3)', marginLeft: Spacing[3] }}>
                 {highlightedIds.size}
               </Text>
             )}
           </View>
         )}
 
-        {/* ── Empty state ── */}
+        {/* Discover mode: selection count + Find button */}
+        {toolMode === 'discover' && discoveryNodeIds.length > 0 && !showCapture && !drawerVisible && (
+          <View style={[styles.discoveryBar, { bottom: TAB_H + (lensMode === 'temporal' ? SCRUBBER_H : 0) + Spacing[5] }]} pointerEvents="box-none">
+            <View style={[styles.discoveryPill, { backgroundColor: 'rgba(10,10,10,0.88)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
+              <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.5)' }]}>
+                {discoveryNodeIds.length} selected
+              </Text>
+              {discoveryNodeIds.length >= 2 && (
+                <>
+                  <View style={[styles.discoverySep, { backgroundColor: 'rgba(255,255,255,0.1)' }]} />
+                  <Pressable onPress={activateDiscovery} hitSlop={8}>
+                    <Text style={[styles.discoveryAction, { color: '#7EC8A0' }]}>
+                      find connection →
+                    </Text>
+                  </Pressable>
+                </>
+              )}
+              <View style={[styles.discoverySep, { backgroundColor: 'rgba(255,255,255,0.1)' }]} />
+              <Pressable onPress={clearDiscovery} hitSlop={8}>
+                <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.3)' }]}>✕</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {/* Empty state */}
         {isEmpty && (
           <View style={styles.emptyHint} pointerEvents="none">
-            <Text variant="monoSmall" style={{ color: c.faint, textAlign: 'center', letterSpacing: 4, marginBottom: Spacing[5] }}>
+            <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.2)', textAlign: 'center', letterSpacing: 4, marginBottom: Spacing[5] }}>
               · · ·
             </Text>
-            <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[3] }}>
+            <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[3], color: 'rgba(236,236,236,0.35)' }}>
               the atlas is empty
             </Text>
-            <Text variant="monoSmall" style={{ color: c.faint, textAlign: 'center', lineHeight: 20 }}>
+            <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.2)', textAlign: 'center', lineHeight: 20 }}>
               {'Save your first capture using\nthe + button below.'}
             </Text>
           </View>
         )}
 
-        {/* ── Center + count (bottom-left) ── */}
-        {nodes.length > 0 && !showCapture && !drawerVisible && (
-          <View style={[styles.mapMeta, { bottom: TAB_H + Spacing[5] }]} pointerEvents="box-none">
-            <CenterFocusButton onPress={centerOnNodes} color={c.muted} borderColor={c.borderSubtle} />
-            <Text variant="monoSmall" style={{ color: c.faint, marginLeft: Spacing[3] }}>
+        {/* Center + count (bottom-left) */}
+        {nodes.length > 0 && !showCapture && !drawerVisible && toolMode !== 'discover' && (
+          <View
+            style={[
+              styles.mapMeta,
+              { bottom: TAB_H + (lensMode === 'temporal' ? SCRUBBER_H : 0) + Spacing[5] },
+            ]}
+            pointerEvents="box-none"
+          >
+            <CenterFocusButton onPress={centerOnNodes} color="rgba(236,236,236,0.35)" borderColor="rgba(255,255,255,0.10)" />
+            <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.25)', marginLeft: Spacing[3] }}>
               {nodes.length} {nodes.length === 1 ? 'point' : 'points'}
             </Text>
           </View>
         )}
 
-        {/* ── Right-side drawer for node / cluster details ── */}
+        {/* Right-side drawer */}
         {drawerVisible && !showCapture && (
           <>
-            {/* Dim overlay on the left (pressable to dismiss) */}
             <Pressable
-              style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.3)' }]}
+              style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.4)' }]}
               onPress={closeDrawer}
               accessibilityLabel="Close detail panel"
             />
             <RNAnimated.View
               style={[
                 styles.drawer,
-                {
-                  width: DRAWER_W,
-                  backgroundColor: c.background,
-                  borderLeftColor: c.border,
-                  transform: [{ translateX: drawerX }],
-                },
+                { width: DRAWER_W, backgroundColor: c.background, borderLeftColor: c.border, transform: [{ translateX: drawerX }] },
               ]}
               pointerEvents="auto"
             >
@@ -1334,10 +1936,77 @@ export default function MapScreen() {
                   <Text variant="monoSmall" style={{ color: c.muted }}>✕</Text>
                 </Pressable>
 
-                {/* Cluster detail */}
-                {drawerCluster && !selectedNode && (
+                {/* Discovery result */}
+                {discoveryResult && discoveryActive && (
                   <View>
-                    <Text variant="h2" style={{ marginBottom: Spacing[2] }}>{drawerCluster.name}</Text>
+                    <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3], letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                      connection
+                    </Text>
+                    <Text variant="h3" style={{ marginBottom: Spacing[2] }}>
+                      {discoveryNodeIds.length} ideas
+                    </Text>
+                    <View style={[styles.drawerHairline, { backgroundColor: c.border }]} />
+
+                    {discoveryResult.directlyConnected && (
+                      <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3], marginBottom: Spacing[2] }}>
+                        directly connected
+                      </Text>
+                    )}
+
+                    {discoveryResult.sharedNeighborCount > 0 && (
+                      <Text variant="monoSmall" color="muted" style={{ marginBottom: Spacing[2] }}>
+                        {discoveryResult.sharedNeighborCount} shared {discoveryResult.sharedNeighborCount === 1 ? 'neighbor' : 'neighbors'}
+                      </Text>
+                    )}
+
+                    {discoveryResult.sharedTopics.length > 0 ? (
+                      <View style={{ marginTop: Spacing[2] }}>
+                        <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[2] }}>shared topics</Text>
+                        {discoveryResult.sharedTopics.map((t) => (
+                          <Text key={t.topicId} variant="body" color="secondary" style={{ marginBottom: Spacing[1] }}>
+                            {t.name}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : (
+                      <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3] }}>
+                        no shared topics — these ideas exist in different territories of your map.
+                      </Text>
+                    )}
+
+                    {discoveryResult.sharedNeighborCount === 0 && !discoveryResult.directlyConnected && (
+                      <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3] }}>
+                        no direct connection yet. capturing more around these ideas may reveal one.
+                      </Text>
+                    )}
+
+                    <View style={[styles.drawerHairline, { backgroundColor: c.border, marginTop: Spacing[4] }]} />
+                    <Pressable onPress={() => { clearDiscovery(); closeDrawer(); }} style={{ marginTop: Spacing[4] }}>
+                      <Text variant="monoSmall" color="muted">clear selection →</Text>
+                    </Pressable>
+                  </View>
+                )}
+
+                {/* Cluster detail */}
+                {drawerCluster && !selectedNode && !discoveryActive && (
+                  <View>
+                    <View style={styles.drawerClusterHeader}>
+                      <Text variant="h2" style={{ flex: 1, marginBottom: Spacing[2] }}>{drawerCluster.name}</Text>
+                      <Pressable
+                        onPress={() => {
+                          setFocusedTopicId((prev) => prev === drawerCluster.topicId ? null : drawerCluster.topicId);
+                        }}
+                        style={[styles.focusToggle, {
+                          borderColor: c.borderSubtle,
+                          backgroundColor: focusedTopicId === drawerCluster.topicId ? c.elevated : 'transparent',
+                        }]}
+                        hitSlop={8}
+                      >
+                        <Text variant="monoSmall" style={{ color: focusedTopicId === drawerCluster.topicId ? c.text : c.faint }}>
+                          {focusedTopicId === drawerCluster.topicId ? 'focused' : 'focus'}
+                        </Text>
+                      </Pressable>
+                    </View>
                     <Text variant="monoSmall" color="muted" style={{ marginBottom: Spacing[6] }}>
                       {drawerCluster.count} {drawerCluster.count === 1 ? 'capture' : 'captures'}
                     </Text>
@@ -1358,10 +2027,11 @@ export default function MapScreen() {
                 )}
 
                 {/* Node detail */}
-                {selectedNode && (
+                {selectedNode && !discoveryActive && (
                   <View>
                     <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3] }}>
                       {selectedNode.kind.toLowerCase()} · {new Date(selectedNode.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      {isRecentNode(selectedNode) && ' · new'}
                     </Text>
                     <Text variant="h3" style={{ marginBottom: Spacing[4] }} numberOfLines={4}>
                       {selectedNode.label}
@@ -1385,10 +2055,7 @@ export default function MapScreen() {
                       </Text>
                     )}
                     <Pressable
-                      onPress={() => {
-                        closeDrawer();
-                        router.push(`/insight/${selectedNode.id}` as never);
-                      }}
+                      onPress={() => { closeDrawer(); router.push(`/insight/${selectedNode.id}` as never); }}
                       style={{ marginTop: Spacing[2] }}
                     >
                       <Text variant="monoSmall" color="muted">view insight →</Text>
@@ -1400,30 +2067,30 @@ export default function MapScreen() {
           </>
         )}
 
-        {/* ── FAB — only visible when no drawer is open ── */}
+        {/* FAB */}
         {!showCapture && !drawerVisible && (
-          <View style={[styles.fabWrap, { bottom: TAB_H + Spacing[5] }]} pointerEvents="box-none">
+          <View style={[styles.fabWrap, { bottom: TAB_H + (lensMode === 'temporal' ? SCRUBBER_H : 0) + Spacing[5] }]} pointerEvents="box-none">
             <RNAnimated.View
-              style={[styles.fabRing, { borderColor: c.text, opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
+              style={[styles.fabRing, { borderColor: MAP_NODE, opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
               pointerEvents="none"
             />
             <Pressable
               onPress={openCapture}
-              style={[styles.fab, { backgroundColor: c.text }]}
+              style={[styles.fab, { backgroundColor: MAP_NODE }]}
               accessibilityLabel="Capture new memory"
               accessibilityRole="button"
             >
-              <Text style={[styles.fabPlus, { color: c.background }]}>+</Text>
+              <Text style={[styles.fabPlus, { color: '#060606' }]}>+</Text>
             </Pressable>
           </View>
         )}
 
-        {/* ── Backdrop — prevents map bleed through rounded modal corners ── */}
+        {/* Backdrop for capture modal */}
         {showCapture && (
           <View style={[StyleSheet.absoluteFill, { backgroundColor: c.background }]} pointerEvents="none" />
         )}
 
-        {/* ── Capture modal ── */}
+        {/* Capture modal */}
         {showCapture && (
           <RNAnimated.View
             style={[
@@ -1448,9 +2115,7 @@ export default function MapScreen() {
                 <View style={styles.stepRow}>
                   {([1, 2, 3] as const).map((s) => (
                     <React.Fragment key={s}>
-                      <View
-                        style={[styles.stepDot, { backgroundColor: step >= s ? c.text : 'transparent', borderColor: step >= s ? c.text : c.border }]}
-                      />
+                      <View style={[styles.stepDot, { backgroundColor: step >= s ? c.text : 'transparent', borderColor: step >= s ? c.text : c.border }]} />
                       {s < 3 && <View style={[styles.stepLine, { backgroundColor: step > s ? c.text : c.border }]} />}
                     </React.Fragment>
                   ))}
@@ -1482,10 +2147,7 @@ export default function MapScreen() {
                   {step === 3 && captureResult && (
                     <StepThree
                       result={captureResult}
-                      onViewInsight={() => {
-                        closeCapture();
-                        router.push(`/insight/${captureResult.id}` as never);
-                      }}
+                      onViewInsight={() => { closeCapture(); router.push(`/insight/${captureResult.id}` as never); }}
                       onBackToMap={closeCapture}
                       c={c}
                     />
@@ -1508,14 +2170,44 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0, left: 0, right: 0,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing[6],
     paddingBottom: Spacing[3],
   },
-  headerRight: {
+  headerLeft: { flexDirection: 'column', alignItems: 'flex-start' },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', paddingTop: 4 },
+  lensRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 4,
+  },
+  lensLabel: {
+    fontFamily: FontFamily.mono,
+    fontSize: 8,
+    letterSpacing: 1.5,
+  },
+  lensDot: {
+    fontFamily: FontFamily.mono,
+    fontSize: 8,
+    color: 'rgba(236,236,236,0.15)',
+    marginHorizontal: 5,
+  },
+  focusBadge: {
+    position: 'absolute',
+    left: Spacing[6],
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: Radius.full,
+    paddingVertical: 5,
+    paddingHorizontal: Spacing[3],
+  },
+  focusBadgeText: {
+    fontFamily: FontFamily.mono,
+    fontSize: 9,
+    letterSpacing: 1.2,
   },
   searchBar: {
     position: 'absolute',
@@ -1528,6 +2220,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[4],
     paddingVertical: 9,
   },
+  discoveryBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  discoveryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: Radius.full,
+    paddingVertical: 8,
+    paddingHorizontal: Spacing[4],
+    gap: Spacing[3],
+  },
+  discoveryCount: {
+    fontFamily: FontFamily.mono,
+    fontSize: FontSize.xs,
+    letterSpacing: 1,
+  },
+  discoveryAction: {
+    fontFamily: FontFamily.mono,
+    fontSize: FontSize.xs,
+    letterSpacing: 1,
+  },
+  discoverySep: { width: 1, height: 14 },
   emptyHint: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
@@ -1549,44 +2267,37 @@ const styles = StyleSheet.create({
   },
   drawer: {
     position: 'absolute',
-    top: 0,
-    bottom: 0,
-    right: 0,
+    top: 0, bottom: 0, right: 0,
     borderLeftWidth: 1,
   },
-  drawerScroll: {
-    paddingHorizontal: Spacing[6],
-    paddingTop: Spacing[8],
-  },
-  drawerClose: {
-    alignSelf: 'flex-end',
-    marginBottom: Spacing[6],
-    padding: Spacing[2],
-  },
-  drawerHairline: {
-    height: StyleSheet.hairlineWidth,
-    marginVertical: Spacing[4],
+  drawerScroll: { paddingHorizontal: Spacing[6], paddingTop: Spacing[8] },
+  drawerClose: { alignSelf: 'flex-end', marginBottom: Spacing[6], padding: Spacing[2] },
+  drawerHairline: { height: StyleSheet.hairlineWidth, marginVertical: Spacing[4] },
+  drawerClusterHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  focusToggle: {
+    borderWidth: 1,
+    borderRadius: Radius.xs,
+    paddingVertical: 4,
+    paddingHorizontal: Spacing[2],
+    marginLeft: Spacing[2],
+    marginTop: 2,
   },
   fabWrap: {
     position: 'absolute',
     alignSelf: 'center',
-    left: 0,
-    right: 0,
+    left: 0, right: 0,
     alignItems: 'center',
   },
   fabRing: {
     position: 'absolute',
-    width: FAB_SIZE,
-    height: FAB_SIZE,
+    width: FAB_SIZE, height: FAB_SIZE,
     borderRadius: FAB_SIZE / 2,
     borderWidth: 1,
   },
   fab: {
-    width: FAB_SIZE,
-    height: FAB_SIZE,
+    width: FAB_SIZE, height: FAB_SIZE,
     borderRadius: FAB_SIZE / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.18,

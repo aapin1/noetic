@@ -9,6 +9,7 @@ import { Spacing, FontFamily } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { SkeletonCard } from '@/components/ui/Skeleton';
+import { InfoModal } from '@/components/ui/InfoModal';
 import type { MemoryTrendsResponse } from '@/types/api';
 
 const { width: SW } = Dimensions.get('window');
@@ -47,17 +48,7 @@ function TopicGalaxy({ data }: { data: MemoryTrendsResponse }) {
   const c = useThemeColors();
   const layout = useMemo(() => computeGalaxyLayout(data.themes, SW, GALAXY_H), [data.themes]);
 
-  if (layout.length === 0) {
-    return (
-      <View style={[styles.galaxyWrap, { height: GALAXY_H }]}>
-        <View style={styles.ghostCenter}>
-          <Text variant="monoSmall" style={{ color: c.faint, textAlign: 'center' }}>
-            {'your galaxy grows\nas you capture more'}
-          </Text>
-        </View>
-      </View>
-    );
-  }
+  if (layout.length === 0) return null;
 
   return (
     <View style={[styles.galaxyWrap, { height: GALAXY_H }]}>
@@ -145,6 +136,7 @@ function TensionRow({ ev }: { ev: MemoryTrendsResponse['events'][number] }) {
 export default function GalaxyScreen() {
   const c = useThemeColors();
   const [windowKey, setWindowKey] = useState<'week' | 'month'>('week');
+  const [infoVisible, setInfoVisible] = useState(false);
   const { data, loading, error, refetch } = useApiQuery(
     () => api.memory.trends({ window: windowKey }),
     [windowKey],
@@ -166,20 +158,31 @@ export default function GalaxyScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: c.border }]}>
         <Text variant="wordmark" color="primary">drift</Text>
-        <View style={styles.toggle}>
-          {(['week', 'month'] as const).map((w) => (
-            <Pressable
-              key={w}
-              onPress={() => setWindowKey(w)}
-              style={[styles.chip, windowKey === w && { borderBottomColor: c.text, borderBottomWidth: 1 }]}
-            >
-              <Text variant="monoSmall" style={{ color: windowKey === w ? c.text : c.muted }}>
-                {w === 'week' ? '7d' : '30d'}
-              </Text>
-            </Pressable>
-          ))}
+        <View style={styles.headerRight}>
+          <View style={styles.toggle}>
+            {(['week', 'month'] as const).map((w) => (
+              <Pressable
+                key={w}
+                onPress={() => setWindowKey(w)}
+                style={[styles.chip, windowKey === w && { borderBottomColor: c.text, borderBottomWidth: 1 }]}
+              >
+                <Text variant="monoSmall" style={{ color: windowKey === w ? c.text : c.muted }}>
+                  {w === 'week' ? '7d' : '30d'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About drift" style={{ marginLeft: Spacing[3] }}>
+            <Text variant="monoSmall" style={{ color: c.faint }}>ⓘ</Text>
+          </Pressable>
         </View>
       </View>
+      <InfoModal
+        visible={infoVisible}
+        onClose={() => setInfoVisible(false)}
+        title="drift"
+        body="Tracks how your attention shifts across topics over time. The galaxy shows your active topics by volume — closer to centre means more recent activity. Tensions surface when new captures pull against ideas you already hold."
+      />
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -193,6 +196,15 @@ export default function GalaxyScreen() {
               <Text variant="monoSmall" style={{ color: c.text }}>retry</Text>
             </Pressable>
           </View>
+        ) : data.themes.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[4] }}>
+              your galaxy grows as you capture more
+            </Text>
+            <Text variant="monoSmall" style={{ color: c.faint, textAlign: 'center', lineHeight: 22 }}>
+              {'Drift tracks how your attention\nshifts. Capture a few items\nacross topics to see it emerge.'}
+            </Text>
+          </View>
         ) : (
           <>
             <TopicGalaxy data={data} />
@@ -204,13 +216,6 @@ export default function GalaxyScreen() {
                 {data.events.map((ev) => (
                   <TensionRow key={ev.id} ev={ev} />
                 ))}
-              </View>
-            )}
-            {data.themes.length === 0 && (
-              <View style={styles.centered}>
-                <Text variant="monoSmall" style={{ color: c.faint, textAlign: 'center', lineHeight: 22 }}>
-                  {'Drift tracks how your attention\nshifts. Capture a few items\nacross topics to see it emerge.'}
-                </Text>
               </View>
             )}
           </>
@@ -227,11 +232,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[6], paddingVertical: Spacing[4],
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  headerRight: { flexDirection: 'row', alignItems: 'center' },
   toggle: { flexDirection: 'row', gap: Spacing[3] },
   chip: { paddingBottom: 2 },
+  emptyState: { paddingTop: Spacing[20], paddingHorizontal: Spacing[8], alignItems: 'center' },
   content: { paddingBottom: Spacing[16] },
   galaxyWrap: { width: SW, overflow: 'hidden' },
-  ghostCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing[12] },
   divider: { borderTopWidth: StyleSheet.hairlineWidth, marginHorizontal: Spacing[6], marginVertical: Spacing[4] },
   pulseLine: { paddingHorizontal: Spacing[6], marginBottom: Spacing[4], letterSpacing: 0.8 },
   tensionsSection: { paddingHorizontal: Spacing[6], paddingTop: Spacing[5] },

@@ -35,7 +35,7 @@ export default function YouScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: c.border }]}>
-        <Text variant="wordmark">You</Text>
+        <Text variant="wordmark">you</Text>
         <Pressable onPress={() => router.push('/settings')} accessibilityLabel="Settings">
           <SettingsIcon size={22} color={c.text} />
         </Pressable>
@@ -63,13 +63,10 @@ export default function YouScreen() {
 
         <View style={[styles.statCard, { borderColor: c.border }]}>
           <Text variant="label" color="muted">
-            Memory activity
+            captures
           </Text>
           <Text variant="h2" style={{ marginTop: Spacing[2] }}>
-            {count === 0 ? 'No captures yet' : `${count} in working set`}
-          </Text>
-          <Text variant="caption" color="muted" style={{ marginTop: Spacing[2] }}>
-            Count reflects recent items loaded from your private index (up to 80).
+            {count === 0 ? '—' : count}
           </Text>
         </View>
 

@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
@@ -15,6 +15,7 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
+import { InfoModal } from '@/components/ui/InfoModal';
 import type {
   ContradictionCard,
   ThreadSynthesis,
@@ -245,6 +246,7 @@ function PositionCard({
 export default function MindScreen() {
   const c = useThemeColors();
   const router = useRouter();
+  const [infoVisible, setInfoVisible] = useState(false);
   const { data, loading, error, refetch } = useApiQuery(
     () => api.memory.intelligence(),
     [],
@@ -280,7 +282,7 @@ export default function MindScreen() {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
         <View style={[styles.header, { borderBottomColor: c.border }]}>
-          <Text variant="wordmark">Mind</Text>
+          <Text variant="wordmark">mind</Text>
         </View>
         <SkeletonCard />
       </SafeAreaView>
@@ -291,7 +293,7 @@ export default function MindScreen() {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
         <View style={[styles.header, { borderBottomColor: c.border }]}>
-          <Text variant="wordmark">Mind</Text>
+          <Text variant="wordmark">mind</Text>
         </View>
         <EmptyState title="Mind unavailable" body={error} ctaLabel="Retry" onCta={refetch} />
       </SafeAreaView>
@@ -301,8 +303,17 @@ export default function MindScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: c.border }]}>
-        <Text variant="wordmark">Mind</Text>
+        <Text variant="wordmark">mind</Text>
+        <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About mind">
+          <Text variant="monoSmall" style={{ color: c.faint }}>ⓘ</Text>
+        </Pressable>
       </View>
+      <InfoModal
+        visible={infoVisible}
+        onClose={() => setInfoVisible(false)}
+        title="mind"
+        body="Surfaces what's already in your map — patterns you didn't notice, contradictions between things you hold, threads that keep recurring. It emerges from your captures, not from prompts."
+      />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -413,6 +424,9 @@ export default function MindScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: Spacing[6],
     paddingVertical: Spacing[4],
     borderBottomWidth: 1,

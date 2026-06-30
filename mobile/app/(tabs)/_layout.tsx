@@ -41,7 +41,10 @@ function SocraticFab() {
         setLoading(false);
       }
     }
-    if (!tid) return;
+    if (!tid) {
+      router.push('/companion' as never);
+      return;
+    }
     router.push({ pathname: '/socratic/[topicId]' as never, params: { topicId: tid } });
   };
 
