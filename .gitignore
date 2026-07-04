@@ -11,3 +11,15 @@ test-results
 # User-uploaded capture images (served from /public)
 public/capture-uploads/*
 !public/capture-uploads/.gitkeep
+
+# Build cache
+tsconfig.tsbuildinfo
+
+# Expo local state
+mobile/.expo/
+
+# Local agent tooling / skills (not part of the product)
+.claude/
+.agents/
+awesome-ux-skills/
+skills-lock.json

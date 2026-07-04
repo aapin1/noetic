@@ -4,6 +4,7 @@ import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/server/db";
 import { fetchMetadata, sourceSlug } from "@/server/metadata";
+import { cleanContentMetadata } from "@/server/cognition/llm";
 import { upsertTopics } from "@/server/topics";
 import { normalizeUrl } from "@/server/url";
 
@@ -125,20 +126,33 @@ export async function ingestUrl(url: string, db: DbClient = prisma) {
   }
 
   const metadata = fetched.metadata;
-  const title = metadata.title!;
   const canonicalUrl = metadata.canonicalUrl!;
   const source = await ensureContentSource(db, metadata.sourceName, metadata.sourceDomain);
   const contentType = await ensureContentType(db, metadata.contentType);
 
+  // Clean scraped metadata: separate author from title, drop boilerplate, and
+  // produce a meaningful excerpt. Falls back to raw values on any failure.
+  const cleaned = await cleanContentMetadata({
+    rawTitle: metadata.title!,
+    rawDescription: metadata.description,
+    rawAuthor: metadata.authorName,
+    siteName: metadata.siteName,
+    bodyText: metadata.bodyText,
+  });
+
+  const title = cleaned?.title ?? metadata.title!;
+  const description = cleaned?.excerpt ?? metadata.description;
+  const authorName = cleaned?.author ?? metadata.authorName;
+
   const created = await db.contentItem.create({
     data: {
       title,
-      description: metadata.description,
+      description,
       canonicalUrl,
       originalUrl: metadata.originalUrl,
       siteName: metadata.siteName,
       imageUrl: metadata.imageUrl,
-      authorName: metadata.authorName,
+      authorName,
       publishedAt: metadata.publishedAt,
       metadataStatus: MetadataStatus.COMPLETE,
       sourceId: source?.id,
@@ -151,6 +165,7 @@ export async function ingestUrl(url: string, db: DbClient = prisma) {
     status: "created" as const,
     requiresManualInput: false,
     contentItem: await serializeContentItem(db, created.id),
+    bodyText: metadata.bodyText,
   };
 }
 
@@ -167,6 +182,7 @@ export async function ingestOrStubUrl(url: string, db: DbClient = prisma) {
       contentItemId: row.id,
       contentTitle: row.title,
       contentDescription: row.description ?? undefined,
+      bodyText: "bodyText" in ingest ? ingest.bodyText : undefined,
     };
   }
 

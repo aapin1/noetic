@@ -45,6 +45,9 @@ export type AppThemeColors = {
   graphNode: string;
   graphLine: string;
   tabBar: string;
+  tabBarBorder: string;
+  mapBackground: string;
+  mapBackgroundOverlay: string;
 };
 
 export const lightColors: AppThemeColors = {
@@ -63,6 +66,9 @@ export const lightColors: AppThemeColors = {
   graphNode: 'rgba(10,10,10,0.85)',
   graphLine: 'rgba(10,10,10,0.15)',
   tabBar: '#F5F4F0',
+  tabBarBorder: 'rgba(10,10,10,0.10)',
+  mapBackground: '#1E1E1E',
+  mapBackgroundOverlay: 'rgba(30,30,30,0.88)',
 };
 
 export const darkColors: AppThemeColors = {
@@ -81,6 +87,9 @@ export const darkColors: AppThemeColors = {
   graphNode: 'rgba(236,236,236,0.9)',
   graphLine: 'rgba(255,255,255,0.12)',
   tabBar: '#060606',
+  tabBarBorder: 'rgba(255,255,255,0.10)',
+  mapBackground: '#060606',
+  mapBackgroundOverlay: 'rgba(6,6,6,0.88)',
 };
 
 export const FontSize = {

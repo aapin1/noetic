@@ -542,6 +542,9 @@ model CapturedItem {
   summary         String?             @db.Text
   keyIdea         String?             @db.Text
   terms           Json
+  embedding       Float[]             @default([])
+  mapX            Float?
+  mapY            Float?
   capturedAt      DateTime            @default(now())
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt

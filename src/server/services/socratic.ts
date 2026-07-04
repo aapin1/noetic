@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/api";
-import type { DbClient } from "@/server/db";
+import type { DbClient, RootDbClient } from "@/server/db";
 import {
   generateSocraticOpening,
   generateSocraticResponse,
@@ -79,7 +79,7 @@ export async function addUserReply(args: {
   userId: string;
   topicId: string;
   content: string;
-  db?: DbClient;
+  db?: RootDbClient;
 }) {
   if (!args.content.trim()) {
     throw new AppError("EMPTY_REPLY", "Reply cannot be empty", 422);

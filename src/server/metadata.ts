@@ -14,7 +14,23 @@ export type ExtractedMetadata = {
   sourceName?: string;
   sourceDomain?: string;
   contentType?: string;
+  /** Main body text extracted from the page, for semantic embedding + cleanup. */
+  bodyText?: string;
 };
+
+/** Pulls readable body text out of an article page (best-effort, no readability dep). */
+function extractBodyText($: ReturnType<typeof load>): string | undefined {
+  $("script, style, noscript, nav, header, footer, aside, form").remove();
+  const root = $("article").first();
+  const scope = root.length ? root : $("main").first().length ? $("main").first() : $("body");
+  const paragraphs: string[] = [];
+  scope.find("p, li, blockquote, h2, h3").each((_, el) => {
+    const text = $(el).text().replace(/\s+/g, " ").trim();
+    if (text.length >= 40) paragraphs.push(text);
+  });
+  const joined = paragraphs.join("\n").trim();
+  return joined.length >= 40 ? joined.slice(0, 6000) : undefined;
+}
 
 function absoluteUrl(href: string | undefined, baseUrl: string) {
   if (!href) {
@@ -84,10 +100,12 @@ export function parseMetadataFromHtml(html: string, originalUrl: string): Extrac
   const sourceName = siteName ?? sourceDomain;
   const ogType = clean($("meta[property='og:type']").attr("content"));
   const contentType = pickContentType(parsedUrl, ogType, title);
+  const bodyText = extractBodyText($);
 
   return {
     title,
     description,
+    bodyText,
     canonicalUrl: canonicalUrl ? normalizeUrl(canonicalUrl) : normalizeUrl(originalUrl),
     originalUrl,
     siteName,

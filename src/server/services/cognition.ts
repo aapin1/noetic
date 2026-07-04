@@ -1,7 +1,10 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import {
   CaptureKind,
   CognitiveEventType,
   InsightStyle,
+  type MemoryEdgeType,
   type Prisma,
 } from "@prisma/client";
 import { AppError } from "@/lib/api";
@@ -22,12 +25,14 @@ import {
 import { classifyTopics, type ClassifiedTopic } from "@/server/cognition/topics";
 import {
   classifyEdge,
+  classifyEdgeSemantic,
   draftInsights,
   type Neighbor,
   type TopicCount,
   type TrajectoryShift,
 } from "@/server/cognition/insights";
-import { generateRecommendations, polishInsights, type Recommendation } from "@/server/cognition/llm";
+import { cosineSim } from "@/server/cognition/layout";
+import { describeImage, embedText, generateRecommendations, polishInsights, type Recommendation } from "@/server/cognition/llm";
 import { applyTopicWeights, incrementTasteProfileVersion } from "@/server/services/activity";
 
 const NEIGHBOR_LIMIT = 6;
@@ -267,6 +272,7 @@ async function computeNeighbors(args: {
   itemTermVector: TermVector;
   itemTopicIds: Set<string>;
   itemPolarity: { negation: number; affirmation: number };
+  itemEmbedding?: number[] | null;
   excludeCaptureId?: string;
 }): Promise<{
   neighbors: Neighbor[];
@@ -282,6 +288,7 @@ async function computeNeighbors(args: {
   });
 
   const neighbors: Neighbor[] = [];
+  const itemEmbedding = args.itemEmbedding ?? null;
 
   for (const prior of priors) {
     const priorText = [
@@ -299,22 +306,31 @@ async function computeNeighbors(args: {
     }
 
     const priorVector = termFrequency(priorTokens);
-    const similarity = cosine(args.itemTermVector, priorVector);
     const priorTopicIds = new Set(prior.topics.map((row) => row.topicId));
     const topicJaccardScore = jaccard(args.itemTopicIds, priorTopicIds);
     const priorPolarity = polarity(priorTokens);
     const polarityDelta = Math.abs(priorPolarity.negation - args.itemPolarity.negation)
       + Math.abs(priorPolarity.affirmation - args.itemPolarity.affirmation);
 
-    if (similarity < NEIGHBOR_THRESHOLD && topicJaccardScore < 0.15) {
-      continue;
-    }
+    // Prefer semantic (embedding) similarity; fall back to keyword cosine only
+    // when an embedding is unavailable on either side.
+    const priorEmbedding = (prior as { embedding?: number[] | null }).embedding ?? null;
+    const useEmbedding =
+      itemEmbedding !== null && priorEmbedding !== null && priorEmbedding.length > 0;
 
-    const edgeType = classifyEdge({
-      cosine: similarity,
-      topicJaccard: topicJaccardScore,
-      polarityDelta,
-    });
+    let similarity: number;
+    let edgeType: ReturnType<typeof classifyEdge>;
+
+    if (useEmbedding) {
+      similarity = cosineSim(itemEmbedding, priorEmbedding);
+      edgeType = classifyEdgeSemantic({ similarity, polarityDelta, topicJaccard: topicJaccardScore });
+    } else {
+      similarity = cosine(args.itemTermVector, priorVector);
+      if (similarity < NEIGHBOR_THRESHOLD && topicJaccardScore < 0.15) {
+        continue;
+      }
+      edgeType = classifyEdge({ cosine: similarity, topicJaccard: topicJaccardScore, polarityDelta });
+    }
 
     if (!edgeType) {
       continue;
@@ -330,7 +346,7 @@ async function computeNeighbors(args: {
     });
   }
 
-  neighbors.sort((a, b) => b.similarity * 0.7 + b.topicJaccard * 0.3 - (a.similarity * 0.7 + a.topicJaccard * 0.3));
+  neighbors.sort((a, b) => b.similarity - a.similarity);
 
   const topicCounts = new Map<string, number>();
 
@@ -353,6 +369,45 @@ export function computeThreadContext(
 ): { topicName: string; captureCount: number } | null {
   if (topicCounts.length === 0 || topicCounts[0].count < 2) return null;
   return { topicName: topicCounts[0].name, captureCount: topicCounts[0].count };
+}
+
+const IMAGE_MIME_BY_EXT: Record<string, string> = {
+  png: "image/png",
+  webp: "image/webp",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+};
+
+/**
+ * Loads a capture image as base64 so it can be sent to the vision model.
+ * Fetches the stored object by URL, which works for both R2 public URLs
+ * (production) and the local dev server serving public/. Falls back to reading
+ * local disk directly if the URL points at our capture-uploads dir but the
+ * server URL isn't reachable from inside the process.
+ */
+async function loadImageForVision(mediaUrl: string): Promise<{ base64: string; mimeType: string } | null> {
+  const ext = (mediaUrl.split("?")[0].split(".").pop() ?? "").toLowerCase();
+  const mimeType = IMAGE_MIME_BY_EXT[ext] ?? "image/jpeg";
+
+  try {
+    const res = await fetch(mediaUrl);
+    if (res.ok) {
+      const buffer = Buffer.from(await res.arrayBuffer());
+      if (buffer.length > 0) return { base64: buffer.toString("base64"), mimeType };
+    }
+  } catch {
+    // fall through to the local-disk fallback below
+  }
+
+  try {
+    const fname = decodeURIComponent(mediaUrl.split("/").pop()?.split("?")[0] ?? "");
+    if (!fname || fname.includes("..") || fname.includes("/")) return null;
+    const buffer = await readFile(path.join(process.cwd(), "public", "capture-uploads", fname));
+    return { base64: buffer.toString("base64"), mimeType };
+  } catch {
+    return null;
+  }
 }
 
 export async function captureItem(payload: CapturePayload): Promise<CapturedItemSummary & {
@@ -379,12 +434,30 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   let contentItemId: string | undefined;
   let contentTitle: string | undefined;
   let contentDescription: string | undefined;
+  let contentBodyText: string | undefined;
 
   if (payload.kind === CaptureKind.LINK && payload.url) {
     const resolved = await ingestOrStubUrl(payload.url, db);
     contentItemId = resolved.contentItemId;
     contentTitle = resolved.contentTitle;
     contentDescription = resolved.contentDescription;
+    contentBodyText = resolved.bodyText;
+  }
+
+  // For images, let a vision model extract the meaning (transcribed text or a
+  // description of the subject) so the capture is embedded and connected just
+  // like a link's scraped article text. Failure degrades to the caption/reaction
+  // fallback below.
+  if (payload.kind === CaptureKind.IMAGE && payload.mediaUrl) {
+    const image = await loadImageForVision(payload.mediaUrl);
+    if (image) {
+      const described = await describeImage(image);
+      if (described) {
+        contentTitle = described.title;
+        contentDescription = described.description;
+        contentBodyText = described.description;
+      }
+    }
   }
 
   let { tokens, combinedText } = sourceTokens({
@@ -411,7 +484,13 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   const summary = extractiveSummary(combinedText, 2);
   const keyIdea = extractKeyIdea(combinedText);
 
-  const [classified, insightStyle] = await Promise.all([
+  // Embed the full semantic content (title + excerpt + body + user text) so the
+  // map and connections are driven by meaning, not keyword overlap.
+  const embeddingText = [contentTitle, contentDescription, contentBodyText, payload.text, payload.caption, payload.reaction]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const [classified, insightStyle, embedding] = await Promise.all([
     classifyTopics({
       db,
       userId: payload.userId,
@@ -422,6 +501,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
       combinedText,
     }),
     ensureUserPreference(db, payload.userId),
+    embedText(embeddingText || combinedText),
   ]);
 
   const topicIdSet = new Set(classified.map((topic) => topic.topicId));
@@ -432,6 +512,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     itemTermVector: termVector,
     itemTopicIds: topicIdSet,
     itemPolarity,
+    itemEmbedding: embedding,
   });
 
   const isFirstCapture = neighborInfo.priorCount === 0;
@@ -481,6 +562,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
         summary: summary || null,
         keyIdea: keyIdea || null,
         terms: topTerms(termVector, 24),
+        embedding: embedding ?? [],
       },
     });
 
@@ -658,11 +740,39 @@ export async function getCapture(args: { userId: string; capturedItemId: string;
         },
         orderBy: { weight: "desc" },
       },
+      edgesTo: {
+        include: {
+          fromItem: {
+            include: {
+              contentItem: { include: { source: true, contentType: true } },
+              topics: { include: { topic: true } },
+            },
+          },
+        },
+        orderBy: { weight: "desc" },
+      },
     },
   });
 
   if (!item || item.userId !== args.userId) {
     throw new AppError("CAPTURE_NOT_FOUND", "Capture not found", 404);
+  }
+
+  // Edges are created from the newer capture to the older one, so a connection
+  // shows up as `edgesFrom` on the newer node and `edgesTo` on the older node.
+  // Merge both directions, dedup by neighbor id keeping the strongest edge.
+  const relatedById = new Map<string, { item: CaptureWithRelations; edgeType: MemoryEdgeType; weight: number }>();
+  for (const edge of item.edgesFrom) {
+    const existing = relatedById.get(edge.toItemId);
+    if (!existing || edge.weight > existing.weight) {
+      relatedById.set(edge.toItemId, { item: edge.toItem, edgeType: edge.type, weight: edge.weight });
+    }
+  }
+  for (const edge of item.edgesTo) {
+    const existing = relatedById.get(edge.fromItemId);
+    if (!existing || edge.weight > existing.weight) {
+      relatedById.set(edge.fromItemId, { item: edge.fromItem, edgeType: edge.type, weight: edge.weight });
+    }
   }
 
   return {
@@ -675,11 +785,13 @@ export async function getCapture(args: { userId: string; capturedItemId: string;
       strength: row.strength,
       evidence: row.evidence,
     })),
-    related: item.edgesFrom.map((edge) => ({
-      ...serializeCapturedItem(edge.toItem),
-      edgeType: edge.type,
-      edgeWeight: edge.weight,
-    })),
+    related: Array.from(relatedById.values())
+      .sort((a, b) => b.weight - a.weight)
+      .map((r) => ({
+        ...serializeCapturedItem(r.item),
+        edgeType: r.edgeType,
+        edgeWeight: r.weight,
+      })),
   };
 }
 

@@ -2,28 +2,97 @@ import type { InsightStyle } from "@prisma/client";
 import type { InsightDraft } from "@/server/cognition/insights";
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings";
 const TIMEOUT_MS = 12000;
+const EMBED_MODEL = "text-embedding-3-small";
 
 /**
- * Classifies precise semantic topics for a piece of content.
- * Topics are derived ONLY from the provided content — never from user history.
+ * Embeds text into a semantic vector. This is the backbone of the cognitive
+ * map: positions and connections are derived from these vectors, not keywords.
+ * Returns null on any failure (caller falls back to keyword similarity).
  */
-export async function extractSemanticTopics(args: {
-  title?: string;
-  combinedText?: string;
-}): Promise<string[]> {
+export async function embedText(text: string): Promise<number[] | null> {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return [];
+  if (!apiKey) return null;
 
-  const content = [args.title, args.combinedText?.slice(0, 2000)]
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
-
-  if (content.length < 6) return [];
+  const input = text.trim().slice(0, 8000);
+  if (input.length < 3) return null;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  try {
+    const response = await fetch(OPENAI_EMBEDDINGS_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_EMBED_MODEL ?? EMBED_MODEL,
+        input,
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as {
+      data?: { embedding?: number[] }[];
+    };
+    const vector = payload.data?.[0]?.embedding;
+    if (!Array.isArray(vector) || vector.length === 0) return null;
+    return vector;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export type CleanedMetadata = {
+  title: string;
+  author: string | null;
+  excerpt: string | null;
+};
+
+/**
+ * Normalizes scraped article metadata into a clean title, author byline, and a
+ * meaningful excerpt. The model decides what is substantive vs. boilerplate —
+ * nothing is hard-coded to strip specific phrases. Returns null on failure so
+ * the caller keeps the raw scraped values.
+ */
+export async function cleanContentMetadata(args: {
+  rawTitle: string;
+  rawDescription?: string;
+  rawAuthor?: string;
+  siteName?: string;
+  bodyText?: string;
+}): Promise<CleanedMetadata | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  const systemPrompt = [
+    "You clean scraped article metadata for a personal knowledge library. Work only from the data given.",
+    "",
+    "Return three fields:",
+    "- title: the work's actual title. Remove author names, site names, and section suffixes that aren't part of the title (e.g. 'My Essay — by Jane Doe | Substack' → 'My Essay'). Keep the real title verbatim otherwise; never invent one.",
+    "- author: the human author's name if determinable, else null. Never put the author in the title.",
+    "- excerpt: 1–2 sentences stating what the piece is actually about, drawn from its substantive content. Exclude boilerplate of ANY kind — subscription prompts, navigation, cookie notices, share/like calls, newsletter pitches, 'read more', author bios. If no substantive content is available, return null. Do not fabricate.",
+    "",
+    "Return strictly valid JSON (no markdown): {\"title\": \"...\", \"author\": \"...\" | null, \"excerpt\": \"...\" | null}",
+  ].join("\n");
+
+  const userMessage = {
+    raw_title: args.rawTitle,
+    raw_description: args.rawDescription ?? "",
+    raw_author: args.rawAuthor ?? "",
+    site_name: args.siteName ?? "",
+    body_text: args.bodyText?.slice(0, 4000) ?? "",
+  };
 
   try {
     const response = await fetch(OPENAI_URL, {
@@ -36,53 +105,256 @@ export async function extractSemanticTopics(args: {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.1,
-        max_tokens: 80,
+        max_tokens: 220,
         response_format: { type: "json_object" },
         messages: [
-          {
-            role: "system",
-            content: [
-              "Extract 2–5 precise topic labels from the provided content only.",
-              "- Derive topics ONLY from what is written. Never infer from surrounding context.",
-              "- Stay within the content's primary discipline. Neuroscience ≠ philosophy. Biology ≠ chemistry. Do not bleed into adjacent fields even if they share concepts (e.g., 'mind').",
-              "- Prefer specific sub-disciplines over broad categories: 'cognitive neuroscience' > 'neuroscience' > 'science'; 'epistemology' > 'philosophy of knowledge' > 'philosophy'.",
-              "- Include: scientific sub-fields, named theories/concepts, philosophical movements, intellectual traditions, key figures when central.",
-              "- Exclude: generic words (video, article, blog, content, information), vague terms (ideas, thoughts, things, topics).",
-              "- All lowercase. No duplicates.",
-              "Return: {\"topics\": [\"...\", ...]}",
-            ].join("\n"),
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              title: args.title ?? "",
-              text: args.combinedText?.slice(0, 1800) ?? "",
-            }),
-          },
+          { role: "system", content: systemPrompt },
+          { role: "user", content: JSON.stringify(userMessage) },
         ],
       }),
     });
 
-    if (!response.ok) return [];
+    if (!response.ok) return null;
 
     const payload = (await response.json()) as {
       choices?: { message?: { content?: string } }[];
     };
     const raw = payload.choices?.[0]?.message?.content;
-    if (!raw) return [];
+    if (!raw) return null;
 
-    const parsed = JSON.parse(raw) as { topics?: unknown };
-    if (!Array.isArray(parsed.topics)) return [];
+    const parsed = JSON.parse(raw) as { title?: unknown; author?: unknown; excerpt?: unknown };
+    const title =
+      typeof parsed.title === "string" && parsed.title.trim().length > 0
+        ? parsed.title.trim()
+        : args.rawTitle;
+    const author =
+      typeof parsed.author === "string" && parsed.author.trim().length > 0
+        ? parsed.author.trim()
+        : null;
+    const excerpt =
+      typeof parsed.excerpt === "string" && parsed.excerpt.trim().length > 0
+        ? parsed.excerpt.trim()
+        : null;
 
-    return parsed.topics
-      .filter((t): t is string => typeof t === "string" && t.trim().length >= 2)
-      .map((t) => t.trim().toLowerCase())
-      .slice(0, 7);
+    return { title, author, excerpt };
   } catch {
-    return [];
+    return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+export type ImageDescription = {
+  title: string;
+  description: string;
+};
+
+/**
+ * Extracts the substantive meaning of a captured image so it can be embedded,
+ * classified, and connected like any other capture — the vision equivalent of
+ * scraping an article. The model transcribes meaningful text (screenshots, book
+ * pages, slides) or describes the subject when there is little text. Returns
+ * null on any failure so the caller falls back to caption/reaction text.
+ */
+export async function describeImage(args: {
+  base64: string;
+  mimeType: string;
+}): Promise<ImageDescription | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  if (!args.base64 || args.base64.length < 16) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  const instruction = [
+    "Extract the substantive meaning of this image for a personal knowledge library. Work only from what is visible; never fabricate.",
+    "- If the image contains meaningful text (a screenshot, book page, slide, quote, article), transcribe that text verbatim into the description.",
+    "- If it is a photo, diagram, or artwork with little text, describe the subject and what makes it noteworthy.",
+    "Return strictly valid JSON (no markdown): {\"title\": \"...\", \"description\": \"...\"} where title is a short handle and description is 1-3 sentences (or the transcribed text) of substance.",
+  ].join("\n");
+
+  const dataUrl = `data:${args.mimeType};base64,${args.base64}`;
+
+  try {
+    const response = await fetch(OPENAI_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_VISION_MODEL ?? "gpt-4o",
+        temperature: 0.1,
+        max_tokens: 400,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: instruction },
+              { type: "image_url", image_url: { url: dataUrl } },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as {
+      choices?: { message?: { content?: string } }[];
+    };
+    const raw = payload.choices?.[0]?.message?.content;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { title?: unknown; description?: unknown };
+    const description =
+      typeof parsed.description === "string" && parsed.description.trim().length > 0
+        ? parsed.description.trim()
+        : null;
+    if (!description) return null;
+
+    const title =
+      typeof parsed.title === "string" && parsed.title.trim().length > 0
+        ? parsed.title.trim()
+        : description.slice(0, 80);
+
+    return { title, description };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Coarse, stable domains used as the anchor for cognitive-map clustering.
+ * Two captures about the same broad field share a domain even when their
+ * specific topic labels differ ("neuroscience" vs "cognitive neuroscience"),
+ * so they land in the same region of the map instead of being scattered.
+ * Mirrors the onboarding domain list — keep it coarse on purpose.
+ */
+const DOMAINS = [
+  "philosophy", "psychology", "economics", "history", "science", "literature",
+  "law", "technology", "design", "film", "mathematics", "politics", "theology",
+  "education", "art", "AI", "writing", "culture", "medicine", "architecture",
+  "sociology", "religion", "business", "music", "linguistics", "environment",
+] as const;
+
+export type SemanticTopics = {
+  /** Coarse field for map clustering. null only when the content is too thin. */
+  domain: string | null;
+  /** Specific topic labels derived from the content. */
+  topics: string[];
+};
+
+/**
+ * Classifies the semantic domain and precise topics for a piece of content.
+ * Both are derived ONLY from the provided content — never from user history.
+ *
+ * Returns one coarse `domain` (the map's clustering anchor) plus specific
+ * `topics`. Retries once on transient failure so the map doesn't silently
+ * fall back to the weaker keyword heuristic.
+ */
+export async function extractSemanticTopics(args: {
+  title?: string;
+  combinedText?: string;
+}): Promise<SemanticTopics> {
+  const empty: SemanticTopics = { domain: null, topics: [] };
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return empty;
+
+  const content = [args.title, args.combinedText?.slice(0, 2000)]
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+
+  if (content.length < 6) return empty;
+
+  const body = JSON.stringify({
+    model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+    temperature: 0.1,
+    max_tokens: 140,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: [
+          "You classify a piece of writing for a personal knowledge map. Work ONLY from the text provided — never infer from outside context.",
+          "",
+          "Output two things:",
+          "1. domain — the single broad field the content primarily belongs to. Choose the closest match from this list:",
+          `   ${DOMAINS.join(", ")}.`,
+          "   If genuinely none fit, return the closest broad field name in lowercase. The domain decides which region of the map the content lands in, so judge it by the ACTUAL subject matter — never by an incidental word. A physics article that mentions a 'thin film' is science, not film. A history essay that mentions a court case is history, not law.",
+          "2. topics — 2 to 4 precise topic labels naming what the content is specifically about.",
+          "",
+          "Rules for topics:",
+          "- Stay within the content's primary discipline. Do not bleed into adjacent fields that merely share a word.",
+          "- Prefer specific sub-disciplines and named concepts over broad categories: 'cognitive neuroscience' > 'neuroscience'; 'epistemology' > 'philosophy'. Include named theories, movements, traditions, or key figures when central.",
+          "- Exclude generic words (video, article, blog, content, information) and vague terms (ideas, thoughts, things, topics).",
+          "- All lowercase. No duplicates. Do not repeat the domain verbatim as a topic.",
+          "",
+          "Return strictly: {\"domain\": \"...\", \"topics\": [\"...\", ...]}",
+        ].join("\n"),
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          title: args.title ?? "",
+          text: args.combinedText?.slice(0, 1800) ?? "",
+        }),
+      },
+    ],
+  });
+
+  const attempt = async (): Promise<SemanticTopics | null> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const response = await fetch(OPENAI_URL, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${apiKey}`,
+        },
+        body,
+      });
+
+      if (!response.ok) return null;
+
+      const payload = (await response.json()) as {
+        choices?: { message?: { content?: string } }[];
+      };
+      const raw = payload.choices?.[0]?.message?.content;
+      if (!raw) return null;
+
+      const parsed = JSON.parse(raw) as { domain?: unknown; topics?: unknown };
+
+      const domain =
+        typeof parsed.domain === "string" && parsed.domain.trim().length >= 2
+          ? parsed.domain.trim().toLowerCase()
+          : null;
+
+      const topics = Array.isArray(parsed.topics)
+        ? parsed.topics
+            .filter((t): t is string => typeof t === "string" && t.trim().length >= 2)
+            .map((t) => t.trim().toLowerCase())
+            .slice(0, 6)
+        : [];
+
+      return { domain, topics };
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  // One retry: transient timeouts/429s should not drop us to the keyword path.
+  return (await attempt()) ?? (await attempt()) ?? empty;
 }
 
 function styleDirective(style: InsightStyle): string {
@@ -606,19 +878,23 @@ export async function generateSocraticOpening(args: {
     ? `The user has stated a position: "${args.positionStatement}". Open by probing the assumption this position most depends on.`
     : "The user has not yet stated a position. Open by identifying the unresolved tension in what they've captured.";
 
+  const positionContext = args.positionStatement
+    ? `The user has stated a position: "${args.positionStatement}". Analyze how their captures support or complicate this position.`
+    : "The user has not yet stated a position. Identify what their captures reveal about where their thinking is heading.";
+
   const systemPrompt = [
-    `You are the Socratic companion in Mneme, a personal memory map for a user exploring "${args.topicName}".`,
-    "Your role: find the precise point where their thinking is unresolved and put pressure on it.",
+    `You are Mneme, an intelligent knowledge companion with full access to the user's captured ideas on "${args.topicName}".`,
+    "Open with a direct, useful observation — surface what's genuinely interesting or non-obvious from their data.",
     "",
-    positionNote,
+    positionContext,
     "",
     "Rules:",
-    "- Do not summarize their captures.",
-    "- Name one specific tension, contradiction, or unstated assumption in what they've saved.",
-    "- End with exactly one question — precise, specific, answerable with more thought.",
-    "- Do not start with 'Great!', affirmations, 'You've been exploring', or any throat-clearing.",
-    "- No filler phrases. No flowery language. Say the thing directly.",
-    "- 2–3 sentences maximum. The question is the last sentence.",
+    "- Lead with insight, not a question. Be analytical and direct.",
+    "- Reference the actual pattern, tension, or implication you see across their captures.",
+    "- Go beyond what individual captures say — name what the collection reveals together.",
+    "- Do not summarize what they already know. Surface what's non-obvious.",
+    "- Do not start with affirmations, 'You've been exploring', or throat-clearing.",
+    "- 2–3 sentences. You may end with a brief invitation to explore a specific angle, but this is optional.",
     "",
     "Return strictly valid JSON (no markdown): {\"challenge\": \"...\"}",
   ].join("\n");
@@ -688,22 +964,19 @@ export async function generateSocraticResponse(args: {
     : "The user has not yet stated a position.";
 
   const systemPrompt = [
-    `You are the Socratic companion in a personal memory map for a user exploring "${args.topicName}".`,
+    `You are Mneme, an intelligent knowledge companion with full access to the user's captured ideas on "${args.topicName}".`,
     positionNote,
-    "You have read all their captures on this topic.",
+    "You have read all their captures and can draw connections between them.",
     "",
-    "First, identify the TYPE of the user's reply:",
-    "- QUESTION: the message ends with '?' or explicitly asks you to explain, define, or clarify something.",
-    "  → Answer directly and concretely in 2-3 sentences. Give the actual answer. Do not respond with another question.",
-    "- CLAIM or ARGUMENT: the user asserts something or defends a position.",
-    "  → Find the weakest assumption in what they said. Do not paraphrase it back. Challenge it with exactly one question — more specific than the last, zooming in not out. 2-3 sentences + question.",
-    "- REFLECTION or UNCERTAINTY: the user admits they're unsure or thinking out loud.",
-    "  → Clarify the specific tension they're wrestling with. 1-2 sentences. Optionally one follow-up question only if it opens productive ground.",
+    "Your role: help the user analyze, connect, and go deeper — be a direct, helpful analyst, not a questioner.",
+    "- If the user asks a question: answer it directly and concretely using their data. Reference specific captures when useful. 2-3 sentences.",
+    "- If the user shares a thought or insight: build on it. Add what you see from their captures that they might have missed. Surface structural patterns or implications that span multiple captures.",
+    "- Produce 'beyond-knowledge': name what the pattern of their captures suggests collectively, not just what individual captures say.",
+    "- Go beyond the explicit nodes — if their data points somewhere interesting, say so directly.",
     "",
     "Do not repeat or paraphrase what the user said.",
-    "Do not start with 'That's...' or any affirmation.",
-    "No filler phrases. No flowery language.",
-    "4 sentences maximum.",
+    "Do not start with 'That's...' or any affirmation. No filler. Be specific.",
+    "4 sentences maximum. A follow-up question is optional and only when it would genuinely unlock new territory.",
     "",
     "Return strictly valid JSON (no markdown): {\"challenge\": \"...\"}",
   ].join("\n");

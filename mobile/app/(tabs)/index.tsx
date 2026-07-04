@@ -14,6 +14,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
 import Svg, {
   Circle,
   Defs,
@@ -26,11 +28,11 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
-import { Crosshair, Hand, MousePointer2, Search } from 'lucide-react-native';
+import { Crosshair, Moon, Search, Sun } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
-import { useThemeColors } from '@/contexts/ThemeContext';
+import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
 import type { AppThemeColors } from '@/constants/theme';
@@ -86,7 +88,7 @@ const RECENT_MS = 14 * 24 * 60 * 60 * 1000;
 // ── Types ─────────────────────────────────────────────────────────
 
 type LensMode = 'semantic' | 'temporal' | 'source';
-type ToolMode = 'move' | 'select' | 'discover' | 'search';
+type ToolMode = 'default' | 'discover' | 'search';
 type PositionMap = Record<string, { x: number; y: number }>;
 
 function intersect<T>(a: Set<T>, b: Set<T>): Set<T> {
@@ -251,6 +253,28 @@ function layoutGraph(
   return pos;
 }
 
+// Semantic (deterministic server-computed embedding coordinates).
+// Server returns normalized [0,1] x/y per node; map them into layout space.
+// Returns null when coordinates are absent/degenerate (all identical), so the
+// caller can fall back to the local force layout.
+function layoutSemanticFromServer(nodes: GraphNode[], w: number, h: number): PositionMap | null {
+  if (nodes.length === 0) return null;
+  const hasCoords = nodes.every((n) => typeof n.x === 'number' && typeof n.y === 'number');
+  if (!hasCoords) return null;
+  const distinct = new Set(nodes.map((n) => `${n.x.toFixed(4)},${n.y.toFixed(4)}`));
+  if (distinct.size < Math.min(2, nodes.length)) return null;
+
+  const pad = 30;
+  const pos: PositionMap = {};
+  for (const node of nodes) {
+    pos[node.id] = {
+      x: Math.max(pad, Math.min(w - pad, node.x * w)),
+      y: Math.max(pad, Math.min(h - pad, node.y * h)),
+    };
+  }
+  return pos;
+}
+
 // Temporal (chronological, left → right)
 function layoutTemporal(nodes: GraphNode[], w: number, h: number): PositionMap {
   const pos: PositionMap = {};
@@ -331,26 +355,6 @@ function applyLayoutOffset(raw: PositionMap): PositionMap {
   return result;
 }
 
-function clusterLabelPositions(
-  clusters: MemoryGraphResponse['clusters'],
-  w: number,
-  h: number,
-) {
-  const major = clusters.filter((cl) => cl.count >= MAJOR_CLUSTER_MIN);
-  if (major.length === 0) return [];
-  const cx = w / 2;
-  const cy = h * 0.44;
-  const cr = Math.min(w, h) * 0.27;
-  return major.map((cl, i) => {
-    const angle = (i / major.length) * Math.PI * 2 - Math.PI / 2;
-    return {
-      ...cl,
-      x: cx + cr * Math.cos(angle) + MAP_PAD,
-      y: cy + cr * Math.sin(angle) + MAP_PAD,
-    };
-  });
-}
-
 function clampVBX(v: number, vbW = SW) {
   return Math.max(0, Math.min(CANVAS_W - vbW, v));
 }
@@ -360,7 +364,7 @@ function clampVBY(v: number, vbH = SH) {
 
 // ── Capture step components ────────────────────────────────────────
 
-type CaptureMode = 'link' | 'text' | 'quote';
+type CaptureMode = 'link' | 'text' | 'quote' | 'image';
 
 function normalizeLinkInput(raw: string): string {
   const v = raw.trim();
@@ -385,20 +389,21 @@ function Divider({ c }: { c: AppThemeColors }) {
 }
 
 function StepOne({
-  mode, setMode, payload, setPayload, error, onNext, onClose, onPaste, c,
+  mode, setMode, payload, setPayload, imageUri, uploading, onPickImage, error, onNext, onClose, onPaste, c,
 }: {
   mode: CaptureMode; setMode: (m: CaptureMode) => void;
   payload: string; setPayload: (s: string) => void;
+  imageUri: string | null; uploading: boolean; onPickImage: (source: 'camera' | 'library') => void;
   error: string; onNext: () => void; onClose: () => void; onPaste: () => void;
   c: AppThemeColors;
 }) {
   return (
     <View>
       <Text variant="serifLg" color="primary" style={sh.heading}>What are you saving?</Text>
-      <Text variant="monoSmall" color="muted" style={sh.sub}>A link, thought, or passage.</Text>
+      <Text variant="monoSmall" color="muted" style={sh.sub}>A link, thought, passage, or image.</Text>
       <Divider c={c} />
       <View style={sh.modeRow}>
-        {(['link', 'text', 'quote'] as CaptureMode[]).map((m) => {
+        {(['link', 'text', 'quote', 'image'] as CaptureMode[]).map((m) => {
           const active = mode === m;
           return (
             <Pressable
@@ -413,25 +418,49 @@ function StepOne({
           );
         })}
       </View>
-      <View style={[sh.inputBox, { borderColor: c.border }]}>
-        <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>
-          {mode === 'link' ? 'URL_' : mode === 'quote' ? 'PASSAGE_' : 'THOUGHT_'}
-        </Text>
-        <TextInput
-          style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
-          value={payload}
-          onChangeText={setPayload}
-          placeholder={mode === 'link' ? 'https://...' : mode === 'quote' ? 'a passage worth preserving...' : 'fragments are fine.'}
-          placeholderTextColor={c.faint}
-          multiline={mode !== 'link'}
-          autoCapitalize={mode === 'link' ? 'none' : 'sentences'}
-          keyboardType={mode === 'link' ? 'url' : 'default'}
-          autoFocus
-        />
-        <Pressable onPress={onPaste} accessibilityLabel="Paste from clipboard">
-          <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>paste from clipboard ↑</Text>
-        </Pressable>
-      </View>
+      {mode === 'image' ? (
+        <View style={[sh.inputBox, { borderColor: c.border }]}>
+          <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>IMAGE_</Text>
+          {imageUri ? (
+            <Image source={{ uri: imageUri }} style={sh.thumb} contentFit="cover" />
+          ) : (
+            <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3] }}>
+              a screenshot, book page, or photo.
+            </Text>
+          )}
+          <View style={{ flexDirection: 'row', gap: Spacing[3], marginTop: Spacing[3] }}>
+            <Pressable onPress={() => onPickImage('camera')} style={[sh.modeChip, { borderColor: c.borderSubtle }]}>
+              <Text variant="monoSmall" style={{ color: c.text }}>take photo</Text>
+            </Pressable>
+            <Pressable onPress={() => onPickImage('library')} style={[sh.modeChip, { borderColor: c.borderSubtle }]}>
+              <Text variant="monoSmall" style={{ color: c.text }}>{imageUri ? 'replace ↑' : 'choose ↑'}</Text>
+            </Pressable>
+          </View>
+          {uploading && (
+            <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>reading image…</Text>
+          )}
+        </View>
+      ) : (
+        <View style={[sh.inputBox, { borderColor: c.border }]}>
+          <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>
+            {mode === 'link' ? 'URL_' : mode === 'quote' ? 'PASSAGE_' : 'THOUGHT_'}
+          </Text>
+          <TextInput
+            style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
+            value={payload}
+            onChangeText={setPayload}
+            placeholder={mode === 'link' ? 'https://...' : mode === 'quote' ? 'a passage worth preserving...' : 'fragments are fine.'}
+            placeholderTextColor={c.faint}
+            multiline={mode !== 'link'}
+            autoCapitalize={mode === 'link' ? 'none' : 'sentences'}
+            keyboardType={mode === 'link' ? 'url' : 'default'}
+            autoFocus
+          />
+          <Pressable onPress={onPaste} accessibilityLabel="Paste from clipboard">
+            <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>paste from clipboard ↑</Text>
+          </Pressable>
+        </View>
+      )}
       {!!error && (
         <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
       )}
@@ -545,8 +574,9 @@ const sh = StyleSheet.create({
   divider: { height: 1, marginVertical: Spacing[5] },
   heading: { marginTop: Spacing[6], marginBottom: Spacing[2] },
   sub: { opacity: 0.7 },
-  modeRow: { flexDirection: 'row', gap: Spacing[2], marginBottom: Spacing[4] },
+  modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[2], marginBottom: Spacing[4] },
   modeChip: { paddingVertical: Spacing[2], paddingHorizontal: Spacing[3], borderRadius: Radius.xs, borderWidth: 1 },
+  thumb: { width: '100%', height: 180, borderRadius: Radius.xs, marginBottom: Spacing[2] },
   inputBox: { borderWidth: 1, borderRadius: Radius.xs, padding: Spacing[4], marginTop: Spacing[2] },
   inputLabel: { marginBottom: Spacing[2] },
   inputField: { minHeight: 72, paddingVertical: Spacing[1] },
@@ -558,29 +588,49 @@ const sh = StyleSheet.create({
 // ── Toolbar ────────────────────────────────────────────────────────
 
 function Toolbar({
-  toolMode, setToolMode, c,
+  toolMode, setToolMode, onRecenter, showRecenter, c,
 }: {
   toolMode: ToolMode;
   setToolMode: (m: ToolMode) => void;
+  onRecenter?: () => void;
+  showRecenter?: boolean;
   c: AppThemeColors;
 }) {
   const iconColor = (active: boolean) => (active ? c.text : c.muted);
-  const tools: { id: ToolMode; label: string; Icon: React.ComponentType<{ size: number; color: string; strokeWidth: number }> }[] = [
-    { id: 'move', label: 'Pan map', Icon: Hand },
-    { id: 'select', label: 'Select point', Icon: MousePointer2 },
+  const tools: { id: Exclude<ToolMode, 'default'>; label: string; Icon: React.ComponentType<{ size: number; color: string; strokeWidth: number }> }[] = [
     { id: 'discover', label: 'Discover connections', Icon: Crosshair },
     { id: 'search', label: 'Find on map', Icon: Search },
   ];
 
+  const recenterVisible = !!onRecenter && showRecenter !== false;
+
   return (
     <View style={[tb.pill, { backgroundColor: 'rgba(10,10,10,0.72)', borderColor: 'rgba(255,255,255,0.12)' }]}>
+      {recenterVisible && (
+        <>
+          <Pressable
+            onPress={onRecenter}
+            style={tb.btn}
+            accessibilityLabel="Fit all points in view"
+            accessibilityRole="button"
+          >
+            <Svg width={17} height={17} viewBox="0 0 18 18">
+              <Rect x={1.5} y={1.5} width={15} height={15} fill="none" stroke={c.muted} strokeWidth={1} strokeDasharray="3 2.5" />
+              <Circle cx={9} cy={9} r={1.5} fill={c.muted} />
+              <Line x1={9} y1={4} x2={9} y2={14} stroke={c.muted} strokeWidth={0.7} strokeDasharray="1.5 1.5" />
+              <Line x1={4} y1={9} x2={14} y2={9} stroke={c.muted} strokeWidth={0.7} strokeDasharray="1.5 1.5" />
+            </Svg>
+          </Pressable>
+          <View style={[tb.sep, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
+        </>
+      )}
       {tools.map((tool, i) => {
         const active = toolMode === tool.id;
         return (
           <React.Fragment key={tool.id}>
             {i > 0 && <View style={[tb.sep, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />}
             <Pressable
-              onPress={() => setToolMode(tool.id)}
+              onPress={() => setToolMode(active ? 'default' : tool.id)}
               style={[tb.btn, active && { backgroundColor: 'rgba(255,255,255,0.08)' }]}
               accessibilityLabel={tool.label}
               accessibilityRole="button"
@@ -620,10 +670,11 @@ interface TimelineScrubberProps {
   clusters: MemoryGraphResponse['clusters'];
   pct: number;
   onChange: (p: number) => void;
+  wrapBgColor?: string;
   c: AppThemeColors;
 }
 
-function TimelineScrubber({ nodes, clusters, pct, onChange, c }: TimelineScrubberProps) {
+function TimelineScrubber({ nodes, clusters, pct, onChange, wrapBgColor, c }: TimelineScrubberProps) {
   const sliderWidth = SW - SLIDER_MARGIN * 2;
   const pctRef = useRef(pct);
 
@@ -683,7 +734,7 @@ function TimelineScrubber({ nodes, clusters, pct, onChange, c }: TimelineScrubbe
   const thumbX = pct * sliderWidth;
 
   return (
-    <View style={[tls.wrap, { borderTopColor: 'rgba(255,255,255,0.08)' }]}>
+    <View style={[tls.wrap, { borderTopColor: 'rgba(255,255,255,0.08)', backgroundColor: wrapBgColor ?? 'rgba(6,6,6,0.88)' }]}>
       <Text style={[tls.label, { color: 'rgba(236,236,236,0.35)' }]}>
         time
       </Text>
@@ -703,7 +754,7 @@ function TimelineScrubber({ nodes, clusters, pct, onChange, c }: TimelineScrubbe
           {/* Thumb */}
           <View style={[tls.thumb, { left: thumbX - 6, backgroundColor: MAP_NODE }]} />
         </View>
-        <Text style={[tls.dateLabel, { color: 'rgba(236,236,236,0.5)' }]}>
+        <Text style={[tls.dateLabel, { color: 'rgba(236,236,236,0.5)' }]} numberOfLines={1}>
           {dateLabel}
         </Text>
       </View>
@@ -717,14 +768,13 @@ function TimelineScrubber({ nodes, clusters, pct, onChange, c }: TimelineScrubbe
 const tls = StyleSheet.create({
   wrap: {
     position: 'absolute',
-    bottom: TAB_H,
+    bottom: TAB_H + 96,
     left: 0,
     right: 0,
     paddingTop: Spacing[3],
     paddingBottom: Spacing[4],
     paddingHorizontal: SLIDER_MARGIN,
     borderTopWidth: 1,
-    backgroundColor: 'rgba(6,6,6,0.88)',
   },
   label: {
     fontFamily: FontFamily.mono,
@@ -775,6 +825,7 @@ const tls = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 0.5,
     minWidth: 56,
+    flexShrink: 0,
     textAlign: 'right',
   },
   hint: {
@@ -799,7 +850,7 @@ function CenterFocusButton({ onPress, color, borderColor }: {
       accessibilityLabel="Fit all points in view"
       accessibilityRole="button"
     >
-      <Svg width={18} height={18} viewBox="0 0 18 18">
+      <Svg width={16} height={16} viewBox="0 0 18 18">
         <Rect x={1.5} y={1.5} width={15} height={15} fill="none" stroke={color} strokeWidth={1} strokeDasharray="3 2.5" />
         <Circle cx={9} cy={9} r={1.5} fill={color} />
         <Line x1={9} y1={4} x2={9} y2={14} stroke={color} strokeWidth={0.7} strokeDasharray="1.5 1.5" />
@@ -813,9 +864,13 @@ function CenterFocusButton({ onPress, color, borderColor }: {
 
 export default function MapScreen() {
   const c = useThemeColors();
+  const { setMode: setThemeMode } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [infoVisible, setInfoVisible] = useState(false);
+
+  const mapBg = c.mapBackground;
+  const isDarkMode = c.mapBackground === '#060606';
 
   const { data: graphData, loading: graphLoading, refetch: refetchGraph } = useApiQuery(
     () => api.memory.graph({ limit: 80 }),
@@ -833,7 +888,11 @@ export default function MapScreen() {
 
   // Compute all 3 layouts upfront
   const semanticPos = useMemo(
-    () => applyLayoutOffset(layoutGraph(nodes, clusters, edges, LAYOUT_W, LAYOUT_H)),
+    () =>
+      applyLayoutOffset(
+        layoutSemanticFromServer(nodes, LAYOUT_W, LAYOUT_H) ??
+          layoutGraph(nodes, clusters, edges, LAYOUT_W, LAYOUT_H),
+      ),
     [nodes, clusters, edges],
   );
   const temporalPos = useMemo(
@@ -850,32 +909,80 @@ export default function MapScreen() {
   const [renderPos, setRenderPos] = useState<PositionMap>({});
   const lensAnimCancelRef = useRef<(() => void) | null>(null);
 
-  // Initialize on first data load
+  // Stable identity of the node SET (not just count) — changes on add OR remove.
+  const nodeIdsKey = useMemo(() => nodes.map((n) => n.id).sort().join(','), [nodes]);
+
+  // React to node-set changes. Server coordinates are persisted and stable, so
+  // a plain refetch (returning to this tab) is a no-op and nothing drifts. When
+  // a new capture is added, existing nodes hold their positions and ONLY the new
+  // node animates in — sliding from its nearest existing neighbour to the
+  // semantic spot the server fitted it into. The map is never regenerated.
   useEffect(() => {
-    if (nodes.length === 0) return;
-    const currentKeys = Object.keys(renderPosRef.current);
-    if (currentKeys.length === 0) {
-      // First load: snap to semantic
-      renderPosRef.current = semanticPos;
-      setRenderPos(semanticPos);
-    } else {
-      // New nodes added: instantly add them without animation
-      const targetPos = lensMode === 'semantic' ? semanticPos
-        : lensMode === 'temporal' ? temporalPos
-        : sourcePos;
-      const merged: PositionMap = { ...renderPosRef.current };
-      for (const [id, p] of Object.entries(targetPos)) {
-        if (!merged[id]) merged[id] = p;
-      }
-      // Remove nodes no longer in the graph
-      for (const id of Object.keys(merged)) {
-        if (!targetPos[id]) delete merged[id];
-      }
-      renderPosRef.current = merged;
-      setRenderPos({ ...merged });
+    if (nodes.length === 0) {
+      if (lensAnimCancelRef.current) { lensAnimCancelRef.current(); lensAnimCancelRef.current = null; }
+      renderPosRef.current = {};
+      setRenderPos({});
+      return;
     }
+
+    const targetPos = lensMode === 'semantic' ? semanticPos
+      : lensMode === 'temporal' ? temporalPos
+      : sourcePos;
+
+    const prev = renderPosRef.current;
+    const prevIds = Object.keys(prev);
+    const newIds = Object.keys(targetPos).filter((id) => !(id in prev));
+    const firstLoad = prevIds.length === 0;
+
+    if (lensAnimCancelRef.current) { lensAnimCancelRef.current(); lensAnimCancelRef.current = null; }
+
+    // First load, non-semantic lens, or a wholesale change → snap directly.
+    if (firstLoad || lensMode !== 'semantic' || newIds.length === 0 ||
+        newIds.length === Object.keys(targetPos).length) {
+      renderPosRef.current = targetPos;
+      setRenderPos(targetPos);
+      return;
+    }
+
+    // Seed each new node at its nearest existing neighbour, then ease to target.
+    const starts: PositionMap = {};
+    for (const id of newIds) {
+      const target = targetPos[id]!;
+      let best = target;
+      let bestD = Infinity;
+      for (const eid of prevIds) {
+        const p = targetPos[eid];
+        if (!p) continue;
+        const d = (p.x - target.x) ** 2 + (p.y - target.y) ** 2;
+        if (d < bestD) { bestD = d; best = p; }
+      }
+      starts[id] = best;
+    }
+
+    const startTime = Date.now();
+    const duration = 600;
+    let cancelled = false;
+    const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+
+    const tick = () => {
+      if (cancelled) return;
+      const t = Math.min(1, (Date.now() - startTime) / duration);
+      const eased = easeOut(t);
+      const newPos: PositionMap = {};
+      for (const [id, target] of Object.entries(targetPos)) {
+        const from = starts[id];
+        newPos[id] = from
+          ? { x: from.x + (target.x - from.x) * eased, y: from.y + (target.y - from.y) * eased }
+          : target; // existing nodes stay put
+      }
+      renderPosRef.current = newPos;
+      setRenderPos(newPos);
+      if (t < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    lensAnimCancelRef.current = () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes.length]);
+  }, [nodeIdsKey]);
 
   const handleLensChange = useCallback((newLens: LensMode) => {
     if (newLens === lensMode) return;
@@ -929,9 +1036,23 @@ export default function MapScreen() {
   const pos = Object.keys(renderPos).length > 0 ? renderPos : semanticPos;
 
   // ── Cluster label positions (semantic only for labels) ─────────
+  // Anchor each region label at the centroid of its members' semantic
+  // positions, so halos sit over the actual nodes in the embedding layout.
   const clusterLabels = useMemo(
-    () => clusterLabelPositions(clusters, LAYOUT_W, LAYOUT_H),
-    [clusters],
+    () =>
+      clusters
+        .filter((cl) => cl.count >= MAJOR_CLUSTER_MIN)
+        .map((cl) => {
+          const pts = cl.itemIds
+            .map((id) => semanticPos[id])
+            .filter((p): p is { x: number; y: number } => Boolean(p));
+          if (pts.length === 0) return null;
+          const x = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+          const y = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+          return { ...cl, x, y };
+        })
+        .filter((cl): cl is typeof clusters[number] & { x: number; y: number } => cl !== null),
+    [clusters, semanticPos],
   );
 
   const clusterColorMap = useMemo(() => {
@@ -977,7 +1098,7 @@ export default function MapScreen() {
   );
 
   // ── Tool state ─────────────────────────────────────────────────
-  const [toolMode, setToolMode] = useState<ToolMode>('select');
+  const [toolMode, setToolMode] = useState<ToolMode>('default');
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
 
@@ -1162,13 +1283,14 @@ export default function MapScreen() {
     animCancelRef.current = () => { cancelled = true; cancelAnimationFrame(frameId); };
   }, []);
 
-  const centerOnNodes = useCallback(() => {
+  const centerOnNodes = useCallback((posOverride?: PositionMap, animated = false, animDuration = 720) => {
     if (nodes.length === 0) { resetView(); return; }
+    const positions = posOverride ?? pos;
 
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     let count = 0;
     for (const node of nodes) {
-      const p = pos[node.id];
+      const p = positions[node.id];
       if (!p) continue;
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
       minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
@@ -1188,26 +1310,70 @@ export default function MapScreen() {
     const nx = clampVBX(centerX - vbW / 2, vbW);
     const ny = clampVBY(centerY - vbH / 2, vbH);
 
-    savedVB.current = { x: nx, y: ny };
-    savedZoom.current = newZoom;
-    setVbPos({ x: nx, y: ny });
-    setZoom(newZoom);
-  }, [nodes, pos, resetView]);
+    if (animated) {
+      animateCamera(nx, ny, newZoom, animDuration);
+    } else {
+      savedVB.current = { x: nx, y: ny };
+      savedZoom.current = newZoom;
+      setVbPos({ x: nx, y: ny });
+      setZoom(newZoom);
+    }
+  }, [nodes, pos, resetView, animateCamera]);
+
+  // Auto-recenter on first data load
+  const hasInitiallyLoadedRef = useRef(false);
+  useEffect(() => {
+    if (nodes.length === 0 || hasInitiallyLoadedRef.current) return;
+    hasInitiallyLoadedRef.current = true;
+    centerOnNodes(semanticPos);
+  }, [nodes.length, semanticPos, centerOnNodes]);
+
+  // Auto-recenter when the Atlas tab gains focus
+  useFocusEffect(useCallback(() => {
+    if (nodes.length > 0) centerOnNodes();
+  }, [nodes.length, centerOnNodes]));
+
+  // Auto-recenter when switching lenses (camera animates in sync with node transition)
+  const prevLensModeRef = useRef(lensMode);
+  useEffect(() => {
+    if (prevLensModeRef.current === lensMode) return;
+    prevLensModeRef.current = lensMode;
+    const targetPos = lensMode === 'semantic' ? semanticPos
+      : lensMode === 'temporal' ? temporalPos
+      : sourcePos;
+    centerOnNodes(targetPos, true, 720);
+  }, [lensMode, semanticPos, temporalPos, sourcePos, centerOnNodes]);
+
+  // Tracks the mid-point between two fingers so zoom stays centered on the pinch point
+  const pinchMidRef = useRef<{ x: number; y: number } | null>(null);
+  // Momentum tracking for smooth pan release
+  const lastMoveRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const momentumFrameRef = useRef<number | null>(null);
 
   const mapPan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length >= 2,
       onMoveShouldSetPanResponder: (evt, gs) =>
         evt.nativeEvent.touches.length >= 2 ||
-        Math.abs(gs.dx) > 4 || Math.abs(gs.dy) > 4,
+        Math.abs(gs.dx) > 3 || Math.abs(gs.dy) > 3,
 
       onPanResponderGrant: (evt) => {
+        // Cancel any in-flight momentum
+        if (momentumFrameRef.current !== null) {
+          cancelAnimationFrame(momentumFrameRef.current);
+          momentumFrameRef.current = null;
+        }
         const touches = evt.nativeEvent.touches;
         if (touches.length >= 2) {
           const dx = touches[0].pageX - touches[1].pageX;
           const dy = touches[0].pageY - touches[1].pageY;
           pinchStartRef.current = { dist: Math.sqrt(dx * dx + dy * dy), zoom: savedZoom.current };
+          pinchMidRef.current = {
+            x: (touches[0].pageX + touches[1].pageX) / 2,
+            y: (touches[0].pageY + touches[1].pageY) / 2,
+          };
         }
+        lastMoveRef.current = null;
       },
 
       onPanResponderMove: (evt, gs) => {
@@ -1218,37 +1384,82 @@ export default function MapScreen() {
           const dist = Math.sqrt(dx * dx + dy * dy);
           const raw = pinchStartRef.current.zoom * (dist / pinchStartRef.current.dist);
           const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, raw));
+
+          // Zoom centered on the pinch mid-point
+          const mid = pinchMidRef.current ?? { x: SW / 2, y: SH / 2 };
+          const worldX = savedVB.current.x + mid.x / savedZoom.current;
+          const worldY = savedVB.current.y + mid.y / savedZoom.current;
           const vbW = SW / newZoom;
           const vbH = SH / newZoom;
+          const nx = clampVBX(worldX - mid.x / newZoom, vbW);
+          const ny = clampVBY(worldY - mid.y / newZoom, vbH);
+
           savedZoom.current = newZoom;
-          savedVB.current = { x: clampVBX(savedVB.current.x, vbW), y: clampVBY(savedVB.current.y, vbH) };
+          savedVB.current = { x: nx, y: ny };
           setZoom(newZoom);
-          setVbPos(savedVB.current);
+          setVbPos({ x: nx, y: ny });
           return;
         }
+        // Pan
         const vbW = SW / savedZoom.current;
         const vbH = SH / savedZoom.current;
-        setVbPos({
-          x: clampVBX(savedVB.current.x - gs.dx / savedZoom.current, vbW),
-          y: clampVBY(savedVB.current.y - gs.dy / savedZoom.current, vbH),
-        });
+        const nx = clampVBX(savedVB.current.x - gs.dx / savedZoom.current, vbW);
+        const ny = clampVBY(savedVB.current.y - gs.dy / savedZoom.current, vbH);
+        setVbPos({ x: nx, y: ny });
+        // Track velocity for momentum
+        const now = Date.now();
+        lastMoveRef.current = { x: gs.vx, y: gs.vy, t: now };
       },
 
       onPanResponderRelease: (evt, gs) => {
-        if (pinchStartRef.current) { pinchStartRef.current = null; return; }
+        if (pinchStartRef.current) {
+          pinchStartRef.current = null;
+          pinchMidRef.current = null;
+          return;
+        }
+        // Commit final pan position
         const vbW = SW / savedZoom.current;
         const vbH = SH / savedZoom.current;
         const nx = clampVBX(savedVB.current.x - gs.dx / savedZoom.current, vbW);
         const ny = clampVBY(savedVB.current.y - gs.dy / savedZoom.current, vbH);
         savedVB.current = { x: nx, y: ny };
         setVbPos({ x: nx, y: ny });
+
+        // Momentum scroll — decay velocity over ~400ms
+        const vx = gs.vx * 0.6;
+        const vy = gs.vy * 0.6;
+        const speed = Math.sqrt(vx * vx + vy * vy);
+        if (speed < 0.3) return;
+
+        let velX = vx;
+        let velY = vy;
+        const decay = 0.88;
+        const MIN_VEL = 0.05;
+
+        const step = () => {
+          velX *= decay;
+          velY *= decay;
+          if (Math.abs(velX) < MIN_VEL && Math.abs(velY) < MIN_VEL) {
+            momentumFrameRef.current = null;
+            return;
+          }
+          const z = savedZoom.current;
+          const w = SW / z;
+          const h = SH / z;
+          const mx = clampVBX(savedVB.current.x - velX * 12 / z, w);
+          const my = clampVBY(savedVB.current.y - velY * 12 / z, h);
+          savedVB.current = { x: mx, y: my };
+          setVbPos({ x: mx, y: my });
+          momentumFrameRef.current = requestAnimationFrame(step);
+        };
+        momentumFrameRef.current = requestAnimationFrame(step);
       },
     }),
   ).current;
 
   // ── Drawer state ──────────────────────────────────────────────
   const DRAWER_W = SW * 0.76;
-  type ClusterLabel = ReturnType<typeof clusterLabelPositions>[0];
+  type ClusterLabel = (typeof clusterLabels)[number];
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [drawerCluster, setDrawerCluster] = useState<ClusterLabel | null>(null);
   const drawerX = useRef(new RNAnimated.Value(DRAWER_W)).current;
@@ -1286,6 +1497,9 @@ export default function MapScreen() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [mode, setMode] = useState<CaptureMode>('link');
   const [payload, setPayload] = useState('');
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [reaction, setReaction] = useState('');
   const [captureResult, setCaptureResult] = useState<CaptureResponse | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1312,6 +1526,7 @@ export default function MapScreen() {
     closeDrawer();
     setSelectedNode(null);
     setStep(1); setPayload(''); setReaction('');
+    setImageUri(null); setMediaUrl(null); setUploading(false);
     setCaptureResult(null); setCaptureError(''); setMode('link');
     setShowCapture(true);
     slideY.setValue(SH);
@@ -1325,9 +1540,44 @@ export default function MapScreen() {
   }, [slideY]);
 
   const goNext = useCallback(() => {
-    if (!payload.trim()) { setCaptureError('Enter a URL or thought first.'); return; }
+    if (mode === 'image') {
+      if (uploading) { setCaptureError('Still reading the image…'); return; }
+      if (!mediaUrl) { setCaptureError('Add an image first.'); return; }
+    } else if (!payload.trim()) {
+      setCaptureError('Enter a URL or thought first.'); return;
+    }
     setCaptureError(''); setStep(2);
-  }, [payload]);
+  }, [mode, payload, mediaUrl, uploading]);
+
+  const pickImage = useCallback(async (source: 'camera' | 'library') => {
+    setCaptureError('');
+    try {
+      if (source === 'camera') {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) { setCaptureError('Camera permission is needed to take a photo.'); return; }
+      }
+      const opts: ImagePicker.ImagePickerOptions = {
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        base64: true,
+        quality: 0.6,
+      };
+      const res = source === 'camera'
+        ? await ImagePicker.launchCameraAsync(opts)
+        : await ImagePicker.launchImageLibraryAsync(opts);
+      if (res.canceled || !res.assets?.[0]?.base64) return;
+      const asset = res.assets[0];
+      setImageUri(asset.uri);
+      setMediaUrl(null);
+      setUploading(true);
+      const up = await api.captures.upload(asset.base64!, asset.mimeType ?? 'image/jpeg');
+      setMediaUrl(up.mediaUrl);
+    } catch (e) {
+      setCaptureError(e instanceof Error ? e.message : 'Could not read that image.');
+      setImageUri(null); setMediaUrl(null);
+    } finally {
+      setUploading(false);
+    }
+  }, []);
 
   const commit = useCallback(async () => {
     setBusy(true); setCaptureError('');
@@ -1337,8 +1587,15 @@ export default function MapScreen() {
       let text: string | undefined;
       if (mode === 'link') { kind = 'LINK'; url = normalizeLinkInput(payload); }
       else if (mode === 'quote') { kind = 'QUOTE'; text = payload.trim(); }
+      else if (mode === 'image') { kind = 'IMAGE'; }
       else { kind = 'TEXT'; text = payload.trim(); }
-      const res = await api.captures.create({ kind, url, text, reaction: reaction.trim() || undefined });
+      const res = await api.captures.create({
+        kind,
+        url,
+        text,
+        mediaUrl: mode === 'image' ? mediaUrl ?? undefined : undefined,
+        reaction: reaction.trim() || undefined,
+      });
       setCaptureResult(res); setStep(3); setNewNodeId(res.id);
       void refetchGraph();
     } catch (e) {
@@ -1346,7 +1603,7 @@ export default function MapScreen() {
     } finally {
       setBusy(false);
     }
-  }, [mode, payload, reaction, refetchGraph]);
+  }, [mode, payload, mediaUrl, reaction, refetchGraph]);
 
   const pasteFromClipboard = useCallback(async () => {
     const t = (await Clipboard.getStringAsync()).trim();
@@ -1447,7 +1704,7 @@ export default function MapScreen() {
 
   // ── Render ────────────────────────────────────────────────────
   return (
-    <View style={[styles.root, { backgroundColor: MAP_BG }]}>
+    <View style={[styles.root, { backgroundColor: mapBg }]}>
 
       {/* Static background dot grid */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -1679,10 +1936,10 @@ export default function MapScreen() {
             </G>
           </Svg>
 
-          {/* Node touch targets */}
+          {/* Node touch targets — always active; PanResponder steals drag gestures */}
           <View
             style={StyleSheet.absoluteFill}
-            pointerEvents={toolMode === 'move' ? 'none' : 'box-none'}
+            pointerEvents="box-none"
           >
             {nodes.map((node) => {
               const p = pos[node.id];
@@ -1744,6 +2001,7 @@ export default function MapScreen() {
           clusters={clusters}
           pct={timelinePct}
           onChange={setTimelinePct}
+          wrapBgColor={c.mapBackgroundOverlay}
           c={c}
         />
       )}
@@ -1759,7 +2017,7 @@ export default function MapScreen() {
           <View style={styles.headerLeft} pointerEvents="box-none">
             <View pointerEvents="box-none">
               <View style={styles.headerTitleRow} pointerEvents="box-none">
-                <Text variant="wordmark" color="primary">atlas</Text>
+                <Text variant="wordmark" style={{ color: 'rgba(236,236,236,0.85)' }}>atlas</Text>
                 <Pressable
                   onPress={() => setInfoVisible(true)}
                   hitSlop={12}
@@ -1767,7 +2025,7 @@ export default function MapScreen() {
                   style={{ marginLeft: Spacing[3] }}
                   pointerEvents="auto"
                 >
-                  <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.35)' }}>ⓘ</Text>
+                  <Text style={{ color: 'rgba(236,236,236,0.35)', fontSize: 16 }}>ⓘ</Text>
                 </Pressable>
               </View>
               {/* Lens picker */}
@@ -1801,7 +2059,26 @@ export default function MapScreen() {
             {graphLoading && (
               <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.3)', letterSpacing: 2, marginRight: Spacing[3] }}>·</Text>
             )}
-            <Toolbar toolMode={toolMode} setToolMode={setToolMode} c={c} />
+            <View pointerEvents="auto">
+              <Toolbar
+                toolMode={toolMode}
+                setToolMode={setToolMode}
+                onRecenter={() => centerOnNodes()}
+                showRecenter={nodes.length > 0 && !showCapture}
+                c={c}
+              />
+            </View>
+            <Pressable
+              onPress={() => setThemeMode(isDarkMode ? 'light' : 'dark')}
+              style={{ marginLeft: Spacing[2], padding: 6 }}
+              hitSlop={8}
+              accessibilityLabel="Toggle theme"
+              pointerEvents="auto"
+            >
+              {isDarkMode
+                ? <Sun size={15} color="rgba(236,236,236,0.4)" strokeWidth={1.5} />
+                : <Moon size={15} color="rgba(236,236,236,0.6)" strokeWidth={1.5} />}
+            </Pressable>
           </View>
         </View>
 
@@ -1858,7 +2135,7 @@ export default function MapScreen() {
 
         {/* Discover mode: selection count + Find button */}
         {toolMode === 'discover' && discoveryNodeIds.length > 0 && !showCapture && !drawerVisible && (
-          <View style={[styles.discoveryBar, { bottom: TAB_H + (lensMode === 'temporal' ? SCRUBBER_H : 0) + Spacing[5] }]} pointerEvents="box-none">
+          <View style={[styles.discoveryBar, { bottom: TAB_H + Spacing[5] + FAB_SIZE + Spacing[3] }]} pointerEvents="box-none">
             <View style={[styles.discoveryPill, { backgroundColor: 'rgba(10,10,10,0.88)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
               <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.5)' }]}>
                 {discoveryNodeIds.length} selected
@@ -1896,17 +2173,13 @@ export default function MapScreen() {
           </View>
         )}
 
-        {/* Center + count (bottom-left) */}
-        {nodes.length > 0 && !showCapture && !drawerVisible && toolMode !== 'discover' && (
+        {/* Node count (bottom-left) */}
+        {nodes.length > 0 && !showCapture && !drawerVisible && lensMode !== 'temporal' && (
           <View
-            style={[
-              styles.mapMeta,
-              { bottom: TAB_H + (lensMode === 'temporal' ? SCRUBBER_H : 0) + Spacing[5] },
-            ]}
-            pointerEvents="box-none"
+            style={[styles.mapMeta, { bottom: TAB_H + Spacing[5] }]}
+            pointerEvents="none"
           >
-            <CenterFocusButton onPress={centerOnNodes} color="rgba(236,236,236,0.35)" borderColor="rgba(255,255,255,0.10)" />
-            <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.25)', marginLeft: Spacing[3] }}>
+            <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.20)' }}>
               {nodes.length} {nodes.length === 1 ? 'point' : 'points'}
             </Text>
           </View>
@@ -2067,9 +2340,9 @@ export default function MapScreen() {
           </>
         )}
 
-        {/* FAB */}
+        {/* FAB — fixed position just above tab bar regardless of active lens */}
         {!showCapture && !drawerVisible && (
-          <View style={[styles.fabWrap, { bottom: TAB_H + (lensMode === 'temporal' ? SCRUBBER_H : 0) + Spacing[5] }]} pointerEvents="box-none">
+          <View style={[styles.fabWrap, { bottom: TAB_H + Spacing[5] }]} pointerEvents="box-none">
             <RNAnimated.View
               style={[styles.fabRing, { borderColor: MAP_NODE, opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
               pointerEvents="none"
@@ -2128,6 +2401,8 @@ export default function MapScreen() {
                     <StepOne
                       mode={mode} setMode={setMode}
                       payload={payload} setPayload={setPayload}
+                      imageUri={imageUri} uploading={uploading}
+                      onPickImage={(source) => void pickImage(source)}
                       error={captureError}
                       onNext={goNext}
                       onClose={closeCapture}
@@ -2260,8 +2535,8 @@ const styles = StyleSheet.create({
   centerBtn: {
     borderWidth: 1,
     borderRadius: Radius.sm,
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -161,7 +161,7 @@ export default function PulseScreen() {
       <View style={[styles.header, { borderBottomColor: c.border }]}>
         <Text variant="wordmark" color="primary">pulse</Text>
         <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About pulse">
-          <Text variant="monoSmall" style={{ color: c.faint }}>ⓘ</Text>
+          <Text style={{ color: c.faint, fontSize: 16 }}>ⓘ</Text>
         </Pressable>
       </View>
       <InfoModal

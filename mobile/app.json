@@ -2,6 +2,7 @@
   "expo": {
     "name": "mneme",
     "slug": "mneme",
+    "owner": "aaronpintos-team",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -12,13 +13,19 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.mneme.mobile"
+      "bundleIdentifier": "app.mneme.mobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#F6F2E9"
       },
-      "package": "app.mneme.mobile"
+      "package": "app.mneme.mobile",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro"
@@ -26,10 +33,40 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Mneme uses your photos so you can save screenshots, book pages, and images to your memory.",
+          "cameraPermission": "Mneme uses your camera so you can capture book pages and notes into your memory."
+        }
+      ],
+      [
+        "expo-share-intent",
+        {
+          "iosActivationRules": {
+            "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
+            "NSExtensionActivationSupportsWebPageWithMaxCount": 1,
+            "NSExtensionActivationSupportsImageWithMaxCount": 1,
+            "NSExtensionActivationSupportsText": true
+          },
+          "androidIntentFilters": [
+            "text/*",
+            "image/*"
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "40f91fac-13f5-44fa-b331-b3a85df60d6b"
+      }
     }
   }
 }

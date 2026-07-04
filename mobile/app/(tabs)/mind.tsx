@@ -305,7 +305,7 @@ export default function MindScreen() {
       <View style={[styles.header, { borderBottomColor: c.border }]}>
         <Text variant="wordmark">mind</Text>
         <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About mind">
-          <Text variant="monoSmall" style={{ color: c.faint }}>ⓘ</Text>
+          <Text style={{ color: c.faint, fontSize: 16 }}>ⓘ</Text>
         </Pressable>
       </View>
       <InfoModal

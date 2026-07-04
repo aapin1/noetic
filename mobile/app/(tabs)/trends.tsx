@@ -173,7 +173,7 @@ export default function GalaxyScreen() {
             ))}
           </View>
           <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About drift" style={{ marginLeft: Spacing[3] }}>
-            <Text variant="monoSmall" style={{ color: c.faint }}>ⓘ</Text>
+            <Text style={{ color: c.faint, fontSize: 16 }}>ⓘ</Text>
           </Pressable>
         </View>
       </View>

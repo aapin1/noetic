@@ -101,6 +101,9 @@ export interface MemoryGraphResponse {
     capturedAt: string;
     reaction: string | null;
     keyIdea: string | null;
+    /** Deterministic semantic-map coordinates, normalized to [0,1]. */
+    x: number;
+    y: number;
   }[];
   edges: {
     fromItemId: string;

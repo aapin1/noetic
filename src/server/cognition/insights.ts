@@ -203,6 +203,47 @@ export function draftInsights(args: {
   return drafts;
 }
 
+/**
+ * Edge classification driven by EMBEDDING cosine similarity rather than
+ * keyword overlap. text-embedding-3 similarities run roughly: ~0.6+ very
+ * close / recurring, ~0.45–0.6 strongly related, ~0.32–0.45 related,
+ * <~0.30 unrelated. An edge is only created above CONNECT (0.30) so genuinely
+ * unrelated captures never connect.
+ */
+export const SEMANTIC_CONNECT_THRESHOLD = 0.3;
+
+export function classifyEdgeSemantic(args: {
+  similarity: number;
+  polarityDelta: number;
+  topicJaccard: number;
+}): MemoryEdgeType | null {
+  const { similarity, polarityDelta, topicJaccard } = args;
+
+  if (similarity < SEMANTIC_CONNECT_THRESHOLD) {
+    return null;
+  }
+
+  // Related in meaning but opposing stance → contradiction.
+  if (similarity >= 0.4 && polarityDelta >= 0.08) {
+    return MemoryEdgeType.CONTRADICTS;
+  }
+
+  // Same idea seen repeatedly (very high similarity, shared topics).
+  if (similarity >= 0.62 || (similarity >= 0.55 && topicJaccard >= 0.5)) {
+    return MemoryEdgeType.RECURS;
+  }
+
+  if (similarity >= 0.45) {
+    return MemoryEdgeType.REINFORCES;
+  }
+
+  if (similarity >= 0.36) {
+    return MemoryEdgeType.EVOLVES_FROM;
+  }
+
+  return MemoryEdgeType.RELATED;
+}
+
 export function classifyEdge(args: {
   cosine: number;
   topicJaccard: number;

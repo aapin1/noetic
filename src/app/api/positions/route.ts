@@ -18,7 +18,7 @@ export async function POST(request: Request) {
       userId,
       topicId: input.topicId,
       statement: input.statement,
-      captureCountAtCreation: input.captureCountAtCreation,
+      captureCountAtCreation: input.captureCountAtCreation ?? 0,
     });
   }, 201);
 }

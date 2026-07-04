@@ -52,14 +52,14 @@ function SocraticFab() {
     <Pressable
       onPress={() => void handlePress()}
       disabled={loading}
-      style={[styles.fab, { borderColor: c.faint, backgroundColor: c.background }]}
+      style={[styles.fab, { borderColor: c.muted, backgroundColor: c.background }]}
       accessibilityLabel="Open Socratic dialogue"
       accessibilityRole="button"
     >
       {loading ? (
         <ActivityIndicator size="small" color={c.muted} />
       ) : (
-        <MessageCircleIcon size={16} color={c.muted} strokeWidth={1.2} />
+        <MessageCircleIcon size={20} color={c.muted} strokeWidth={1.4} />
       )}
     </Pressable>
   );
@@ -159,12 +159,12 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   fab: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 100 : 82,
+    bottom: Platform.OS === 'ios' ? 104 : 86,
     right: Spacing[5],
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },

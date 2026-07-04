@@ -1,0 +1,46 @@
+# Render blueprint — always-on Docker web service for the Mneme backend.
+# The Dockerfile is host-agnostic, so this same image also runs on Railway/Fly.
+# Secret values (sync: false) are set in the Render dashboard, not committed.
+services:
+  - type: web
+    name: mneme-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter # always-on; use "standard" to scale up
+    region: oregon
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      # Auth — NEXTAUTH_URL must equal this service's public URL once known.
+      - key: NEXTAUTH_URL
+        sync: false
+      - key: NEXTAUTH_SECRET
+        generateValue: true
+      # Public base URL of this service (used for absolute links).
+      - key: MNEME_BASE_URL
+        sync: false
+      # Neon Postgres — pooled URL for the app, direct URL for schema/migrations.
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      # OpenAI — embeddings, topic/insight LLM, and image vision.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_VISION_MODEL
+        value: gpt-4o
+      # Cloudflare R2 object storage for capture images.
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false

@@ -110,7 +110,7 @@ export default function LogScreen() {
             </Text>
           )}
           <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About archive">
-            <Text variant="monoSmall" style={{ color: c.faint }}>ⓘ</Text>
+            <Text style={{ color: c.faint, fontSize: 16 }}>ⓘ</Text>
           </Pressable>
         </View>
       </View>

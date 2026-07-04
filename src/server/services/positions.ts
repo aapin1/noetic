@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/api";
-import type { DbClient } from "@/server/db";
+import type { DbClient, RootDbClient } from "@/server/db";
 import { evaluatePositionTension } from "@/server/cognition/llm";
 
 export async function createPosition(args: {
@@ -135,7 +135,7 @@ export async function acknowledgeChallenge(args: {
   userId: string;
   challengeId: string;
   revision?: string;
-  db?: DbClient;
+  db?: RootDbClient;
 }) {
   const db = args.db ?? prisma;
 

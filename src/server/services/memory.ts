@@ -1,6 +1,7 @@
 import { CognitiveEventType, MemoryEdgeType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/server/db";
+import { peripheralPoint, placeNewNode, semanticLayout } from "@/server/cognition/layout";
 
 const GRAPH_LIMIT_DEFAULT = 80;
 const TRENDS_RECENT_DAYS = 7;
@@ -14,6 +15,9 @@ type GraphNode = {
   capturedAt: Date;
   reaction: string | null;
   keyIdea: string | null;
+  /** Deterministic semantic-map coordinates, normalized to [0,1]. */
+  x: number;
+  y: number;
 };
 
 type GraphEdge = {
@@ -49,6 +53,81 @@ function nodeLabel(input: {
   return text.length > 64 ? `${text.slice(0, 61).trimEnd()}…` : text;
 }
 
+type Positionable = {
+  id: string;
+  embedding?: number[] | null;
+  mapX?: number | null;
+  mapY?: number | null;
+};
+
+/**
+ * Resolves stable semantic coordinates for the visible captures.
+ *
+ * Coordinates are PERSISTED (`mapX`/`mapY`): once a node is placed it keeps its
+ * spot, so the map never reshuffles on refetch or when a new capture is added —
+ * only the new node gets fitted into the existing frame (next to what it's
+ * semantically near). Already-positioned nodes are the fixed anchors; newly
+ * captured nodes are placed against them and their coordinates are written back.
+ * On a cold start (nothing positioned yet) it bootstraps the whole set once.
+ */
+async function resolveSemanticCoords(
+  db: DbClient,
+  captures: Positionable[],
+): Promise<Record<string, { x: number; y: number }>> {
+  const coords: Record<string, { x: number; y: number }> = {};
+  // Oldest first, so earlier captures anchor the placement of later ones.
+  const ordered = [...captures].reverse();
+
+  const anchors: { x: number; y: number; embedding?: number[] | null }[] = [];
+  const unpositioned: Positionable[] = [];
+
+  for (const item of ordered) {
+    if (item.mapX != null && item.mapY != null) {
+      coords[item.id] = { x: item.mapX, y: item.mapY };
+      anchors.push({ x: item.mapX, y: item.mapY, embedding: item.embedding ?? null });
+    } else {
+      unpositioned.push(item);
+    }
+  }
+
+  if (unpositioned.length === 0) return coords;
+
+  const toPersist: { id: string; x: number; y: number }[] = [];
+
+  // Cold start: no positioned anchors yet — lay out the embeddable ones together.
+  if (anchors.length === 0) {
+    const boot = semanticLayout(
+      unpositioned.map((it) => ({ id: it.id, embedding: it.embedding ?? null })),
+    );
+    for (const it of unpositioned) {
+      const p = boot[it.id] ?? peripheralPoint(it.id);
+      coords[it.id] = p;
+      toPersist.push({ id: it.id, x: p.x, y: p.y });
+      anchors.push({ x: p.x, y: p.y, embedding: it.embedding ?? null });
+    }
+  } else {
+    for (const it of unpositioned) {
+      const p = placeNewNode(it.embedding ?? null, anchors) ?? peripheralPoint(it.id);
+      coords[it.id] = p;
+      toPersist.push({ id: it.id, x: p.x, y: p.y });
+      anchors.push({ x: p.x, y: p.y, embedding: it.embedding ?? null });
+    }
+  }
+
+  // Materialize the freshly computed coordinates (idempotent; best-effort).
+  try {
+    await Promise.all(
+      toPersist.map((p) =>
+        db.capturedItem.update({ where: { id: p.id }, data: { mapX: p.x, mapY: p.y } }),
+      ),
+    );
+  } catch {
+    // Non-fatal: the map still renders with the computed coords this request.
+  }
+
+  return coords;
+}
+
 export async function getMemoryGraph(args: {
   userId: string;
   limit?: number;
@@ -68,9 +147,13 @@ export async function getMemoryGraph(args: {
     take: limit,
     include: {
       contentItem: { select: { title: true } },
-      topics: { include: { topic: true } },
+      // Highest-weight topic first: the coarse domain (score 1.0) leads, so the
+      // semantic layout anchors each node to its broad field deterministically.
+      topics: { include: { topic: true }, orderBy: { weight: "desc" } },
     },
   });
+
+  const coords = await resolveSemanticCoords(db, captures);
 
   const nodes: GraphNode[] = captures.map((item) => ({
     id: item.id,
@@ -88,6 +171,8 @@ export async function getMemoryGraph(args: {
     capturedAt: item.capturedAt,
     reaction: item.reaction,
     keyIdea: item.keyIdea,
+    x: coords[item.id]?.x ?? 0.5,
+    y: coords[item.id]?.y ?? 0.5,
   }));
 
   const ids = new Set(nodes.map((node) => node.id));
