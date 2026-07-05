@@ -13,7 +13,7 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (identifier: string, password: string) => Promise<void>;
   signUp: (name: string, email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -21,10 +21,10 @@ interface AuthContextValue extends AuthState {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function isDevFakeCredentials(email: string, password: string) {
+function isDevFakeCredentials(identifier: string, password: string) {
   return (
     DEV_FAKE_LOGIN.enabled &&
-    email.trim().toLowerCase() === DEV_FAKE_LOGIN.credentials.email.toLowerCase() &&
+    identifier.trim().toLowerCase() === DEV_FAKE_LOGIN.credentials.email.toLowerCase() &&
     password === DEV_FAKE_LOGIN.credentials.password
   );
 }
@@ -54,38 +54,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    try {
-      const result = await api.profile.me();
-      setState((prev) => ({
-        ...prev,
-        profile: result.profile,
-        hasProfile: true,
-        isLoading: false,
-      }));
-    } catch (error) {
-      const code = (error as Error & { code?: string })?.code;
-
-      // Newly registered users have no profile yet until onboarding completes.
-      if (code === 'PROFILE_NOT_FOUND') {
+    // A valid token can still hit a flaky profile fetch (network blip, 5xx,
+    // cold serverless start). Retry transient failures instead of tearing down
+    // the session — otherwise a just-issued, correct login gets silently undone.
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const result = await api.profile.me();
         setState((prev) => ({
           ...prev,
-          profile: null,
+          profile: result.profile,
           isAuthenticated: true,
-          hasProfile: false,
+          hasProfile: true,
           isLoading: false,
         }));
         return;
-      }
+      } catch (error) {
+        const code = (error as Error & { code?: string })?.code;
 
-      await clearAuth();
-      setState((prev) => ({
-        ...prev,
-        token: null,
-        profile: null,
-        isAuthenticated: false,
-        hasProfile: false,
-        isLoading: false,
-      }));
+        // Newly registered users have no profile yet until onboarding completes.
+        if (code === 'PROFILE_NOT_FOUND') {
+          setState((prev) => ({
+            ...prev,
+            profile: null,
+            isAuthenticated: true,
+            hasProfile: false,
+            isLoading: false,
+          }));
+          return;
+        }
+
+        // The only reason to end the session: the token itself is rejected.
+        if (code === 'UNAUTHORIZED') {
+          await clearAuth();
+          setState((prev) => ({
+            ...prev,
+            token: null,
+            profile: null,
+            isAuthenticated: false,
+            hasProfile: false,
+            isLoading: false,
+          }));
+          return;
+        }
+
+        // Transient error: the token is still valid. Retry, then keep the
+        // session rather than logging a correctly-authenticated user back out.
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+          continue;
+        }
+        setState((prev) => ({ ...prev, isAuthenticated: true, isLoading: false }));
+      }
     }
   }, []);
 
@@ -112,8 +132,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, [loadProfile]);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    if (isDevFakeCredentials(email, password)) {
+  const signIn = useCallback(async (identifier: string, password: string) => {
+    if (isDevFakeCredentials(identifier, password)) {
       await storeToken(DEV_FAKE_LOGIN.token);
       await storeUserId(DEV_FAKE_LOGIN.profile.id);
       setState((prev) => ({
@@ -127,7 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const result = await api.auth.token({ email, password });
+    const result = await api.auth.token({ identifier, password });
     await storeToken(result.token);
     await storeUserId(result.userId ?? result.user.id);
     setState((prev) => ({ ...prev, token: result.token, isAuthenticated: true }));

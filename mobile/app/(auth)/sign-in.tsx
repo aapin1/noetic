@@ -21,23 +21,23 @@ export default function SignInScreen() {
   const c = useThemeColors();
   const router = useRouter();
   const { signIn } = useAuth();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSignIn = async () => {
-    if (!email.trim() || !password) {
-      setError('Email and password are required.');
+    if (!identifier.trim() || !password) {
+      setError('Enter your email or username and password.');
       return;
     }
     setError('');
     setLoading(true);
     try {
-      await signIn(email.trim().toLowerCase(), password);
+      await signIn(identifier.trim().toLowerCase(), password);
       router.replace('/(tabs)');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Sign in failed. Please check your credentials.');
+      setError(e instanceof Error ? e.message : "That didn't work. Check your details and try again.");
     } finally {
       setLoading(false);
     }
@@ -71,7 +71,7 @@ export default function SignInScreen() {
               Welcome back.
             </Text>
             <Text variant="body" color="secondary" style={styles.subtitle}>
-              Private memory. Same account.
+              Sign back in, and pick up right where you left off.
             </Text>
           </View>
 
@@ -85,13 +85,15 @@ export default function SignInScreen() {
             ) : null}
 
             <Input
-              label="Email"
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              keyboardType="email-address"
+              label="Email or username"
+              value={identifier}
+              onChangeText={setIdentifier}
+              placeholder="you@example.com or your_handle"
               autoCapitalize="none"
-              autoComplete="email"
+              autoCorrect={false}
+              spellCheck={false}
+              autoComplete="username"
+              textContentType="username"
               returnKeyType="next"
             />
 
@@ -101,7 +103,11 @@ export default function SignInScreen() {
               onChangeText={setPassword}
               placeholder="Your password"
               secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
               autoComplete="password"
+              textContentType="password"
               returnKeyType="done"
               onSubmitEditing={handleSignIn}
             />
