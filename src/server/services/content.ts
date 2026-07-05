@@ -3,7 +3,7 @@ import slugify from "slugify";
 import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/server/db";
-import { fetchMetadata, sourceSlug } from "@/server/metadata";
+import { fetchMetadata, scoreContentConfidence, sourceSlug, type ContentConfidence } from "@/server/metadata";
 import { cleanContentMetadata } from "@/server/cognition/llm";
 import { upsertTopics } from "@/server/topics";
 import { normalizeUrl } from "@/server/url";
@@ -97,6 +97,33 @@ export async function ingestUrl(url: string, db: DbClient = prisma) {
   });
 
   if (existing) {
+    // Backfill missing body text for items captured before the extraction
+    // ladder existed (or when the earlier scrape failed). Without this,
+    // re-capturing a URL whose first fetch came back empty stays title-only
+    // forever.
+    if (!existing.bodyText && existing.canonicalUrl) {
+      try {
+        const refetched = await fetchMetadata(existing.canonicalUrl);
+        const body = refetched.metadata?.bodyText;
+        if (body) {
+          await db.contentItem.update({
+            where: { id: existing.id },
+            data: {
+              bodyText: body,
+              bodySource: refetched.metadata?.bodySource,
+              description: existing.description ?? refetched.metadata?.description ?? body,
+            },
+          });
+          existing.bodyText = body;
+          if (!existing.description) {
+            existing.description = refetched.metadata?.description ?? body;
+          }
+        }
+      } catch {
+        // best-effort; fall through with whatever we have
+      }
+    }
+
     return {
       status: "existing" as const,
       requiresManualInput: false,
@@ -148,6 +175,8 @@ export async function ingestUrl(url: string, db: DbClient = prisma) {
     data: {
       title,
       description,
+      bodyText: metadata.bodyText,
+      bodySource: metadata.bodySource,
       canonicalUrl,
       originalUrl: metadata.originalUrl,
       siteName: metadata.siteName,
@@ -170,6 +199,44 @@ export async function ingestUrl(url: string, db: DbClient = prisma) {
 }
 
 /**
+ * Capture-time preflight: resolves what we can extract from a URL so the
+ * capture sheet can tell the user whether the content was actually readable —
+ * and ask them what it was about when it wasn't. Creates/refreshes the
+ * ContentItem, which the subsequent capture reuses via canonicalUrl dedupe.
+ */
+export async function preflightUrl(url: string, db: DbClient = prisma): Promise<{
+  confidence: ContentConfidence;
+  title?: string;
+  excerpt?: string;
+  bodySource?: string;
+}> {
+  let ingest: Awaited<ReturnType<typeof ingestUrl>>;
+  try {
+    ingest = await ingestUrl(url, db);
+  } catch {
+    return { confidence: "thin" };
+  }
+
+  if ("contentItem" in ingest && ingest.contentItem) {
+    const item = ingest.contentItem;
+    return {
+      confidence: scoreContentConfidence({ bodyText: item.bodyText, description: item.description }),
+      title: item.title,
+      excerpt: item.description ?? undefined,
+      bodySource: item.bodySource ?? undefined,
+    };
+  }
+
+  const partial = "metadata" in ingest ? ingest.metadata : undefined;
+  return {
+    confidence: scoreContentConfidence({ bodyText: partial?.bodyText, description: partial?.description }),
+    title: partial?.title,
+    excerpt: partial?.description,
+    bodySource: partial?.bodySource,
+  };
+}
+
+/**
  * Resolves a URL to a ContentItem when possible; if metadata fetch fails,
  * creates a minimal manual item so capture stays one-tap.
  */
@@ -182,7 +249,7 @@ export async function ingestOrStubUrl(url: string, db: DbClient = prisma) {
       contentItemId: row.id,
       contentTitle: row.title,
       contentDescription: row.description ?? undefined,
-      bodyText: "bodyText" in ingest ? ingest.bodyText : undefined,
+      bodyText: row.bodyText ?? undefined,
     };
   }
 

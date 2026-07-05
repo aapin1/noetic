@@ -81,12 +81,16 @@ export function draftInsights(args: {
   topicCounts: TopicCount[];
   shift?: TrajectoryShift | null;
   isFirstCapture: boolean;
+  /** When true, the capture is essentially title-only — suppress the generic
+   * NOVELTY boilerplate (which describes the app rather than the content) and
+   * emit only insights grounded in real neighbor/pattern signal. */
+  contentThin?: boolean;
 }): InsightDraft[] {
   const drafts: InsightDraft[] = [];
   const voice = STYLE_VOICE[args.style];
   const dominantTopic = args.topicNames[0];
 
-  if (args.isFirstCapture) {
+  if (args.isFirstCapture && !args.contentThin) {
     drafts.push({
       type: InsightType.NOVELTY,
       headline: voice.novelty(dominantTopic),
@@ -188,7 +192,9 @@ export function draftInsights(args: {
     });
   }
 
-  if (drafts.length === 0) {
+  // Thin captures with no real neighbor signal get no insight rather than
+  // app-describing boilerplate — a wrong insight is worse than none.
+  if (drafts.length === 0 && !args.contentThin) {
     drafts.push({
       type: InsightType.NOVELTY,
       headline: voice.novelty(dominantTopic),

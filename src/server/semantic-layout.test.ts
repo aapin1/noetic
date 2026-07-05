@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { semanticLayout, cosineSim, placeNewNode } from "@/server/cognition/layout";
+import { semanticLayout, cosineSim, placeNewNode, isDegenerateLayout } from "@/server/cognition/layout";
 import { classifyEdgeSemantic, SEMANTIC_CONNECT_THRESHOLD } from "@/server/cognition/insights";
 
 function dist(a: { x: number; y: number }, b: { x: number; y: number }): number {
@@ -57,6 +57,69 @@ describe("semanticLayout", () => {
       { id: "noemb", embedding: null },
     ]);
     expect(dist(pos.noemb!, { x: 0.5, y: 0.5 })).toBeGreaterThan(0.3);
+  });
+
+  // Regression: the old accretion path froze every node and greedily placed
+  // new ones against the frozen anchors, which collapsed the whole map onto a
+  // line and could never move a badly-placed node again. A warm-started
+  // re-layout must escape that line AND recover the true 2D relationships.
+  it("heals a collinear warm start and respects 2D semantic relationships", () => {
+    const items = [
+      { id: "neuro", embedding: [1, 0.3, 0.1, 0] },
+      { id: "consc1", embedding: [0.4, 1, 0.2, 0.1] },
+      { id: "consc2", embedding: [0.42, 0.98, 0.22, 0.12] },
+      // related to consciousness (shared themes), unrelated to neuroscience
+      { id: "heidegger", embedding: [0.1, 0.5, 0.2, 1] },
+    ];
+    // Degenerate persisted coordinates: all four on one diagonal line, with
+    // heidegger wrongly sitting closest to neuro (what the old path produced).
+    const init = {
+      neuro: { x: 0.5, y: 0.5 },
+      consc1: { x: 0.766, y: 0.234 },
+      consc2: { x: 0.76, y: 0.24 },
+      heidegger: { x: 0.613, y: 0.385 },
+    };
+
+    const pos = semanticLayout(items, { init });
+
+    expect(isDegenerateLayout(Object.values(pos))).toBe(false);
+    // The consciousness pair stays the closest relationship on the map.
+    expect(dist(pos.consc1!, pos.consc2!)).toBeLessThan(dist(pos.consc1!, pos.neuro!));
+    // Heidegger ends up nearer consciousness than neuroscience.
+    expect(dist(pos.heidegger!, pos.consc1!)).toBeLessThan(dist(pos.heidegger!, pos.neuro!));
+  });
+
+  it("is deterministic with a warm start", () => {
+    const items = [
+      { id: "a", embedding: [1, 0, 0] },
+      { id: "b", embedding: [0.2, 1, 0] },
+      { id: "c", embedding: [0.1, 0.2, 1] },
+    ];
+    const init = { a: { x: 0.3, y: 0.3 }, b: { x: 0.6, y: 0.6 }, c: { x: 0.9, y: 0.9 } };
+    expect(semanticLayout(items, { init })).toEqual(semanticLayout(items, { init }));
+  });
+});
+
+describe("isDegenerateLayout", () => {
+  it("flags points on a straight line", () => {
+    const line = Array.from({ length: 6 }, (_, i) => ({ x: 0.1 + i * 0.15, y: 0.1 + i * 0.15 }));
+    expect(isDegenerateLayout(line)).toBe(true);
+  });
+
+  it("flags coincident points", () => {
+    expect(isDegenerateLayout([
+      { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 },
+    ])).toBe(true);
+  });
+
+  it("accepts a healthy 2D spread", () => {
+    expect(isDegenerateLayout([
+      { x: 0.1, y: 0.1 }, { x: 0.9, y: 0.15 }, { x: 0.5, y: 0.85 }, { x: 0.3, y: 0.5 },
+    ])).toBe(false);
+  });
+
+  it("never flags fewer than 3 points", () => {
+    expect(isDegenerateLayout([{ x: 0.2, y: 0.2 }, { x: 0.8, y: 0.8 }])).toBe(false);
   });
 });
 

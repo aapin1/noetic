@@ -17,6 +17,7 @@ export async function POST(request: Request) {
       caption: input.caption,
       mediaUrl: input.mediaUrl,
       reaction: input.reaction,
+      userContext: input.userContext,
       topicHints: input.topicHints,
     });
     const positionChallenge = await checkCaptureAgainstPositions({

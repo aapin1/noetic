@@ -11,7 +11,8 @@ export const registerSchema = z.object({
 });
 
 export const tokenSchema = z.object({
-  email: z.string().email(),
+  // Accepts either an email address or a profile handle.
+  identifier: z.string().min(1).max(120),
   password: z.string().min(8).max(128),
 });
 
@@ -155,6 +156,7 @@ export const captureSchema = z.object({
   caption: z.string().max(2000).optional(),
   mediaUrl: z.string().url().max(2048).optional(),
   reaction: z.string().max(500).optional(),
+  userContext: z.string().max(4000).optional(),
   topicHints: z.array(z.string().min(1).max(80)).max(8).optional(),
 }).superRefine((value, ctx) => {
   if (value.kind === "LINK" && !value.url) {
@@ -172,6 +174,19 @@ export const captureSchema = z.object({
 
 export const captureListSchema = z.object({
   limit: z.coerce.number().int().min(1).max(80).default(20),
+});
+
+export const capturePreflightSchema = z.object({
+  url: z.string().url().max(2048),
+});
+
+export const captureTranscribeSchema = z.object({
+  audioBase64: z.string().min(100).max(12_000_000),
+  mimeType: z.string().min(3).max(80).optional(),
+});
+
+export const captureUpdateSchema = z.object({
+  userContext: z.string().min(1).max(4000),
 });
 
 export const memoryGraphSchema = z.object({

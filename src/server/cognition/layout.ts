@@ -53,6 +53,19 @@ export function cosineSim(a: number[], b: number[]): number {
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
+export type SemanticLayoutOptions = {
+  iterations?: number;
+  /**
+   * Warm-start positions (normalized [0,1]) keyed by item id. Items found here
+   * start at their given coordinates instead of a seeded random point, so a
+   * re-layout refines the existing map rather than inventing a new one. A tiny
+   * deterministic per-id jitter is always added: SMACOF preserves exactly
+   * collinear/coincident configurations, so a degenerate warm start would
+   * otherwise stay degenerate forever.
+   */
+  init?: Record<string, LayoutPoint>;
+};
+
 /**
  * Lays out items with embeddings into normalized [0,1] x/y coordinates.
  * Items without a usable embedding are placed deterministically around the
@@ -60,8 +73,10 @@ export function cosineSim(a: number[], b: number[]): number {
  */
 export function semanticLayout(
   items: { id: string; embedding: number[] | null | undefined }[],
-  iterations = 160,
+  options: SemanticLayoutOptions = {},
 ): Record<string, LayoutPoint> {
+  const iterations = options.iterations ?? 160;
+  const init = options.init ?? {};
   const result: Record<string, LayoutPoint> = {};
   if (items.length === 0) return result;
 
@@ -81,17 +96,44 @@ export function semanticLayout(
 
     // Target distances: 1 - cosine, clamped to [0, 1].
     const dist: number[][] = Array.from({ length: n }, () => new Array<number>(n).fill(0));
+    let dMin = Infinity;
+    let dMax = -Infinity;
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
         const d = Math.min(1, Math.max(0, 1 - cosineSim(vecs[i]!, vecs[j]!)));
         dist[i]![j] = d;
         dist[j]![i] = d;
+        if (d < dMin) dMin = d;
+        if (d > dMax) dMax = d;
       }
     }
 
-    // Deterministic seeded initialization.
+    // Contrast: real-world embedding distances bunch into a narrow band (most
+    // pairs are "somewhat different"), which flattens the map into an even
+    // blob. Stretch the observed band across [floor, 1] so the layout spends
+    // its dynamic range on the distinctions this user's data actually has.
+    // Monotonic, so relative ordering (closer stays closer) is untouched.
+    const span = dMax - dMin;
+    if (span > 1e-6) {
+      const floor = 0.15;
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          const d = floor + ((dist[i]![j]! - dMin) / span) * (1 - floor);
+          dist[i]![j] = d;
+          dist[j]![i] = d;
+        }
+      }
+    }
+
+    // Warm-start where coordinates are provided, seeded elsewhere. The jitter
+    // is deterministic per id and small enough to be invisible, but breaks the
+    // degenerate (collinear/coincident) configurations SMACOF cannot escape.
     const X: LayoutPoint[] = withEmb.map((it) => {
       const rng = seededRng(hashId(it.id));
+      const given = init[it.id];
+      if (given && Number.isFinite(given.x) && Number.isFinite(given.y)) {
+        return { x: given.x + (rng() - 0.5) * 0.04, y: given.y + (rng() - 0.5) * 0.04 };
+      }
       return { x: rng(), y: rng() };
     });
 
@@ -115,7 +157,10 @@ export function semanticLayout(
       for (let i = 0; i < n; i++) X[i] = next[i]!;
     }
 
-    // Normalize to [0,1] with a small interior margin.
+    // Normalize to [0,1] with a small interior margin. The scale must be
+    // ISOTROPIC (one factor for both axes): stretching x and y independently
+    // would distort the distances SMACOF just converged on, corrupting which
+    // nodes are closest to which.
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
@@ -126,14 +171,16 @@ export function semanticLayout(
       if (p.x > maxX) maxX = p.x;
       if (p.y > maxY) maxY = p.y;
     }
-    const spanX = maxX - minX || 1;
-    const spanY = maxY - minY || 1;
+    const extent = Math.max(maxX - minX, maxY - minY) || 1;
     const margin = 0.08;
-    const scale = 1 - margin * 2;
+    const scale = (1 - margin * 2) / extent;
+    // Center the shorter axis so the layout sits in the middle of the box.
+    const offX = margin + ((1 - margin * 2) - (maxX - minX) * scale) / 2;
+    const offY = margin + ((1 - margin * 2) - (maxY - minY) * scale) / 2;
     withEmb.forEach((it, i) => {
       result[it.id] = {
-        x: margin + ((X[i]!.x - minX) / spanX) * scale,
-        y: margin + ((X[i]!.y - minY) / spanY) * scale,
+        x: offX + (X[i]!.x - minX) * scale,
+        y: offY + (X[i]!.y - minY) * scale,
       };
     });
   }
@@ -144,6 +191,45 @@ export function semanticLayout(
   });
 
   return result;
+}
+
+/**
+ * True when a set of 2D points has collapsed to (nearly) a single point or a
+ * single line — i.e. the layout is not using the second dimension. Measured by
+ * the ratio of the covariance eigenvalues: a healthy 2D spread keeps the minor
+ * axis a meaningful fraction of the major axis, a line drives it to ~0.
+ */
+export function isDegenerateLayout(points: LayoutPoint[]): boolean {
+  if (points.length < 3) return false;
+  const n = points.length;
+  let mx = 0;
+  let my = 0;
+  for (const p of points) {
+    mx += p.x;
+    my += p.y;
+  }
+  mx /= n;
+  my /= n;
+  let sxx = 0;
+  let syy = 0;
+  let sxy = 0;
+  for (const p of points) {
+    const dx = p.x - mx;
+    const dy = p.y - my;
+    sxx += dx * dx;
+    syy += dy * dy;
+    sxy += dx * dy;
+  }
+  sxx /= n;
+  syy /= n;
+  sxy /= n;
+  const trace = sxx + syy;
+  const det = sxx * syy - sxy * sxy;
+  const disc = Math.sqrt(Math.max(0, (trace * trace) / 4 - det));
+  const major = trace / 2 + disc;
+  const minor = trace / 2 - disc;
+  if (major < 1e-9) return true; // all points coincident
+  return minor / major < 0.02;
 }
 
 /** Deterministic point on the periphery, seeded by id (for un-embeddable items). */

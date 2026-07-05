@@ -28,8 +28,12 @@ services:
         sync: false
       - key: DIRECT_URL
         sync: false
-      # OpenAI — embeddings, topic/insight LLM, and image vision.
+      # OpenAI — embeddings, topic/insight LLM, image vision, voice transcription.
       - key: OPENAI_API_KEY
+        sync: false
+      # Supadata — transcript fallback for YouTube/TikTok/Instagram video
+      # content (optional; extraction degrades gracefully without it).
+      - key: SUPADATA_API_KEY
         sync: false
       - key: OPENAI_VISION_MODEL
         value: gpt-4o

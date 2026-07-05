@@ -50,6 +50,51 @@ export async function embedText(text: string): Promise<number[] | null> {
   }
 }
 
+/**
+ * Transcribes a short voice note (the capture fail-safe's spoken "what was
+ * this about?") via Whisper. Returns null on any failure so the caller can
+ * tell the user to type instead.
+ */
+export async function transcribeAudio(args: {
+  base64: string;
+  mimeType?: string;
+}): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const buffer = Buffer.from(args.base64, "base64");
+    if (buffer.length < 200) return null;
+
+    const mimeType = args.mimeType ?? "audio/m4a";
+    const ext = mimeType.split("/").pop()?.split(";")[0] ?? "m4a";
+    const form = new FormData();
+    form.append("file", new Blob([buffer], { type: mimeType }), `note.${ext}`);
+    form.append("model", "whisper-1");
+
+    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      signal: controller.signal,
+      headers: { authorization: `Bearer ${apiKey}` },
+      body: form,
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { text?: unknown };
+    if (typeof payload.text !== "string") return null;
+    const text = payload.text.trim();
+    return text.length > 0 ? text : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export type CleanedMetadata = {
   title: string;
   author: string | null;
@@ -371,10 +416,33 @@ export type PolishContext = {
   style: InsightStyle;
   itemTitle: string;
   contentText?: string;
+  /** How much actual substance grounds this capture (rich transcript/body vs.
+   * short excerpt vs. title-only). Drives the anti-confabulation directive. */
+  contentGrounding?: "rich" | "partial" | "thin";
+  /** The user's own account of what the content was about — authoritative. */
+  userContext?: string;
   topicNames?: string[];
   neighborContext?: { title: string; edgeType: string }[];
   drafts: InsightDraft[];
 };
+
+function groundingDirective(grounding: "rich" | "partial" | "thin" | undefined): string {
+  if (grounding === "thin") {
+    return [
+      "GROUNDING — CRITICAL:",
+      "- You know almost NOTHING about this content beyond its title. Do NOT reconstruct, assume, or invent what it argues, claims, or covers.",
+      "- Never present an inferred argument as the content's argument. Ground every claim in the connection/pattern evidence (neighbors, topics, recurrence) or the user's own words.",
+      "- If a draft asserts something about the content itself that the data cannot support, rewrite it to be about the pattern instead.",
+    ].join("\n");
+  }
+  if (grounding === "partial") {
+    return [
+      "GROUNDING:",
+      "- You have only a short excerpt of this content, not the full text. Do not extrapolate specific claims the excerpt does not make.",
+    ].join("\n");
+  }
+  return "";
+}
 
 /**
  * Rewrites insight drafts with deep, specific intellectual analysis.
@@ -412,15 +480,20 @@ export async function polishInsights(args: PolishContext): Promise<InsightDraft[
     "- Bad: 'What do you think about X?' Good: 'Does Descartes' move to res cogitans depend on the same certainty-in-doubt he claims to dissolve?'",
     "",
     "Do not start with 'This capture', 'This article', or the title verbatim. Do not overstate thin evidence.",
+    groundingDirective(args.contentGrounding),
+    args.userContext
+      ? "user_account_of_content is the user's own description of what the content was about — treat it as the authoritative account of the content."
+      : "",
     `${styleDirective(args.style)}`,
     "",
     "Return strictly valid JSON (no markdown):",
     '{"insights": [{"index": N, "headline": "...", "body": "...", "open_question": "..."}]}',
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 
   const userMessage = {
     title: args.itemTitle,
     content_text: args.contentText?.slice(0, 1200) ?? "",
+    user_account_of_content: args.userContext?.slice(0, 1200) ?? "",
     topics: args.topicNames ?? [],
     related_items: (args.neighborContext ?? []).map((n) => ({
       title: n.title,

@@ -12,6 +12,7 @@ const {
   captureItem,
   listCaptures,
   getCapture,
+  deleteCapture,
   getMemoryGraph,
   getMemoryTrends,
   getPreferences,
@@ -27,6 +28,7 @@ const {
   captureItem: vi.fn(),
   listCaptures: vi.fn(),
   getCapture: vi.fn(),
+  deleteCapture: vi.fn(),
   getMemoryGraph: vi.fn(),
   getMemoryTrends: vi.fn(),
   getPreferences: vi.fn(),
@@ -62,6 +64,7 @@ vi.mock("@/server/services/cognition", () => ({
   captureItem,
   listCaptures,
   getCapture,
+  deleteCapture,
 }));
 
 vi.mock("@/server/services/memory", () => ({
@@ -81,7 +84,7 @@ import { GET as getMemoryTrendsRoute } from "@/app/api/memory/trends/route";
 import { GET as getPreferencesRoute, PATCH as patchPreferencesRoute } from "@/app/api/me/preferences/route";
 import { POST as postOnboardingRoute } from "@/app/api/profile/onboarding/route";
 import { GET as getSearchRoute } from "@/app/api/search/route";
-import { GET as getCaptureByIdRoute } from "@/app/api/captures/[id]/route";
+import { DELETE as deleteCaptureRoute, GET as getCaptureByIdRoute } from "@/app/api/captures/[id]/route";
 import { GET as getCapturesRoute, POST as postCapturesRoute } from "@/app/api/captures/route";
 
 afterEach(() => {
@@ -263,6 +266,18 @@ describe("capture routes", () => {
     );
     expect(getCapture).toHaveBeenCalledWith({ userId: "user_1", capturedItemId: "cap_1" });
     expect(response.status).toBe(200);
+  });
+
+  it("deletes a capture by id", async () => {
+    deleteCapture.mockResolvedValue(undefined);
+    const response = await deleteCaptureRoute(
+      new Request("http://localhost/api/captures/cap_1", { method: "DELETE" }),
+      { params: { id: "cap_1" } },
+    );
+    expect(deleteCapture).toHaveBeenCalledWith({ userId: "user_1", capturedItemId: "cap_1" });
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.data).toEqual({ deleted: true });
   });
 });
 

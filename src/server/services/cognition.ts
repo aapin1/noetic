@@ -13,8 +13,6 @@ import type { DbClient, RootDbClient } from "@/server/db";
 import { ingestOrStubUrl } from "@/server/services/content";
 import {
   cosine,
-  extractKeyIdea,
-  extractiveSummary,
   jaccard,
   polarity,
   termFrequency,
@@ -33,6 +31,7 @@ import {
 } from "@/server/cognition/insights";
 import { cosineSim } from "@/server/cognition/layout";
 import { describeImage, embedText, generateRecommendations, polishInsights, type Recommendation } from "@/server/cognition/llm";
+import { scoreContentConfidence } from "@/server/metadata";
 import { applyTopicWeights, incrementTasteProfileVersion } from "@/server/services/activity";
 
 const NEIGHBOR_LIMIT = 6;
@@ -49,6 +48,9 @@ type CapturePayload = {
   caption?: string;
   mediaUrl?: string;
   reaction?: string;
+  /** The user's own account of what the content was about (capture fail-safe).
+   * Treated as ground truth alongside whatever was scraped. */
+  userContext?: string;
   topicHints?: string[];
   db?: RootDbClient;
 };
@@ -60,11 +62,13 @@ type CapturedItemSummary = {
   keyIdea: string | null;
   capturedAt: Date;
   reaction: string | null;
+  userContext: string | null;
   kind: CaptureKind;
   topics: { topicId: string; name: string; slug: string; weight: number }[];
   contentItem: {
     id: string;
     title: string;
+    description: string | null;
     canonicalUrl: string | null;
     sourceName: string | null;
     contentType: string | null;
@@ -117,6 +121,7 @@ function serializeCapturedItem(item: CaptureWithRelations): CapturedItemSummary 
     keyIdea: item.keyIdea,
     capturedAt: item.capturedAt,
     reaction: item.reaction,
+    userContext: item.userContext,
     kind: item.kind,
     topics: item.topics.map((row) => ({
       topicId: row.topicId,
@@ -128,6 +133,7 @@ function serializeCapturedItem(item: CaptureWithRelations): CapturedItemSummary 
       ? {
         id: item.contentItem.id,
         title: item.contentItem.title,
+        description: item.contentItem.description,
         canonicalUrl: item.contentItem.canonicalUrl,
         sourceName: item.contentItem.source?.name ?? item.contentItem.siteName ?? null,
         contentType: item.contentItem.contentType?.name ?? null,
@@ -163,12 +169,16 @@ function sourceTokens(args: {
   rawText?: string;
   caption?: string;
   reaction?: string;
+  userContext?: string;
   contentTitle?: string;
   contentDescription?: string;
+  contentBodyText?: string;
 }): { tokens: string[]; combinedText: string } {
   const parts = [
     args.contentTitle,
+    args.userContext,
     args.contentDescription,
+    args.contentBodyText,
     args.rawText,
     args.caption,
     args.reaction,
@@ -464,8 +474,27 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     rawText: payload.text,
     caption: payload.caption,
     reaction: payload.reaction,
+    userContext: payload.userContext,
     contentTitle,
     contentDescription,
+    contentBodyText,
+  });
+
+  // "Thin" = we have essentially only a title (e.g. a YouTube video whose
+  // transcript/description scrape failed). With no real content, the drafting
+  // layer falls back to boilerplate that describes the app itself ("the memory
+  // graph starts here…") instead of the capture — so we suppress that fallback
+  // rather than emit a self-referential insight.
+  const contentThin = !(
+    contentDescription || contentBodyText || payload.text || payload.caption || payload.userContext
+  );
+
+  // How much actual substance grounds this capture — drives the anti-
+  // confabulation directive in insight polishing. The user's own account and
+  // notes count as grounding; the title alone does not.
+  const contentGrounding = scoreContentConfidence({
+    bodyText: [contentBodyText, payload.userContext, payload.text].filter(Boolean).join("\n"),
+    description: contentDescription ?? payload.caption,
   });
 
   if (tokens.length === 0 && payload.kind === CaptureKind.IMAGE && (payload.mediaUrl || payload.caption || payload.reaction)) {
@@ -481,12 +510,11 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
 
   const termVector = termFrequency(tokens);
   const itemPolarity = polarity(tokens);
-  const summary = extractiveSummary(combinedText, 2);
-  const keyIdea = extractKeyIdea(combinedText);
 
-  // Embed the full semantic content (title + excerpt + body + user text) so the
-  // map and connections are driven by meaning, not keyword overlap.
-  const embeddingText = [contentTitle, contentDescription, contentBodyText, payload.text, payload.caption, payload.reaction]
+  // Embed the full semantic content (title + user account + excerpt + body +
+  // user text) so the map and connections are driven by meaning, not keyword
+  // overlap. The user's account leads so it dominates when the scrape is thin.
+  const embeddingText = [contentTitle, payload.userContext, contentDescription, contentBodyText, payload.text, payload.caption, payload.reaction]
     .filter(Boolean)
     .join("\n\n");
 
@@ -534,12 +562,15 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     topicCounts,
     shift: trajectory,
     isFirstCapture,
+    contentThin,
   });
 
   const polishedDrafts = await polishInsights({
     style: insightStyle,
     itemTitle,
     contentText: combinedText,
+    contentGrounding,
+    userContext: payload.userContext,
     topicNames: classified.map((topic) => topic.name),
     neighborContext: neighborInfo.neighbors.map((n) => ({
       title: n.title,
@@ -559,8 +590,11 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
         caption: payload.caption ?? null,
         mediaUrl: payload.mediaUrl ?? null,
         reaction: payload.reaction ?? null,
-        summary: summary || null,
-        keyIdea: keyIdea || null,
+        userContext: payload.userContext ?? null,
+        // Excerpt-style summary/keyIdea are intentionally not generated: the
+        // reading surfaces show only title, author, reaction, and insight.
+        summary: null,
+        keyIdea: null,
         terms: topTerms(termVector, 24),
         embedding: embedding ?? [],
       },
@@ -719,6 +753,240 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   ]);
 
   return { ...txResult, threadContext, recommendations };
+}
+
+/**
+ * Re-runs the cognition pipeline for an existing capture after the user
+ * corrects the AI's understanding of the content (`userContext`). The user's
+ * account is ground truth, so everything derived from the old text is rebuilt:
+ * embedding, topics, connections, insights — and the persisted map position is
+ * cleared so the semantic layout re-seats the node.
+ */
+export async function updateCaptureContext(args: {
+  userId: string;
+  capturedItemId: string;
+  userContext: string;
+  db?: RootDbClient;
+}) {
+  const db = args.db ?? prisma;
+  const item = await db.capturedItem.findUnique({
+    where: { id: args.capturedItemId },
+    include: {
+      contentItem: true,
+      topics: { select: { topicId: true } },
+    },
+  });
+
+  if (!item || item.userId !== args.userId) {
+    throw new AppError("CAPTURE_NOT_FOUND", "Capture not found", 404);
+  }
+
+  const userContext = args.userContext.trim();
+  const contentTitle = item.contentItem?.title ?? undefined;
+  const contentDescription = item.contentItem?.description ?? undefined;
+  const contentBodyText = item.contentItem?.bodyText ?? undefined;
+  const rawText = item.rawText ?? undefined;
+  const caption = item.caption ?? undefined;
+  const reaction = item.reaction ?? undefined;
+
+  const { tokens, combinedText } = sourceTokens({
+    rawText,
+    caption,
+    reaction,
+    userContext,
+    contentTitle,
+    contentDescription,
+    contentBodyText,
+  });
+
+  if (tokens.length === 0) {
+    throw new AppError("EMPTY_CAPTURE", "Capture is empty after parsing.", 422);
+  }
+
+  const termVector = termFrequency(tokens);
+  const itemPolarity = polarity(tokens);
+  const embeddingText = [contentTitle, userContext, contentDescription, contentBodyText, rawText, caption, reaction]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const contentGrounding = scoreContentConfidence({
+    bodyText: [contentBodyText, userContext, rawText].filter(Boolean).join("\n"),
+    description: contentDescription ?? caption,
+  });
+
+  const [classified, insightStyle, embedding] = await Promise.all([
+    classifyTopics({
+      db,
+      userId: args.userId,
+      tokens,
+      title: contentTitle,
+      description: contentDescription,
+      combinedText,
+    }),
+    ensureUserPreference(db, args.userId),
+    embedText(embeddingText || combinedText),
+  ]);
+
+  const topicIdSet = new Set(classified.map((topic) => topic.topicId));
+  const neighborInfo = await computeNeighbors({
+    db,
+    userId: args.userId,
+    itemTokens: tokens,
+    itemTermVector: termVector,
+    itemTopicIds: topicIdSet,
+    itemPolarity,
+    itemEmbedding: embedding,
+    excludeCaptureId: item.id,
+  });
+
+  const topicMap = new Map<string, ClassifiedTopic>(
+    classified.map((topic) => [topic.topicId, topic]),
+  );
+  const topicCounts = computeTopicCounts(neighborInfo.rawPriors, topicMap);
+  const trajectory = computeTrajectory(neighborInfo.rawPriors, topicMap);
+  const itemTitle = contentTitle ?? (rawText ?? caption ?? "Untitled capture").slice(0, 80);
+
+  const drafts = draftInsights({
+    style: insightStyle,
+    itemTitle,
+    topicNames: classified.map((topic) => topic.name),
+    topNeighbors: neighborInfo.neighbors,
+    topicCounts,
+    shift: trajectory,
+    isFirstCapture: false,
+    contentThin: false,
+  });
+
+  const polishedDrafts = await polishInsights({
+    style: insightStyle,
+    itemTitle,
+    contentText: combinedText,
+    contentGrounding,
+    userContext,
+    topicNames: classified.map((topic) => topic.name),
+    neighborContext: neighborInfo.neighbors.map((n) => ({
+      title: n.title,
+      edgeType: n.edgeType,
+    })),
+    drafts,
+  });
+
+  const oldTopicIds = new Set(item.topics.map((row) => row.topicId));
+  const removedTopicIds = [...oldTopicIds].filter((id) => !topicIdSet.has(id));
+  const addedTopicIds = [...topicIdSet].filter((id) => !oldTopicIds.has(id));
+
+  await prisma.$transaction(async (tx: DbClient) => {
+    await tx.capturedItem.update({
+      where: { id: item.id },
+      data: {
+        userContext,
+        terms: topTerms(termVector, 24),
+        embedding: embedding ?? [],
+        // Cleared so the semantic layout re-seats the node from the new embedding.
+        mapX: null,
+        mapY: null,
+      },
+    });
+
+    await tx.capturedItemTopic.deleteMany({ where: { capturedItemId: item.id } });
+    if (classified.length > 0) {
+      await tx.capturedItemTopic.createMany({
+        data: classified.map((topic) => ({
+          capturedItemId: item.id,
+          topicId: topic.topicId,
+          weight: topic.score,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    if (removedTopicIds.length > 0) {
+      await applyTopicWeights({ db: tx, userId: args.userId, topicIds: removedTopicIds, increment: -1 });
+    }
+    if (addedTopicIds.length > 0) {
+      await applyTopicWeights({ db: tx, userId: args.userId, topicIds: addedTopicIds, increment: 1 });
+    }
+
+    // Edges in both directions were computed from the old understanding.
+    await tx.memoryEdge.deleteMany({
+      where: {
+        userId: args.userId,
+        OR: [{ fromItemId: item.id }, { toItemId: item.id }],
+      },
+    });
+    if (neighborInfo.neighbors.length > 0) {
+      await tx.memoryEdge.createMany({
+        data: neighborInfo.neighbors.map((neighbor) => ({
+          userId: args.userId,
+          fromItemId: item.id,
+          toItemId: neighbor.capturedItemId,
+          type: neighbor.edgeType,
+          weight: Number(neighbor.similarity.toFixed(4)),
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    await tx.insight.deleteMany({ where: { capturedItemId: item.id } });
+    for (const draft of polishedDrafts) {
+      await tx.insight.create({
+        data: {
+          userId: args.userId,
+          capturedItemId: item.id,
+          type: draft.type,
+          headline: draft.headline,
+          body: draft.body,
+          evidence: draft.evidence as Prisma.InputJsonValue,
+          strength: draft.strength,
+        },
+      });
+    }
+
+    await incrementTasteProfileVersion(tx, args.userId);
+  });
+
+  return getCapture({ userId: args.userId, capturedItemId: item.id, db });
+}
+
+/**
+ * Permanently deletes a capture: the row itself, and — via schema cascades —
+ * every Insight, CapturedItemTopic, and MemoryEdge (both directions) that
+ * references it. Nothing soft-deletes here; once this returns, the item
+ * cannot be recovered and no longer participates in the memory graph, topic
+ * counts, neighbor search, or taste profile.
+ */
+export async function deleteCapture(args: {
+  userId: string;
+  capturedItemId: string;
+  db?: RootDbClient;
+}): Promise<void> {
+  const db = args.db ?? prisma;
+  const item = await db.capturedItem.findUnique({
+    where: { id: args.capturedItemId },
+    select: { id: true, userId: true, topics: { select: { topicId: true } } },
+  });
+
+  if (!item || item.userId !== args.userId) {
+    throw new AppError("CAPTURE_NOT_FOUND", "Capture not found", 404);
+  }
+
+  const topicIds = item.topics.map((t) => t.topicId);
+
+  await prisma.$transaction(async (tx: DbClient) => {
+    if (topicIds.length > 0) {
+      // Undo this capture's contribution to the taste profile before the
+      // CapturedItemTopic rows disappear with the cascade delete below.
+      await applyTopicWeights({ db: tx, userId: args.userId, topicIds, increment: -1 });
+    }
+
+    // Cascades (schema onDelete: Cascade) remove Insight, CapturedItemTopic,
+    // and MemoryEdge rows in both directions. CognitiveEvent/PositionChallenge
+    // rows referencing it are historical logs and set their FK to null rather
+    // than being deleted themselves.
+    await tx.capturedItem.delete({ where: { id: item.id } });
+
+    await incrementTasteProfileVersion(tx, args.userId);
+  });
 }
 
 export async function getCapture(args: { userId: string; capturedItemId: string; db?: DbClient }) {

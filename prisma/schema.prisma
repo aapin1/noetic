@@ -220,6 +220,9 @@ model ContentItem {
   id             String            @id @default(cuid())
   title          String
   description    String?
+  bodyText       String?
+  /// Where bodyText came from: transcript | body | jsonld | reddit | description | user
+  bodySource     String?
   canonicalUrl   String?           @unique
   originalUrl    String?
   siteName       String?
@@ -539,6 +542,8 @@ model CapturedItem {
   caption         String?             @db.Text
   mediaUrl        String?
   reaction        String?             @db.Text
+  /// The user's own account of what the content was about (capture fail-safe / post-hoc correction). Treated as ground truth by the pipeline.
+  userContext     String?             @db.Text
   summary         String?             @db.Text
   keyIdea         String?             @db.Text
   terms           Json

@@ -1,7 +1,13 @@
 import { CognitiveEventType, MemoryEdgeType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/server/db";
-import { peripheralPoint, placeNewNode, semanticLayout } from "@/server/cognition/layout";
+import {
+  isDegenerateLayout,
+  peripheralPoint,
+  placeNewNode,
+  semanticLayout,
+  type LayoutPoint,
+} from "@/server/cognition/layout";
 
 const GRAPH_LIMIT_DEFAULT = 80;
 const TRENDS_RECENT_DAYS = 7;
@@ -30,6 +36,12 @@ type GraphEdge = {
 type GraphCluster = {
   topicId: string;
   name: string;
+  /**
+   * 'domain' when this topic is the coarse classification anchor (highest
+   * weight) for most of its members — the label to show zoomed out. 'topic'
+   * for the more specific labels that take over as the user zooms in.
+   */
+  kind: "domain" | "topic";
   count: number;
   itemIds: string[];
 };
@@ -63,12 +75,19 @@ type Positionable = {
 /**
  * Resolves stable semantic coordinates for the visible captures.
  *
- * Coordinates are PERSISTED (`mapX`/`mapY`): once a node is placed it keeps its
- * spot, so the map never reshuffles on refetch or when a new capture is added —
- * only the new node gets fitted into the existing frame (next to what it's
- * semantically near). Already-positioned nodes are the fixed anchors; newly
- * captured nodes are placed against them and their coordinates are written back.
- * On a cold start (nothing positioned yet) it bootstraps the whole set once.
+ * Coordinates are PERSISTED (`mapX`/`mapY`) so a plain refetch never reshuffles
+ * the map. When new captures arrive, the WHOLE embeddable set is re-laid-out
+ * with SMACOF, warm-started from the persisted coordinates: existing nodes only
+ * drift as far as the embedding distances require, new nodes are seeded next to
+ * their most similar anchors, and the global geometry stays faithful in 2D.
+ * (Greedily freezing anchors and fitting one node at a time — the previous
+ * approach — degenerates to a line: a new point placed by gradient descent
+ * against collinear anchors can never leave that line, and early placement
+ * mistakes were permanent.)
+ *
+ * A persisted layout that is itself degenerate (nearly collinear/coincident,
+ * i.e. produced by the old greedy path) also triggers the re-layout, so
+ * existing maps heal on the next fetch.
  */
 async function resolveSemanticCoords(
   db: DbClient,
@@ -78,41 +97,68 @@ async function resolveSemanticCoords(
   // Oldest first, so earlier captures anchor the placement of later ones.
   const ordered = [...captures].reverse();
 
-  const anchors: { x: number; y: number; embedding?: number[] | null }[] = [];
-  const unpositioned: Positionable[] = [];
-
-  for (const item of ordered) {
-    if (item.mapX != null && item.mapY != null) {
-      coords[item.id] = { x: item.mapX, y: item.mapY };
-      anchors.push({ x: item.mapX, y: item.mapY, embedding: item.embedding ?? null });
-    } else {
-      unpositioned.push(item);
-    }
-  }
-
-  if (unpositioned.length === 0) return coords;
+  const embeddable = ordered.filter(
+    (it) => Array.isArray(it.embedding) && it.embedding.length > 0,
+  );
+  const nonEmbeddable = ordered.filter(
+    (it) => !Array.isArray(it.embedding) || it.embedding.length === 0,
+  );
 
   const toPersist: { id: string; x: number; y: number }[] = [];
 
-  // Cold start: no positioned anchors yet — lay out the embeddable ones together.
-  if (anchors.length === 0) {
-    const boot = semanticLayout(
-      unpositioned.map((it) => ({ id: it.id, embedding: it.embedding ?? null })),
-    );
-    for (const it of unpositioned) {
-      const p = boot[it.id] ?? peripheralPoint(it.id);
+  // Un-embeddable items live on a deterministic peripheral ring, untouched by
+  // the semantic relaxation.
+  for (const it of nonEmbeddable) {
+    if (it.mapX != null && it.mapY != null) {
+      coords[it.id] = { x: it.mapX, y: it.mapY };
+    } else {
+      const p = peripheralPoint(it.id);
       coords[it.id] = p;
       toPersist.push({ id: it.id, x: p.x, y: p.y });
-      anchors.push({ x: p.x, y: p.y, embedding: it.embedding ?? null });
-    }
-  } else {
-    for (const it of unpositioned) {
-      const p = placeNewNode(it.embedding ?? null, anchors) ?? peripheralPoint(it.id);
-      coords[it.id] = p;
-      toPersist.push({ id: it.id, x: p.x, y: p.y });
-      anchors.push({ x: p.x, y: p.y, embedding: it.embedding ?? null });
     }
   }
+
+  const positioned = embeddable.filter((it) => it.mapX != null && it.mapY != null);
+  const unpositioned = embeddable.filter((it) => it.mapX == null || it.mapY == null);
+
+  const needsLayout =
+    unpositioned.length > 0 ||
+    isDegenerateLayout(positioned.map((it) => ({ x: it.mapX!, y: it.mapY! })));
+
+  if (!needsLayout) {
+    for (const it of positioned) coords[it.id] = { x: it.mapX!, y: it.mapY! };
+  } else if (embeddable.length > 0) {
+    // Warm-start: positioned nodes at their persisted spots; new nodes seeded
+    // near their most similar anchors so they converge into the right region.
+    const init: Record<string, LayoutPoint> = {};
+    const anchors: { x: number; y: number; embedding?: number[] | null }[] = [];
+    for (const it of positioned) {
+      init[it.id] = { x: it.mapX!, y: it.mapY! };
+      anchors.push({ x: it.mapX!, y: it.mapY!, embedding: it.embedding ?? null });
+    }
+    for (const it of unpositioned) {
+      const seed = anchors.length > 0 ? placeNewNode(it.embedding ?? null, anchors) : null;
+      if (seed) {
+        init[it.id] = seed;
+        anchors.push({ x: seed.x, y: seed.y, embedding: it.embedding ?? null });
+      }
+    }
+
+    const layout = semanticLayout(
+      embeddable.map((it) => ({ id: it.id, embedding: it.embedding ?? null })),
+      { init },
+    );
+
+    for (const it of embeddable) {
+      const p = layout[it.id] ?? peripheralPoint(it.id);
+      coords[it.id] = p;
+      if (p.x !== it.mapX || p.y !== it.mapY) {
+        toPersist.push({ id: it.id, x: p.x, y: p.y });
+      }
+    }
+  }
+
+  if (toPersist.length === 0) return coords;
 
   // Materialize the freshly computed coordinates (idempotent; best-effort).
   try {
@@ -188,9 +234,12 @@ export async function getMemoryGraph(args: {
     });
 
   const clusterMap = new Map<string, GraphCluster>();
+  // Node topics arrive ordered by weight desc, so topics[0] is the coarse
+  // domain anchor. Count how often each topic leads to decide its kind.
+  const domainVotes = new Map<string, number>();
 
   for (const node of nodes) {
-    for (const topic of node.topics) {
+    node.topics.forEach((topic, index) => {
       const existing = clusterMap.get(topic.topicId);
 
       if (existing) {
@@ -200,10 +249,21 @@ export async function getMemoryGraph(args: {
         clusterMap.set(topic.topicId, {
           topicId: topic.topicId,
           name: topic.name,
+          kind: "topic",
           count: 1,
           itemIds: [node.id],
         });
       }
+
+      if (index === 0) {
+        domainVotes.set(topic.topicId, (domainVotes.get(topic.topicId) ?? 0) + 1);
+      }
+    });
+  }
+
+  for (const cluster of clusterMap.values()) {
+    if ((domainVotes.get(cluster.topicId) ?? 0) * 2 >= cluster.count) {
+      cluster.kind = "domain";
     }
   }
 
