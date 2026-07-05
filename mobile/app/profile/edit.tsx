@@ -46,7 +46,7 @@ export default function EditProfileScreen() {
       return;
     }
     if (!handle.trim() || !/^[a-zA-Z0-9_]{2,24}$/.test(handle.trim())) {
-      setError('Handle must be 2–24 characters: letters, numbers, underscores only.');
+      setError('Handle must be 2-24 characters, using only letters, numbers, and underscores.');
       return;
     }
     setSaving(true);
@@ -118,14 +118,14 @@ export default function EditProfileScreen() {
             onChangeText={(t) => setHandle(t.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 24))}
             placeholder="your_handle"
             autoCapitalize="none"
-            hint="2–24 characters. Letters, numbers, underscores only."
+            hint="2-24 characters, using only letters, numbers, and underscores."
           />
 
           <Input
             label="Bio"
             value={bio}
             onChangeText={setBio}
-            placeholder="Optional orientation for the system…"
+            placeholder="A line about you (optional)"
             multiline
             numberOfLines={3}
           />
@@ -134,7 +134,7 @@ export default function EditProfileScreen() {
             label="Notes"
             value={publicNotes}
             onChangeText={setPublicNotes}
-            placeholder="Optional. Kept with your account."
+            placeholder="Optional notes for your profile."
             multiline
             numberOfLines={4}
           />

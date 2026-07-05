@@ -32,6 +32,7 @@ export interface CaptureTopic {
 export interface CaptureContent {
   id: string;
   title: string;
+  description: string | null;
   canonicalUrl: string | null;
   sourceName: string | null;
   contentType: string | null;
@@ -46,6 +47,7 @@ export interface CapturedItem {
   keyIdea: string | null;
   capturedAt: string;
   reaction: string | null;
+  userContext: string | null;
   kind: CaptureKind;
   topics: CaptureTopic[];
   contentItem: CaptureContent | null;
@@ -92,6 +94,15 @@ export interface CaptureSummary extends CapturedItem {
   leadInsight: { id: string; type: InsightType; headline: string } | null;
 }
 
+export type ContentConfidence = 'rich' | 'partial' | 'thin';
+
+export interface CapturePreflight {
+  confidence: ContentConfidence;
+  title?: string;
+  excerpt?: string;
+  bodySource?: string;
+}
+
 export interface MemoryGraphResponse {
   nodes: {
     id: string;
@@ -114,6 +125,8 @@ export interface MemoryGraphResponse {
   clusters: {
     topicId: string;
     name: string;
+    /** 'domain' = coarse field label (zoomed out); 'topic' = specific label (zoomed in). */
+    kind: 'domain' | 'topic';
     count: number;
     itemIds: string[];
   }[];

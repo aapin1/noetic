@@ -16,6 +16,7 @@ import { Text } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { InfoModal } from '@/components/ui/InfoModal';
+import { ScreenIntro } from '@/components/ui/ScreenIntro';
 import type {
   ContradictionCard,
   ThreadSynthesis,
@@ -312,7 +313,7 @@ export default function MindScreen() {
         visible={infoVisible}
         onClose={() => setInfoVisible(false)}
         title="mind"
-        body="Surfaces what's already in your map — patterns you didn't notice, contradictions between things you hold, threads that keep recurring. It emerges from your captures, not from prompts."
+        body="Shows what's already sitting in your map: patterns you missed, ideas that contradict each other, threads that keep coming back. All of it comes from what you saved, not from prompts."
       />
       <ScrollView
         contentContainerStyle={styles.content}
@@ -321,13 +322,14 @@ export default function MindScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <Text variant="serif" color="secondary" style={styles.lead}>
-          What you didn't know you know.
-        </Text>
-
-        {isEmpty && (
-          <Text variant="body" color="muted" style={styles.emptyNote}>
-            Keep capturing. Tensions, threads, and patterns will surface once your map has enough depth.
+        {isEmpty ? (
+          <ScreenIntro
+            title="Your mind is quiet for now"
+            body="Save a few more things and patterns start showing up here: contradictions, repeats, and ideas that connect."
+          />
+        ) : (
+          <Text variant="serif" color="secondary" style={styles.lead}>
+            What you didn't know you know.
           </Text>
         )}
 
@@ -397,7 +399,7 @@ export default function MindScreen() {
           <>
             <Text variant="h3" style={styles.sectionHead}>Evolution</Text>
             <Text variant="body" color="muted" style={styles.sectionSub}>
-              How your engagement with these topics has shifted over time.
+              How your attention to these topics has changed over time.
             </Text>
             {data!.evolutionArcs.map((arc) => (
               <EvolutionArcView key={arc.topicId} arc={arc} />
@@ -409,7 +411,7 @@ export default function MindScreen() {
           <>
             <Text variant="h3" style={styles.sectionHead}>Dormant</Text>
             <Text variant="body" color="muted" style={styles.sectionSub}>
-              Threads you were deep in — still waiting.
+              Threads you went deep on, now sitting quiet.
             </Text>
             {data!.dormantThreads.map((thread) => (
               <DormantThreadView key={thread.topicId} thread={thread} />
@@ -436,10 +438,6 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing[16],
   },
   lead: {
-    marginTop: Spacing[6],
-    maxWidth: 320,
-  },
-  emptyNote: {
     marginTop: Spacing[6],
     maxWidth: 320,
   },

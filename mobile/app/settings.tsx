@@ -117,8 +117,8 @@ export default function SettingsScreen() {
         <SectionHeader title="Capture & insights" />
         <View style={[styles.section, { borderColor: c.border }]}>
           <SettingRow
-            label="Weekly cognition summary"
-            description="Drift, themes, and what returned to attention."
+            label="Weekly summary"
+            description="A recap of your drift and what you've been thinking about."
             rightElement={
               <Switch
                 value={digestWeekly}
@@ -130,8 +130,8 @@ export default function SettingsScreen() {
             }
           />
           <SettingRow
-            label="Gentle capture reminder"
-            description="One quiet nudge if you go quiet for a few days."
+            label="Capture reminder"
+            description="A quiet nudge if you haven't saved anything in a few days."
             rightElement={
               <Switch
                 value={captureNudge}
@@ -148,7 +148,7 @@ export default function SettingsScreen() {
         <View style={[styles.section, { borderColor: c.border }]}>
           <SettingRow
             label="Your data stays yours"
-            description="Captures and insights are private by default. Export from the API or request a dump in a future build."
+            description="Captures and insights are private by default. You can export them through the API, or request a full download once that feature ships."
           />
         </View>
 

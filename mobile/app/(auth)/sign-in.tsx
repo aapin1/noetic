@@ -71,7 +71,7 @@ export default function SignInScreen() {
               Welcome back.
             </Text>
             <Text variant="body" color="secondary" style={styles.subtitle}>
-              Sign back in, and pick up right where you left off.
+              Sign back in and pick up where you left off.
             </Text>
           </View>
 

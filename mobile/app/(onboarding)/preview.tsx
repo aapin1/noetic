@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Dimensions, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,6 +11,9 @@ import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Brain } from '@/components/Brain';
 import { InsightLine } from '@/components/InsightLine';
+
+const { width: SCREEN_W } = Dimensions.get('window');
+const BRAIN_SIZE = Math.min(SCREEN_W * 0.6, 240);
 
 export default function PreviewScreen() {
   const c = useThemeColors();
@@ -34,10 +37,10 @@ export default function PreviewScreen() {
           Ready
         </Text>
         <Text variant="h2" style={{ marginTop: Spacing[2] }}>
-          Your memory is live
+          You're all set
         </Text>
         <View style={styles.brainWrap}>
-          <Brain size={200} density={56} showLines />
+          <Brain size={BRAIN_SIZE} density={56} showLines />
         </View>
         {first?.leadInsight ? (
           <View style={[styles.insightCard, { borderColor: c.border }]}>
@@ -59,18 +62,18 @@ export default function PreviewScreen() {
             </View>
             <Pressable onPress={() => router.push(`/insight/${first.id}` as never)} style={{ marginTop: Spacing[4] }}>
               <Text variant="monoSmall" color="muted">
-                Open full record →
+                See the full insight →
               </Text>
             </Pressable>
           </View>
         ) : (
           <Text variant="serif" color="secondary" style={{ marginTop: Spacing[6] }}>
-            No seed capture yet. The first thing you store will produce the opening insight.
+            Nothing saved yet. The first thing you add gets its own insight.
           </Text>
         )}
 
         <Button
-          label="Enter"
+          label="Start"
           variant="primary"
           size="lg"
           fullWidth

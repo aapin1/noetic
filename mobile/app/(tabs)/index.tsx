@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Animated as RNAnimated,
   Dimensions,
   KeyboardAvoidingView,
@@ -12,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -28,15 +29,17 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
-import { Crosshair, Moon, Search, Sun } from 'lucide-react-native';
+import { Crosshair, Moon, Search, Sun, Trash2Icon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
+import { LoadingDots } from '@/components/ui/LoadingDots';
+import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
 import type { AppThemeColors } from '@/constants/theme';
-import type { CaptureKind, CaptureResponse, MemoryEdgeType, MemoryGraphResponse } from '@/types/api';
+import type { CaptureKind, CapturePreflight, MemoryGraphResponse } from '@/types/api';
 
 type GraphNode = MemoryGraphResponse['nodes'][number];
 type GraphEdge = MemoryGraphResponse['edges'][number];
@@ -374,16 +377,6 @@ function normalizeLinkInput(raw: string): string {
   return v;
 }
 
-function edgeLabel(type: MemoryEdgeType): string {
-  switch (type) {
-    case 'REINFORCES': return 'reinforces';
-    case 'CONTRADICTS': return 'challenges';
-    case 'RECURS': return 'recurs in';
-    case 'EVOLVES_FROM': return 'evolves from';
-    default: return 'connects to';
-  }
-}
-
 function Divider({ c }: { c: AppThemeColors }) {
   return <View style={[sh.divider, { backgroundColor: c.border }]} />;
 }
@@ -449,7 +442,7 @@ function StepOne({
             style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
             value={payload}
             onChangeText={setPayload}
-            placeholder={mode === 'link' ? 'https://...' : mode === 'quote' ? 'a passage worth preserving...' : 'fragments are fine.'}
+            placeholder={mode === 'link' ? 'https://...' : mode === 'quote' ? 'a line worth keeping...' : 'fragments are fine.'}
             placeholderTextColor={c.faint}
             multiline={mode !== 'link'}
             autoCapitalize={mode === 'link' ? 'none' : 'sentences'}
@@ -477,17 +470,66 @@ function StepOne({
   );
 }
 
+/** What the preflight read of the source yielded, shown on the reaction step. */
+function PreflightStatus({ loading, preflight, c }: {
+  loading: boolean;
+  preflight: CapturePreflight | null;
+  c: AppThemeColors;
+}) {
+  if (loading) {
+    return (
+      <View style={sh.preflightRow}>
+        <LoadingDots size={4} />
+        <Text variant="monoSmall" style={{ color: c.muted }}>reading the source…</Text>
+      </View>
+    );
+  }
+  if (!preflight) return null;
+  if (preflight.confidence === 'rich') {
+    const label = preflight.bodySource === 'transcript' ? 'got the full transcript ✓' : 'read the full content ✓';
+    return (
+      <View style={sh.preflightRow}>
+        <Text variant="monoSmall" style={{ color: c.muted }}>{label}</Text>
+      </View>
+    );
+  }
+  if (preflight.confidence === 'partial') {
+    return (
+      <View style={sh.preflightRow}>
+        <Text variant="monoSmall" style={{ color: c.muted }}>only got a short excerpt of this source.</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={sh.preflightRow}>
+      <Text variant="monoSmall" color="danger">couldn't read this source.</Text>
+    </View>
+  );
+}
+
 function StepTwo({
   reaction, setReaction, error, busy, onBack, onCommit, c,
+  isLink, preflight, preflightLoading, userContext, setUserContext, onVoiceError,
 }: {
   reaction: string; setReaction: (s: string) => void;
   error: string; busy: boolean; onBack: () => void; onCommit: () => void;
   c: AppThemeColors;
+  isLink: boolean;
+  preflight: CapturePreflight | null;
+  preflightLoading: boolean;
+  userContext: string; setUserContext: (s: string) => void;
+  onVoiceError: (message: string) => void;
 }) {
+  // The fail-safe: when we couldn't read the source (or barely could), the
+  // user's own account becomes the ground truth the insight pipeline works from.
+  const needsContext = isLink && !preflightLoading && !!preflight && preflight.confidence !== 'rich';
+  const contextThin = preflight?.confidence === 'thin';
+
   return (
     <View>
       <Text variant="serifLg" color="primary" style={sh.heading}>Your reaction.</Text>
-      <Text variant="monoSmall" color="muted" style={sh.sub}>Optional. One line. Stays private.</Text>
+      <Text variant="monoSmall" color="muted" style={sh.sub}>Optional. One line, just for you.</Text>
+      {isLink && <PreflightStatus loading={preflightLoading} preflight={preflight} c={c} />}
       <Divider c={c} />
       <View style={[sh.inputBox, { borderColor: c.border }]}>
         <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>REACTION_</Text>
@@ -495,12 +537,38 @@ function StepTwo({
           style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
           value={reaction}
           onChangeText={setReaction}
-          placeholder="a single reflex. or nothing."
+          placeholder="a quick reaction, or nothing."
           placeholderTextColor={c.faint}
           multiline
-          autoFocus
+          autoFocus={!needsContext}
         />
       </View>
+      {needsContext && (
+        <View style={[sh.inputBox, { borderColor: contextThin ? c.danger : c.border }]}>
+          <View style={sh.contextHeader}>
+            <Text variant="monoSmall" style={[sh.inputLabel, { color: contextThin ? c.danger : c.muted }]}>
+              WHAT WAS IT ABOUT?_
+            </Text>
+            <VoiceNoteButton
+              onText={(t) => setUserContext(userContext ? `${userContext.trim()} ${t}` : t)}
+              onError={onVoiceError}
+            />
+          </View>
+          <TextInput
+            style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
+            value={userContext}
+            onChangeText={setUserContext}
+            placeholder="a few sentences in your own words. speak or type."
+            placeholderTextColor={c.faint}
+            multiline
+          />
+          <Text variant="monoSmall" style={{ color: c.faint, marginTop: Spacing[2] }}>
+            {contextThin
+              ? 'we build the connections and insight from this.'
+              : 'optional. helps when the excerpt is short.'}
+          </Text>
+        </View>
+      )}
       {!!error && (
         <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
       )}
@@ -515,55 +583,8 @@ function StepTwo({
           style={[sh.primaryBtn, { backgroundColor: c.text, opacity: busy ? 0.55 : 1 }]}
         >
           <Text variant="monoSmall" style={{ color: c.background }}>
-            {busy ? 'synthesizing...' : 'commit →'}
+            {busy ? 'saving...' : 'commit →'}
           </Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-function StepThree({
-  result, onViewInsight, onBackToMap, c,
-}: {
-  result: CaptureResponse; onViewInsight: () => void; onBackToMap: () => void;
-  c: AppThemeColors;
-}) {
-  const topConnections = result.related?.slice(0, 3) ?? [];
-
-  return (
-    <View>
-      <Text variant="serifLg" color="primary" style={[sh.heading, { marginTop: Spacing[6] }]} numberOfLines={4}>
-        {result.title ?? result.rawText?.slice(0, 120) ?? 'Saved.'}
-      </Text>
-
-      <Divider c={c} />
-
-      {topConnections.length > 0 && (
-        <View style={{ marginBottom: Spacing[4] }}>
-          {topConnections.map((item) => (
-            <View
-              key={item.id}
-              style={{ flexDirection: 'row', alignItems: 'baseline', gap: Spacing[3], marginBottom: Spacing[3] }}
-            >
-              <Text variant="monoSmall" style={{ color: c.faint, minWidth: 68 }} numberOfLines={1}>
-                {edgeLabel(item.edgeType ?? 'RELATED')}
-              </Text>
-              <Text variant="monoSmall" color="muted" style={{ flex: 1 }} numberOfLines={1}>
-                {item.title}
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      <Divider c={c} />
-      <View style={sh.actions}>
-        <Pressable onPress={onBackToMap} style={sh.secondaryBtn}>
-          <Text variant="monoSmall" style={{ color: c.muted }}>← map</Text>
-        </Pressable>
-        <Pressable onPress={onViewInsight} style={[sh.primaryBtn, { backgroundColor: c.text }]}>
-          <Text variant="monoSmall" style={{ color: c.background }}>view insight →</Text>
         </Pressable>
       </View>
     </View>
@@ -579,6 +600,8 @@ const sh = StyleSheet.create({
   thumb: { width: '100%', height: 180, borderRadius: Radius.xs, marginBottom: Spacing[2] },
   inputBox: { borderWidth: 1, borderRadius: Radius.xs, padding: Spacing[4], marginTop: Spacing[2] },
   inputLabel: { marginBottom: Spacing[2] },
+  preflightRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2], marginTop: Spacing[3] },
+  contextHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   inputField: { minHeight: 72, paddingVertical: Spacing[1] },
   actions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   secondaryBtn: { paddingVertical: Spacing[3], paddingHorizontal: Spacing[2] },
@@ -663,20 +686,23 @@ const tb = StyleSheet.create({
 
 // ── Timeline scrubber (temporal lens) ─────────────────────────────
 
-const SLIDER_MARGIN = Spacing[6];
-
 interface TimelineScrubberProps {
   nodes: GraphNode[];
   clusters: MemoryGraphResponse['clusters'];
   pct: number;
   onChange: (p: number) => void;
-  wrapBgColor?: string;
-  c: AppThemeColors;
 }
 
-function TimelineScrubber({ nodes, clusters, pct, onChange, wrapBgColor, c }: TimelineScrubberProps) {
-  const sliderWidth = SW - SLIDER_MARGIN * 2;
+// Vertical rail: pinned to the right edge, clear of the centered FAB. Top =
+// earliest, bottom = latest; drag up to travel back in time. The thumb is
+// clamped to the track so it never overflows into the date label.
+const RAIL_H = Math.min(SH * 0.5, 440);
+const RAIL_TRACK_W = 40;
+const RAIL_THUMB = 12;
+
+function TimelineScrubber({ nodes, clusters, pct, onChange }: TimelineScrubberProps) {
   const pctRef = useRef(pct);
+  pctRef.current = pct;
 
   const { minTs, maxTs, milestones } = useMemo(() => {
     if (nodes.length === 0) return { minTs: 0, maxTs: 0, milestones: [] };
@@ -717,50 +743,50 @@ function TimelineScrubber({ nodes, clusters, pct, onChange, wrapBgColor, c }: Ti
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
-        const x = evt.nativeEvent.locationX;
-        const newPct = Math.max(0, Math.min(1, x / sliderWidth));
+        const y = evt.nativeEvent.locationY;
+        const newPct = Math.max(0, Math.min(1, y / RAIL_H));
         pctRef.current = newPct;
         onChange(newPct);
       },
       onPanResponderMove: (evt, gs) => {
-        const startX = pctRef.current * sliderWidth;
-        const newX = startX + gs.dx;
-        const newPct = Math.max(0, Math.min(1, newX / sliderWidth));
+        const startY = pctRef.current * RAIL_H;
+        const newY = startY + gs.dy;
+        const newPct = Math.max(0, Math.min(1, newY / RAIL_H));
         onChange(newPct);
       },
     }),
   ).current;
 
-  const thumbX = pct * sliderWidth;
+  // Clamp so the thumb (and the date label that tracks it) stay on the rail.
+  const thumbY = Math.max(0, Math.min(RAIL_H, pct * RAIL_H));
+  const labelTop = Math.max(0, Math.min(RAIL_H - 12, thumbY - 6));
 
   return (
-    <View style={[tls.wrap, { borderTopColor: 'rgba(255,255,255,0.08)', backgroundColor: wrapBgColor ?? 'rgba(6,6,6,0.88)' }]}>
-      <Text style={[tls.label, { color: 'rgba(236,236,236,0.35)' }]}>
-        time
-      </Text>
-      <View style={tls.sliderRow}>
-        <View style={tls.trackWrap} {...pan.panHandlers}>
-          {/* Track */}
-          <View style={[tls.track, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
-          {/* Filled portion */}
-          <View style={[tls.fill, { width: thumbX, backgroundColor: 'rgba(255,255,255,0.22)' }]} />
-          {/* Milestone ticks */}
-          {milestones.map((m) => (
-            <View
-              key={m.topicId}
-              style={[tls.milestone, { left: m.pct * sliderWidth - 1, backgroundColor: 'rgba(255,255,255,0.4)' }]}
-            />
-          ))}
-          {/* Thumb */}
-          <View style={[tls.thumb, { left: thumbX - 6, backgroundColor: MAP_NODE }]} />
-        </View>
-        <Text style={[tls.dateLabel, { color: 'rgba(236,236,236,0.5)' }]} numberOfLines={1}>
+    <View style={tls.wrap} pointerEvents="box-none">
+      <Text style={[tls.label, { color: 'rgba(236,236,236,0.35)' }]}>time</Text>
+      <View style={tls.trackWrap} {...pan.panHandlers}>
+        {/* Track */}
+        <View style={[tls.track, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
+        {/* Filled portion (earliest → cutoff) */}
+        <View style={[tls.fill, { height: thumbY, backgroundColor: 'rgba(255,255,255,0.22)' }]} />
+        {/* Milestone ticks */}
+        {milestones.map((m) => (
+          <View
+            key={m.topicId}
+            style={[tls.milestone, { top: m.pct * RAIL_H - 1, backgroundColor: 'rgba(255,255,255,0.4)' }]}
+          />
+        ))}
+        {/* Thumb */}
+        <View style={[tls.thumb, { top: thumbY - RAIL_THUMB / 2, backgroundColor: MAP_NODE }]} />
+        {/* Date label — tracks the thumb, sits to its left */}
+        <Text
+          style={[tls.dateLabel, { top: labelTop, color: 'rgba(236,236,236,0.55)' }]}
+          numberOfLines={1}
+        >
           {dateLabel}
         </Text>
       </View>
-      <Text style={[tls.hint, { color: 'rgba(236,236,236,0.2)' }]}>
-        drag to travel through time
-      </Text>
+      <Text style={[tls.hint, { color: 'rgba(236,236,236,0.2)' }]}>drag</Text>
     </View>
   );
 }
@@ -768,13 +794,10 @@ function TimelineScrubber({ nodes, clusters, pct, onChange, wrapBgColor, c }: Ti
 const tls = StyleSheet.create({
   wrap: {
     position: 'absolute',
-    bottom: TAB_H + 96,
-    left: 0,
-    right: 0,
-    paddingTop: Spacing[3],
-    paddingBottom: Spacing[4],
-    paddingHorizontal: SLIDER_MARGIN,
-    borderTopWidth: 1,
+    right: Spacing[3],
+    top: (SH - RAIL_H) / 2,
+    height: RAIL_H + 40,
+    alignItems: 'center',
   },
   label: {
     fontFamily: FontFamily.mono,
@@ -783,49 +806,43 @@ const tls = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: Spacing[2],
   },
-  sliderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing[3],
-  },
   trackWrap: {
-    flex: 1,
-    height: 20,
-    justifyContent: 'center',
+    width: RAIL_TRACK_W,
+    height: RAIL_H,
+    alignItems: 'center',
   },
   track: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 2,
+    top: 0,
+    bottom: 0,
+    width: 2,
     borderRadius: 1,
   },
   fill: {
     position: 'absolute',
-    left: 0,
-    height: 2,
+    top: 0,
+    width: 2,
     borderRadius: 1,
   },
   milestone: {
     position: 'absolute',
-    width: 2,
-    height: 8,
-    top: 6,
+    width: 8,
+    height: 2,
     borderRadius: 1,
   },
   thumb: {
     position: 'absolute',
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    top: 4,
+    width: RAIL_THUMB,
+    height: RAIL_THUMB,
+    borderRadius: RAIL_THUMB / 2,
   },
   dateLabel: {
+    position: 'absolute',
+    right: RAIL_TRACK_W - 4,
     fontFamily: FontFamily.mono,
     fontSize: 9,
     letterSpacing: 0.5,
-    minWidth: 56,
-    flexShrink: 0,
+    width: 64,
     textAlign: 'right',
   },
   hint: {
@@ -885,6 +902,9 @@ export default function MapScreen() {
 
   // ── Lens mode ──────────────────────────────────────────────────
   const [lensMode, setLensMode] = useState<LensMode>('semantic');
+  // True while nodes are easing between layouts, so per-lens labels can stay
+  // hidden until the map has settled (otherwise they float over moving nodes).
+  const [lensTransitioning, setLensTransitioning] = useState(false);
 
   // Compute all 3 layouts upfront
   const semanticPos = useMemo(
@@ -909,14 +929,18 @@ export default function MapScreen() {
   const [renderPos, setRenderPos] = useState<PositionMap>({});
   const lensAnimCancelRef = useRef<(() => void) | null>(null);
 
-  // Stable identity of the node SET (not just count) — changes on add OR remove.
-  const nodeIdsKey = useMemo(() => nodes.map((n) => n.id).sort().join(','), [nodes]);
+  // Stable identity of the node set AND their server coordinates — changes on
+  // add, remove, or when the server refines the layout.
+  const nodeIdsKey = useMemo(
+    () => nodes.map((n) => `${n.id}:${n.x.toFixed(3)},${n.y.toFixed(3)}`).sort().join(','),
+    [nodes],
+  );
 
-  // React to node-set changes. Server coordinates are persisted and stable, so
-  // a plain refetch (returning to this tab) is a no-op and nothing drifts. When
-  // a new capture is added, existing nodes hold their positions and ONLY the new
-  // node animates in — sliding from its nearest existing neighbour to the
-  // semantic spot the server fitted it into. The map is never regenerated.
+  // React to layout changes. Server coordinates are persisted, so a plain
+  // refetch (returning to this tab) is a no-op and nothing drifts. When a new
+  // capture is added the server re-relaxes the map globally: the new node
+  // slides in from its nearest existing neighbour, and existing nodes ease
+  // from their previous spots to their (usually barely different) refined ones.
   useEffect(() => {
     if (nodes.length === 0) {
       if (lensAnimCancelRef.current) { lensAnimCancelRef.current(); lensAnimCancelRef.current = null; }
@@ -937,7 +961,7 @@ export default function MapScreen() {
     if (lensAnimCancelRef.current) { lensAnimCancelRef.current(); lensAnimCancelRef.current = null; }
 
     // First load, non-semantic lens, or a wholesale change → snap directly.
-    if (firstLoad || lensMode !== 'semantic' || newIds.length === 0 ||
+    if (firstLoad || lensMode !== 'semantic' ||
         newIds.length === Object.keys(targetPos).length) {
       renderPosRef.current = targetPos;
       setRenderPos(targetPos);
@@ -958,6 +982,10 @@ export default function MapScreen() {
       }
       starts[id] = best;
     }
+    // Existing nodes ease from where they currently sit to their refined spot.
+    for (const id of prevIds) {
+      if (targetPos[id]) starts[id] = prev[id]!;
+    }
 
     const startTime = Date.now();
     const duration = 600;
@@ -973,7 +1001,7 @@ export default function MapScreen() {
         const from = starts[id];
         newPos[id] = from
           ? { x: from.x + (target.x - from.x) * eased, y: from.y + (target.y - from.y) * eased }
-          : target; // existing nodes stay put
+          : target;
       }
       renderPosRef.current = newPos;
       setRenderPos(newPos);
@@ -1009,12 +1037,17 @@ export default function MapScreen() {
     const duration = 720;
     let cancelled = false;
 
-    const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+    // Same curve the camera uses (animateCamera), so nodes and viewport move in
+    // lockstep. A mismatched curve is what made nodes look like they overshot.
+    const easeInOutCubic = (t: number) =>
+      t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+    setLensTransitioning(true);
 
     const tick = () => {
       if (cancelled) return;
       const t = Math.min(1, (Date.now() - startTime) / duration);
-      const eased = easeOut(t);
+      const eased = easeInOutCubic(t);
       const newPos: PositionMap = {};
       for (const [id, target] of Object.entries(targetPos)) {
         const from = fromPos[id] ?? target;
@@ -1026,10 +1059,11 @@ export default function MapScreen() {
       renderPosRef.current = newPos;
       setRenderPos(newPos);
       if (t < 1) requestAnimationFrame(tick);
+      else setLensTransitioning(false);
     };
 
     requestAnimationFrame(tick);
-    lensAnimCancelRef.current = () => { cancelled = true; };
+    lensAnimCancelRef.current = () => { cancelled = true; setLensTransitioning(false); };
   }, [lensMode, semanticPos, temporalPos, sourcePos]);
 
   // Use renderPos for display, fall back to semanticPos on first render
@@ -1491,19 +1525,70 @@ export default function MapScreen() {
 
   // ── Node selection ────────────────────────────────────────────
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [deletingNode, setDeletingNode] = useState(false);
+
+  // Permanent delete: the row and everything derived from it (insights,
+  // connections, topic links) are removed server-side, then the graph is
+  // refetched so the node — and any edges into it — vanish from the map,
+  // clusters, and every other surface in the same request.
+  const handleDeleteNode = useCallback((node: GraphNode) => {
+    Alert.alert(
+      'Delete this memory?',
+      'This permanently removes it and its connections. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingNode(true);
+            try {
+              await api.captures.delete(node.id);
+              closeDrawer();
+              await refetchGraph();
+            } catch (e) {
+              Alert.alert('Could not delete', e instanceof Error ? e.message : 'Try again.');
+            } finally {
+              setDeletingNode(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [closeDrawer, refetchGraph]);
 
   // ── Capture state ─────────────────────────────────────────────
   const [showCapture, setShowCapture] = useState(false);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2>(1);
   const [mode, setMode] = useState<CaptureMode>('link');
   const [payload, setPayload] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [reaction, setReaction] = useState('');
-  const [captureResult, setCaptureResult] = useState<CaptureResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [captureError, setCaptureError] = useState('');
+  // Preflight: what the backend could read from the pasted URL, fetched while
+  // the user types their reaction. Drives the "what was this about?" fail-safe.
+  const [preflight, setPreflight] = useState<CapturePreflight | null>(null);
+  const [preflightLoading, setPreflightLoading] = useState(false);
+  const [userContext, setUserContext] = useState('');
+  const preflightSeq = useRef(0);
+
+  const runPreflight = useCallback((url: string) => {
+    const seq = ++preflightSeq.current;
+    setPreflight(null);
+    setPreflightLoading(true);
+    api.captures
+      .preflight(url)
+      // A failed preflight means the scrape failed — treat it as unreadable.
+      .catch((): CapturePreflight => ({ confidence: 'thin' }))
+      .then((res) => {
+        if (preflightSeq.current !== seq) return;
+        setPreflight(res);
+        setPreflightLoading(false);
+      });
+  }, []);
   const [newNodeId, setNewNodeId] = useState<string | null>(null);
   const landingAnim = useRef(new RNAnimated.Value(0)).current;
   const animatingRef = useRef(false);
@@ -1527,7 +1612,8 @@ export default function MapScreen() {
     setSelectedNode(null);
     setStep(1); setPayload(''); setReaction('');
     setImageUri(null); setMediaUrl(null); setUploading(false);
-    setCaptureResult(null); setCaptureError(''); setMode('link');
+    setCaptureError(''); setMode('link');
+    setPreflight(null); setPreflightLoading(false); setUserContext('');
     setShowCapture(true);
     slideY.setValue(SH);
     RNAnimated.spring(slideY, { toValue: 0, useNativeDriver: true, damping: 22, stiffness: 170 }).start();
@@ -1546,8 +1632,48 @@ export default function MapScreen() {
     } else if (!payload.trim()) {
       setCaptureError('Enter a URL or thought first.'); return;
     }
+    if (mode === 'link') {
+      runPreflight(normalizeLinkInput(payload));
+    }
     setCaptureError(''); setStep(2);
-  }, [mode, payload, mediaUrl, uploading]);
+  }, [mode, payload, mediaUrl, uploading, runPreflight]);
+
+  // Content shared in from the OS share sheet arrives as route params. Rather
+  // than saving silently, seed the capture flow and drop the user on the
+  // reaction step so every capture goes through the same flow.
+  const shareParams = useLocalSearchParams<{
+    shareKind?: string; shareUrl?: string; shareText?: string; shareMediaUrl?: string;
+  }>();
+  useEffect(() => {
+    const kind = shareParams.shareKind;
+    if (!kind) return;
+    closeDrawer();
+    setSelectedNode(null);
+    setCaptureError('');
+    setReaction('');
+    setPreflight(null); setPreflightLoading(false); setUserContext('');
+    if (kind === 'LINK') {
+      setMode('link'); setPayload(String(shareParams.shareUrl ?? ''));
+      setImageUri(null); setMediaUrl(null);
+      const sharedUrl = String(shareParams.shareUrl ?? '').trim();
+      if (sharedUrl) runPreflight(normalizeLinkInput(sharedUrl));
+    } else if (kind === 'IMAGE') {
+      setMode('image');
+      setMediaUrl(String(shareParams.shareMediaUrl ?? ''));
+      setImageUri(String(shareParams.shareMediaUrl ?? ''));
+      setPayload('');
+    } else {
+      setMode('text'); setPayload(String(shareParams.shareText ?? ''));
+      setImageUri(null); setMediaUrl(null);
+    }
+    setStep(2);
+    setShowCapture(true);
+    slideY.setValue(SH);
+    RNAnimated.spring(slideY, { toValue: 0, useNativeDriver: true, damping: 22, stiffness: 170 }).start();
+    // Clear params so returning to this tab doesn't reopen the sheet.
+    router.setParams({ shareKind: '', shareUrl: '', shareText: '', shareMediaUrl: '' });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shareParams.shareKind, shareParams.shareUrl, shareParams.shareText, shareParams.shareMediaUrl]);
 
   const pickImage = useCallback(async (source: 'camera' | 'library') => {
     setCaptureError('');
@@ -1595,15 +1721,18 @@ export default function MapScreen() {
         text,
         mediaUrl: mode === 'image' ? mediaUrl ?? undefined : undefined,
         reaction: reaction.trim() || undefined,
+        userContext: mode === 'link' ? userContext.trim() || undefined : undefined,
       });
-      setCaptureResult(res); setStep(3); setNewNodeId(res.id);
+      setNewNodeId(res.id);
       void refetchGraph();
+      closeCapture();
+      router.push(`/insight/${res.id}` as never);
     } catch (e) {
       setCaptureError(e instanceof Error ? e.message : 'Capture failed.');
     } finally {
       setBusy(false);
     }
-  }, [mode, payload, mediaUrl, reaction, refetchGraph]);
+  }, [mode, payload, mediaUrl, reaction, userContext, refetchGraph, closeCapture, router]);
 
   const pasteFromClipboard = useCallback(async () => {
     const t = (await Clipboard.getStringAsync()).trim();
@@ -1671,8 +1800,10 @@ export default function MapScreen() {
     );
   })() : null;
 
-  // Source kind labels for source lens mode
-  const kindLabels = lensMode === 'source' ? [
+  // Source kind labels for source lens mode. Held back until the lens
+  // transition settles so "links / thoughts / quotes" don't flash over nodes
+  // that are still sliding into their groups.
+  const kindLabels = lensMode === 'source' && !lensTransitioning ? [
     { kind: 'LINK' as CaptureKind, label: 'links', x: MAP_PAD + LAYOUT_W * 0.2, y: MAP_PAD + LAYOUT_H * 0.15 },
     { kind: 'TEXT' as CaptureKind, label: 'thoughts', x: MAP_PAD + LAYOUT_W * 0.5, y: MAP_PAD + LAYOUT_H * 0.15 },
     { kind: 'QUOTE' as CaptureKind, label: 'quotes', x: MAP_PAD + LAYOUT_W * 0.8, y: MAP_PAD + LAYOUT_H * 0.15 },
@@ -1771,12 +1902,22 @@ export default function MapScreen() {
                 );
               })}
 
-              {/* Cluster labels (semantic mode only) */}
+              {/* Cluster labels (semantic mode only) — hierarchical: coarse
+                  domain labels own the zoomed-out view; the more specific
+                  topic labels fade in as the user zooms into their region. */}
               {lensMode === 'semantic' && clusterLabels.map((cl) => {
-                const clFontSize = Math.max(9, Math.min(22, 14 / zoom));
-                const clOpacity = zoom > 1.4
-                  ? Math.max(0, (1 - (zoom - 1.4) / 0.6) * 0.14)
-                  : 0.12 + (1 - zoom) * 0.10;
+                const isDomain = cl.kind === 'domain';
+                const clFontSize = isDomain
+                  ? Math.max(9, Math.min(22, 14 / zoom))
+                  : Math.max(7, Math.min(14, 10 / zoom));
+                const clOpacity = isDomain
+                  ? (zoom <= 1.0
+                    ? 0.12 + (1 - zoom) * 0.10
+                    : Math.max(0, 0.12 * (1 - (zoom - 1.0) / 0.6)))
+                  : (zoom <= 1.1
+                    ? 0
+                    : Math.min(0.20, ((zoom - 1.1) / 0.5) * 0.20));
+                if (clOpacity <= 0.005) return null;
                 const dimmed = focusedTopicId && cl.topicId !== focusedTopicId;
                 return (
                   <SvgText
@@ -2001,8 +2142,6 @@ export default function MapScreen() {
           clusters={clusters}
           pct={timelinePct}
           onChange={setTimelinePct}
-          wrapBgColor={c.mapBackgroundOverlay}
-          c={c}
         />
       )}
 
@@ -2057,7 +2196,9 @@ export default function MapScreen() {
           </View>
           <View style={styles.headerRight} pointerEvents="box-none">
             {graphLoading && (
-              <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.3)', letterSpacing: 2, marginRight: Spacing[3] }}>·</Text>
+              <View style={{ marginRight: Spacing[3] }}>
+                <LoadingDots size={4} color="rgba(236,236,236,0.4)" />
+              </View>
             )}
             <View pointerEvents="auto">
               <Toolbar
@@ -2086,7 +2227,7 @@ export default function MapScreen() {
           visible={infoVisible}
           onClose={() => setInfoVisible(false)}
           title="atlas"
-          body="Your personal knowledge map. Each node is a capture. Connections emerge as ideas share topics, contradict, or evolve. Switch lenses to see your map through different projections — semantic clusters, time, or source type."
+          body="Your knowledge map. Every node is something you saved. Lines appear when ideas share a topic, contradict each other, or grow out of one another. Switch lenses to sort the map by meaning, time, or source."
         />
 
         {/* Focus mode indicator */}
@@ -2158,6 +2299,16 @@ export default function MapScreen() {
           </View>
         )}
 
+        {/* First-load state: map is still fetching, show a clear signal */}
+        {graphLoading && nodes.length === 0 && (
+          <View style={styles.emptyHint} pointerEvents="none">
+            <LoadingDots size={6} color="rgba(236,236,236,0.4)" />
+            <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.28)', textAlign: 'center', marginTop: Spacing[5], letterSpacing: 1 }}>
+              drawing your map
+            </Text>
+          </View>
+        )}
+
         {/* Empty state */}
         {isEmpty && (
           <View style={styles.emptyHint} pointerEvents="none">
@@ -2165,10 +2316,10 @@ export default function MapScreen() {
               · · ·
             </Text>
             <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[3], color: 'rgba(236,236,236,0.35)' }}>
-              the atlas is empty
+              nothing on the map yet
             </Text>
             <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.2)', textAlign: 'center', lineHeight: 20 }}>
-              {'Save your first capture using\nthe + button below.'}
+              {'Tap the + below to save your\nfirst thing and watch it appear.'}
             </Text>
           </View>
         )}
@@ -2243,13 +2394,13 @@ export default function MapScreen() {
                       </View>
                     ) : (
                       <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3] }}>
-                        no shared topics — these ideas exist in different territories of your map.
+                        no shared topics yet. these ideas sit in different parts of the map.
                       </Text>
                     )}
 
                     {discoveryResult.sharedNeighborCount === 0 && !discoveryResult.directlyConnected && (
                       <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3] }}>
-                        no direct connection yet. capturing more around these ideas may reveal one.
+                        no direct link yet. save more around these and one may show up.
                       </Text>
                     )}
 
@@ -2333,6 +2484,17 @@ export default function MapScreen() {
                     >
                       <Text variant="monoSmall" color="muted">view insight →</Text>
                     </Pressable>
+                    <Pressable
+                      onPress={() => handleDeleteNode(selectedNode)}
+                      disabled={deletingNode}
+                      style={{ marginTop: Spacing[4], flexDirection: 'row', alignItems: 'center', gap: Spacing[2], opacity: deletingNode ? 0.5 : 1 }}
+                      accessibilityLabel="Delete this memory"
+                    >
+                      <Trash2Icon size={13} color={c.danger} />
+                      <Text variant="monoSmall" color="danger">
+                        {deletingNode ? 'deleting…' : 'delete'}
+                      </Text>
+                    </Pressable>
                   </View>
                 )}
               </ScrollView>
@@ -2386,15 +2548,15 @@ export default function MapScreen() {
                   <View style={[styles.handle, { backgroundColor: c.border }]} />
                 </View>
                 <View style={styles.stepRow}>
-                  {([1, 2, 3] as const).map((s) => (
+                  {([1, 2] as const).map((s) => (
                     <React.Fragment key={s}>
                       <View style={[styles.stepDot, { backgroundColor: step >= s ? c.text : 'transparent', borderColor: step >= s ? c.text : c.border }]} />
-                      {s < 3 && <View style={[styles.stepLine, { backgroundColor: step > s ? c.text : c.border }]} />}
+                      {s < 2 && <View style={[styles.stepLine, { backgroundColor: step > s ? c.text : c.border }]} />}
                     </React.Fragment>
                   ))}
                 </View>
                 <Text variant="monoSmall" style={[styles.stepLabel, { color: c.muted }]}>
-                  {step === 1 ? '01 / CAPTURE' : step === 2 ? '02 / REACT' : '03 / COMMITTED'}
+                  {step === 1 ? '01 / CAPTURE' : '02 / REACT'}
                 </Text>
                 <View style={styles.modalBody}>
                   {step === 1 && (
@@ -2417,14 +2579,11 @@ export default function MapScreen() {
                       onBack={() => { setStep(1); setCaptureError(''); }}
                       onCommit={() => void commit()}
                       c={c}
-                    />
-                  )}
-                  {step === 3 && captureResult && (
-                    <StepThree
-                      result={captureResult}
-                      onViewInsight={() => { closeCapture(); router.push(`/insight/${captureResult.id}` as never); }}
-                      onBackToMap={closeCapture}
-                      c={c}
+                      isLink={mode === 'link'}
+                      preflight={preflight}
+                      preflightLoading={preflightLoading}
+                      userContext={userContext} setUserContext={setUserContext}
+                      onVoiceError={setCaptureError}
                     />
                   )}
                 </View>

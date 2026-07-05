@@ -20,7 +20,9 @@ export function useApiQuery<T>(
 
   const run = useCallback(async () => {
     cancelRef.current = false;
-    setState({ data: null, loading: true, error: null });
+    // Keep any previously loaded data on screen while revalidating so a
+    // refetch (e.g. on tab focus) doesn't blank the UI and flash a spinner.
+    setState((s) => ({ data: s.data, loading: true, error: null }));
     try {
       const data = await fetcher();
       if (!cancelRef.current) setState({ data, loading: false, error: null });

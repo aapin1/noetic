@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Dimensions, Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,6 +9,9 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Brain } from '@/components/Brain';
+
+const { width: SCREEN_W } = Dimensions.get('window');
+const BRAIN_SIZE = Math.min(SCREEN_W * 0.76, 320);
 
 export default function LandingScreen() {
   const c = useThemeColors();
@@ -29,16 +32,16 @@ export default function LandingScreen() {
           mneme
         </Text>
         <View style={styles.brain}>
-          <Brain size={260} density={72} intensity={0.85} />
+          <Brain size={BRAIN_SIZE} density={72} intensity={0.85} />
         </View>
         <Text variant="h1" style={styles.line}>
-          Private memory. Immediate insight.
+          Save what catches your eye.
         </Text>
         <Text variant="serif" color="secondary" style={styles.sub}>
-          One capture. The system does the rest.
+          Mneme connects what you save and shows you what you keep coming back to.
         </Text>
         <Button
-          label="Begin"
+          label="Get started"
           variant="primary"
           size="lg"
           fullWidth
@@ -69,7 +72,7 @@ const styles = StyleSheet.create({
   },
   brain: { alignItems: 'center', marginBottom: Spacing[8] },
   line: { textAlign: 'center' },
-  sub: { textAlign: 'center', marginTop: Spacing[4], maxWidth: 300, alignSelf: 'center' },
+  sub: { textAlign: 'center', marginTop: Spacing[4], maxWidth: 340, alignSelf: 'center' },
   cta: { marginTop: Spacing[10] },
   secondary: { marginTop: Spacing[6], alignSelf: 'center', padding: Spacing[2] },
 });

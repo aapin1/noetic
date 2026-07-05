@@ -85,7 +85,7 @@ export default function SignUpScreen() {
               Create an account.
             </Text>
             <Text variant="body" color="secondary" style={styles.subtitle}>
-              Onboarding is short. Capture comes next.
+              Takes about two minutes. Then you can start saving whatever catches your attention.
             </Text>
           </View>
 
@@ -115,7 +115,10 @@ export default function SignUpScreen() {
               placeholder="you@example.com"
               keyboardType="email-address"
               autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
               autoComplete="email"
+              textContentType="emailAddress"
               returnKeyType="next"
             />
 
@@ -125,7 +128,11 @@ export default function SignUpScreen() {
               onChangeText={setPassword}
               placeholder="At least 8 characters"
               secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
               autoComplete="new-password"
+              textContentType="newPassword"
               returnKeyType="next"
             />
 
@@ -135,6 +142,10 @@ export default function SignUpScreen() {
               onChangeText={setConfirm}
               placeholder="Repeat password"
               secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
+              textContentType="newPassword"
               returnKeyType="done"
               onSubmitEditing={handleSignUp}
             />

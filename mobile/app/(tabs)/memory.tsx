@@ -7,7 +7,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { FontFamily, Radius, Spacing } from '@/constants/theme';
@@ -97,6 +97,9 @@ export default function LogScreen() {
 
   const onRefresh = useCallback(() => void refetch(), [refetch]);
 
+  // Refresh when the tab regains focus so the archive never shows stale entries.
+  useFocusEffect(useCallback(() => { void refetch(); }, [refetch]));
+
   const isEmpty = !loading && (captures?.length ?? 0) === 0;
 
   return (
@@ -118,7 +121,7 @@ export default function LogScreen() {
         visible={infoVisible}
         onClose={() => setInfoVisible(false)}
         title="archive"
-        body="A chronological record of everything you've saved — links, thoughts, and passages. Each entry shows its type, when it was captured, and the key idea Mneme extracted from it."
+        body="A chronological record of everything you've saved: links, thoughts, and passages. Each entry shows its type, when it was captured, and the key idea Mneme pulled from it."
       />
 
       <ScrollView

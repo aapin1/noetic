@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { SettingsIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
@@ -22,10 +22,18 @@ export default function YouScreen() {
     [],
   );
 
-  const { data: capList } = useApiQuery(() => api.captures.list({ limit: 80 }), []);
+  const { data: capList, refetch: refetchCaps } = useApiQuery(() => api.captures.list({ limit: 80 }), []);
   const count = capList?.length ?? 0;
 
   const p = profile ?? authProfile;
+
+  // Refresh profile + capture count whenever the tab regains focus.
+  useFocusEffect(
+    useCallback(() => {
+      void refetch();
+      void refetchCaps();
+    }, [refetch, refetchCaps]),
+  );
 
   const handleRefresh = useCallback(async () => {
     await refetch();

@@ -36,11 +36,11 @@ export default function TopicsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Text variant="label" color="muted" style={styles.step}>
-          Orientation · 1/3
+          Setup · 1 of 3
         </Text>
-        <Text variant="h2">What occupies your mind?</Text>
+        <Text variant="h2">What do you think about most?</Text>
         <Text variant="body" color="secondary" style={styles.sub}>
-          {MIN}–{MAX} domains. No hierarchy yet.
+          Pick {MIN} to {MAX} topics. It's just a starting point, nothing's ranked.
         </Text>
 
         {ONBOARDING_TOPICS.map((topic) => {

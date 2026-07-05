@@ -18,6 +18,7 @@ import { Text } from '@/components/ui/Text';
 import { Avatar } from '@/components/ui/Avatar';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { InfoModal } from '@/components/ui/InfoModal';
+import { ScreenIntro } from '@/components/ui/ScreenIntro';
 import type { FeedItem } from '@/types/api';
 
 function FeedCard({ item }: { item: FeedItem }) {
@@ -168,7 +169,7 @@ export default function PulseScreen() {
         visible={infoVisible}
         onClose={() => setInfoVisible(false)}
         title="pulse"
-        body="See what people you follow are reading and thinking about. Pulse is a slow, quiet feed — no likes or comments, just the ideas people choose to preserve."
+        body="See what the people you follow are reading and thinking about. It's a slow, quiet feed. No likes, no comments, just the ideas people decide to keep."
       />
 
       {loading && !data ? (
@@ -219,13 +220,10 @@ export default function PulseScreen() {
           {!searchQuery.trim() && (
             <>
               {isEmpty && (
-                <View style={styles.emptyWrap}>
-                  <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[4] }}>· · ·</Text>
-                  <Text variant="serif" color="primary" style={{ marginBottom: Spacing[4] }}>the pulse is quiet</Text>
-                  <Text variant="monoSmall" style={{ color: c.muted, textAlign: 'center', lineHeight: 22 }}>
-                    {'Follow people to see their captures here.\nUse the search above to find them.'}
-                  </Text>
-                </View>
+                <ScreenIntro
+                  title="The pulse is quiet"
+                  body="Follow a few people and the ideas they save will show up here. Use the search above to find them."
+                />
               )}
               {allItems.map((item) => (
                 <FeedCard key={item.id} item={item} />
@@ -270,5 +268,4 @@ const styles = StyleSheet.create({
   userInfo: { flex: 1, gap: 2 },
   followBtn: { borderWidth: 1, borderRadius: Radius.xs, paddingVertical: Spacing[2], paddingHorizontal: Spacing[3] },
   centered: { paddingTop: Spacing[12], alignItems: 'center', paddingHorizontal: Spacing[6] },
-  emptyWrap: { paddingTop: Spacing[12], paddingHorizontal: Spacing[6], alignItems: 'center' },
 });

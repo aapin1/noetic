@@ -1,19 +1,20 @@
-import React from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { Linking, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeftIcon, ExternalLinkIcon } from 'lucide-react-native';
+import { ChevronLeftIcon, ExternalLinkIcon, PencilIcon } from 'lucide-react-native';
 import { Image } from 'expo-image';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { Radius, Spacing } from '@/constants/theme';
+import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Badge } from '@/components/ui/Badge';
-import { Card } from '@/components/ui/Card';
 import { InsightLine } from '@/components/InsightLine';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
+import { LoadingDots } from '@/components/ui/LoadingDots';
+import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
 
 export default function InsightDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -21,6 +22,36 @@ export default function InsightDetailScreen() {
   const router = useRouter();
 
   const { data, loading, error, refetch } = useApiQuery(() => api.captures.get(id), [id]);
+
+  // Editing the AI's understanding of the content. Saving reprocesses the
+  // whole capture (embedding, topics, connections, insights), so the screen
+  // shows a working state and refetches when done.
+  const [editing, setEditing] = useState(false);
+  const [contextDraft, setContextDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  const startEdit = useCallback((current: string) => {
+    setContextDraft(current);
+    setEditError('');
+    setEditing(true);
+  }, []);
+
+  const saveContext = useCallback(async () => {
+    const text = contextDraft.trim();
+    if (!text) { setEditError('Say a sentence or two about what it was.'); return; }
+    setSaving(true);
+    setEditError('');
+    try {
+      await api.captures.updateContext(id, text);
+      await refetch();
+      setEditing(false);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'Could not save that.');
+    } finally {
+      setSaving(false);
+    }
+  }, [contextDraft, id, refetch]);
 
   if (loading && !data) {
     return (
@@ -45,25 +76,29 @@ export default function InsightDetailScreen() {
 
   const url = data.contentItem?.canonicalUrl ?? null;
   const title = data.title;
+  const author = data.contentItem?.authorName ?? null;
 
   // Normalise for deduplication — ignore case and whitespace
   function norm(s: string | null | undefined) {
     return (s ?? '').trim().toLowerCase();
   }
   const titleN = norm(title);
-  const summaryN = norm(data.summary);
-  const keyIdeaN = norm(data.keyIdea);
-  const reactionN = norm(data.reaction);
 
-  // Only show a field if it adds new information
-  const showSummary = !!data.summary && summaryN !== titleN;
-  const showKeyIdea = !!data.keyIdea && keyIdeaN !== titleN && keyIdeaN !== summaryN;
-  const showRawText = !!data.rawText && !data.summary && norm(data.rawText) !== titleN;
-  const showReaction =
-    !!data.reaction &&
-    reactionN !== titleN &&
-    reactionN !== summaryN &&
-    reactionN !== keyIdeaN;
+  // The user's own words (text notes and quotes) are the substance, so show
+  // them. Scraped links never show body text here — only title, author,
+  // reaction, and insight.
+  const showRawText =
+    !!data.rawText &&
+    (data.kind === 'TEXT' || data.kind === 'QUOTE') &&
+    norm(data.rawText) !== titleN;
+  const showReaction = !!data.reaction && norm(data.reaction) !== titleN;
+
+  // The AI's understanding of the content — the user's own account wins over
+  // the scraped excerpt, and either can be corrected (which reprocesses the
+  // capture). Only link/image captures have an AI reading to correct; text and
+  // quote captures ARE the user's words already.
+  const showAbout = data.kind === 'LINK' || data.kind === 'IMAGE';
+  const aboutText = data.userContext ?? data.contentItem?.description ?? null;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
@@ -97,14 +132,9 @@ export default function InsightDetailScreen() {
             ))}
           </View>
           <Text variant="h2">{title}</Text>
-          {showSummary ? (
-            <Text variant="serif" color="secondary" style={{ marginTop: Spacing[4] }}>
-              {data.summary}
-            </Text>
-          ) : null}
-          {showKeyIdea ? (
-            <Text variant="serif" color="secondary" style={{ marginTop: Spacing[5], fontStyle: 'italic' }}>
-              {data.keyIdea}
+          {author ? (
+            <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[2] }}>
+              {author}
             </Text>
           ) : null}
           {url ? (
@@ -120,21 +150,86 @@ export default function InsightDetailScreen() {
             </Pressable>
           ) : null}
           {showRawText ? (
-            <Text variant="body" color="secondary" style={{ marginTop: Spacing[4] }}>
+            <Text variant="body" color="secondary" style={{ marginTop: Spacing[5] }}>
               {data.rawText}
             </Text>
           ) : null}
-          {showReaction ? (
-            <Card variant="hairline" padding="md" style={{ marginTop: Spacing[6] }}>
-              <Text variant="label" color="muted">
-                Your reaction
-              </Text>
-              <Text variant="serif" style={{ marginTop: Spacing[2] }}>
-                {data.reaction}
-              </Text>
-            </Card>
-          ) : null}
         </View>
+
+        {showAbout ? (
+          <View style={styles.section}>
+            <View style={styles.aboutHeader}>
+              <Text variant="h3">About this capture</Text>
+              {!editing && !saving ? (
+                <Pressable
+                  onPress={() => startEdit(data.userContext ?? aboutText ?? '')}
+                  accessibilityLabel="Correct what this capture is about"
+                  style={styles.editBtn}
+                >
+                  <PencilIcon size={14} color={c.muted} />
+                </Pressable>
+              ) : null}
+            </View>
+            {saving ? (
+              <View style={styles.savingRow}>
+                <LoadingDots size={4} />
+                <Text variant="monoSmall" color="muted">re-mapping connections…</Text>
+              </View>
+            ) : editing ? (
+              <View style={[styles.editBox, { borderColor: c.border }]}>
+                <TextInput
+                  style={[styles.editInput, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
+                  value={contextDraft}
+                  onChangeText={setContextDraft}
+                  placeholder="what was this actually about, in your own words?"
+                  placeholderTextColor={c.muted}
+                  multiline
+                  autoFocus
+                />
+                {!!editError && (
+                  <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[2] }}>{editError}</Text>
+                )}
+                <View style={styles.editActions}>
+                  <VoiceNoteButton
+                    onText={(t) => setContextDraft((prev) => (prev.trim() ? `${prev.trim()} ${t}` : t))}
+                    onError={setEditError}
+                  />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing[4] }}>
+                    <Pressable onPress={() => setEditing(false)}>
+                      <Text variant="monoSmall" color="muted">cancel</Text>
+                    </Pressable>
+                    <Pressable onPress={() => void saveContext()} style={[styles.saveBtn, { backgroundColor: c.text }]}>
+                      <Text variant="monoSmall" style={{ color: c.background }}>save →</Text>
+                    </Pressable>
+                  </View>
+                </View>
+                <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3] }}>
+                  saving re-reads this capture and rebuilds its topics, connections, and insight from your words.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <Text variant="body" color="secondary" style={{ marginTop: Spacing[4] }}>
+                  {aboutText ?? "The source couldn't be read. Tell mneme what it was about."}
+                </Text>
+                {data.userContext ? (
+                  <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[2] }}>
+                    in your words
+                  </Text>
+                ) : null}
+              </>
+            )}
+          </View>
+        ) : null}
+
+        {showReaction ? (
+          <View style={styles.section}>
+            <Text variant="h3">Your reaction</Text>
+            <Text variant="serif" color="secondary" style={{ marginTop: Spacing[4] }}>
+              {data.reaction}
+            </Text>
+          </View>
+        ) : null}
 
         <View style={styles.section}>
           <Text variant="h3">Insight</Text>
@@ -147,7 +242,7 @@ export default function InsightDetailScreen() {
           <Text variant="h3">Connected memory</Text>
           {data.related.length === 0 ? (
             <Text variant="body" color="muted" style={{ marginTop: Spacing[2] }}>
-              First node: connections appear as you add more.
+              Nothing connected yet. Links appear as you save more.
             </Text>
           ) : (
             data.related.map((r) => (
@@ -186,6 +281,13 @@ const styles = StyleSheet.create({
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[2], marginBottom: Spacing[3] },
   linkRow: { flexDirection: 'row', alignItems: 'center' },
   section: { paddingHorizontal: Spacing[6], marginTop: Spacing[8] },
+  aboutHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  editBtn: { padding: Spacing[2] },
+  savingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2], marginTop: Spacing[4] },
+  editBox: { borderWidth: 1, borderRadius: Radius.md, padding: Spacing[4], marginTop: Spacing[4] },
+  editInput: { minHeight: 88, paddingVertical: Spacing[1] },
+  editActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing[3] },
+  saveBtn: { paddingVertical: Spacing[2], paddingHorizontal: Spacing[4], borderRadius: Radius.xs },
   rel: {
     marginTop: Spacing[4],
     padding: Spacing[4],

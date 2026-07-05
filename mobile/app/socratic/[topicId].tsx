@@ -169,7 +169,7 @@ export default function SocraticScreen() {
                 color="secondary"
                 style={{ fontStyle: 'italic', textAlign: 'center' }}
               >
-                The dialogue begins when you respond.
+                This starts when you reply.
               </Text>
             ) : (
               messages.map((msg) => <MessageBlock key={msg.id} message={msg} />)

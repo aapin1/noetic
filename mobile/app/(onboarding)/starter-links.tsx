@@ -52,13 +52,13 @@ export default function StarterLinksScreen() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Text variant="label" color="muted">
-            Orientation · 3/3
+            Setup · 3 of 3
           </Text>
           <Text variant="h2" style={{ marginTop: Spacing[2] }}>
-            Seed memory (optional)
+            Add a link or two (optional)
           </Text>
           <Text variant="body" color="secondary" style={{ marginTop: Spacing[2] }}>
-            Zero or one link is enough for an immediate insight. Skip if you want an empty slate.
+            Paste a link and we'll show you an insight from it right away. Or skip and start empty.
           </Text>
 
           {urls.map((url, i) => (

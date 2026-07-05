@@ -9,14 +9,15 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Spacing } from '@/constants/theme';
 
-type Status = 'working' | 'done' | 'error';
+type Status = 'working' | 'error';
 
 const URL_RE = /^https?:\/\/\S+$/i;
 
 /**
  * Entry point for items shared into Mneme from the iOS/Android share sheet.
- * Routes the shared URL / text / image straight into the existing capture
- * pipeline, then lands on the resulting insight — no manual re-entry.
+ * Resolves the shared URL, text, or image into capture params and hands off to
+ * the capture flow, dropping the user on the reaction step so nothing is saved
+ * without a chance to react.
  */
 export default function ShareIntentScreen() {
   const router = useRouter();
@@ -24,7 +25,7 @@ export default function ShareIntentScreen() {
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntentContext();
   const { isLoading, isAuthenticated } = useAuth();
   const [status, setStatus] = useState<Status>('working');
-  const [message, setMessage] = useState('Saving to your memory…');
+  const [message, setMessage] = useState('Opening capture…');
   const handledRef = useRef(false);
 
   useEffect(() => {
@@ -43,11 +44,13 @@ export default function ShareIntentScreen() {
 
     (async () => {
       try {
-        let capturedId: string | null = null;
+        // Resolve the shared payload into capture params, then hand off to the
+        // capture flow so the user always lands on the reaction step instead of
+        // the item being saved silently.
+        let params: Record<string, string>;
 
         if (shareIntent.webUrl) {
-          const res = await api.captures.create({ kind: 'LINK', url: shareIntent.webUrl });
-          capturedId = res.id;
+          params = { shareKind: 'LINK', shareUrl: shareIntent.webUrl };
         } else if (shareIntent.files && shareIntent.files.length > 0) {
           const file = shareIntent.files[0];
           const uri = file.path.startsWith('file://') ? file.path : `file://${file.path}`;
@@ -55,28 +58,22 @@ export default function ShareIntentScreen() {
             encoding: FileSystem.EncodingType.Base64,
           });
           const { mediaUrl } = await api.captures.upload(base64, file.mimeType);
-          const res = await api.captures.create({ kind: 'IMAGE', mediaUrl });
-          capturedId = res.id;
+          params = { shareKind: 'IMAGE', shareMediaUrl: mediaUrl };
         } else if (shareIntent.text) {
           const trimmed = shareIntent.text.trim();
-          const res = URL_RE.test(trimmed)
-            ? await api.captures.create({ kind: 'LINK', url: trimmed })
-            : await api.captures.create({ kind: 'TEXT', text: trimmed });
-          capturedId = res.id;
+          params = URL_RE.test(trimmed)
+            ? { shareKind: 'LINK', shareUrl: trimmed }
+            : { shareKind: 'TEXT', shareText: trimmed };
         } else {
-          throw new Error('Nothing to save from that share.');
+          throw new Error('Nothing to capture from that share.');
         }
 
         resetShareIntent();
-        setStatus('done');
-        setMessage('Saved to your memory.');
-        setTimeout(() => {
-          router.replace(capturedId ? (`/insight/${capturedId}` as never) : '/(tabs)');
-        }, 900);
+        router.replace({ pathname: '/(tabs)', params } as never);
       } catch (e) {
         resetShareIntent();
         setStatus('error');
-        setMessage(e instanceof Error ? e.message : 'Could not save that.');
+        setMessage(e instanceof Error ? e.message : 'Could not open that.');
       }
     })();
   }, [isLoading, isAuthenticated, hasShareIntent, shareIntent, resetShareIntent, router]);
@@ -84,7 +81,6 @@ export default function ShareIntentScreen() {
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
       {status === 'working' && <ActivityIndicator color={c.text} />}
-      {status === 'done' && <Text variant="serifLg" color="primary">✓</Text>}
       <Text variant="monoSmall" color="muted" style={styles.message}>
         {message}
       </Text>

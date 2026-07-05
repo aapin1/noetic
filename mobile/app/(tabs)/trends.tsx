@@ -10,6 +10,7 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { InfoModal } from '@/components/ui/InfoModal';
+import { ScreenIntro } from '@/components/ui/ScreenIntro';
 import type { MemoryTrendsResponse } from '@/types/api';
 
 const { width: SW } = Dimensions.get('window');
@@ -115,7 +116,7 @@ function TensionRow({ ev }: { ev: MemoryTrendsResponse['events'][number] }) {
     const count = typeof payload?.neighborCount === 'number' ? payload.neighborCount : 1;
     text = count === 1
       ? 'A new capture pulled against something you already hold.'
-      : `A new capture tensioned with ${count} nearby ideas.`;
+      : `A new capture pushed against ${count} nearby ideas.`;
   } else if (ev.type === 'TOPIC_SHIFT') {
     const name = typeof payload?.name === 'string' ? payload.name : 'a theme';
     const delta = typeof payload?.delta === 'number' ? payload.delta : null;
@@ -181,7 +182,7 @@ export default function GalaxyScreen() {
         visible={infoVisible}
         onClose={() => setInfoVisible(false)}
         title="drift"
-        body="Tracks how your attention shifts across topics over time. The galaxy shows your active topics by volume — closer to centre means more recent activity. Tensions surface when new captures pull against ideas you already hold."
+        body="Tracks how your attention moves across topics over time. In the galaxy, closer to the centre means more recent. Tensions show up when a new capture pulls against something you already hold."
       />
 
       <ScrollView
@@ -197,14 +198,10 @@ export default function GalaxyScreen() {
             </Pressable>
           </View>
         ) : data.themes.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[4] }}>
-              your galaxy grows as you capture more
-            </Text>
-            <Text variant="monoSmall" style={{ color: c.faint, textAlign: 'center', lineHeight: 22 }}>
-              {'Drift tracks how your attention\nshifts. Capture a few items\nacross topics to see it emerge.'}
-            </Text>
-          </View>
+          <ScreenIntro
+            title="Your galaxy is still forming"
+            body="Drift shows how your attention moves across topics over time. Save a few things and it starts to take shape."
+          />
         ) : (
           <>
             <TopicGalaxy data={data} />
@@ -235,7 +232,6 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: 'row', alignItems: 'center' },
   toggle: { flexDirection: 'row', gap: Spacing[3] },
   chip: { paddingBottom: 2 },
-  emptyState: { paddingTop: Spacing[20], paddingHorizontal: Spacing[8], alignItems: 'center' },
   content: { paddingBottom: Spacing[16] },
   galaxyWrap: { width: SW, overflow: 'hidden' },
   divider: { borderTopWidth: StyleSheet.hairlineWidth, marginHorizontal: Spacing[6], marginVertical: Spacing[4] },

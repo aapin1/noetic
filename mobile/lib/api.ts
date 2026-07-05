@@ -3,6 +3,7 @@ import { getToken } from '@/lib/storage';
 import type {
   ApiResponse,
   CaptureKind,
+  CapturePreflight,
   CaptureResponse,
   CaptureDetail,
   CaptureSummary,
@@ -87,7 +88,7 @@ export const api = {
         { method: 'POST', body: JSON.stringify(body) },
       );
     },
-    token(body: { email: string; password: string }) {
+    token(body: { identifier: string; password: string }) {
       return request<{
         token: string;
         /** Present on current API; older servers may omit—use `user.id` as fallback. */
@@ -166,6 +167,7 @@ export const api = {
       caption?: string;
       mediaUrl?: string;
       reaction?: string;
+      userContext?: string;
       topicHints?: string[];
     }) {
       return request<CaptureResponse>('/api/captures', {
@@ -177,6 +179,29 @@ export const api = {
       return request<{ mediaUrl: string }>('/api/captures/upload', {
         method: 'POST',
         body: JSON.stringify({ imageBase64, mimeType }),
+      });
+    },
+    preflight(url: string) {
+      return request<CapturePreflight>('/api/captures/preflight', {
+        method: 'POST',
+        body: JSON.stringify({ url }),
+      });
+    },
+    transcribe(audioBase64: string, mimeType?: string) {
+      return request<{ text: string }>('/api/captures/transcribe', {
+        method: 'POST',
+        body: JSON.stringify({ audioBase64, mimeType }),
+      });
+    },
+    updateContext(id: string, userContext: string) {
+      return request<CaptureDetail>(`/api/captures/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ userContext }),
+      });
+    },
+    delete(id: string) {
+      return request<{ deleted: true }>(`/api/captures/${id}`, {
+        method: 'DELETE',
       });
     },
     list(params?: { limit?: number }) {

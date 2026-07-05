@@ -15,7 +15,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "app.mneme.mobile",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "Mneme uses your microphone so you can describe a capture in your own words."
       }
     },
     "android": {

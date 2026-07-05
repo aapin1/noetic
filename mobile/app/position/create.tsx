@@ -78,7 +78,7 @@ export default function PositionCreateScreen() {
             {topicName ?? 'Topic'}
           </Text>
           <Text variant="body" color="secondary" style={styles.prompt}>
-            After exploring this thread, where has your thinking landed?
+            Where has your thinking on this landed?
           </Text>
           <TextInput
             style={[styles.input, { color: c.text, borderColor: c.border }]}
@@ -91,7 +91,7 @@ export default function PositionCreateScreen() {
             textAlignVertical="top"
           />
           <Text variant="monoSmall" color="muted" style={styles.hint}>
-            This becomes a thesis node on your map. New captures on this topic will be tested against it.
+            This becomes a position on your map. New captures on this topic get tested against it.
           </Text>
           {error && (
             <Text variant="monoSmall" style={[styles.errorText, { color: c.danger }]}>

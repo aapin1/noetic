@@ -71,13 +71,13 @@ export default function IdentityScreen() {
           showsVerticalScrollIndicator={false}
         >
           <Text variant="label" color="muted">
-            Orientation · 2/3
+            Setup · 2 of 3
           </Text>
           <Text variant="h2" style={{ marginTop: Spacing[2] }}>
-            Calibrate output
+            How should your insights read?
           </Text>
           <Text variant="body" color="secondary" style={{ marginTop: Spacing[2] }}>
-            Name and handle are optional. Insight tone is not.
+            Name and handle are optional. Pick a tone that fits you.
           </Text>
 
           {error ? (
@@ -97,7 +97,7 @@ export default function IdentityScreen() {
             value={handle}
             onChangeText={(t) => setHandle(t.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 24).toLowerCase())}
             autoCapitalize="none"
-            hint="Leave blank for an anonymous system handle."
+            hint="Leave blank for a random anonymous handle."
           />
 
           <Text variant="label" color="muted" style={{ marginTop: Spacing[2] }}>
@@ -124,7 +124,7 @@ export default function IdentityScreen() {
           </View>
 
           <Button
-            label={loading ? 'Sealing…' : 'Continue'}
+            label={loading ? 'Saving…' : 'Continue'}
             onPress={() => void submit()}
             loading={loading}
             variant="primary"
