@@ -288,10 +288,10 @@ export const api = {
     getThread() {
       return request<CompanionThread>('/api/companion');
     },
-    reply(content: string) {
+    reply(content: string, contextItemIds?: string[]) {
       return request<{ userMessage: CompanionMessage; companionMessage: CompanionMessage }>(
         '/api/companion/reply',
-        { method: 'POST', body: JSON.stringify({ content }) },
+        { method: 'POST', body: JSON.stringify({ content, contextItemIds }) },
       );
     },
   },
