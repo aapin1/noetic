@@ -89,6 +89,26 @@ async function buildCompanionContext(userId: string, db: DbClient): Promise<stri
   ].join("\n");
 }
 
+async function buildFocusBlock(
+  userId: string,
+  itemIds: string[],
+  db: DbClient,
+): Promise<string | undefined> {
+  const items = await db.capturedItem.findMany({
+    where: { id: { in: itemIds }, userId },
+    select: { rawText: true, keyIdea: true, contentItem: { select: { title: true } } },
+  });
+  if (items.length === 0) return undefined;
+
+  const lines = items.map((it, i) => {
+    const title = it.contentItem?.title ?? it.rawText?.slice(0, 80) ?? "Untitled";
+    const idea = it.keyIdea ? ` — ${it.keyIdea}` : "";
+    return `${i + 1}. "${title}"${idea}`;
+  });
+
+  return ["--- FOCUS FOR THIS REPLY ---", ...lines, "--- END FOCUS ---"].join("\n");
+}
+
 export async function getOrCreateCompanionThread(args: {
   userId: string;
   db?: DbClient;
@@ -116,6 +136,7 @@ export async function getOrCreateCompanionThread(args: {
 export async function addCompanionReply(args: {
   userId: string;
   content: string;
+  contextItemIds?: string[];
   db?: DbClient;
 }) {
   if (!args.content.trim()) {
@@ -133,11 +154,17 @@ export async function addCompanionReply(args: {
     throw new AppError("THREAD_NOT_FOUND", "Thread not found — call GET to initialise it", 404);
   }
 
-  const [contextBlock] = await Promise.all([buildCompanionContext(args.userId, db)]);
+  const [contextBlock, focusBlock] = await Promise.all([
+    buildCompanionContext(args.userId, db),
+    args.contextItemIds && args.contextItemIds.length > 0
+      ? buildFocusBlock(args.userId, args.contextItemIds, db)
+      : Promise.resolve(undefined),
+  ]);
 
   const companionContent =
     (await generateCompanionResponse({
       contextBlock,
+      focusBlock,
       conversationHistory: thread.messages.map((m) => ({
         role: m.role,
         content: m.content,
