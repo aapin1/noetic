@@ -47,6 +47,11 @@ type GraphEdge = MemoryGraphResponse['edges'][number];
 const { width: SW, height: SH } = Dimensions.get('window');
 const TAB_H = Platform.OS === 'ios' ? 86 : 68;
 const FAB_SIZE = 64;
+// Mirrors the global SocraticFab's position (app/(tabs)/_layout.tsx) — it
+// floats above the tab bar on the same right edge as the timeline rail, so
+// the rail's bottom bound must clear it, not just the tab bar.
+const SOCRATIC_FAB_BOTTOM = Platform.OS === 'ios' ? 104 : 86;
+const SOCRATIC_FAB_SIZE = 50;
 
 // Always-dark map colors (map is always dark regardless of theme)
 const MAP_BG = '#060606';
@@ -278,36 +283,6 @@ function layoutSemanticFromServer(nodes: GraphNode[], w: number, h: number): Pos
   return pos;
 }
 
-// Temporal (chronological, left → right)
-function layoutTemporal(nodes: GraphNode[], w: number, h: number): PositionMap {
-  const pos: PositionMap = {};
-  if (nodes.length === 0) return pos;
-
-  const sorted = [...nodes].sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
-  const minTs = new Date(sorted[0]!.capturedAt).getTime();
-  const maxTs = new Date(sorted[sorted.length - 1]!.capturedAt).getTime();
-  const tsRange = Math.max(maxTs - minTs, 1);
-
-  const pad = 40;
-  const usableW = w - pad * 2;
-  const centerY = h * 0.5;
-  const jitterBand = h * 0.32;
-
-  sorted.forEach((node) => {
-    const rng = seededRng(hashId(node.id));
-    const ts = new Date(node.capturedAt).getTime();
-    const tPct = (ts - minTs) / tsRange;
-    const jitterX = (rng() - 0.5) * 32;
-    const jitterY = (rng() - 0.5) * jitterBand;
-    pos[node.id] = {
-      x: Math.max(pad, Math.min(w - pad, pad + tPct * usableW + jitterX)),
-      y: Math.max(pad, Math.min(h - pad, centerY + jitterY)),
-    };
-  });
-
-  return pos;
-}
-
 // Source (grouped by capture kind)
 function layoutSource(nodes: GraphNode[], w: number, h: number): PositionMap {
   const pos: PositionMap = {};
@@ -363,6 +338,42 @@ function clampVBX(v: number, vbW = SW) {
 }
 function clampVBY(v: number, vbH = SH) {
   return Math.max(0, Math.min(CANVAS_H - vbH, v));
+}
+
+// Bounding-box camera fit for a given set of node positions. Pure so it can be
+// recomputed every frame against in-flight (tweened) positions — deriving the
+// camera from whatever is currently on screen, rather than flying toward a
+// separately-eased target. Two independently-eased tweens (node position and
+// camera zoom/pan) combine multiplicatively in screen space
+// (screenX = (nodeX - camX) * zoom) and produce a non-monotonic path — visible
+// as nodes overshooting/reversing mid-transition — unless camera and node
+// motion are derived from the same live positions every frame.
+function computeCameraFit(nodes: GraphNode[], positions: PositionMap): { x: number; y: number; zoom: number } | null {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  let count = 0;
+  for (const node of nodes) {
+    const p = positions[node.id];
+    if (!p) continue;
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    count++;
+  }
+  if (count === 0) return null;
+
+  const PAD = 72;
+  const boundsW = maxX - minX + PAD * 2;
+  const boundsH = maxY - minY + PAD * 2;
+  const fitZoom = Math.min(SW / boundsW, (SH - TAB_H) / boundsH, 2.5);
+  const zoom = Math.max(ZOOM_MIN, fitZoom);
+  const vbW = SW / zoom;
+  const vbH = SH / zoom;
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  return {
+    x: clampVBX(centerX - vbW / 2, vbW),
+    y: clampVBY(centerY - vbH / 2, vbH),
+    zoom,
+  };
 }
 
 // ── Capture step components ────────────────────────────────────────
@@ -687,106 +698,170 @@ const tb = StyleSheet.create({
 // ── Timeline scrubber (temporal lens) ─────────────────────────────
 
 interface TimelineScrubberProps {
-  nodes: GraphNode[];
-  clusters: MemoryGraphResponse['clusters'];
+  startMs: number;
+  endMs: number;
   pct: number;
   onChange: (p: number) => void;
+  top: number;
+  railH: number;
 }
 
 // Vertical rail: pinned to the right edge, clear of the centered FAB. Top =
-// earliest, bottom = latest; drag up to travel back in time. The thumb is
-// clamped to the track so it never overflows into the date label.
-const RAIL_H = Math.min(SH * 0.5, 440);
+// account created, bottom = the present; drag (or tap) anywhere on the rail to
+// travel through time. The thumb is clamped to the track so it never overflows.
+// Position/height are computed by the caller from the real header and tab-bar
+// bounds (see MapScreen) and passed in as `top`/`railH`.
 const RAIL_TRACK_W = 40;
 const RAIL_THUMB = 12;
 
-function TimelineScrubber({ nodes, clusters, pct, onChange }: TimelineScrubberProps) {
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+type TimelineTick = { pct: number; label: string; labelled: boolean };
+
+// Incremental date marks along the rail. The unit widens with elapsed time:
+// days for a short history, then weeks, then months.
+function buildTimelineTicks(startMs: number, endMs: number): {
+  ticks: TimelineTick[];
+  unit: 'day' | 'week' | 'month';
+} {
+  const span = Math.max(endMs - startMs, 1);
+  const pctOf = (ts: number) => (ts - startMs) / span;
+  const fmtDay = (ts: number) =>
+    new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const fmtMonth = (ts: number) =>
+    new Date(ts).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+
+  const ticks: TimelineTick[] = [];
+  let unit: 'day' | 'week' | 'month';
+
+  if (span <= 21 * DAY_MS) {
+    unit = 'day';
+    const d = new Date(startMs); d.setHours(0, 0, 0, 0);
+    for (let t = d.getTime(); t <= endMs; t += DAY_MS) {
+      if (t >= startMs) ticks.push({ pct: pctOf(t), label: fmtDay(t), labelled: false });
+    }
+  } else if (span <= 120 * DAY_MS) {
+    unit = 'week';
+    for (let t = startMs; t <= endMs; t += 7 * DAY_MS) {
+      ticks.push({ pct: pctOf(t), label: fmtDay(t), labelled: false });
+    }
+  } else {
+    unit = 'month';
+    const d = new Date(startMs); d.setDate(1); d.setHours(0, 0, 0, 0);
+    while (d.getTime() < startMs) d.setMonth(d.getMonth() + 1);
+    for (; d.getTime() <= endMs; d.setMonth(d.getMonth() + 1)) {
+      ticks.push({ pct: pctOf(d.getTime()), label: fmtMonth(d.getTime()), labelled: false });
+    }
+  }
+
+  // The last generated mark always lands on (or a sliver before) today, which
+  // duplicates the fixed "current date" endpoint below — drop it so "now"
+  // only ever appears once, anchored at the end of the rail.
+  if (ticks.length > 0) ticks.pop();
+
+  // Label a subset (≈4 interior marks) so the narrow rail doesn't crowd. The
+  // endpoints get their own explicit labels, so skip marks near the ends.
+  const stride = Math.max(1, Math.ceil(ticks.length / 5));
+  ticks.forEach((tk, i) => {
+    tk.labelled = i % stride === 0 && tk.pct > 0.06 && tk.pct < 0.94;
+  });
+
+  return { ticks, unit };
+}
+
+function TimelineScrubber({ startMs, endMs, pct, onChange, top, railH }: TimelineScrubberProps) {
   const pctRef = useRef(pct);
   pctRef.current = pct;
+  // The pan responder closure is created once (via useRef below), so it must
+  // read the rail height through a ref rather than the closed-over prop —
+  // otherwise a post-mount header measurement would leave drag math stale.
+  const railHRef = useRef(railH);
+  railHRef.current = railH;
 
-  const { minTs, maxTs, milestones } = useMemo(() => {
-    if (nodes.length === 0) return { minTs: 0, maxTs: 0, milestones: [] };
-    const timestamps = nodes.map((n) => new Date(n.capturedAt).getTime());
-    const min = Math.min(...timestamps);
-    const max = Math.max(...timestamps);
-    // Topic first-appearance milestones
-    const topicFirst: Record<string, number> = {};
-    for (const node of nodes) {
-      const ts = new Date(node.capturedAt).getTime();
-      for (const t of node.topics) {
-        if (topicFirst[t.topicId] === undefined || ts < topicFirst[t.topicId]!) {
-          topicFirst[t.topicId] = ts;
-        }
-      }
-    }
-    const ms = clusters
-      .filter((cl) => cl.count >= 2)
-      .map((cl) => ({
-        topicId: cl.topicId,
-        name: cl.name,
-        ts: topicFirst[cl.topicId] ?? 0,
-      }))
-      .filter((m) => m.ts > 0)
-      .map((m) => ({ ...m, pct: max === min ? 0 : (m.ts - min) / (max - min) }));
-    return { minTs: min, maxTs: max, milestones: ms };
-  }, [nodes, clusters]);
+  const { ticks } = useMemo(() => buildTimelineTicks(startMs, endMs), [startMs, endMs]);
 
-  const cutoffDate = useMemo(() => {
-    if (minTs === maxTs) return new Date();
-    return new Date(minTs + (maxTs - minTs) * pct);
-  }, [minTs, maxTs, pct]);
-
-  const dateLabel = cutoffDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  const cutoffDate = useMemo(
+    () => new Date(startMs + (endMs - startMs) * pct),
+    [startMs, endMs, pct],
+  );
+  const dateLabel = cutoffDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const startLabel = new Date(startMs).toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: '2-digit',
+  });
+  const nowLabel = new Date(endMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
+      // Tap-to-jump: land the thumb wherever the rail is touched.
       onPanResponderGrant: (evt) => {
         const y = evt.nativeEvent.locationY;
-        const newPct = Math.max(0, Math.min(1, y / RAIL_H));
+        const newPct = Math.max(0, Math.min(1, y / railHRef.current));
         pctRef.current = newPct;
         onChange(newPct);
       },
+      // Scrub: the thumb follows the finger.
       onPanResponderMove: (evt, gs) => {
-        const startY = pctRef.current * RAIL_H;
+        const startY = pctRef.current * railHRef.current;
         const newY = startY + gs.dy;
-        const newPct = Math.max(0, Math.min(1, newY / RAIL_H));
+        const newPct = Math.max(0, Math.min(1, newY / railHRef.current));
         onChange(newPct);
       },
     }),
   ).current;
 
-  // Clamp so the thumb (and the date label that tracks it) stay on the rail.
-  const thumbY = Math.max(0, Math.min(RAIL_H, pct * RAIL_H));
-  const labelTop = Math.max(0, Math.min(RAIL_H - 12, thumbY - 6));
+  // Clamp so the thumb (and the readout that tracks it) stay on the rail.
+  const thumbY = Math.max(0, Math.min(railH, pct * railH));
+  const labelTop = Math.max(0, Math.min(railH - 12, thumbY - 6));
+  // The fixed end label already shows the current date once scrubbed all the
+  // way down — hide the moving readout there so it isn't shown twice.
+  const showReadout = pct < 0.985;
 
   return (
-    <View style={tls.wrap} pointerEvents="box-none">
-      <Text style={[tls.label, { color: 'rgba(236,236,236,0.35)' }]}>time</Text>
-      <View style={tls.trackWrap} {...pan.panHandlers}>
+    <View style={[tls.wrap, { top, height: railH + 40 }]} pointerEvents="box-none">
+      <Text style={[tls.label, { color: 'rgba(236,236,236,0.35)' }]}>date</Text>
+      <View style={[tls.trackWrap, { height: railH }]} {...pan.panHandlers}>
         {/* Track */}
         <View style={[tls.track, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
-        {/* Filled portion (earliest → cutoff) */}
+        {/* Filled portion (created → cutoff) */}
         <View style={[tls.fill, { height: thumbY, backgroundColor: 'rgba(255,255,255,0.22)' }]} />
-        {/* Milestone ticks */}
-        {milestones.map((m) => (
-          <View
-            key={m.topicId}
-            style={[tls.milestone, { top: m.pct * RAIL_H - 1, backgroundColor: 'rgba(255,255,255,0.4)' }]}
-          />
+        {/* Incremental date ticks */}
+        {ticks.map((tk, i) => (
+          <React.Fragment key={i}>
+            <View
+              style={[
+                tls.tick,
+                {
+                  top: tk.pct * railH - 1,
+                  width: tk.labelled ? 9 : 5,
+                  left: (RAIL_TRACK_W - (tk.labelled ? 9 : 5)) / 2,
+                  backgroundColor: tk.labelled ? 'rgba(255,255,255,0.32)' : 'rgba(255,255,255,0.15)',
+                },
+              ]}
+            />
+            {tk.labelled && (
+              <Text
+                style={[tls.tickLabel, { top: tk.pct * railH - 6, color: 'rgba(236,236,236,0.3)' }]}
+                numberOfLines={1}
+              >
+                {tk.label}
+              </Text>
+            )}
+          </React.Fragment>
         ))}
+        {/* Endpoint labels: account created (top) and the current date (bottom) */}
+        <Text style={[tls.endLabel, { top: -3 }]} numberOfLines={1}>{startLabel}</Text>
+        <Text style={[tls.endLabel, { top: railH - 9 }]} numberOfLines={1}>{nowLabel}</Text>
         {/* Thumb */}
         <View style={[tls.thumb, { top: thumbY - RAIL_THUMB / 2, backgroundColor: MAP_NODE }]} />
-        {/* Date label — tracks the thumb, sits to its left */}
-        <Text
-          style={[tls.dateLabel, { top: labelTop, color: 'rgba(236,236,236,0.55)' }]}
-          numberOfLines={1}
-        >
-          {dateLabel}
-        </Text>
+        {/* Cutoff-date readout — dark pill so it stays legible over tick labels */}
+        {showReadout && (
+          <View style={[tls.datePill, { top: labelTop - 3 }]} pointerEvents="none">
+            <Text style={tls.dateLabelText} numberOfLines={1}>{dateLabel}</Text>
+          </View>
+        )}
       </View>
-      <Text style={[tls.hint, { color: 'rgba(236,236,236,0.2)' }]}>drag</Text>
     </View>
   );
 }
@@ -795,8 +870,6 @@ const tls = StyleSheet.create({
   wrap: {
     position: 'absolute',
     right: Spacing[3],
-    top: (SH - RAIL_H) / 2,
-    height: RAIL_H + 40,
     alignItems: 'center',
   },
   label: {
@@ -808,7 +881,6 @@ const tls = StyleSheet.create({
   },
   trackWrap: {
     width: RAIL_TRACK_W,
-    height: RAIL_H,
     alignItems: 'center',
   },
   track: {
@@ -824,11 +896,29 @@ const tls = StyleSheet.create({
     width: 2,
     borderRadius: 1,
   },
-  milestone: {
+  tick: {
     position: 'absolute',
-    width: 8,
     height: 2,
     borderRadius: 1,
+  },
+  tickLabel: {
+    position: 'absolute',
+    right: RAIL_TRACK_W - 4,
+    fontFamily: FontFamily.mono,
+    fontSize: 8,
+    letterSpacing: 0.3,
+    width: 60,
+    textAlign: 'right',
+  },
+  endLabel: {
+    position: 'absolute',
+    right: RAIL_TRACK_W - 4,
+    fontFamily: FontFamily.mono,
+    fontSize: 8.5,
+    letterSpacing: 0.3,
+    width: 60,
+    textAlign: 'right',
+    color: 'rgba(236,236,236,0.5)',
   },
   thumb: {
     position: 'absolute',
@@ -836,20 +926,19 @@ const tls = StyleSheet.create({
     height: RAIL_THUMB,
     borderRadius: RAIL_THUMB / 2,
   },
-  dateLabel: {
+  datePill: {
     position: 'absolute',
-    right: RAIL_TRACK_W - 4,
+    right: RAIL_TRACK_W - 2,
+    backgroundColor: 'rgba(6,6,6,0.9)',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  dateLabelText: {
     fontFamily: FontFamily.mono,
     fontSize: 9,
     letterSpacing: 0.5,
-    width: 64,
-    textAlign: 'right',
-  },
-  hint: {
-    fontFamily: FontFamily.mono,
-    fontSize: 7,
-    letterSpacing: 1,
-    marginTop: Spacing[2],
+    color: 'rgba(236,236,236,0.75)',
   },
 });
 
@@ -885,6 +974,10 @@ export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [infoVisible, setInfoVisible] = useState(false);
+  // Measured header height, so the timeline rail can center itself in the
+  // actual gap below the header instead of guessing. Falls back to a sane
+  // estimate until the first layout pass reports the real value.
+  const [headerH, setHeaderH] = useState(0);
 
   const mapBg = c.mapBackground;
   const isDarkMode = c.mapBackground === '#060606';
@@ -895,6 +988,13 @@ export default function MapScreen() {
   );
 
   useFocusEffect(useCallback(() => { void refetchGraph(); }, [refetchGraph]));
+
+  // Account creation date anchors the temporal timeline's start.
+  const { data: profileData } = useApiQuery(() => api.profile.me(), []);
+  const accountCreatedMs = useMemo(() => {
+    const created = profileData?.profile.createdAt;
+    return created ? new Date(created).getTime() : null;
+  }, [profileData]);
 
   const nodes = graphData?.nodes ?? [];
   const edges = graphData?.edges ?? [];
@@ -915,10 +1015,11 @@ export default function MapScreen() {
       ),
     [nodes, clusters, edges],
   );
-  const temporalPos = useMemo(
-    () => applyLayoutOffset(layoutTemporal(nodes, LAYOUT_W, LAYOUT_H)),
-    [nodes],
-  );
+  // Time lens reuses the semantic layout: its actual "time" meaning is
+  // carried entirely by the timeline scrubber dimming nodes past the cutoff
+  // (see getNodeOpacity), not by spatial position — so switching semantic
+  // ↔ time never moves a single node or the camera.
+  const temporalPos = semanticPos;
   const sourcePos = useMemo(
     () => applyLayoutOffset(layoutSource(nodes, LAYOUT_W, LAYOUT_H)),
     [nodes],
@@ -1029,6 +1130,13 @@ export default function MapScreen() {
     if (Object.keys(renderPosRef.current).length === 0) {
       renderPosRef.current = targetPos;
       setRenderPos(targetPos);
+      const fit = computeCameraFit(nodes, targetPos);
+      if (fit) {
+        savedVB.current = { x: fit.x, y: fit.y };
+        savedZoom.current = fit.zoom;
+        setVbPos({ x: fit.x, y: fit.y });
+        setZoom(fit.zoom);
+      }
       return;
     }
 
@@ -1037,8 +1145,6 @@ export default function MapScreen() {
     const duration = 720;
     let cancelled = false;
 
-    // Same curve the camera uses (animateCamera), so nodes and viewport move in
-    // lockstep. A mismatched curve is what made nodes look like they overshot.
     const easeInOutCubic = (t: number) =>
       t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
@@ -1058,13 +1164,25 @@ export default function MapScreen() {
       }
       renderPosRef.current = newPos;
       setRenderPos(newPos);
+
+      // Derive the camera from these same in-flight positions every frame
+      // instead of flying it toward a separately-eased target — see
+      // computeCameraFit for why an independent camera tween causes overshoot.
+      const fit = computeCameraFit(nodes, newPos);
+      if (fit) {
+        savedVB.current = { x: fit.x, y: fit.y };
+        savedZoom.current = fit.zoom;
+        setVbPos({ x: fit.x, y: fit.y });
+        setZoom(fit.zoom);
+      }
+
       if (t < 1) requestAnimationFrame(tick);
       else setLensTransitioning(false);
     };
 
     requestAnimationFrame(tick);
     lensAnimCancelRef.current = () => { cancelled = true; setLensTransitioning(false); };
-  }, [lensMode, semanticPos, temporalPos, sourcePos]);
+  }, [lensMode, semanticPos, temporalPos, sourcePos, nodes]);
 
   // Use renderPos for display, fall back to semanticPos on first render
   const pos = Object.keys(renderPos).length > 0 ? renderPos : semanticPos;
@@ -1254,15 +1372,26 @@ export default function MapScreen() {
     return m;
   }, [nodes]);
 
+  // Timeline spans account creation → the present. Start never falls after the
+  // earliest capture; end never before the latest capture, so every node maps
+  // onto the rail.
+  const timeRange = useMemo(() => {
+    const now = Date.now();
+    let earliest = Infinity, latest = -Infinity;
+    for (const ts of nodeTimestamps.values()) {
+      if (ts < earliest) earliest = ts;
+      if (ts > latest) latest = ts;
+    }
+    let startMs = accountCreatedMs ?? (earliest === Infinity ? now : earliest);
+    if (earliest !== Infinity) startMs = Math.min(startMs, earliest);
+    const endMs = Math.max(now, latest === -Infinity ? now : latest);
+    return { startMs, endMs };
+  }, [nodeTimestamps, accountCreatedMs]);
+
   const timelineCutoffMs = useMemo(() => {
     if (nodes.length === 0) return Infinity;
-    let minTs = Infinity, maxTs = -Infinity;
-    for (const ts of nodeTimestamps.values()) {
-      if (ts < minTs) minTs = ts;
-      if (ts > maxTs) maxTs = ts;
-    }
-    return minTs + (maxTs - minTs) * timelinePct;
-  }, [nodeTimestamps, timelinePct]);
+    return timeRange.startMs + (timeRange.endMs - timeRange.startMs) * timelinePct;
+  }, [nodes.length, timeRange, timelinePct]);
 
   // ── Focus mode ────────────────────────────────────────────────
   const [focusedTopicId, setFocusedTopicId] = useState<string | null>(null);
@@ -1318,39 +1447,17 @@ export default function MapScreen() {
   }, []);
 
   const centerOnNodes = useCallback((posOverride?: PositionMap, animated = false, animDuration = 720) => {
-    if (nodes.length === 0) { resetView(); return; }
     const positions = posOverride ?? pos;
-
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    let count = 0;
-    for (const node of nodes) {
-      const p = positions[node.id];
-      if (!p) continue;
-      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
-      count++;
-    }
-    if (count === 0) { resetView(); return; }
-
-    const PAD = 72;
-    const boundsW = maxX - minX + PAD * 2;
-    const boundsH = maxY - minY + PAD * 2;
-    const fitZoom = Math.min(SW / boundsW, (SH - TAB_H) / boundsH, 2.5);
-    const newZoom = Math.max(ZOOM_MIN, fitZoom);
-    const vbW = SW / newZoom;
-    const vbH = SH / newZoom;
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
-    const nx = clampVBX(centerX - vbW / 2, vbW);
-    const ny = clampVBY(centerY - vbH / 2, vbH);
+    const fit = computeCameraFit(nodes, positions);
+    if (!fit) { resetView(); return; }
 
     if (animated) {
-      animateCamera(nx, ny, newZoom, animDuration);
+      animateCamera(fit.x, fit.y, fit.zoom, animDuration);
     } else {
-      savedVB.current = { x: nx, y: ny };
-      savedZoom.current = newZoom;
-      setVbPos({ x: nx, y: ny });
-      setZoom(newZoom);
+      savedVB.current = { x: fit.x, y: fit.y };
+      savedZoom.current = fit.zoom;
+      setVbPos({ x: fit.x, y: fit.y });
+      setZoom(fit.zoom);
     }
   }, [nodes, pos, resetView, animateCamera]);
 
@@ -1367,19 +1474,10 @@ export default function MapScreen() {
     if (nodes.length > 0) centerOnNodes();
   }, [nodes.length, centerOnNodes]));
 
-  // Auto-recenter when switching lenses (camera animates in sync with node transition)
-  const prevLensModeRef = useRef(lensMode);
-  useEffect(() => {
-    if (prevLensModeRef.current === lensMode) return;
-    prevLensModeRef.current = lensMode;
-    const targetPos = lensMode === 'semantic' ? semanticPos
-      : lensMode === 'temporal' ? temporalPos
-      : sourcePos;
-    centerOnNodes(targetPos, true, 720);
-  }, [lensMode, semanticPos, temporalPos, sourcePos, centerOnNodes]);
+  // Lens-switch camera recentering happens frame-by-frame inside
+  // handleLensChange's tick loop (derived from the same in-flight node
+  // positions), not as a separate effect here — see computeCameraFit.
 
-  // Tracks the mid-point between two fingers so zoom stays centered on the pinch point
-  const pinchMidRef = useRef<{ x: number; y: number } | null>(null);
   // Momentum tracking for smooth pan release
   const lastMoveRef = useRef<{ x: number; y: number; t: number } | null>(null);
   const momentumFrameRef = useRef<number | null>(null);
@@ -1402,10 +1500,6 @@ export default function MapScreen() {
           const dx = touches[0].pageX - touches[1].pageX;
           const dy = touches[0].pageY - touches[1].pageY;
           pinchStartRef.current = { dist: Math.sqrt(dx * dx + dy * dy), zoom: savedZoom.current };
-          pinchMidRef.current = {
-            x: (touches[0].pageX + touches[1].pageX) / 2,
-            y: (touches[0].pageY + touches[1].pageY) / 2,
-          };
         }
         lastMoveRef.current = null;
       },
@@ -1419,8 +1513,15 @@ export default function MapScreen() {
           const raw = pinchStartRef.current.zoom * (dist / pinchStartRef.current.dist);
           const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, raw));
 
-          // Zoom centered on the pinch mid-point
-          const mid = pinchMidRef.current ?? { x: SW / 2, y: SH / 2 };
+          // Zoom centered on the *live* pinch mid-point, recomputed every
+          // move event. Anchoring to the mid-point captured once at gesture
+          // start drifted as soon as the fingers' midpoint shifted (which it
+          // always does slightly in a real pinch), making the map appear to
+          // pan on its own during zoom.
+          const mid = {
+            x: (touches[0].pageX + touches[1].pageX) / 2,
+            y: (touches[0].pageY + touches[1].pageY) / 2,
+          };
           const worldX = savedVB.current.x + mid.x / savedZoom.current;
           const worldY = savedVB.current.y + mid.y / savedZoom.current;
           const vbW = SW / newZoom;
@@ -1448,7 +1549,6 @@ export default function MapScreen() {
       onPanResponderRelease: (evt, gs) => {
         if (pinchStartRef.current) {
           pinchStartRef.current = null;
-          pinchMidRef.current = null;
           return;
         }
         // Commit final pan position
@@ -1777,6 +1877,15 @@ export default function MapScreen() {
   const vbW = SW / zoom;
   const vbH = SH / zoom;
 
+  // The background (dot grid + tone) must always cover the viewport so the
+  // canvas edge is never visible — even zoomed all the way out, where the
+  // viewport can be larger than the canvas. Anchor a rect 3× the viewport,
+  // centred on it, so it fills the screen at any pan/zoom.
+  const bgX = vbPos.x - vbW;
+  const bgY = vbPos.y - vbH;
+  const bgW = vbW * 3;
+  const bgH = vbH * 3;
+
   const landingRing = newNodeId && pos[newNodeId] ? (() => {
     const p = pos[newNodeId]!;
     const screenX = (p.x - vbPos.x) * zoom;
@@ -1884,8 +1993,10 @@ export default function MapScreen() {
             </Defs>
 
             <G>
-              <Rect width={CANVAS_W} height={CANVAS_H} fill="url(#dotGrid)" />
-              <Rect width={CANVAS_W} height={CANVAS_H} fill="url(#bgTone)" />
+              <Rect x={bgX} y={bgY} width={bgW} height={bgH} fill="url(#dotGrid)" />
+              <Rect x={bgX} y={bgY} width={bgW} height={bgH} fill="url(#bgTone)" />
+              {/* Ambient glow stays anchored to the canvas — it fades to zero
+                  well within its bounds, so it never draws a hard edge. */}
               <Rect width={CANVAS_W} height={CANVAS_H} fill="url(#ambientGlow)" />
 
               {/* Cluster region halos — only in semantic mode */}
@@ -2020,7 +2131,10 @@ export default function MapScreen() {
                 const isDiscoverySelected = discoveryNodeIds.includes(node.id);
                 const isDiscoveryRelevant = discoveryResult?.nodeIds.has(node.id);
 
-                const zoomFade = zoom < 0.5 ? 0 : zoom < 0.9 ? (zoom - 0.5) / 0.4 : 1;
+                // Nodes stay visible at every zoom level — never fade to zero.
+                // Only a gentle dimming as you pull back, floored so points (and
+                // their colour) remain clearly readable when fully zoomed out.
+                const zoomFade = Math.max(0.6, Math.min(1, (zoom - 0.15) / 0.75));
                 const finalOpacity = getNodeOpacity(node, baseOpacity, zoomFade);
 
                 const glowR = isHighlighted || isDiscoverySelected ? baseR * 9 : baseR * 5.5;
@@ -2135,15 +2249,26 @@ export default function MapScreen() {
 
       </View>
 
-      {/* Timeline scrubber (temporal lens) */}
-      {lensMode === 'temporal' && nodes.length > 0 && !showCapture && !drawerVisible && (
-        <TimelineScrubber
-          nodes={nodes}
-          clusters={clusters}
-          pct={timelinePct}
-          onChange={setTimelinePct}
-        />
-      )}
+      {/* Timeline scrubber (temporal lens) — centered in the real gap between
+          the header buttons and the Socratic FAB (which shares the rail's
+          right edge), nudged up a bit above dead-center. */}
+      {lensMode === 'temporal' && nodes.length > 0 && !showCapture && !drawerVisible && (() => {
+        const zoneTop = (headerH || insets.top + 90) + Spacing[4];
+        const zoneBottom = SH - SOCRATIC_FAB_BOTTOM - SOCRATIC_FAB_SIZE - Spacing[4];
+        const zoneH = Math.max(zoneBottom - zoneTop, 120);
+        const railH = Math.min(zoneH, 440);
+        const railTop = Math.max(zoneTop, zoneTop + (zoneH - railH) / 2 - Spacing[4]);
+        return (
+          <TimelineScrubber
+            startMs={timeRange.startMs}
+            endMs={timeRange.endMs}
+            pct={timelinePct}
+            onChange={setTimelinePct}
+            top={railTop}
+            railH={railH}
+          />
+        );
+      })()}
 
       {/* Fixed overlay */}
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -2151,6 +2276,7 @@ export default function MapScreen() {
         {/* Header */}
         <View
           style={[styles.header, { paddingTop: insets.top + 6 }]}
+          onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}
           pointerEvents="box-none"
         >
           <View style={styles.headerLeft} pointerEvents="box-none">

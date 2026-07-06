@@ -184,6 +184,8 @@ export async function getComposedProfile(args: {
       id: user.id,
       name: user.name,
       image: user.image,
+      // Owner-only: the timeline anchors on this; not exposed on public profiles.
+      createdAt: isOwner ? user.createdAt : null,
       profile: user.profile,
     },
     visibilityContext: {
