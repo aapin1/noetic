@@ -6,6 +6,7 @@ import { SIGNAL_WEIGHTS, TOP_FOLLOW_TOPICS } from "@/server/weights";
 import { createNotification } from "@/server/services/notifications";
 import { applyTopicWeights, getPublicTopicIdsForUser, incrementTasteProfileVersion, recordActivityEvent } from "@/server/services/activity";
 import { recomputeProfileSummary } from "@/server/services/profile";
+import { getMemoryGraph } from "@/server/services/memory";
 
 export async function followUser(userId: string, targetUserId: string, db: DbClient = prisma) {
   if (userId === targetUserId) {
@@ -277,6 +278,86 @@ export async function getFeed(args: {
   }));
 
   return { items, nextCursor };
+}
+
+// How much of each followed person's world the pulse shows at a glance: enough
+// nodes to read the shape of their map, a handful of their most recent logs.
+const PULSE_MAP_NODES = 60;
+const PULSE_LATEST_COUNT = 4;
+
+/**
+ * The pulse: for every person the viewer follows, a small version of their
+ * semantic map plus their latest logs. One entry per followed user, newest
+ * follows first. Reuses the same layout the person sees on their own map, so
+ * the miniature is faithful to the real thing.
+ */
+export async function getPulse(args: { userId: string; db?: DbClient }) {
+  const db = args.db ?? prisma;
+
+  const follows = await db.follow.findMany({
+    where: { followerId: args.userId },
+    orderBy: { createdAt: "desc" },
+    select: {
+      following: {
+        select: {
+          id: true,
+          profile: {
+            select: {
+              handle: true,
+              displayName: true,
+              avatarUrl: true,
+              identitySummary: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const friends = await Promise.all(
+    follows.map(async ({ following: user }) => {
+      const graph = await getMemoryGraph({ userId: user.id, limit: PULSE_MAP_NODES, db });
+
+      // Nodes arrive newest-first, so the head of the list is the latest logs.
+      const latest = graph.nodes.slice(0, PULSE_LATEST_COUNT).map((node) => ({
+        id: node.id,
+        title: node.label,
+        keyIdea: node.keyIdea,
+        kind: node.kind,
+        capturedAt: node.capturedAt.toISOString(),
+        topics: node.topics,
+      }));
+
+      return {
+        user: {
+          id: user.id,
+          handle: user.profile?.handle ?? user.id,
+          displayName: user.profile?.displayName ?? "Unknown",
+          avatarUrl: user.profile?.avatarUrl ?? null,
+          identitySummary: user.profile?.identitySummary ?? null,
+        },
+        captureCount: graph.nodes.length,
+        map: {
+          nodes: graph.nodes.map((node) => ({
+            id: node.id,
+            x: node.x,
+            y: node.y,
+            kind: node.kind,
+            topics: node.topics,
+          })),
+          clusters: graph.clusters.map((cluster) => ({
+            topicId: cluster.topicId,
+            name: cluster.name,
+            kind: cluster.kind,
+            count: cluster.count,
+          })),
+        },
+        latest,
+      };
+    }),
+  );
+
+  return { friends };
 }
 
 export async function commentOnReview(args: {

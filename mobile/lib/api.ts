@@ -16,6 +16,7 @@ import type {
   MemoryTrendsResponse,
   OwnerProfile,
   PersonalIntelligenceResponse,
+  PulseResponse,
   UserPreference,
   UserPosition,
   SocraticThread,
@@ -104,9 +105,9 @@ export const api = {
   profile: {
     async me(): Promise<{ profile: OwnerProfile }> {
       const composed = await request<{
-        user: { id: string; name?: string | null; profile: OwnerProfile & { isOnboarded?: boolean } };
+        user: { id: string; name?: string | null; createdAt?: string; profile: OwnerProfile & { isOnboarded?: boolean } };
       }>('/api/me/profile');
-      return { profile: { ...composed.user.profile, id: composed.user.id } };
+      return { profile: { ...composed.user.profile, id: composed.user.id, createdAt: composed.user.createdAt } };
     },
     async onboarding(body: {
       topics: string[];
@@ -248,6 +249,9 @@ export const api = {
   social: {
     feed(params?: { cursor?: string; limit?: number }) {
       return request<FeedResponse>(`/api/social/feed${buildQuery(params ?? {})}`);
+    },
+    pulse() {
+      return request<PulseResponse>('/api/social/pulse');
     },
     follow(targetUserId: string) {
       return request<{ following: boolean }>('/api/social/follow', {

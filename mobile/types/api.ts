@@ -193,6 +193,8 @@ export interface OwnerProfile {
   identitySummary?: string | null;
   email?: string;
   isOnboarded?: boolean;
+  /** Account creation date (ISO). Present on the owner's own /api/me/profile. */
+  createdAt?: string;
 }
 
 export interface IngestedMetadata {
@@ -339,6 +341,48 @@ export interface FeedItem {
 export interface FeedResponse {
   items: FeedItem[];
   nextCursor: string | null;
+}
+
+export interface PulseMapNode {
+  id: string;
+  /** Normalized [0,1] semantic-map coordinates. */
+  x: number;
+  y: number;
+  kind: CaptureKind;
+  topics: { topicId: string; name: string }[];
+}
+
+export interface PulseMapCluster {
+  topicId: string;
+  name: string;
+  kind: 'domain' | 'topic';
+  count: number;
+}
+
+export interface PulseLatestItem {
+  id: string;
+  title: string;
+  keyIdea: string | null;
+  kind: CaptureKind;
+  capturedAt: string;
+  topics: { topicId: string; name: string }[];
+}
+
+export interface PulseFriend {
+  user: {
+    id: string;
+    handle: string;
+    displayName: string;
+    avatarUrl: string | null;
+    identitySummary: string | null;
+  };
+  captureCount: number;
+  map: { nodes: PulseMapNode[]; clusters: PulseMapCluster[] };
+  latest: PulseLatestItem[];
+}
+
+export interface PulseResponse {
+  friends: PulseFriend[];
 }
 
 export interface PersonalIntelligenceResponse {
