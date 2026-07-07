@@ -1,5 +1,6 @@
 import type { InsightStyle } from "@prisma/client";
 import type { InsightDraft } from "@/server/cognition/insights";
+import { GENERAL_TOPICS, normalizeGeneral } from "@/server/cognition/generalTopics";
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings";
@@ -274,40 +275,37 @@ export async function describeImage(args: {
   }
 }
 
-/**
- * Coarse, stable domains used as the anchor for cognitive-map clustering.
- * Two captures about the same broad field share a domain even when their
- * specific topic labels differ ("neuroscience" vs "cognitive neuroscience"),
- * so they land in the same region of the map instead of being scattered.
- * Mirrors the onboarding domain list — keep it coarse on purpose.
- */
-const DOMAINS = [
-  "philosophy", "psychology", "economics", "history", "science", "literature",
-  "law", "technology", "design", "film", "mathematics", "politics", "theology",
-  "education", "art", "AI", "writing", "culture", "medicine", "architecture",
-  "sociology", "religion", "business", "music", "linguistics", "environment",
-] as const;
+/** One (general field, specific sub-topic) framing of a piece of content. */
+export type TopicClassification = {
+  /** Coarse field, always one of GENERAL_TOPICS — the map's clustering anchor. */
+  general: string;
+  /** AI-generated fine-grained label naming what it is specifically about. */
+  specific: string;
+};
 
 export type SemanticTopics = {
-  /** Coarse field for map clustering. null only when the content is too thin. */
-  domain: string | null;
-  /** Specific topic labels derived from the content. */
-  topics: string[];
+  /**
+   * 1–3 (general, specific) pairs. Normally exactly one; up to three only when
+   * the content is genuinely interdisciplinary. Empty when content is too thin
+   * or the LLM is unavailable.
+   */
+  classifications: TopicClassification[];
 };
 
 /**
- * Classifies the semantic domain and precise topics for a piece of content.
- * Both are derived ONLY from the provided content — never from user history.
+ * Classifies a piece of content into 1–3 (general field, specific topic) pairs.
+ * Derived ONLY from the provided content — never from user history.
  *
- * Returns one coarse `domain` (the map's clustering anchor) plus specific
- * `topics`. Retries once on transient failure so the map doesn't silently
- * fall back to the weaker keyword heuristic.
+ * Every entry pairs a coarse `general` field (the map's clustering anchor, always
+ * drawn from GENERAL_TOPICS) with a precise AI-generated `specific` sub-topic.
+ * A single field is the norm; extra fields are added ONLY for genuinely
+ * interdisciplinary content (strict). Retries once on transient failure.
  */
 export async function extractSemanticTopics(args: {
   title?: string;
   combinedText?: string;
 }): Promise<SemanticTopics> {
-  const empty: SemanticTopics = { domain: null, topics: [] };
+  const empty: SemanticTopics = { classifications: [] };
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return empty;
 
@@ -321,27 +319,28 @@ export async function extractSemanticTopics(args: {
   const body = JSON.stringify({
     model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
     temperature: 0.1,
-    max_tokens: 140,
+    max_tokens: 180,
     response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
         content: [
-          "You classify a piece of writing for a personal knowledge map. Work ONLY from the text provided — never infer from outside context.",
+          "You file a piece of writing into a personal knowledge map. Work ONLY from the text provided — never infer from outside context.",
           "",
-          "Output two things:",
-          "1. domain — the single broad field the content primarily belongs to. Choose the closest match from this list:",
-          `   ${DOMAINS.join(", ")}.`,
-          "   If genuinely none fit, return the closest broad field name in lowercase. The domain decides which region of the map the content lands in, so judge it by the ACTUAL subject matter — never by an incidental word. A physics article that mentions a 'thin film' is science, not film. A history essay that mentions a court case is history, not law.",
-          "2. topics — 2 to 4 precise topic labels naming what the content is specifically about.",
+          "Return a list of classifications. Each classification has:",
+          "- general — the broad field it belongs to. MUST be exactly one of this fixed list:",
+          `   ${GENERAL_TOPICS.join(", ")}.`,
+          "   Pick the closest field even if none is perfect. The general field decides which region of the map the content lands in, so judge it by the ACTUAL subject matter — never by an incidental word. A physics article that mentions a 'thin film' is science, not film. A history essay that mentions a court case is history, not law.",
+          "- specific — one precise sub-topic label naming what the content is specifically about within that field. Prefer a named sub-discipline, theory, movement, tradition, or key concept: 'quantum mechanics' under science, 'epistemology' under philosophy, 'metaphysics' under philosophy. Never just restate the general field.",
           "",
-          "Rules for topics:",
-          "- Stay within the content's primary discipline. Do not bleed into adjacent fields that merely share a word.",
-          "- Prefer specific sub-disciplines and named concepts over broad categories: 'cognitive neuroscience' > 'neuroscience'; 'epistemology' > 'philosophy'. Include named theories, movements, traditions, or key figures when central.",
-          "- Exclude generic words (video, article, blog, content, information) and vague terms (ideas, thoughts, things, topics).",
-          "- All lowercase. No duplicates. Do not repeat the domain verbatim as a topic.",
+          "How many classifications:",
+          "- Almost always return exactly ONE. Most content lives in a single field.",
+          "- Return two or (rarely) three ONLY when the content genuinely and substantively draws on multiple distinct fields at once — e.g. an essay on what quantum physics implies for free will is [science/quantum physics, philosophy/free will]. Be strict: a passing mention of another field does NOT count. Maximum three.",
           "",
-          "Return strictly: {\"domain\": \"...\", \"topics\": [\"...\", ...]}",
+          "Rules:",
+          "- All lowercase. No duplicate general fields. Exclude generic words (video, article, blog, content) and vague terms (ideas, thoughts, things).",
+          "",
+          "Return strictly: {\"classifications\": [{\"general\": \"...\", \"specific\": \"...\"}, ...]}",
         ].join("\n"),
       },
       {
@@ -376,21 +375,35 @@ export async function extractSemanticTopics(args: {
       const raw = payload.choices?.[0]?.message?.content;
       if (!raw) return null;
 
-      const parsed = JSON.parse(raw) as { domain?: unknown; topics?: unknown };
+      const parsed = JSON.parse(raw) as { classifications?: unknown };
 
-      const domain =
-        typeof parsed.domain === "string" && parsed.domain.trim().length >= 2
-          ? parsed.domain.trim().toLowerCase()
-          : null;
+      const rows = Array.isArray(parsed.classifications) ? parsed.classifications : [];
+      const seenGeneral = new Set<string>();
+      const classifications: TopicClassification[] = [];
 
-      const topics = Array.isArray(parsed.topics)
-        ? parsed.topics
-            .filter((t): t is string => typeof t === "string" && t.trim().length >= 2)
-            .map((t) => t.trim().toLowerCase())
-            .slice(0, 6)
-        : [];
+      for (const row of rows) {
+        if (typeof row !== "object" || row === null) continue;
+        const rawGeneral = (row as { general?: unknown }).general;
+        const rawSpecific = (row as { specific?: unknown }).specific;
 
-      return { domain, topics };
+        // Reject free-form generals: the field must be one of the fixed set so
+        // clustering stays stable and the general/specific split is derivable.
+        const general = typeof rawGeneral === "string" ? normalizeGeneral(rawGeneral) : null;
+        if (!general || seenGeneral.has(general)) continue;
+
+        const specific =
+          typeof rawSpecific === "string" && rawSpecific.trim().length >= 2
+            ? rawSpecific.trim().toLowerCase()
+            : "";
+        // Never let a specific echo the general field verbatim.
+        const cleanSpecific = specific === general ? "" : specific;
+
+        seenGeneral.add(general);
+        classifications.push({ general, specific: cleanSpecific });
+        if (classifications.length >= 3) break;
+      }
+
+      return { classifications };
     } catch {
       return null;
     } finally {
@@ -399,7 +412,11 @@ export async function extractSemanticTopics(args: {
   };
 
   // One retry: transient timeouts/429s should not drop us to the keyword path.
-  return (await attempt()) ?? (await attempt()) ?? empty;
+  const first = await attempt();
+  if (first && first.classifications.length > 0) return first;
+  const second = await attempt();
+  if (second && second.classifications.length > 0) return second;
+  return first ?? second ?? empty;
 }
 
 function styleDirective(style: InsightStyle): string {

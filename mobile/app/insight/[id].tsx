@@ -127,9 +127,18 @@ export default function InsightDetailScreen() {
         <View style={styles.block}>
           <View style={styles.badges}>
             <Badge label={data.kind} variant="edge" />
-            {data.topics.slice(0, 4).map((t) => (
-              <Badge key={t.topicId} label={t.name} variant="topic" />
-            ))}
+            {[...data.topics]
+              // General fields first (filled), then specific topics (outline).
+              .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'general' ? -1 : 1))
+              .slice(0, 4)
+              .map((t) => (
+                <Badge
+                  key={t.topicId}
+                  label={t.name}
+                  variant="topic"
+                  selected={t.kind === 'general'}
+                />
+              ))}
           </View>
           <Text variant="h2">{title}</Text>
           {author ? (

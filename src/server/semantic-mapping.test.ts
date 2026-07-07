@@ -45,18 +45,46 @@ describe("extractSemanticTopics", () => {
   it("returns an empty result when OPENAI_API_KEY is not set", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const result = await extractSemanticTopics({ title: "Anything", combinedText: "x".repeat(80) });
-    expect(result).toEqual({ domain: null, topics: [] });
+    expect(result).toEqual({ classifications: [] });
   });
 
-  it("parses a domain plus specific topics from a valid response", async () => {
+  it("parses a (general, specific) pair from a valid response", async () => {
     vi.stubEnv("OPENAI_API_KEY", "sk-test");
-    mockOpenAI({ domain: "Science", topics: ["Quantum Mechanics", "Decoherence"] });
+    mockOpenAI({ classifications: [{ general: "Science", specific: "Quantum Mechanics" }] });
     const result = await extractSemanticTopics({
       title: "How decoherence resolves the measurement problem",
       combinedText: "A long piece about quantum theory.".repeat(4),
     });
-    expect(result.domain).toBe("science");
-    expect(result.topics).toEqual(["quantum mechanics", "decoherence"]);
+    expect(result.classifications).toEqual([{ general: "science", specific: "quantum mechanics" }]);
+  });
+
+  it("keeps up to three fields for interdisciplinary content and dedupes generals", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    mockOpenAI({
+      classifications: [
+        { general: "science", specific: "quantum physics" },
+        { general: "philosophy", specific: "free will" },
+        { general: "science", specific: "thermodynamics" }, // duplicate general → dropped
+      ],
+    });
+    const result = await extractSemanticTopics({
+      title: "What quantum physics says about free will",
+      combinedText: "An interdisciplinary essay.".repeat(4),
+    });
+    expect(result.classifications).toEqual([
+      { general: "science", specific: "quantum physics" },
+      { general: "philosophy", specific: "free will" },
+    ]);
+  });
+
+  it("rejects free-form generals not in the fixed field list", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    mockOpenAI({ classifications: [{ general: "astrology", specific: "natal charts" }] });
+    const result = await extractSemanticTopics({
+      title: "Reading the stars",
+      combinedText: "x".repeat(80),
+    });
+    expect(result.classifications).toEqual([]);
   });
 });
 
@@ -101,9 +129,9 @@ describe("cleanContentMetadata", () => {
 });
 
 describe("classifyTopics — LLM path", () => {
-  it("places the coarse domain first with the highest score, then specific topics", async () => {
+  it("places the general field first at 1.0, then its specific topic", async () => {
     vi.stubEnv("OPENAI_API_KEY", "sk-test");
-    mockOpenAI({ domain: "science", topics: ["quantum mechanics", "decoherence"] });
+    mockOpenAI({ classifications: [{ general: "science", specific: "quantum mechanics" }] });
     const db = fallbackDb([]); // user has NO topics — proves topics aren't limited to picks
 
     const result = await classifyTopics({
@@ -114,21 +142,49 @@ describe("classifyTopics — LLM path", () => {
       combinedText: "A long piece about quantum theory and the measurement problem.".repeat(3),
     });
 
-    expect(result.length).toBeGreaterThanOrEqual(3);
+    expect(result.length).toBe(2);
     expect(result[0]!.name).toBe("science");
+    expect(result[0]!.kind).toBe("general");
     expect(result[0]!.score).toBe(1);
-    const names = result.map((r) => r.name);
-    expect(names).toContain("quantum mechanics");
-    expect(names).toContain("decoherence");
-    // Domain anchor must outrank every specific topic.
+    expect(result[1]!.name).toBe("quantum mechanics");
+    expect(result[1]!.kind).toBe("specific");
+    // The general anchor must outrank the specific topic.
     expect(result[0]!.score).toBeGreaterThan(result[1]!.score);
+  });
+
+  it("keeps up to three general anchors for interdisciplinary content", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    mockOpenAI({
+      classifications: [
+        { general: "science", specific: "quantum physics" },
+        { general: "philosophy", specific: "free will" },
+      ],
+    });
+    const db = fallbackDb([]);
+
+    const result = await classifyTopics({
+      db,
+      userId: "u1",
+      tokens: ["quantum", "physics", "free", "will"],
+      title: "What quantum physics says about free will",
+      combinedText: "An interdisciplinary essay about physics and philosophy.".repeat(3),
+    });
+
+    const generals = result.filter((r) => r.kind === "general").map((r) => r.name);
+    expect(generals).toEqual(["science", "philosophy"]);
+    expect(result[0]!.score).toBe(1); // primary field leads
+    const specifics = result.filter((r) => r.kind === "specific").map((r) => r.name);
+    expect(specifics).toContain("quantum physics");
+    expect(specifics).toContain("free will");
   });
 });
 
 describe("classifyTopics — keyword fallback", () => {
   it("does not misclassify on a single stray token (science is not tagged 'film')", async () => {
     vi.stubEnv("OPENAI_API_KEY", ""); // force fallback
+    // Dominant declared field first so the guaranteed-general anchor is 'science'.
     const db = fallbackDb([
+      { id: "science", name: "science", slug: "science" },
       { id: "film", name: "film", slug: "film" },
     ]);
 
@@ -139,12 +195,16 @@ describe("classifyTopics — keyword fallback", () => {
       tokens: ["semiconductor", "thin", "film", "deposition", "lattice"],
     });
 
+    // The stray "film" token must not score-classify the capture as film.
     expect(result.map((r) => r.name)).not.toContain("film");
+    // Every node still ends up with a general field.
+    expect(result.some((r) => r.kind === "general")).toBe(true);
   });
 
   it("still classifies on a genuine multi-token match", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const db = fallbackDb([
+      { id: "science", name: "science", slug: "science" },
       { id: "qp", name: "quantum physics", slug: "quantum-physics" },
       { id: "film", name: "film", slug: "film" },
     ]);
@@ -158,5 +218,7 @@ describe("classifyTopics — keyword fallback", () => {
     const names = result.map((r) => r.name);
     expect(names).toContain("quantum physics");
     expect(names).not.toContain("film");
+    // Guaranteed general anchor comes from the user's dominant declared field.
+    expect(result.some((r) => r.kind === "general")).toBe(true);
   });
 });

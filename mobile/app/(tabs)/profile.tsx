@@ -1,5 +1,9 @@
-import React, { useCallback } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import Animated, {
+  useAnimatedScrollHandler,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SettingsIcon } from 'lucide-react-native';
@@ -9,13 +13,16 @@ import { useApiQuery } from '@/hooks/useApiQuery';
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
-import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { EditableAvatar } from '@/components/profile/EditableAvatar';
+import { WrappedSection } from '@/components/wrapped/WrappedSection';
+import type { OwnerProfile } from '@/types/api';
 
 export default function YouScreen() {
   const c = useThemeColors();
   const router = useRouter();
   const { profile: authProfile, refreshProfile } = useAuth();
+  const scrollY = useSharedValue(0);
 
   const { data: profile, loading, refetch } = useApiQuery(
     () => api.profile.me().then((r) => r.profile),
@@ -25,9 +32,10 @@ export default function YouScreen() {
   const { data: capList, refetch: refetchCaps } = useApiQuery(() => api.captures.list({ limit: 80 }), []);
   const count = capList?.length ?? 0;
 
-  const p = profile ?? authProfile;
+  // Optimistic override so a freshly-changed avatar shows immediately.
+  const [override, setOverride] = useState<OwnerProfile | null>(null);
+  const p = override ?? profile ?? authProfile;
 
-  // Refresh profile + capture count whenever the tab regains focus.
   useFocusEffect(
     useCallback(() => {
       void refetch();
@@ -40,6 +48,19 @@ export default function YouScreen() {
     await refreshProfile();
   }, [refetch, refreshProfile]);
 
+  const handleAvatarChanged = useCallback(
+    (updated: OwnerProfile) => {
+      setOverride(updated);
+      void refetch();
+      void refreshProfile();
+    },
+    [refetch, refreshProfile],
+  );
+
+  const scrollHandler = useAnimatedScrollHandler((e) => {
+    scrollY.value = e.contentOffset.y;
+  });
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: c.border }]}>
@@ -48,26 +69,31 @@ export default function YouScreen() {
           <SettingsIcon size={22} color={c.text} />
         </Pressable>
       </View>
-      <ScrollView
+      <Animated.ScrollView
         contentContainerStyle={styles.content}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl refreshing={loading} onRefresh={() => void handleRefresh()} tintColor={c.text} />
         }
+        showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
-          <Avatar uri={p?.avatarUrl} displayName={p?.displayName} size="xl" />
+          <EditableAvatar profile={p} onChanged={handleAvatarChanged} />
           <Text variant="h3" style={{ marginTop: Spacing[4] }}>
             {p?.displayName ?? '—'}
           </Text>
           <Text variant="mono" color="muted">
             @{p?.handle ?? '—'}
           </Text>
-          {p?.identitySummary ? (
-            <Text variant="serif" color="secondary" style={{ marginTop: Spacing[3], textAlign: 'center' }}>
-              {p.identitySummary}
+          {p?.bio ? (
+            <Text variant="serif" color="secondary" style={styles.bio}>
+              {p.bio}
             </Text>
           ) : null}
         </View>
+
+        <WrappedSection scrollY={scrollY} />
 
         <View style={[styles.statCard, { borderColor: c.border }]}>
           <Text variant="label" color="muted">
@@ -84,9 +110,9 @@ export default function YouScreen() {
           size="md"
           fullWidth
           onPress={() => router.push('/profile/edit' as never)}
-          style={{ marginTop: Spacing[6] }}
+          style={styles.editButton}
         />
-      </ScrollView>
+      </Animated.ScrollView>
     </SafeAreaView>
   );
 }
@@ -103,10 +129,13 @@ const styles = StyleSheet.create({
   },
   content: { paddingBottom: Spacing[16] },
   hero: { alignItems: 'center', paddingHorizontal: Spacing[6], paddingVertical: Spacing[8] },
+  bio: { marginTop: Spacing[3], textAlign: 'center', maxWidth: 320 },
   statCard: {
     marginHorizontal: Spacing[6],
+    marginTop: Spacing[6],
     padding: Spacing[5],
     borderWidth: 1,
     borderRadius: 12,
   },
+  editButton: { marginHorizontal: Spacing[6], marginTop: Spacing[6] },
 });

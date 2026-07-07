@@ -186,6 +186,7 @@ export default function CompanionScreen() {
             style={isFreshContext ? styles.scrollCompact : styles.flex}
             contentContainerStyle={[
               styles.messageList,
+              isFreshContext && styles.messageListCompact,
               messages.length === 0 && styles.messageListEmpty,
             ]}
             showsVerticalScrollIndicator={false}
@@ -249,7 +250,7 @@ export default function CompanionScreen() {
               {
                 borderTopColor: c.border,
                 backgroundColor: c.background,
-                paddingBottom: Math.max(insets.bottom, Spacing[3]),
+                paddingBottom: insets.bottom + Spacing[4],
               },
             ]}
           >
@@ -292,14 +293,16 @@ const styles = StyleSheet.create({
   scrollCompact: { flexGrow: 0 },
   contextBlock: {
     paddingHorizontal: Spacing[5],
-    paddingTop: Spacing[3],
+    paddingTop: Spacing[4],
+    paddingBottom: Spacing[5],
   },
   contextLabel: {
-    marginBottom: Spacing[2],
+    marginBottom: Spacing[3],
+    letterSpacing: 0.5,
   },
   suggestionRow: {
     flexDirection: 'row',
-    gap: Spacing[2],
+    gap: Spacing[3],
   },
   suggestionChip: {
     flex: 1,
@@ -328,6 +331,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[6],
     paddingVertical: Spacing[8],
     gap: Spacing[8],
+  },
+  // Fresh multi-select flow: a single seeded message sits above the chips, so
+  // the heavy chat padding just leaves it stranded. Tighten it up.
+  messageListCompact: {
+    paddingTop: Spacing[6],
+    paddingBottom: Spacing[4],
+    gap: Spacing[6],
   },
   messageListEmpty: {
     flex: 1,
