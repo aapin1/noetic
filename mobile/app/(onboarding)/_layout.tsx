@@ -6,8 +6,7 @@ export default function OnboardingLayout() {
     <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
       <Stack.Screen name="topics" />
       <Stack.Screen name="identity" />
-      <Stack.Screen name="starter-links" />
-      <Stack.Screen name="preview" />
+      <Stack.Screen name="walkthrough" />
     </Stack>
   );
 }

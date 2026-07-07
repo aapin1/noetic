@@ -1,77 +1,113 @@
-export type TutorialTab = 'index' | 'memory' | 'pulse' | 'trends' | 'mind' | 'profile';
+// Which bottom-tab a `tab` step points at. `index` matches the tab-bar column
+// order (atlas=0, archive=1, …) and `seg` matches the last route segment used
+// to detect the user actually landed on that tab.
+export type TutorialTabSeg = 'memory' | 'pulse' | 'trends' | 'mind' | 'profile';
+
+export type TutorialTarget =
+  // A measured on-screen control (the + FAB, the capture buttons). The control
+  // reports its rect via useTutorialTarget; the step advances when it's pressed.
+  | { kind: 'registered'; id: string }
+  // A bottom-tab, spotlit geometrically (equal columns). Advances when the
+  // route changes to `seg` — i.e. the user tapped the real tab.
+  | { kind: 'tab'; index: number; seg: TutorialTabSeg }
+  // No target: an informational card the user dismisses with a button.
+  | { kind: 'card' };
 
 export interface TutorialStep {
   id: string;
-  tab: TutorialTab;
   title: string;
   body: string;
+  target: TutorialTarget;
+  // Dim opacity for card steps (0–1). Lower = more of the screen shows through,
+  // used on the atlas step so the freshly-saved node stays visible.
+  scrim?: number;
 }
+
+// Registered-target ids, shared between the steps, the context, and the
+// instrumented controls so there's a single source of truth for the strings.
+export const TUTORIAL_TARGET = {
+  captureFab: 'capture-fab',
+  captureNext: 'capture-next',
+  captureCommit: 'capture-commit',
+} as const;
+
+// A stable, richly-scrapeable article used for the guided first capture. If the
+// site is unreachable the capture still succeeds (the flow just falls back to
+// the "what was it about?" prompt), so the tutorial never hard-fails on it.
+export const TUTORIAL_EXAMPLE_LINK = 'https://www.paulgraham.com/greatwork.html';
 
 export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'welcome',
-    tab: 'index',
     title: 'welcome',
-    body: "A quick walk through what mneme does, including a couple of things it does quietly in the background. Takes about a minute. Skip whenever you want.",
-  },
-  {
-    id: 'atlas',
-    tab: 'index',
-    title: 'atlas',
-    body: "This is home. Every node here is something you saved, and lines form when ideas share a topic, contradict each other, or grow out of one another. Try the lenses at the top to sort the map by meaning, time, or source.",
+    body: "A quick tour. You'll log your first node as you go.",
+    target: { kind: 'card' },
   },
   {
     id: 'capture',
-    tab: 'index',
     title: 'capture',
-    body: "Tap the plus to save something: a link, a thought, a quote, or a photo. On the next screen you can add a quick reaction, one line just for you, or leave it blank.",
+    body: "Tap + to save something. We've dropped in an example link.",
+    target: { kind: 'registered', id: TUTORIAL_TARGET.captureFab },
+  },
+  {
+    id: 'capture-next',
+    title: 'the source',
+    body: 'That’s your link. Tap next — mneme reads the whole piece.',
+    target: { kind: 'registered', id: TUTORIAL_TARGET.captureNext },
+  },
+  {
+    id: 'capture-commit',
+    title: 'react',
+    body: 'Add a line, or leave it blank. Tap commit to save.',
+    target: { kind: 'registered', id: TUTORIAL_TARGET.captureCommit },
+  },
+  {
+    id: 'atlas',
+    title: 'atlas',
+    body: 'Your first node. Tap it anytime to open or delete it. Lines form as ideas connect.',
+    target: { kind: 'card' },
+    scrim: 0.25,
   },
   {
     id: 'share',
-    tab: 'index',
     title: 'share to mneme',
-    body: "You don't have to open the app to save something. From Safari, Reddit, YouTube, wherever, use the share button and look for mneme in the list. It drops straight into the same capture flow.",
-  },
-  {
-    id: 'reading-source',
-    tab: 'index',
-    title: 'reading the source',
-    body: "When you save a link, mneme tries to read the whole thing: the article, the transcript, the caption. If it can't get enough, it'll ask what the piece was about, in your own words. That's what the map and the insights get built from.",
+    body: 'From any app, hit share and pick mneme. It lands in this same flow.',
+    target: { kind: 'card' },
   },
   {
     id: 'archive',
-    tab: 'memory',
     title: 'archive',
-    body: "A chronological record of everything you've saved. Each entry shows its type, when it was captured, and the key idea mneme pulled from it.",
+    body: 'Everything you save, in order. Tap archive.',
+    target: { kind: 'tab', index: 1, seg: 'memory' },
   },
   {
     id: 'pulse',
-    tab: 'pulse',
     title: 'pulse',
-    body: "Follow people by their handle. A small version of their map, plus their latest logs, shows up here. Search is always open at the top if you want to find someone.",
+    body: 'Follow people by handle and see their maps. Tap pulse.',
+    target: { kind: 'tab', index: 2, seg: 'pulse' },
   },
   {
     id: 'drift',
-    tab: 'trends',
     title: 'drift',
-    body: "Tracks how your attention moves across topics over time. Closer to the centre of the galaxy means more recent. Tensions show up when something new pulls against what you already hold.",
+    body: 'How your attention moves over time. Tap drift.',
+    target: { kind: 'tab', index: 3, seg: 'trends' },
   },
   {
     id: 'mind',
-    tab: 'mind',
     title: 'mind',
-    body: "What's already sitting in your map: patterns you missed, ideas that contradict each other, threads that keep coming back. All of it comes from what you saved, not from prompts.",
+    body: "Patterns and tensions across what you've saved. Tap mind.",
+    target: { kind: 'tab', index: 4, seg: 'mind' },
   },
   {
     id: 'you',
-    tab: 'profile',
     title: 'you',
-    body: "Your profile: handle, identity, how many things you've saved. Settings and sign out live here too.",
+    body: 'Your profile and settings. Tap you.',
+    target: { kind: 'tab', index: 5, seg: 'profile' },
   },
   {
     id: 'done',
-    tab: 'profile',
     title: "you're set",
-    body: "That's the whole map. Go save something.",
+    body: "That's the map. Go save something real.",
+    target: { kind: 'card' },
   },
 ];

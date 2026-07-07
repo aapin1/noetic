@@ -36,7 +36,8 @@ import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
-import { useTutorial } from '@/contexts/TutorialContext';
+import { useTutorial, useTutorialTarget } from '@/contexts/TutorialContext';
+import { TUTORIAL_EXAMPLE_LINK, TUTORIAL_TARGET } from '@/constants/tutorialSteps';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
 import type { AppThemeColors } from '@/constants/theme';
@@ -402,6 +403,7 @@ function StepOne({
   error: string; onNext: () => void; onClose: () => void; onPaste: () => void;
   c: AppThemeColors;
 }) {
+  const nextTarget = useTutorialTarget(TUTORIAL_TARGET.captureNext);
   return (
     <View>
       <Text variant="serifLg" color="primary" style={sh.heading}>What are you saving?</Text>
@@ -459,7 +461,7 @@ function StepOne({
             multiline={mode !== 'link'}
             autoCapitalize={mode === 'link' ? 'none' : 'sentences'}
             keyboardType={mode === 'link' ? 'url' : 'default'}
-            autoFocus
+            autoFocus={!nextTarget.isActive}
           />
           <Pressable onPress={onPaste} accessibilityLabel="Paste from clipboard">
             <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>paste from clipboard ↑</Text>
@@ -474,7 +476,12 @@ function StepOne({
         <Pressable onPress={onClose} style={sh.secondaryBtn}>
           <Text variant="monoSmall" style={{ color: c.muted }}>close ✕</Text>
         </Pressable>
-        <Pressable onPress={onNext} style={[sh.primaryBtn, { backgroundColor: c.text }]}>
+        <Pressable
+          ref={nextTarget.ref}
+          onLayout={nextTarget.onLayout}
+          onPress={() => { onNext(); nextTarget.press(); }}
+          style={[sh.primaryBtn, { backgroundColor: c.text }]}
+        >
           <Text variant="monoSmall" style={{ color: c.background }}>next →</Text>
         </Pressable>
       </View>
@@ -536,6 +543,7 @@ function StepTwo({
   // user's own account becomes the ground truth the insight pipeline works from.
   const needsContext = isLink && !preflightLoading && !!preflight && preflight.confidence !== 'rich';
   const contextThin = preflight?.confidence === 'thin';
+  const commitTarget = useTutorialTarget(TUTORIAL_TARGET.captureCommit);
 
   return (
     <View>
@@ -552,7 +560,7 @@ function StepTwo({
           placeholder="a quick reaction, or nothing."
           placeholderTextColor={c.faint}
           multiline
-          autoFocus={!needsContext}
+          autoFocus={!needsContext && !commitTarget.isActive}
         />
       </View>
       {needsContext && (
@@ -590,6 +598,8 @@ function StepTwo({
           <Text variant="monoSmall" style={{ color: c.muted }}>← back</Text>
         </Pressable>
         <Pressable
+          ref={commitTarget.ref}
+          onLayout={commitTarget.onLayout}
           onPress={onCommit}
           disabled={busy}
           style={[sh.primaryBtn, { backgroundColor: c.text, opacity: busy ? 0.55 : 1 }]}
@@ -974,7 +984,8 @@ export default function MapScreen() {
   const { setMode: setThemeMode } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { start: startTutorial } = useTutorial();
+  const { start: startTutorial, active: tutorialActive, notifyTargetPressed } = useTutorial();
+  const fabTarget = useTutorialTarget(TUTORIAL_TARGET.captureFab);
   const [infoVisible, setInfoVisible] = useState(false);
   // Measured header height, so the timeline rail can center itself in the
   // actual gap below the header instead of guessing. Falls back to a sane
@@ -1721,6 +1732,17 @@ export default function MapScreen() {
     RNAnimated.spring(slideY, { toValue: 0, useNativeDriver: true, damping: 22, stiffness: 170 }).start();
   }, [closeDrawer, slideY]);
 
+  // The + during the walkthrough: open capture pre-loaded with the example link
+  // and advance the tutorial to its "tap next" step.
+  const openCaptureFromFab = useCallback(() => {
+    openCapture();
+    if (tutorialActive) {
+      setMode('link');
+      setPayload(TUTORIAL_EXAMPLE_LINK);
+      notifyTargetPressed(TUTORIAL_TARGET.captureFab);
+    }
+  }, [openCapture, tutorialActive, notifyTargetPressed]);
+
   const closeCapture = useCallback(() => {
     RNAnimated.timing(slideY, { toValue: SH, duration: 260, useNativeDriver: true }).start(() => {
       setShowCapture(false);
@@ -1828,13 +1850,20 @@ export default function MapScreen() {
       setNewNodeId(res.id);
       void refetchGraph();
       closeCapture();
-      router.push(`/insight/${res.id}` as never);
+      // During the walkthrough, stay on the map so the user sees their first
+      // node land (and the tutorial moves to the atlas step) instead of being
+      // whisked to the insight screen.
+      if (tutorialActive) {
+        notifyTargetPressed(TUTORIAL_TARGET.captureCommit);
+      } else {
+        router.push(`/insight/${res.id}` as never);
+      }
     } catch (e) {
       setCaptureError(e instanceof Error ? e.message : 'Capture failed.');
     } finally {
       setBusy(false);
     }
-  }, [mode, payload, mediaUrl, reaction, userContext, refetchGraph, closeCapture, router]);
+  }, [mode, payload, mediaUrl, reaction, userContext, refetchGraph, closeCapture, router, tutorialActive, notifyTargetPressed]);
 
   const pasteFromClipboard = useCallback(async () => {
     const t = (await Clipboard.getStringAsync()).trim();
@@ -2647,7 +2676,9 @@ export default function MapScreen() {
               pointerEvents="none"
             />
             <Pressable
-              onPress={openCapture}
+              ref={fabTarget.ref}
+              onLayout={fabTarget.onLayout}
+              onPress={openCaptureFromFab}
               style={[styles.fab, { backgroundColor: MAP_NODE }]}
               accessibilityLabel="Capture new memory"
               accessibilityRole="button"
