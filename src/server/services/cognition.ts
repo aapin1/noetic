@@ -56,7 +56,7 @@ type CapturePayload = {
   db?: RootDbClient;
 };
 
-type CapturedItemSummary = {
+export type CapturedItemSummary = {
   id: string;
   title: string;
   summary: string | null;
@@ -81,7 +81,7 @@ type CapturedItemSummary = {
   mediaUrl: string | null;
 };
 
-type CaptureWithRelations = Prisma.CapturedItemGetPayload<{
+export type CaptureWithRelations = Prisma.CapturedItemGetPayload<{
   include: {
     contentItem: {
       include: {
@@ -114,7 +114,7 @@ function captureTitle(item: CaptureWithRelations): string {
   return `${trimmed.slice(0, 77).trimEnd()}…`;
 }
 
-function serializeCapturedItem(item: CaptureWithRelations): CapturedItemSummary {
+export function serializeCapturedItem(item: CaptureWithRelations): CapturedItemSummary {
   return {
     id: item.id,
     title: captureTitle(item),
@@ -1065,6 +1065,19 @@ export async function getCapture(args: { userId: string; capturedItemId: string;
   };
 }
 
+export type CaptureListItem = CapturedItemSummary & {
+  leadInsight: { id: string; type: string; headline: string } | null;
+};
+
+export function withLeadInsight(item: CaptureWithRelations & { insights: { id: string; type: string; headline: string }[] }): CaptureListItem {
+  return {
+    ...serializeCapturedItem(item),
+    leadInsight: item.insights[0]
+      ? { id: item.insights[0].id, type: item.insights[0].type, headline: item.insights[0].headline }
+      : null,
+  };
+}
+
 export async function listCaptures(args: { userId: string; limit?: number; db?: DbClient }) {
   const db = args.db ?? prisma;
   const limit = Math.min(Math.max(args.limit ?? 20, 1), 80);
@@ -1082,14 +1095,5 @@ export async function listCaptures(args: { userId: string; limit?: number; db?: 
     },
   });
 
-  return items.map((item) => ({
-    ...serializeCapturedItem(item),
-    leadInsight: item.insights[0]
-      ? {
-        id: item.insights[0].id,
-        type: item.insights[0].type,
-        headline: item.insights[0].headline,
-      }
-      : null,
-  }));
+  return items.map(withLeadInsight);
 }

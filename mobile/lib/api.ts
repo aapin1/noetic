@@ -2,6 +2,8 @@ import Constants from 'expo-constants';
 import { getToken } from '@/lib/storage';
 import type {
   ApiResponse,
+  ArchiveFolderDetail,
+  ArchiveFolderSummary,
   CaptureKind,
   CapturePreflight,
   CaptureResponse,
@@ -232,6 +234,15 @@ export const api = {
     },
     get(id: string) {
       return request<CaptureDetail>(`/api/captures/${id}`);
+    },
+  },
+
+  archive: {
+    list() {
+      return request<{ folders: ArchiveFolderSummary[] }>('/api/archive');
+    },
+    get(topicId: string) {
+      return request<ArchiveFolderDetail>(`/api/archive/${topicId}`);
     },
   },
 

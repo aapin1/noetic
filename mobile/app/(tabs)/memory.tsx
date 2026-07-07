@@ -1,11 +1,5 @@
-import React, { useCallback, useState } from 'react';
-import {
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/lib/api';
@@ -14,102 +8,58 @@ import { FontFamily, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
-import type { CaptureSummary } from '@/types/api';
+import { FolderGrid } from '@/components/archive/FolderGrid';
+import type { ArchiveFolderSummary } from '@/types/api';
 
-function CaptureRow({ item, onPress }: { item: CaptureSummary; onPress: () => void }) {
-  const c = useThemeColors();
-  const date = new Date(item.capturedAt);
-  const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+type SortKey = 'recent' | 'alphabetical' | 'largest' | 'smallest';
 
-  // For links, split "Title | Source" so the source appears as a byline
-  let displayTitle = item.title;
-  let displaySource: string | null = null;
-  if (item.kind === 'LINK' && item.title) {
-    const pipeIdx = item.title.lastIndexOf(' | ');
-    if (pipeIdx > 0) {
-      displayTitle = item.title.slice(0, pipeIdx);
-      displaySource = item.title.slice(pipeIdx + 3);
-    }
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: 'recent', label: 'recent' },
+  { key: 'alphabetical', label: 'a–z' },
+  { key: 'largest', label: 'largest' },
+  { key: 'smallest', label: 'smallest' },
+];
+
+function sortFolders(folders: ArchiveFolderSummary[], sort: SortKey): ArchiveFolderSummary[] {
+  const copy = [...folders];
+  switch (sort) {
+    case 'alphabetical':
+      return copy.sort((a, b) => a.name.localeCompare(b.name));
+    case 'largest':
+      return copy.sort((a, b) => b.count - a.count);
+    case 'smallest':
+      return copy.sort((a, b) => a.count - b.count);
+    case 'recent':
+    default:
+      return copy.sort((a, b) => b.latestActivity.localeCompare(a.latestActivity));
   }
-
-  // Suppress keyIdea when it duplicates the full title
-  const normalizedTitle = (item.title ?? '').trim().toLowerCase();
-  const showKeyIdea =
-    !!item.keyIdea && item.keyIdea.trim().toLowerCase() !== normalizedTitle;
-
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[styles.row, { borderBottomColor: c.border }]}
-      accessibilityRole="button"
-    >
-      <View style={styles.rowMeta}>
-        <Text variant="monoSmall" style={{ color: c.muted }}>{item.kind.toLowerCase()}</Text>
-        <Text variant="monoSmall" style={{ color: c.faint }}>{dateStr}</Text>
-      </View>
-
-      <Text variant="serif" color="primary" numberOfLines={2} style={styles.rowTitle}>
-        {displayTitle}
-      </Text>
-
-      {!!displaySource && (
-        <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[2] }} numberOfLines={1}>
-          {displaySource}
-        </Text>
-      )}
-
-      {showKeyIdea && (
-        <Text variant="monoSmall" color="muted" numberOfLines={2} style={styles.rowIdea}>
-          {item.keyIdea}
-        </Text>
-      )}
-
-      {item.topics.length > 0 && (
-        <View style={styles.topicRow}>
-          {item.topics.slice(0, 4).map((t) => (
-            <View key={t.topicId} style={[styles.topicChip, { borderColor: c.borderSubtle }]}>
-              <Text variant="monoSmall" style={{ color: c.faint }}>
-                {t.name}
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {!!item.leadInsight && (
-        <Text variant="monoSmall" style={[styles.insightLine, { color: c.muted }]} numberOfLines={1}>
-          {'↳ '}{item.leadInsight.headline}
-        </Text>
-      )}
-    </Pressable>
-  );
 }
 
-export default function LogScreen() {
+export default function ArchiveScreen() {
   const c = useThemeColors();
   const router = useRouter();
   const [infoVisible, setInfoVisible] = useState(false);
+  const [sort, setSort] = useState<SortKey>('recent');
 
-  const { data: captures, loading, refetch } = useApiQuery(
-    () => api.captures.list({ limit: 80 }),
-    [],
-  );
+  const { data, loading, refetch } = useApiQuery(() => api.archive.list(), []);
+  const folders = data?.folders ?? null;
 
   const onRefresh = useCallback(() => void refetch(), [refetch]);
 
   // Refresh when the tab regains focus so the archive never shows stale entries.
   useFocusEffect(useCallback(() => { void refetch(); }, [refetch]));
 
-  const isEmpty = !loading && (captures?.length ?? 0) === 0;
+  const sortedFolders = useMemo(() => (folders ? sortFolders(folders, sort) : []), [folders, sort]);
+  const isEmpty = !loading && (folders?.length ?? 0) === 0;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: c.border }]}>
-        <Text variant="wordmark" color="primary">log</Text>
+        <Text variant="wordmark" color="primary">archive</Text>
         <View style={styles.headerRight}>
-          {captures && captures.length > 0 && (
+          {folders && folders.length > 0 && (
             <Text variant="monoSmall" style={{ color: c.faint, fontFamily: FontFamily.mono, marginRight: Spacing[3] }}>
-              {captures.length}
+              {folders.length}
             </Text>
           )}
           <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About archive">
@@ -121,8 +71,31 @@ export default function LogScreen() {
         visible={infoVisible}
         onClose={() => setInfoVisible(false)}
         title="archive"
-        body="A chronological record of everything you've saved: links, thoughts, and passages. Each entry shows its type, when it was captured, and the key idea Mneme pulled from it."
+        body="Everything you've saved, organized into folders by topic. Open a folder to browse its entries — and its sub-topics, if it has any."
       />
+
+      {!isEmpty && (
+        <View style={styles.sortRow}>
+          {SORT_OPTIONS.map((opt) => {
+            const selected = sort === opt.key;
+            return (
+              <Pressable
+                key={opt.key}
+                onPress={() => setSort(opt.key)}
+                style={[
+                  styles.sortPill,
+                  { borderColor: selected ? c.inverse : c.border },
+                  selected && { backgroundColor: c.inverse },
+                ]}
+              >
+                <Text variant="monoSmall" color={selected ? 'inverse' : 'secondary'}>
+                  {opt.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -131,13 +104,12 @@ export default function LogScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {loading && !captures && (
-          <View style={styles.loadingWrap}>
-            {[0, 1, 2, 3].map((i) => (
-              <View key={i} style={[styles.skeletonRow, { borderBottomColor: c.border }]}>
-                <View style={[styles.skeletonLine, { width: '30%', backgroundColor: c.elevated }]} />
-                <View style={[styles.skeletonLine, { width: '85%', backgroundColor: c.elevated, marginTop: 10 }]} />
-                <View style={[styles.skeletonLine, { width: '60%', backgroundColor: c.elevated, marginTop: 6 }]} />
+        {loading && !folders && (
+          <View style={styles.skeletonGrid}>
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <View key={i} style={styles.skeletonTile}>
+                <View style={[styles.skeletonIcon, { backgroundColor: c.elevated }]} />
+                <View style={[styles.skeletonLine, { backgroundColor: c.elevated }]} />
               </View>
             ))}
           </View>
@@ -151,13 +123,7 @@ export default function LogScreen() {
           </View>
         )}
 
-        {captures?.map((item) => (
-          <CaptureRow
-            key={item.id}
-            item={item}
-            onPress={() => router.push(`/insight/${item.id}` as never)}
-          />
-        ))}
+        <FolderGrid folders={sortedFolders} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -177,34 +143,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  content: { paddingBottom: Spacing[16] },
-  row: {
-    paddingHorizontal: Spacing[6],
-    paddingVertical: Spacing[5],
-    borderBottomWidth: 1,
-  },
-  rowMeta: {
+  sortRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: Spacing[2],
-  },
-  rowTitle: { marginBottom: Spacing[2] },
-  rowIdea: { marginBottom: Spacing[3], opacity: 0.75 },
-  topicRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: Spacing[2] },
-  topicChip: {
-    borderWidth: 1,
-    borderRadius: Radius.xs,
-    paddingVertical: 2,
-    paddingHorizontal: Spacing[2],
-  },
-  insightLine: { marginTop: Spacing[1] },
-  loadingWrap: {},
-  skeletonRow: {
+    gap: Spacing[2],
     paddingHorizontal: Spacing[6],
-    paddingVertical: Spacing[5],
-    borderBottomWidth: 1,
+    paddingVertical: Spacing[3],
   },
-  skeletonLine: { height: 12, borderRadius: Radius.xs },
+  sortPill: {
+    borderWidth: 1,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing[3],
+    paddingVertical: 4,
+  },
+  content: { paddingHorizontal: Spacing[4], paddingBottom: Spacing[16] },
+  skeletonGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingTop: Spacing[4],
+  },
+  skeletonTile: {
+    width: '33.33%',
+    alignItems: 'center',
+    paddingVertical: Spacing[4],
+  },
+  skeletonIcon: { width: 56, height: 46, borderRadius: Radius.sm },
+  skeletonLine: { width: '70%', height: 10, borderRadius: Radius.xs, marginTop: Spacing[2] },
   emptyWrap: {
     paddingTop: Spacing[20],
     alignItems: 'center',

@@ -98,6 +98,25 @@ export interface CaptureSummary extends CapturedItem {
   leadInsight: { id: string; type: InsightType; headline: string } | null;
 }
 
+export type ArchiveFolderKind = 'general' | 'specific' | 'uncategorized';
+
+export interface ArchiveFolderSummary {
+  topicId: string;
+  name: string;
+  slug: string;
+  kind: ArchiveFolderKind;
+  count: number;
+  latestActivity: string;
+}
+
+export interface ArchiveFolderDetail {
+  topicId: string;
+  name: string;
+  kind: ArchiveFolderKind;
+  subfolders: ArchiveFolderSummary[];
+  entries: CaptureSummary[];
+}
+
 export type ContentConfidence = 'rich' | 'partial' | 'thin';
 
 export interface CapturePreflight {

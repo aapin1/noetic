@@ -18,6 +18,8 @@ const {
   getPreferences,
   updatePreferences,
   addCompanionReply,
+  listArchiveFolders,
+  getArchiveFolder,
 } = vi.hoisted(() => ({
   requireRequestUserId: vi.fn(),
   getRequestUserId: vi.fn(),
@@ -35,6 +37,8 @@ const {
   getPreferences: vi.fn(),
   updatePreferences: vi.fn(),
   addCompanionReply: vi.fn(),
+  listArchiveFolders: vi.fn(),
+  getArchiveFolder: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -74,6 +78,11 @@ vi.mock("@/server/services/memory", () => ({
   getMemoryTrends,
 }));
 
+vi.mock("@/server/services/archive", () => ({
+  listArchiveFolders,
+  getArchiveFolder,
+}));
+
 vi.mock("@/server/services/preferences", () => ({
   getPreferences,
   updatePreferences,
@@ -93,6 +102,8 @@ import { GET as getSearchRoute } from "@/app/api/search/route";
 import { DELETE as deleteCaptureRoute, GET as getCaptureByIdRoute } from "@/app/api/captures/[id]/route";
 import { GET as getCapturesRoute, POST as postCapturesRoute } from "@/app/api/captures/route";
 import { POST as postCompanionReplyRoute } from "@/app/api/companion/reply/route";
+import { GET as getArchiveFoldersRoute } from "@/app/api/archive/route";
+import { GET as getArchiveFolderRoute } from "@/app/api/archive/[topicId]/route";
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -285,6 +296,39 @@ describe("capture routes", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.data).toEqual({ deleted: true });
+  });
+});
+
+describe("archive routes", () => {
+  it("lists archive folders for the current user", async () => {
+    listArchiveFolders.mockResolvedValue([
+      { topicId: "t1", name: "philosophy", slug: "philosophy", kind: "general", count: 3, latestActivity: "2026-01-01T00:00:00.000Z" },
+    ]);
+
+    const response = await getArchiveFoldersRoute(new Request("http://localhost/api/archive"));
+
+    expect(listArchiveFolders).toHaveBeenCalledWith({ userId: "user_1" });
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.data.folders).toHaveLength(1);
+  });
+
+  it("gets a single archive folder by topic id", async () => {
+    getArchiveFolder.mockResolvedValue({
+      topicId: "t1",
+      name: "philosophy",
+      kind: "general",
+      subfolders: [],
+      entries: [],
+    });
+
+    const response = await getArchiveFolderRoute(
+      new Request("http://localhost/api/archive/t1"),
+      { params: { topicId: "t1" } },
+    );
+
+    expect(getArchiveFolder).toHaveBeenCalledWith({ userId: "user_1", topicId: "t1" });
+    expect(response.status).toBe(200);
   });
 });
 
