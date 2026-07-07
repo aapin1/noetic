@@ -3,6 +3,7 @@ import { Dimensions, Pressable, ScrollView, StyleSheet, View } from 'react-nativ
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTutorial } from '@/contexts/TutorialContext';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api';
 import { Radius, Spacing } from '@/constants/theme';
@@ -19,6 +20,7 @@ export default function PreviewScreen() {
   const c = useThemeColors();
   const router = useRouter();
   const { refreshProfile } = useAuth();
+  const { start: startTutorial } = useTutorial();
   const [, setFinishing] = useState(false);
 
   const { data: captures } = useApiQuery(() => api.captures.list({ limit: 3 }), []);
@@ -28,7 +30,8 @@ export default function PreviewScreen() {
     setFinishing(true);
     await refreshProfile();
     router.replace('/(tabs)');
-  }, [refreshProfile, router]);
+    startTutorial();
+  }, [refreshProfile, router, startTutorial]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top', 'bottom']}>
