@@ -16,7 +16,7 @@ export function TutorialOverlay() {
   const isLast = stepIndex === totalSteps - 1;
 
   return (
-    <Modal visible={active} transparent animationType="fade">
+    <Modal visible={active} transparent animationType="fade" onRequestClose={stop}>
       <View style={styles.overlay}>
         <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
           <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 2, marginBottom: Spacing[3] }}>
@@ -42,7 +42,7 @@ export function TutorialOverlay() {
           </View>
 
           <View style={styles.controlRow}>
-            <Pressable onPress={stop} hitSlop={12}>
+            <Pressable onPress={stop} hitSlop={12} accessibilityRole="button" accessibilityLabel="Skip tutorial">
               <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 1 }}>
                 skip tutorial
               </Text>
