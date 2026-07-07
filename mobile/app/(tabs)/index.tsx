@@ -44,9 +44,6 @@ import type {
   CaptureKind,
   CapturePreflight,
   MemoryGraphResponse,
-  MemoryTrendsResponse,
-  PersonalIntelligenceResponse,
-  PulseResponse,
 } from '@/types/api';
 
 type GraphNode = MemoryGraphResponse['nodes'][number];
