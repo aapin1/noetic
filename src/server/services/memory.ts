@@ -1,6 +1,7 @@
 import { CognitiveEventType, MemoryEdgeType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/server/db";
+import { isGeneralTopic } from "@/server/cognition/generalTopics";
 import {
   isDegenerateLayout,
   peripheralPoint,
@@ -17,7 +18,7 @@ type GraphNode = {
   id: string;
   label: string;
   kind: string;
-  topics: { topicId: string; name: string }[];
+  topics: { topicId: string; name: string; kind: "general" | "specific" }[];
   capturedAt: Date;
   reaction: string | null;
   keyIdea: string | null;
@@ -213,6 +214,7 @@ export async function getMemoryGraph(args: {
     topics: item.topics.map((row) => ({
       topicId: row.topicId,
       name: row.topic.name,
+      kind: isGeneralTopic(row.topic.name) ? "general" as const : "specific" as const,
     })),
     capturedAt: item.capturedAt,
     reaction: item.reaction,
@@ -234,12 +236,11 @@ export async function getMemoryGraph(args: {
     });
 
   const clusterMap = new Map<string, GraphCluster>();
-  // Node topics arrive ordered by weight desc, so topics[0] is the coarse
-  // domain anchor. Count how often each topic leads to decide its kind.
-  const domainVotes = new Map<string, number>();
-
+  // A cluster is a 'domain' (coarse label shown zoomed out) iff its topic is one
+  // of the canonical general fields; specific topics are 'topic' labels that
+  // take over on zoom-in. Derived from the topic name, so it's deterministic.
   for (const node of nodes) {
-    node.topics.forEach((topic, index) => {
+    for (const topic of node.topics) {
       const existing = clusterMap.get(topic.topicId);
 
       if (existing) {
@@ -249,21 +250,11 @@ export async function getMemoryGraph(args: {
         clusterMap.set(topic.topicId, {
           topicId: topic.topicId,
           name: topic.name,
-          kind: "topic",
+          kind: topic.kind === "general" ? "domain" : "topic",
           count: 1,
           itemIds: [node.id],
         });
       }
-
-      if (index === 0) {
-        domainVotes.set(topic.topicId, (domainVotes.get(topic.topicId) ?? 0) + 1);
-      }
-    });
-  }
-
-  for (const cluster of clusterMap.values()) {
-    if ((domainVotes.get(cluster.topicId) ?? 0) * 2 >= cluster.count) {
-      cluster.kind = "domain";
     }
   }
 

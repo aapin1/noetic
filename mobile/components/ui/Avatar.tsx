@@ -64,7 +64,13 @@ export function Avatar({ uri, displayName, size = 'md' }: Props) {
         <Text
           style={[
             styles.initials,
-            { fontSize: fontSizeMap[size], color: c.text, fontFamily: FontFamily.mono },
+            {
+              fontSize: fontSizeMap[size],
+              lineHeight: dimension,
+              color: c.text,
+              fontFamily: FontFamily.mono,
+              includeFontPadding: false,
+            },
           ]}
         >
           {initials}

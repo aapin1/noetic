@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -10,13 +10,24 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeftIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import type { CompanionMessage, CompanionThread } from '@/types/api';
+
+// Names the selected items directly in the message text, so the question is
+// unambiguous even if the server-side focus lookup ever comes back thin.
+function buildContextPrompt(lead: string, labels: string[]): string {
+  if (labels.length === 0) return lead.endsWith('these ideas') ? lead : `${lead} these ideas?`;
+  const quoted = labels.map((l) => `"${l}"`);
+  const list = quoted.length === 1
+    ? quoted[0]
+    : `${quoted.slice(0, -1).join(', ')} and ${quoted[quoted.length - 1]}`;
+  return `${lead} ${list}?`;
+}
 
 function MessageBlock({ message }: { message: CompanionMessage }) {
   const c = useThemeColors();
@@ -53,6 +64,17 @@ export default function CompanionScreen() {
   const c = useThemeColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { contextIds, contextLabels } = useLocalSearchParams<{ contextIds?: string; contextLabels?: string }>();
+
+  const contextItemIds = useMemo(
+    () => (contextIds ? contextIds.split(',').filter(Boolean) : []),
+    [contextIds],
+  );
+  const contextLabelList = useMemo(
+    () => (contextLabels ? contextLabels.split(',').filter(Boolean) : []),
+    [contextLabels],
+  );
+  const [suggestionsUsed, setSuggestionsUsed] = useState(false);
 
   const [thread, setThread] = useState<CompanionThread | null>(null);
   const [messages, setMessages] = useState<CompanionMessage[]>([]);
@@ -60,6 +82,13 @@ export default function CompanionScreen() {
   const [error, setError] = useState<string | null>(null);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
+
+  // Fresh multi-select-into-companion flow: only the seeded opening message
+  // is present. Let the suggestion chips + input sit right under it instead
+  // of being pushed to the very bottom by a flex:1 scroll view with nothing
+  // in it — once a real conversation exists, fall back to the normal
+  // bottom-pinned chat layout.
+  const isFreshContext = contextItemIds.length > 0 && !suggestionsUsed && messages.length <= 1;
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -87,8 +116,8 @@ export default function CompanionScreen() {
     }
   }, [messages.length, scrollToEnd]);
 
-  const handleSend = useCallback(async () => {
-    const content = reply.trim();
+  const handleSend = useCallback(async (overrideText?: string) => {
+    const content = (overrideText ?? reply).trim();
     if (!content || sending) return;
 
     const optimisticUser: CompanionMessage = {
@@ -101,10 +130,14 @@ export default function CompanionScreen() {
 
     setReply('');
     setSending(true);
+    setSuggestionsUsed(true);
     setMessages((prev) => [...prev, optimisticUser]);
 
     try {
-      const { userMessage, companionMessage } = await api.companion.reply(content);
+      const { userMessage, companionMessage } = await api.companion.reply(
+        content,
+        contextItemIds.length > 0 ? contextItemIds : undefined,
+      );
       setMessages((prev) => [
         ...prev.filter((m) => m.id !== optimisticUser.id),
         userMessage,
@@ -116,7 +149,7 @@ export default function CompanionScreen() {
     } finally {
       setSending(false);
     }
-  }, [reply, sending, thread?.id]);
+  }, [reply, sending, thread?.id, contextItemIds]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
@@ -150,9 +183,10 @@ export default function CompanionScreen() {
         >
           <ScrollView
             ref={scrollRef}
-            style={styles.flex}
+            style={isFreshContext ? styles.scrollCompact : styles.flex}
             contentContainerStyle={[
               styles.messageList,
+              isFreshContext && styles.messageListCompact,
               messages.length === 0 && styles.messageListEmpty,
             ]}
             showsVerticalScrollIndicator={false}
@@ -181,13 +215,42 @@ export default function CompanionScreen() {
             )}
           </ScrollView>
 
+          {contextItemIds.length > 0 && !suggestionsUsed && (
+            <View style={styles.contextBlock}>
+              {contextLabelList.length > 0 && (
+                <Text
+                  variant="monoSmall"
+                  color="muted"
+                  style={styles.contextLabel}
+                  numberOfLines={1}
+                >
+                  regarding: {contextLabelList.join(', ')}
+                </Text>
+              )}
+              <View style={styles.suggestionRow}>
+                <Pressable
+                  onPress={() => handleSend(buildContextPrompt('Find the connection between', contextLabelList))}
+                  style={[styles.suggestionChip, { borderColor: c.border }]}
+                >
+                  <Text variant="monoSmall" style={{ color: c.text, textAlign: 'center' }}>Find the connection</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => handleSend(buildContextPrompt("What's the tension between", contextLabelList))}
+                  style={[styles.suggestionChip, { borderColor: c.border }]}
+                >
+                  <Text variant="monoSmall" style={{ color: c.text, textAlign: 'center' }}>What&apos;s the tension?</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+
           <View
             style={[
               styles.inputBar,
               {
                 borderTopColor: c.border,
                 backgroundColor: c.background,
-                paddingBottom: Math.max(insets.bottom, Spacing[3]),
+                paddingBottom: insets.bottom + Spacing[4],
               },
             ]}
           >
@@ -200,11 +263,11 @@ export default function CompanionScreen() {
               multiline
               maxLength={4000}
               editable={!sending}
-              onSubmitEditing={handleSend}
+              onSubmitEditing={() => handleSend()}
               blurOnSubmit={false}
             />
             <Pressable
-              onPress={handleSend}
+              onPress={() => handleSend()}
               disabled={!reply.trim() || sending}
               style={styles.sendButton}
               accessibilityLabel="Send"
@@ -227,6 +290,28 @@ export default function CompanionScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   flex: { flex: 1 },
+  scrollCompact: { flexGrow: 0 },
+  contextBlock: {
+    paddingHorizontal: Spacing[5],
+    paddingTop: Spacing[4],
+    paddingBottom: Spacing[5],
+  },
+  contextLabel: {
+    marginBottom: Spacing[3],
+    letterSpacing: 0.5,
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    gap: Spacing[3],
+  },
+  suggestionChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    paddingVertical: 8,
+    paddingHorizontal: Spacing[3],
+    alignItems: 'center',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -246,6 +331,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[6],
     paddingVertical: Spacing[8],
     gap: Spacing[8],
+  },
+  // Fresh multi-select flow: a single seeded message sits above the chips, so
+  // the heavy chat padding just leaves it stranded. Tighten it up.
+  messageListCompact: {
+    paddingTop: Spacing[6],
+    paddingBottom: Spacing[4],
+    gap: Spacing[6],
   },
   messageListEmpty: {
     flex: 1,

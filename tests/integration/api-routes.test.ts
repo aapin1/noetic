@@ -17,6 +17,7 @@ const {
   getMemoryTrends,
   getPreferences,
   updatePreferences,
+  addCompanionReply,
 } = vi.hoisted(() => ({
   requireRequestUserId: vi.fn(),
   getRequestUserId: vi.fn(),
@@ -33,6 +34,7 @@ const {
   getMemoryTrends: vi.fn(),
   getPreferences: vi.fn(),
   updatePreferences: vi.fn(),
+  addCompanionReply: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -77,6 +79,10 @@ vi.mock("@/server/services/preferences", () => ({
   updatePreferences,
 }));
 
+vi.mock("@/server/services/companion", () => ({
+  addCompanionReply,
+}));
+
 import { GET as getFeedRoute } from "@/app/api/feed/route";
 import { POST as postLogsRoute } from "@/app/api/logs/route";
 import { GET as getMemoryGraphRoute } from "@/app/api/memory/graph/route";
@@ -86,6 +92,7 @@ import { POST as postOnboardingRoute } from "@/app/api/profile/onboarding/route"
 import { GET as getSearchRoute } from "@/app/api/search/route";
 import { DELETE as deleteCaptureRoute, GET as getCaptureByIdRoute } from "@/app/api/captures/[id]/route";
 import { GET as getCapturesRoute, POST as postCapturesRoute } from "@/app/api/captures/route";
+import { POST as postCompanionReplyRoute } from "@/app/api/companion/reply/route";
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -323,5 +330,57 @@ describe("preferences routes", () => {
       preferences: { density: "high" },
     });
     expect(response.status).toBe(200);
+  });
+});
+
+describe("POST /api/companion/reply", () => {
+  it("passes contextItemIds through to the service when provided", async () => {
+    addCompanionReply.mockResolvedValue({
+      userMessage: { id: "msg_1", role: "USER", content: "Find the connection" },
+      companionMessage: { id: "msg_2", role: "COMPANION", content: "They both argue X." },
+    });
+
+    const response = await postCompanionReplyRoute(
+      new Request("http://localhost/api/companion/reply", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content: "Find the connection", contextItemIds: ["item_1", "item_2"] }),
+      }),
+    );
+
+    expect(addCompanionReply).toHaveBeenCalledWith({
+      userId: "user_1",
+      content: "Find the connection",
+      contextItemIds: ["item_1", "item_2"],
+    });
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      data: {
+        userMessage: { id: "msg_1", role: "USER", content: "Find the connection" },
+        companionMessage: { id: "msg_2", role: "COMPANION", content: "They both argue X." },
+      },
+    });
+  });
+
+  it("omits contextItemIds when not provided", async () => {
+    addCompanionReply.mockResolvedValue({
+      userMessage: { id: "msg_3", role: "USER", content: "hello" },
+      companionMessage: { id: "msg_4", role: "COMPANION", content: "hi" },
+    });
+
+    await postCompanionReplyRoute(
+      new Request("http://localhost/api/companion/reply", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content: "hello" }),
+      }),
+    );
+
+    expect(addCompanionReply).toHaveBeenCalledWith({
+      userId: "user_1",
+      content: "hello",
+      contextItemIds: undefined,
+    });
   });
 });

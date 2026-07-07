@@ -3,6 +3,7 @@ import {
   Alert,
   Animated as RNAnimated,
   Dimensions,
+  Easing,
   KeyboardAvoidingView,
   PanResponder,
   Platform,
@@ -41,7 +42,11 @@ import { TUTORIAL_EXAMPLE_LINK, TUTORIAL_TARGET } from '@/constants/tutorialStep
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
 import type { AppThemeColors } from '@/constants/theme';
-import type { CaptureKind, CapturePreflight, MemoryGraphResponse } from '@/types/api';
+import type {
+  CaptureKind,
+  CapturePreflight,
+  MemoryGraphResponse,
+} from '@/types/api';
 
 type GraphNode = MemoryGraphResponse['nodes'][number];
 type GraphEdge = MemoryGraphResponse['edges'][number];
@@ -49,6 +54,8 @@ type GraphEdge = MemoryGraphResponse['edges'][number];
 const { width: SW, height: SH } = Dimensions.get('window');
 const TAB_H = Platform.OS === 'ios' ? 86 : 68;
 const FAB_SIZE = 64;
+// Just barely larger than the button itself — a subtle breathing ring, not a halo.
+const FAB_GLOW_SIZE = FAB_SIZE * 1.14;
 // Mirrors the global SocraticFab's position (app/(tabs)/_layout.tsx) — it
 // floats above the tab bar on the same right edge as the timeline rail, so
 // the rail's bottom bound must clear it, not just the tab bar.
@@ -100,10 +107,6 @@ const RECENT_MS = 14 * 24 * 60 * 60 * 1000;
 type LensMode = 'semantic' | 'temporal' | 'source';
 type ToolMode = 'default' | 'discover' | 'search';
 type PositionMap = Record<string, { x: number; y: number }>;
-
-function intersect<T>(a: Set<T>, b: Set<T>): Set<T> {
-  return new Set([...a].filter((x) => b.has(x)));
-}
 
 // ── Layout helpers ─────────────────────────────────────────────────
 
@@ -706,6 +709,75 @@ const tb = StyleSheet.create({
   sep: { width: 1, height: 18 },
 });
 
+// ── Info panel (top-right map summary) ────────────────────────────
+
+interface ExcitingLine {
+  text: string;
+  route: string;
+}
+
+function InfoPanel({
+  top, pointCount, fieldCount, topicCount, connectionCount, tensionCount, exciting, onNavigate,
+}: {
+  top: number;
+  pointCount: number;
+  fieldCount: number;
+  topicCount: number;
+  connectionCount: number;
+  tensionCount: number;
+  exciting: ExcitingLine | null;
+  onNavigate: (route: string) => void;
+}) {
+  return (
+    <View style={[infoPanelStyles.wrap, { top }]} pointerEvents="box-none">
+      <Text variant="monoSmall" style={infoPanelStyles.line}>
+        {pointCount} {pointCount === 1 ? 'point' : 'points'}
+      </Text>
+      {fieldCount > 0 && (
+        <Text variant="monoSmall" style={infoPanelStyles.line}>
+          {fieldCount} {fieldCount === 1 ? 'field' : 'fields'}
+        </Text>
+      )}
+      <Text variant="monoSmall" style={infoPanelStyles.line}>
+        {topicCount} {topicCount === 1 ? 'topic' : 'topics'}
+      </Text>
+      {connectionCount > 0 && (
+        <Text variant="monoSmall" style={infoPanelStyles.line}>
+          {connectionCount} {connectionCount === 1 ? 'connection' : 'connections'}
+        </Text>
+      )}
+      {tensionCount > 0 && (
+        <Pressable onPress={() => onNavigate('/(tabs)/mind')} hitSlop={6}>
+          <Text variant="monoSmall" style={infoPanelStyles.exciting}>
+            {tensionCount} {tensionCount === 1 ? 'tension' : 'tensions'} to explore →
+          </Text>
+        </Pressable>
+      )}
+      {exciting && (
+        <Pressable onPress={() => onNavigate(exciting.route)} hitSlop={6}>
+          <Text variant="monoSmall" style={infoPanelStyles.exciting}>{exciting.text}</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+const infoPanelStyles = StyleSheet.create({
+  wrap: {
+    position: 'absolute',
+    right: Spacing[6],
+    alignItems: 'flex-end',
+  },
+  line: {
+    color: 'rgba(236,236,236,0.28)',
+    marginBottom: 4,
+  },
+  exciting: {
+    color: 'rgba(236,236,236,0.5)',
+    marginBottom: 4,
+  },
+});
+
 // ── Timeline scrubber (temporal lens) ─────────────────────────────
 
 interface TimelineScrubberProps {
@@ -1009,9 +1081,45 @@ export default function MapScreen() {
     return created ? new Date(created).getTime() : null;
   }, [profileData]);
 
+  // Info panel: independent, non-blocking fetches — each line appears as
+  // soon as its own data resolves, without gating on the others.
+  const { data: intelligenceData } = useApiQuery(() => api.memory.intelligence(), []);
+  const { data: trendsData } = useApiQuery(() => api.memory.trends({ window: 'week' }), []);
+  const { data: pulseData } = useApiQuery(() => api.social.pulse(), []);
+
   const nodes = graphData?.nodes ?? [];
   const edges = graphData?.edges ?? [];
   const clusters = graphData?.clusters ?? [];
+
+  const { fieldCount, topicCount } = useMemo(() => {
+    const fieldIds = new Set<string>();
+    const topicIds = new Set<string>();
+    for (const n of nodes) {
+      for (const t of n.topics) {
+        (t.kind === 'general' ? fieldIds : topicIds).add(t.topicId);
+      }
+    }
+    return { fieldCount: fieldIds.size, topicCount: topicIds.size };
+  }, [nodes]);
+
+  const tensionCount = intelligenceData?.contradictionCards.length ?? 0;
+
+  const excitingLine = useMemo((): ExcitingLine | null => {
+    const friendWithRecent = pulseData?.friends.find((f) => {
+      const latest = f.latest[0];
+      return latest && Date.now() - new Date(latest.capturedAt).getTime() < DAY_MS;
+    });
+    if (friendWithRecent) {
+      return { text: `${friendWithRecent.user.displayName} just added something →`, route: '/(tabs)/pulse' };
+    }
+    const risingTheme = trendsData?.shifts
+      .filter((s) => s.delta > 0)
+      .sort((a, b) => b.delta - a.delta)[0];
+    if (risingTheme) {
+      return { text: `${risingTheme.name} is rising this week →`, route: '/(tabs)/trends' };
+    }
+    return null;
+  }, [pulseData, trendsData]);
 
   // ── Lens mode ──────────────────────────────────────────────────
   const [lensMode, setLensMode] = useState<LensMode>('semantic');
@@ -1284,79 +1392,8 @@ export default function MapScreen() {
 
   // ── Discovery mode ─────────────────────────────────────────────
   const [discoveryNodeIds, setDiscoveryNodeIds] = useState<string[]>([]);
-  const [discoveryActive, setDiscoveryActive] = useState(false);
-
-  const discoveryResult = useMemo(() => {
-    if (!discoveryActive || discoveryNodeIds.length < 2) return null;
-
-    const selectedSet = new Set(discoveryNodeIds);
-    const connectedTo: Record<string, Set<string>> = {};
-
-    for (const id of discoveryNodeIds) {
-      connectedTo[id] = new Set();
-    }
-
-    for (const edge of edges) {
-      if (selectedSet.has(edge.fromItemId)) {
-        connectedTo[edge.fromItemId]!.add(edge.toItemId);
-      }
-      if (selectedSet.has(edge.toItemId)) {
-        connectedTo[edge.toItemId]!.add(edge.fromItemId);
-      }
-    }
-
-    // Shared neighbors: connected to ALL selected nodes
-    const [firstId, ...restIds] = discoveryNodeIds;
-    let sharedNeighbors = connectedTo[firstId!] ?? new Set<string>();
-    for (const id of restIds) {
-      sharedNeighbors = intersect(sharedNeighbors, connectedTo[id] ?? new Set<string>());
-    }
-    // Remove the selected nodes themselves from shared neighbors
-    for (const id of discoveryNodeIds) sharedNeighbors.delete(id);
-
-    const relevantNodeIds = new Set([...discoveryNodeIds, ...sharedNeighbors]);
-
-    const relevantEdges = edges.filter(
-      (e) => relevantNodeIds.has(e.fromItemId) && relevantNodeIds.has(e.toItemId),
-    );
-
-    // Shared topics between selected nodes
-    const topicSets = discoveryNodeIds.map((id) => {
-      const node = nodes.find((n) => n.id === id);
-      return new Set(node?.topics.map((t) => t.topicId) ?? []);
-    });
-    const [firstTopicSet, ...restTopicSets] = topicSets;
-    let sharedTopicIds = firstTopicSet ?? new Set<string>();
-    for (const ts of restTopicSets) {
-      sharedTopicIds = intersect(sharedTopicIds, ts);
-    }
-    const firstNode = nodes.find((n) => n.id === discoveryNodeIds[0]);
-    const sharedTopics = firstNode?.topics.filter((t) => sharedTopicIds.has(t.topicId)) ?? [];
-
-    return {
-      nodeIds: relevantNodeIds,
-      edges: relevantEdges,
-      sharedTopics,
-      sharedNeighborCount: sharedNeighbors.size,
-      directlyConnected: relevantEdges.some(
-        (e) =>
-          (e.fromItemId === discoveryNodeIds[0] && e.toItemId === discoveryNodeIds[1]) ||
-          (e.fromItemId === discoveryNodeIds[1] && e.toItemId === discoveryNodeIds[0]),
-      ),
-    };
-  }, [discoveryActive, discoveryNodeIds, edges, nodes]);
-
-  const discoveryEdgeKeys = useMemo(() => {
-    const s = new Set<string>();
-    for (const de of discoveryResult?.edges ?? []) {
-      s.add(`${de.fromItemId}:${de.toItemId}`);
-      s.add(`${de.toItemId}:${de.fromItemId}`);
-    }
-    return s;
-  }, [discoveryResult]);
 
   const toggleDiscoveryNode = useCallback((nodeId: string) => {
-    setDiscoveryActive(false);
     setDiscoveryNodeIds((prev) => {
       if (prev.includes(nodeId)) return prev.filter((id) => id !== nodeId);
       if (prev.length >= 5) return [...prev.slice(1), nodeId];
@@ -1364,17 +1401,23 @@ export default function MapScreen() {
     });
   }, []);
 
-  const activateDiscovery = useCallback(() => {
-    if (discoveryNodeIds.length >= 2) {
-      setDiscoveryActive(true);
-      openDrawer(null);
-    }
-  }, [discoveryNodeIds.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const clearDiscovery = useCallback(() => {
     setDiscoveryNodeIds([]);
-    setDiscoveryActive(false);
   }, []);
+
+  const openDiscoveryCompanion = useCallback(() => {
+    if (discoveryNodeIds.length < 2) return;
+    const labels = discoveryNodeIds
+      .map((id) => nodes.find((n) => n.id === id)?.label ?? '')
+      .filter(Boolean)
+      .map((l) => l.replace(/,/g, ';'));
+    router.push({
+      pathname: '/companion' as never,
+      params: { contextIds: discoveryNodeIds.join(','), contextLabels: labels.join(',') },
+    });
+    clearDiscovery();
+    setToolMode('default');
+  }, [discoveryNodeIds, nodes, router, clearDiscovery]);
 
   // ── Timeline state (temporal lens) ────────────────────────────
   const [timelinePct, setTimelinePct] = useState(1.0);
@@ -1622,7 +1665,6 @@ export default function MapScreen() {
       setDrawerVisible(false);
       setDrawerCluster(null);
       setSelectedNode(null);
-      setDiscoveryActive(false);
     });
   }, [drawerX, DRAWER_W]);
 
@@ -1712,8 +1754,12 @@ export default function MapScreen() {
   useEffect(() => {
     const loop = RNAnimated.loop(
       RNAnimated.sequence([
-        RNAnimated.timing(fabPulse, { toValue: 1, duration: 2600, useNativeDriver: true }),
-        RNAnimated.timing(fabPulse, { toValue: 0, duration: 2600, useNativeDriver: true }),
+        RNAnimated.timing(fabPulse, {
+          toValue: 1, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true,
+        }),
+        RNAnimated.timing(fabPulse, {
+          toValue: 0, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true,
+        }),
       ]),
     );
     loop.start();
@@ -1872,8 +1918,8 @@ export default function MapScreen() {
     if (/^https?:\/\//i.test(t)) setMode('link');
   }, []);
 
-  const ringOpacity = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [0.0, 0.4] });
-  const ringScale = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [1.0, 1.75] });
+  const glowOpacity = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [0.0, 0.16] });
+  const glowScale = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1.05] });
   const isEmpty = !graphLoading && nodes.length === 0;
 
   useEffect(() => {
@@ -1955,10 +2001,6 @@ export default function MapScreen() {
     if (hasSearch && !highlightedIds.has(node.id)) {
       return baseOpacity * 0.10 * zoomFade;
     }
-    // Discovery dimming (when result is active)
-    if (discoveryResult && !discoveryResult.nodeIds.has(node.id)) {
-      return baseOpacity * 0.06 * zoomFade;
-    }
     // Timeline cutoff (temporal lens)
     if (lensMode === 'temporal') {
       const ts = nodeTimestamps.get(node.id) ?? 0;
@@ -1971,7 +2013,7 @@ export default function MapScreen() {
       return baseOpacity * 0.06 * zoomFade;
     }
     return baseOpacity * zoomFade;
-  }, [hasSearch, highlightedIds, discoveryResult, lensMode, nodeTimestamps, timelineCutoffMs, focusedTopicId]);
+  }, [hasSearch, highlightedIds, lensMode, nodeTimestamps, timelineCutoffMs, focusedTopicId]);
 
   // ── Render ────────────────────────────────────────────────────
   return (
@@ -2127,10 +2169,8 @@ export default function MapScreen() {
                 const b = pos[e.toItemId];
                 if (!a || !b) return null;
 
-                const isDiscoveryEdge = discoveryEdgeKeys.has(`${e.fromItemId}:${e.toItemId}`);
                 const baseOpacity = 0.07 + e.weight * 0.24;
                 let edgeOpacity = baseOpacity;
-                if (discoveryResult && !isDiscoveryEdge) edgeOpacity = baseOpacity * 0.04;
                 if (focusedTopicId) {
                   const fromNode = nodeById.get(e.fromItemId);
                   const toNode = nodeById.get(e.toItemId);
@@ -2143,8 +2183,8 @@ export default function MapScreen() {
                   <Line
                     key={`e${i}`}
                     x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                    stroke={isDiscoveryEdge ? '#7EC8A0' : MAP_LINE}
-                    strokeWidth={isDiscoveryEdge ? 1.2 : 0.7}
+                    stroke={MAP_LINE}
+                    strokeWidth={0.7}
                     strokeOpacity={edgeOpacity}
                   />
                 );
@@ -2160,7 +2200,6 @@ export default function MapScreen() {
 
                 const isHighlighted = hasSearch && highlightedIds.has(node.id);
                 const isDiscoverySelected = discoveryNodeIds.includes(node.id);
-                const isDiscoveryRelevant = discoveryResult?.nodeIds.has(node.id);
 
                 // Nodes stay visible at every zoom level — never fade to zero.
                 // Only a gentle dimming as you pull back, floored so points (and
@@ -2169,8 +2208,8 @@ export default function MapScreen() {
                 const finalOpacity = getNodeOpacity(node, baseOpacity, zoomFade);
 
                 const glowR = isHighlighted || isDiscoverySelected ? baseR * 9 : baseR * 5.5;
-                const glowOp = (isHighlighted || isDiscoverySelected) ? 0.12 : (isDiscoveryRelevant ? 0.10 : 0.03);
-                const innerGlowOp = (isHighlighted || isDiscoverySelected) ? 0.28 : (isDiscoveryRelevant ? 0.20 : 0.09);
+                const glowOp = (isHighlighted || isDiscoverySelected) ? 0.12 : 0.03;
+                const innerGlowOp = (isHighlighted || isDiscoverySelected) ? 0.28 : 0.09;
 
                 return (
                   <G key={node.id}>
@@ -2396,6 +2435,21 @@ export default function MapScreen() {
           body="Your knowledge map. Every node is something you saved. Lines appear when ideas share a topic, contradict each other, or grow out of one another. Switch lenses to sort the map by meaning, time, or source."
         />
 
+        {/* Info panel (top-right map summary) */}
+        {nodes.length > 0 && !showCapture && !drawerVisible && lensMode !== 'temporal' &&
+          toolMode !== 'search' && !(toolMode === 'discover' && discoveryNodeIds.length > 0) && (
+          <InfoPanel
+            top={insets.top + 80}
+            pointCount={nodes.length}
+            fieldCount={fieldCount}
+            topicCount={topicCount}
+            connectionCount={edges.length}
+            tensionCount={tensionCount}
+            exciting={excitingLine}
+            onNavigate={(route) => router.push(route as never)}
+          />
+        )}
+
         {/* Focus mode indicator */}
         {focusedTopicId && !showCapture && (
           <View style={[styles.focusBadge, { top: insets.top + 80, backgroundColor: 'rgba(10,10,10,0.85)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
@@ -2440,7 +2494,7 @@ export default function MapScreen() {
           </View>
         )}
 
-        {/* Discover mode: selection count + Find button */}
+        {/* Discover mode: selection count + open-in-companion button */}
         {toolMode === 'discover' && discoveryNodeIds.length > 0 && !showCapture && !drawerVisible && (
           <View style={[styles.discoveryBar, { bottom: TAB_H + Spacing[5] + FAB_SIZE + Spacing[3] }]} pointerEvents="box-none">
             <View style={[styles.discoveryPill, { backgroundColor: 'rgba(10,10,10,0.88)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
@@ -2450,15 +2504,15 @@ export default function MapScreen() {
               {discoveryNodeIds.length >= 2 && (
                 <>
                   <View style={[styles.discoverySep, { backgroundColor: 'rgba(255,255,255,0.1)' }]} />
-                  <Pressable onPress={activateDiscovery} hitSlop={8}>
+                  <Pressable onPress={openDiscoveryCompanion} hitSlop={8}>
                     <Text style={[styles.discoveryAction, { color: '#7EC8A0' }]}>
-                      find connection →
+                      open in companion →
                     </Text>
                   </Pressable>
                 </>
               )}
               <View style={[styles.discoverySep, { backgroundColor: 'rgba(255,255,255,0.1)' }]} />
-              <Pressable onPress={clearDiscovery} hitSlop={8}>
+              <Pressable onPress={() => { clearDiscovery(); setToolMode('default'); }} hitSlop={8}>
                 <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.3)' }]}>✕</Text>
               </Pressable>
             </View>
@@ -2490,18 +2544,6 @@ export default function MapScreen() {
           </View>
         )}
 
-        {/* Node count (bottom-left) */}
-        {nodes.length > 0 && !showCapture && !drawerVisible && lensMode !== 'temporal' && (
-          <View
-            style={[styles.mapMeta, { bottom: TAB_H + Spacing[5] }]}
-            pointerEvents="none"
-          >
-            <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.20)' }}>
-              {nodes.length} {nodes.length === 1 ? 'point' : 'points'}
-            </Text>
-          </View>
-        )}
-
         {/* Right-side drawer */}
         {drawerVisible && !showCapture && (
           <>
@@ -2526,59 +2568,8 @@ export default function MapScreen() {
                   <Text variant="monoSmall" style={{ color: c.muted }}>✕</Text>
                 </Pressable>
 
-                {/* Discovery result */}
-                {discoveryResult && discoveryActive && (
-                  <View>
-                    <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3], letterSpacing: 1.5, textTransform: 'uppercase' }}>
-                      connection
-                    </Text>
-                    <Text variant="h3" style={{ marginBottom: Spacing[2] }}>
-                      {discoveryNodeIds.length} ideas
-                    </Text>
-                    <View style={[styles.drawerHairline, { backgroundColor: c.border }]} />
-
-                    {discoveryResult.directlyConnected && (
-                      <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3], marginBottom: Spacing[2] }}>
-                        directly connected
-                      </Text>
-                    )}
-
-                    {discoveryResult.sharedNeighborCount > 0 && (
-                      <Text variant="monoSmall" color="muted" style={{ marginBottom: Spacing[2] }}>
-                        {discoveryResult.sharedNeighborCount} shared {discoveryResult.sharedNeighborCount === 1 ? 'neighbor' : 'neighbors'}
-                      </Text>
-                    )}
-
-                    {discoveryResult.sharedTopics.length > 0 ? (
-                      <View style={{ marginTop: Spacing[2] }}>
-                        <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[2] }}>shared topics</Text>
-                        {discoveryResult.sharedTopics.map((t) => (
-                          <Text key={t.topicId} variant="body" color="secondary" style={{ marginBottom: Spacing[1] }}>
-                            {t.name}
-                          </Text>
-                        ))}
-                      </View>
-                    ) : (
-                      <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3] }}>
-                        no shared topics yet. these ideas sit in different parts of the map.
-                      </Text>
-                    )}
-
-                    {discoveryResult.sharedNeighborCount === 0 && !discoveryResult.directlyConnected && (
-                      <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3] }}>
-                        no direct link yet. save more around these and one may show up.
-                      </Text>
-                    )}
-
-                    <View style={[styles.drawerHairline, { backgroundColor: c.border, marginTop: Spacing[4] }]} />
-                    <Pressable onPress={() => { clearDiscovery(); closeDrawer(); }} style={{ marginTop: Spacing[4] }}>
-                      <Text variant="monoSmall" color="muted">clear selection →</Text>
-                    </Pressable>
-                  </View>
-                )}
-
                 {/* Cluster detail */}
-                {drawerCluster && !selectedNode && !discoveryActive && (
+                {drawerCluster && !selectedNode && (
                   <View>
                     <View style={styles.drawerClusterHeader}>
                       <Text variant="h2" style={{ flex: 1, marginBottom: Spacing[2] }}>{drawerCluster.name}</Text>
@@ -2617,7 +2608,7 @@ export default function MapScreen() {
                 )}
 
                 {/* Node detail */}
-                {selectedNode && !discoveryActive && (
+                {selectedNode && (
                   <View>
                     <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3] }}>
                       {selectedNode.kind.toLowerCase()} · {new Date(selectedNode.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -2672,7 +2663,7 @@ export default function MapScreen() {
         {!showCapture && !drawerVisible && (
           <View style={[styles.fabWrap, { bottom: TAB_H + Spacing[5] }]} pointerEvents="box-none">
             <RNAnimated.View
-              style={[styles.fabRing, { borderColor: MAP_NODE, opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
+              style={[styles.fabGlow, { backgroundColor: MAP_NODE, opacity: glowOpacity, transform: [{ scale: glowScale }] }]}
               pointerEvents="none"
             />
             <Pressable
@@ -2853,12 +2844,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  mapMeta: {
-    position: 'absolute',
-    left: Spacing[5],
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   centerBtn: {
     borderWidth: 1,
     borderRadius: Radius.sm,
@@ -2890,11 +2875,15 @@ const styles = StyleSheet.create({
     left: 0, right: 0,
     alignItems: 'center',
   },
-  fabRing: {
+  fabGlow: {
     position: 'absolute',
-    width: FAB_SIZE, height: FAB_SIZE,
-    borderRadius: FAB_SIZE / 2,
-    borderWidth: 1,
+    // Centered on the FAB: the wrap has no explicit height (it sizes to the
+    // FAB), so an absolutely-positioned sibling defaults to the same top edge
+    // as the FAB — offset it upward by half the size difference to make the
+    // two circles concentric instead of the glow bulging out below.
+    top: -(FAB_GLOW_SIZE - FAB_SIZE) / 2,
+    width: FAB_GLOW_SIZE, height: FAB_GLOW_SIZE,
+    borderRadius: FAB_GLOW_SIZE / 2,
   },
   fab: {
     width: FAB_SIZE, height: FAB_SIZE,
