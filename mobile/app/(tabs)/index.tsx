@@ -99,10 +99,6 @@ type LensMode = 'semantic' | 'temporal' | 'source';
 type ToolMode = 'default' | 'discover' | 'search';
 type PositionMap = Record<string, { x: number; y: number }>;
 
-function intersect<T>(a: Set<T>, b: Set<T>): Set<T> {
-  return new Set([...a].filter((x) => b.has(x)));
-}
-
 // ── Layout helpers ─────────────────────────────────────────────────
 
 function hashId(id: string): number {
@@ -1271,79 +1267,8 @@ export default function MapScreen() {
 
   // ── Discovery mode ─────────────────────────────────────────────
   const [discoveryNodeIds, setDiscoveryNodeIds] = useState<string[]>([]);
-  const [discoveryActive, setDiscoveryActive] = useState(false);
-
-  const discoveryResult = useMemo(() => {
-    if (!discoveryActive || discoveryNodeIds.length < 2) return null;
-
-    const selectedSet = new Set(discoveryNodeIds);
-    const connectedTo: Record<string, Set<string>> = {};
-
-    for (const id of discoveryNodeIds) {
-      connectedTo[id] = new Set();
-    }
-
-    for (const edge of edges) {
-      if (selectedSet.has(edge.fromItemId)) {
-        connectedTo[edge.fromItemId]!.add(edge.toItemId);
-      }
-      if (selectedSet.has(edge.toItemId)) {
-        connectedTo[edge.toItemId]!.add(edge.fromItemId);
-      }
-    }
-
-    // Shared neighbors: connected to ALL selected nodes
-    const [firstId, ...restIds] = discoveryNodeIds;
-    let sharedNeighbors = connectedTo[firstId!] ?? new Set<string>();
-    for (const id of restIds) {
-      sharedNeighbors = intersect(sharedNeighbors, connectedTo[id] ?? new Set<string>());
-    }
-    // Remove the selected nodes themselves from shared neighbors
-    for (const id of discoveryNodeIds) sharedNeighbors.delete(id);
-
-    const relevantNodeIds = new Set([...discoveryNodeIds, ...sharedNeighbors]);
-
-    const relevantEdges = edges.filter(
-      (e) => relevantNodeIds.has(e.fromItemId) && relevantNodeIds.has(e.toItemId),
-    );
-
-    // Shared topics between selected nodes
-    const topicSets = discoveryNodeIds.map((id) => {
-      const node = nodes.find((n) => n.id === id);
-      return new Set(node?.topics.map((t) => t.topicId) ?? []);
-    });
-    const [firstTopicSet, ...restTopicSets] = topicSets;
-    let sharedTopicIds = firstTopicSet ?? new Set<string>();
-    for (const ts of restTopicSets) {
-      sharedTopicIds = intersect(sharedTopicIds, ts);
-    }
-    const firstNode = nodes.find((n) => n.id === discoveryNodeIds[0]);
-    const sharedTopics = firstNode?.topics.filter((t) => sharedTopicIds.has(t.topicId)) ?? [];
-
-    return {
-      nodeIds: relevantNodeIds,
-      edges: relevantEdges,
-      sharedTopics,
-      sharedNeighborCount: sharedNeighbors.size,
-      directlyConnected: relevantEdges.some(
-        (e) =>
-          (e.fromItemId === discoveryNodeIds[0] && e.toItemId === discoveryNodeIds[1]) ||
-          (e.fromItemId === discoveryNodeIds[1] && e.toItemId === discoveryNodeIds[0]),
-      ),
-    };
-  }, [discoveryActive, discoveryNodeIds, edges, nodes]);
-
-  const discoveryEdgeKeys = useMemo(() => {
-    const s = new Set<string>();
-    for (const de of discoveryResult?.edges ?? []) {
-      s.add(`${de.fromItemId}:${de.toItemId}`);
-      s.add(`${de.toItemId}:${de.fromItemId}`);
-    }
-    return s;
-  }, [discoveryResult]);
 
   const toggleDiscoveryNode = useCallback((nodeId: string) => {
-    setDiscoveryActive(false);
     setDiscoveryNodeIds((prev) => {
       if (prev.includes(nodeId)) return prev.filter((id) => id !== nodeId);
       if (prev.length >= 5) return [...prev.slice(1), nodeId];
@@ -1351,17 +1276,23 @@ export default function MapScreen() {
     });
   }, []);
 
-  const activateDiscovery = useCallback(() => {
-    if (discoveryNodeIds.length >= 2) {
-      setDiscoveryActive(true);
-      openDrawer(null);
-    }
-  }, [discoveryNodeIds.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const clearDiscovery = useCallback(() => {
     setDiscoveryNodeIds([]);
-    setDiscoveryActive(false);
   }, []);
+
+  const openDiscoveryCompanion = useCallback(() => {
+    if (discoveryNodeIds.length < 2) return;
+    const labels = discoveryNodeIds
+      .map((id) => nodes.find((n) => n.id === id)?.label ?? '')
+      .filter(Boolean)
+      .map((l) => l.replace(/,/g, ';'));
+    router.push({
+      pathname: '/companion' as never,
+      params: { contextIds: discoveryNodeIds.join(','), contextLabels: labels.join(',') },
+    });
+    clearDiscovery();
+    setToolMode('default');
+  }, [discoveryNodeIds, nodes, router, clearDiscovery]);
 
   // ── Timeline state (temporal lens) ────────────────────────────
   const [timelinePct, setTimelinePct] = useState(1.0);
@@ -1609,7 +1540,6 @@ export default function MapScreen() {
       setDrawerVisible(false);
       setDrawerCluster(null);
       setSelectedNode(null);
-      setDiscoveryActive(false);
     });
   }, [drawerX, DRAWER_W]);
 
@@ -1924,10 +1854,6 @@ export default function MapScreen() {
     if (hasSearch && !highlightedIds.has(node.id)) {
       return baseOpacity * 0.10 * zoomFade;
     }
-    // Discovery dimming (when result is active)
-    if (discoveryResult && !discoveryResult.nodeIds.has(node.id)) {
-      return baseOpacity * 0.06 * zoomFade;
-    }
     // Timeline cutoff (temporal lens)
     if (lensMode === 'temporal') {
       const ts = nodeTimestamps.get(node.id) ?? 0;
@@ -1940,7 +1866,7 @@ export default function MapScreen() {
       return baseOpacity * 0.06 * zoomFade;
     }
     return baseOpacity * zoomFade;
-  }, [hasSearch, highlightedIds, discoveryResult, lensMode, nodeTimestamps, timelineCutoffMs, focusedTopicId]);
+  }, [hasSearch, highlightedIds, lensMode, nodeTimestamps, timelineCutoffMs, focusedTopicId]);
 
   // ── Render ────────────────────────────────────────────────────
   return (
@@ -2096,10 +2022,8 @@ export default function MapScreen() {
                 const b = pos[e.toItemId];
                 if (!a || !b) return null;
 
-                const isDiscoveryEdge = discoveryEdgeKeys.has(`${e.fromItemId}:${e.toItemId}`);
                 const baseOpacity = 0.07 + e.weight * 0.24;
                 let edgeOpacity = baseOpacity;
-                if (discoveryResult && !isDiscoveryEdge) edgeOpacity = baseOpacity * 0.04;
                 if (focusedTopicId) {
                   const fromNode = nodeById.get(e.fromItemId);
                   const toNode = nodeById.get(e.toItemId);
@@ -2112,8 +2036,8 @@ export default function MapScreen() {
                   <Line
                     key={`e${i}`}
                     x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                    stroke={isDiscoveryEdge ? '#7EC8A0' : MAP_LINE}
-                    strokeWidth={isDiscoveryEdge ? 1.2 : 0.7}
+                    stroke={MAP_LINE}
+                    strokeWidth={0.7}
                     strokeOpacity={edgeOpacity}
                   />
                 );
@@ -2129,7 +2053,6 @@ export default function MapScreen() {
 
                 const isHighlighted = hasSearch && highlightedIds.has(node.id);
                 const isDiscoverySelected = discoveryNodeIds.includes(node.id);
-                const isDiscoveryRelevant = discoveryResult?.nodeIds.has(node.id);
 
                 // Nodes stay visible at every zoom level — never fade to zero.
                 // Only a gentle dimming as you pull back, floored so points (and
@@ -2138,8 +2061,8 @@ export default function MapScreen() {
                 const finalOpacity = getNodeOpacity(node, baseOpacity, zoomFade);
 
                 const glowR = isHighlighted || isDiscoverySelected ? baseR * 9 : baseR * 5.5;
-                const glowOp = (isHighlighted || isDiscoverySelected) ? 0.12 : (isDiscoveryRelevant ? 0.10 : 0.03);
-                const innerGlowOp = (isHighlighted || isDiscoverySelected) ? 0.28 : (isDiscoveryRelevant ? 0.20 : 0.09);
+                const glowOp = (isHighlighted || isDiscoverySelected) ? 0.12 : 0.03;
+                const innerGlowOp = (isHighlighted || isDiscoverySelected) ? 0.28 : 0.09;
 
                 return (
                   <G key={node.id}>
@@ -2400,7 +2323,7 @@ export default function MapScreen() {
           </View>
         )}
 
-        {/* Discover mode: selection count + Find button */}
+        {/* Discover mode: selection count + open-in-companion button */}
         {toolMode === 'discover' && discoveryNodeIds.length > 0 && !showCapture && !drawerVisible && (
           <View style={[styles.discoveryBar, { bottom: TAB_H + Spacing[5] + FAB_SIZE + Spacing[3] }]} pointerEvents="box-none">
             <View style={[styles.discoveryPill, { backgroundColor: 'rgba(10,10,10,0.88)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
@@ -2410,15 +2333,15 @@ export default function MapScreen() {
               {discoveryNodeIds.length >= 2 && (
                 <>
                   <View style={[styles.discoverySep, { backgroundColor: 'rgba(255,255,255,0.1)' }]} />
-                  <Pressable onPress={activateDiscovery} hitSlop={8}>
+                  <Pressable onPress={openDiscoveryCompanion} hitSlop={8}>
                     <Text style={[styles.discoveryAction, { color: '#7EC8A0' }]}>
-                      find connection →
+                      open in companion →
                     </Text>
                   </Pressable>
                 </>
               )}
               <View style={[styles.discoverySep, { backgroundColor: 'rgba(255,255,255,0.1)' }]} />
-              <Pressable onPress={clearDiscovery} hitSlop={8}>
+              <Pressable onPress={() => { clearDiscovery(); setToolMode('default'); }} hitSlop={8}>
                 <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.3)' }]}>✕</Text>
               </Pressable>
             </View>
@@ -2486,59 +2409,8 @@ export default function MapScreen() {
                   <Text variant="monoSmall" style={{ color: c.muted }}>✕</Text>
                 </Pressable>
 
-                {/* Discovery result */}
-                {discoveryResult && discoveryActive && (
-                  <View>
-                    <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3], letterSpacing: 1.5, textTransform: 'uppercase' }}>
-                      connection
-                    </Text>
-                    <Text variant="h3" style={{ marginBottom: Spacing[2] }}>
-                      {discoveryNodeIds.length} ideas
-                    </Text>
-                    <View style={[styles.drawerHairline, { backgroundColor: c.border }]} />
-
-                    {discoveryResult.directlyConnected && (
-                      <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3], marginBottom: Spacing[2] }}>
-                        directly connected
-                      </Text>
-                    )}
-
-                    {discoveryResult.sharedNeighborCount > 0 && (
-                      <Text variant="monoSmall" color="muted" style={{ marginBottom: Spacing[2] }}>
-                        {discoveryResult.sharedNeighborCount} shared {discoveryResult.sharedNeighborCount === 1 ? 'neighbor' : 'neighbors'}
-                      </Text>
-                    )}
-
-                    {discoveryResult.sharedTopics.length > 0 ? (
-                      <View style={{ marginTop: Spacing[2] }}>
-                        <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[2] }}>shared topics</Text>
-                        {discoveryResult.sharedTopics.map((t) => (
-                          <Text key={t.topicId} variant="body" color="secondary" style={{ marginBottom: Spacing[1] }}>
-                            {t.name}
-                          </Text>
-                        ))}
-                      </View>
-                    ) : (
-                      <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3] }}>
-                        no shared topics yet. these ideas sit in different parts of the map.
-                      </Text>
-                    )}
-
-                    {discoveryResult.sharedNeighborCount === 0 && !discoveryResult.directlyConnected && (
-                      <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3] }}>
-                        no direct link yet. save more around these and one may show up.
-                      </Text>
-                    )}
-
-                    <View style={[styles.drawerHairline, { backgroundColor: c.border, marginTop: Spacing[4] }]} />
-                    <Pressable onPress={() => { clearDiscovery(); closeDrawer(); }} style={{ marginTop: Spacing[4] }}>
-                      <Text variant="monoSmall" color="muted">clear selection →</Text>
-                    </Pressable>
-                  </View>
-                )}
-
                 {/* Cluster detail */}
-                {drawerCluster && !selectedNode && !discoveryActive && (
+                {drawerCluster && !selectedNode && (
                   <View>
                     <View style={styles.drawerClusterHeader}>
                       <Text variant="h2" style={{ flex: 1, marginBottom: Spacing[2] }}>{drawerCluster.name}</Text>
@@ -2577,7 +2449,7 @@ export default function MapScreen() {
                 )}
 
                 {/* Node detail */}
-                {selectedNode && !discoveryActive && (
+                {selectedNode && (
                   <View>
                     <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3] }}>
                       {selectedNode.kind.toLowerCase()} · {new Date(selectedNode.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
