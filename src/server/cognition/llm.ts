@@ -1099,6 +1099,7 @@ export async function generateSocraticResponse(args: {
 
 export async function generateCompanionResponse(args: {
   contextBlock: string;
+  focusBlock?: string;
   conversationHistory: { role: "USER" | "COMPANION"; content: string }[];
   userMessage: string;
 }): Promise<string | null> {
@@ -1114,6 +1115,14 @@ export async function generateCompanionResponse(args: {
     "",
     args.contextBlock,
     "",
+    ...(args.focusBlock
+      ? [
+          args.focusBlock,
+          "",
+          "Ground your answer specifically in the focus items above — they are what the user is asking about right now. Use the rest of the knowledge map only for supporting context.",
+          "",
+        ]
+      : []),
     "Answer what the user asks. Be direct and specific.",
     "- For factual questions: answer concisely in 2-3 sentences. Do not add a question after every answer.",
     "- For connection questions: name the specific intellectual bridge (concept, argument, mechanism) in 2-3 sentences.",

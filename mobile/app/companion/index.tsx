@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeftIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
@@ -53,6 +53,17 @@ export default function CompanionScreen() {
   const c = useThemeColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { contextIds, contextLabels } = useLocalSearchParams<{ contextIds?: string; contextLabels?: string }>();
+
+  const contextItemIds = useMemo(
+    () => (contextIds ? contextIds.split(',').filter(Boolean) : []),
+    [contextIds],
+  );
+  const contextLabelList = useMemo(
+    () => (contextLabels ? contextLabels.split(',').filter(Boolean) : []),
+    [contextLabels],
+  );
+  const [suggestionsUsed, setSuggestionsUsed] = useState(false);
 
   const [thread, setThread] = useState<CompanionThread | null>(null);
   const [messages, setMessages] = useState<CompanionMessage[]>([]);
@@ -87,8 +98,8 @@ export default function CompanionScreen() {
     }
   }, [messages.length, scrollToEnd]);
 
-  const handleSend = useCallback(async () => {
-    const content = reply.trim();
+  const handleSend = useCallback(async (overrideText?: string) => {
+    const content = (overrideText ?? reply).trim();
     if (!content || sending) return;
 
     const optimisticUser: CompanionMessage = {
@@ -101,10 +112,14 @@ export default function CompanionScreen() {
 
     setReply('');
     setSending(true);
+    setSuggestionsUsed(true);
     setMessages((prev) => [...prev, optimisticUser]);
 
     try {
-      const { userMessage, companionMessage } = await api.companion.reply(content);
+      const { userMessage, companionMessage } = await api.companion.reply(
+        content,
+        contextItemIds.length > 0 ? contextItemIds : undefined,
+      );
       setMessages((prev) => [
         ...prev.filter((m) => m.id !== optimisticUser.id),
         userMessage,
@@ -116,7 +131,7 @@ export default function CompanionScreen() {
     } finally {
       setSending(false);
     }
-  }, [reply, sending, thread?.id]);
+  }, [reply, sending, thread?.id, contextItemIds]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
@@ -181,6 +196,35 @@ export default function CompanionScreen() {
             )}
           </ScrollView>
 
+          {contextItemIds.length > 0 && !suggestionsUsed && (
+            <View style={styles.contextBlock}>
+              {contextLabelList.length > 0 && (
+                <Text
+                  variant="monoSmall"
+                  color="muted"
+                  style={styles.contextLabel}
+                  numberOfLines={1}
+                >
+                  regarding: {contextLabelList.join(', ')}
+                </Text>
+              )}
+              <View style={styles.suggestionRow}>
+                <Pressable
+                  onPress={() => handleSend('Find the connection')}
+                  style={[styles.suggestionChip, { borderColor: c.border }]}
+                >
+                  <Text variant="monoSmall" style={{ color: c.text }}>Find the connection</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => handleSend("What's the tension between these ideas?")}
+                  style={[styles.suggestionChip, { borderColor: c.border }]}
+                >
+                  <Text variant="monoSmall" style={{ color: c.text }}>What&apos;s the tension between these ideas?</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+
           <View
             style={[
               styles.inputBar,
@@ -200,11 +244,11 @@ export default function CompanionScreen() {
               multiline
               maxLength={4000}
               editable={!sending}
-              onSubmitEditing={handleSend}
+              onSubmitEditing={() => handleSend()}
               blurOnSubmit={false}
             />
             <Pressable
-              onPress={handleSend}
+              onPress={() => handleSend()}
               disabled={!reply.trim() || sending}
               style={styles.sendButton}
               accessibilityLabel="Send"
@@ -227,6 +271,24 @@ export default function CompanionScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   flex: { flex: 1 },
+  contextBlock: {
+    paddingHorizontal: Spacing[5],
+    paddingTop: Spacing[3],
+  },
+  contextLabel: {
+    marginBottom: Spacing[2],
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing[2],
+  },
+  suggestionChip: {
+    borderWidth: 1,
+    borderRadius: Radius.full,
+    paddingVertical: 6,
+    paddingHorizontal: Spacing[3],
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

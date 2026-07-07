@@ -225,4 +225,5 @@ export const socraticReplySchema = z.object({
 
 export const companionReplySchema = z.object({
   content: z.string().min(1).max(4000),
+  contextItemIds: z.array(z.string()).max(5).optional(),
 });
