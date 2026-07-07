@@ -711,10 +711,11 @@ interface ExcitingLine {
 }
 
 function InfoPanel({
-  top, pointCount, topicCount, connectionCount, tensionCount, exciting, onNavigate,
+  top, pointCount, fieldCount, topicCount, connectionCount, tensionCount, exciting, onNavigate,
 }: {
   top: number;
   pointCount: number;
+  fieldCount: number;
   topicCount: number;
   connectionCount: number;
   tensionCount: number;
@@ -726,6 +727,11 @@ function InfoPanel({
       <Text variant="monoSmall" style={infoPanelStyles.line}>
         {pointCount} {pointCount === 1 ? 'point' : 'points'}
       </Text>
+      {fieldCount > 0 && (
+        <Text variant="monoSmall" style={infoPanelStyles.line}>
+          {fieldCount} {fieldCount === 1 ? 'field' : 'fields'}
+        </Text>
+      )}
       <Text variant="monoSmall" style={infoPanelStyles.line}>
         {topicCount} {topicCount === 1 ? 'topic' : 'topics'}
       </Text>
@@ -1078,10 +1084,15 @@ export default function MapScreen() {
   const edges = graphData?.edges ?? [];
   const clusters = graphData?.clusters ?? [];
 
-  const topicCount = useMemo(() => {
-    const ids = new Set<string>();
-    for (const n of nodes) for (const t of n.topics) ids.add(t.topicId);
-    return ids.size;
+  const { fieldCount, topicCount } = useMemo(() => {
+    const fieldIds = new Set<string>();
+    const topicIds = new Set<string>();
+    for (const n of nodes) {
+      for (const t of n.topics) {
+        (t.kind === 'general' ? fieldIds : topicIds).add(t.topicId);
+      }
+    }
+    return { fieldCount: fieldIds.size, topicCount: topicIds.size };
   }, [nodes]);
 
   const tensionCount = intelligenceData?.contradictionCards.length ?? 0;
@@ -2447,6 +2458,7 @@ export default function MapScreen() {
           <InfoPanel
             top={insets.top + 80}
             pointCount={nodes.length}
+            fieldCount={fieldCount}
             topicCount={topicCount}
             connectionCount={edges.length}
             tensionCount={tensionCount}

@@ -1,7 +1,8 @@
 import type { DbClient } from "@/server/db";
 import { tokenize } from "@/server/cognition/terms";
 import { extractSemanticTopics } from "@/server/cognition/llm";
-import { upsertTopics } from "@/server/topics";
+import { isGeneralTopic } from "@/server/cognition/generalTopics";
+import { upsertTopics, normalizeTopicName } from "@/server/topics";
 
 type TopicWithKeywords = {
   id: string;
@@ -46,11 +47,15 @@ async function loadTopicsForUser(db: DbClient, userId: string, limit = 100): Pro
   }));
 }
 
+export type TopicKind = "general" | "specific";
+
 export type ClassifiedTopic = {
   topicId: string;
   name: string;
   slug: string;
   score: number;
+  /** general = coarse onboarding-style field; specific = fine-grained label. */
+  kind: TopicKind;
 };
 
 export async function classifyTopics(args: {
@@ -75,39 +80,55 @@ export async function classifyTopics(args: {
     (args.combinedText && args.combinedText.trim().length >= 40);
 
   if (hasContext) {
-    const { domain, topics: llmTopics } = await extractSemanticTopics({
+    const { classifications } = await extractSemanticTopics({
       title: args.title,
       combinedText: args.combinedText ?? args.description,
     });
 
-    if (domain || llmTopics.length > 0) {
-      // Order matters: the coarse domain comes first so the map anchors every
-      // node to its broad field (keeping similar captures in one region), then
-      // specific topics, then any explicit caller hints. Topics come purely
-      // from the content — they are NOT restricted to the user's chosen
-      // interests. upsertTopics creates Topic records for unseen names.
-      const allNames = [
-        ...(domain ? [domain] : []),
-        ...llmTopics,
-        ...hintNames,
-      ];
-      const records = await upsertTopics(args.db, allNames);
+    if (classifications.length > 0) {
+      // Build the ordered (name, kind, score) plan. General fields come first so
+      // the map anchors every node to its broad field (keeping similar captures
+      // in one region); the primary general leads at 1.0. Specifics follow at a
+      // lower band, then any explicit caller hints. Topics come purely from the
+      // content — they are NOT restricted to the user's chosen interests.
+      const generals = classifications.map((c) => c.general);
+      const specifics = classifications.map((c) => c.specific).filter(Boolean);
 
-      const seen = new Set<string>();
-      const unique: { id: string; name: string; slug: string }[] = [];
-      for (const r of records) {
-        if (!seen.has(r.id)) {
-          seen.add(r.id);
-          unique.push(r);
-        }
+      const plan: { name: string; kind: TopicKind; score: number }[] = [
+        ...generals.map((name, idx) => ({
+          name,
+          kind: "general" as const,
+          score: idx === 0 ? 1.0 : Math.max(0.85, 0.92 - (idx - 1) * 0.04),
+        })),
+        ...specifics.map((name, idx) => ({
+          name,
+          kind: "specific" as const,
+          score: Math.max(0.6, 0.75 - idx * 0.05),
+        })),
+        ...hintNames.map((name) => ({ name, kind: "specific" as const, score: 0.6 })),
+      ];
+
+      // upsertTopics normalizes + dedupes its input, so match returned records
+      // back to the plan by normalized name (not array index). Keep the first
+      // (highest-priority) plan entry for each name; dedup by resulting id.
+      const planByName = new Map<string, { kind: TopicKind; score: number }>();
+      for (const p of plan) {
+        const key = normalizeTopicName(p.name);
+        if (!planByName.has(key)) planByName.set(key, { kind: p.kind, score: p.score });
       }
 
-      // Domain anchor scores 1.0; later topics decrease so the domain always
-      // outranks specifics when the layout picks a cluster anchor.
-      return unique.slice(0, 8).map((r, idx) => {
-        const score = idx === 0 ? 1.0 : Math.max(0.65, 0.9 - (idx - 1) * 0.04);
-        return { topicId: r.id, name: r.name, slug: r.slug, score };
-      });
+      const records = await upsertTopics(args.db, plan.map((p) => p.name));
+      const byId = new Map<string, ClassifiedTopic>();
+      for (const r of records) {
+        if (byId.has(r.id)) continue;
+        const meta = planByName.get(normalizeTopicName(r.name)) ?? { kind: "specific" as const, score: 0.6 };
+        byId.set(r.id, { topicId: r.id, name: r.name, slug: r.slug, score: meta.score, kind: meta.kind });
+      }
+
+      // Preserve plan priority order (generals first, by score) so topics[0] is
+      // the primary general anchor the map clusters on.
+      const ordered = Array.from(byId.values()).sort((a, b) => b.score - a.score);
+      return await ensureGeneral(args.db, args.userId, ordered);
     }
   }
 
@@ -143,7 +164,13 @@ export async function classifyTopics(args: {
   const topicMap = new Map<string, ClassifiedTopic>();
 
   for (const hint of hintRecords) {
-    topicMap.set(hint.id, { topicId: hint.id, name: hint.name, slug: hint.slug, score: 1 });
+    topicMap.set(hint.id, {
+      topicId: hint.id,
+      name: hint.name,
+      slug: hint.slug,
+      score: 1,
+      kind: isGeneralTopic(hint.name) ? "general" : "specific",
+    });
   }
 
   for (const entry of scored) {
@@ -153,10 +180,51 @@ export async function classifyTopics(args: {
         name: entry.topic.name,
         slug: entry.topic.slug,
         score: entry.score,
+        kind: isGeneralTopic(entry.topic.name) ? "general" : "specific",
       });
     }
     if (topicMap.size >= max) break;
   }
 
-  return Array.from(topicMap.values()).slice(0, max);
+  return await ensureGeneral(args.db, args.userId, Array.from(topicMap.values()).slice(0, max));
+}
+
+/**
+ * Guarantees every node ends up with at least one GENERAL topic. The LLM path
+ * always yields one, but the keyword fallback (and total-LLM-failure) can come
+ * back with only specifics or nothing at all. In that case we file the node
+ * under the user's dominant declared interest — or a neutral "general" bucket
+ * when they have none — so no node is ever left unclassified.
+ */
+async function ensureGeneral(
+  db: DbClient,
+  userId: string,
+  topics: ClassifiedTopic[],
+): Promise<ClassifiedTopic[]> {
+  if (topics.some((t) => t.kind === "general")) return topics;
+
+  // Prefer the user's dominant declared field (onboarding picks are all general
+  // fields), so an unclassifiable capture lands in their main area rather than a
+  // neutral bucket. `loadTopicsForUser` returns topics weighted by the user's
+  // interest, so the first general is their strongest field.
+  const candidates = await loadTopicsForUser(db, userId);
+  const general = candidates.find((c) => isGeneralTopic(c.name));
+
+  let anchor: ClassifiedTopic;
+  if (general) {
+    anchor = { topicId: general.id, name: general.name, slug: general.slug, score: 1, kind: "general" };
+  } else {
+    // Absolute last resort (user with no fields + unclassifiable content): a
+    // neutral bucket so the node is never left without a topic.
+    const [record] = await upsertTopics(db, ["general"]);
+    if (!record) return topics;
+    anchor = { topicId: record.id, name: record.name, slug: record.slug, score: 1, kind: "general" };
+  }
+
+  // Anchor leads at 1.0 so the map still has a field to cluster on; demote any
+  // existing specifics below it.
+  const demoted = topics
+    .filter((t) => t.topicId !== anchor.topicId)
+    .map((t) => ({ ...t, score: Math.min(t.score, 0.75) }));
+  return [anchor, ...demoted];
 }

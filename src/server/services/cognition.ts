@@ -20,7 +20,8 @@ import {
   topTerms,
   type TermVector,
 } from "@/server/cognition/terms";
-import { classifyTopics, type ClassifiedTopic } from "@/server/cognition/topics";
+import { classifyTopics, type ClassifiedTopic, type TopicKind } from "@/server/cognition/topics";
+import { isGeneralTopic } from "@/server/cognition/generalTopics";
 import {
   classifyEdge,
   classifyEdgeSemantic,
@@ -64,7 +65,7 @@ type CapturedItemSummary = {
   reaction: string | null;
   userContext: string | null;
   kind: CaptureKind;
-  topics: { topicId: string; name: string; slug: string; weight: number }[];
+  topics: { topicId: string; name: string; slug: string; weight: number; kind: TopicKind }[];
   contentItem: {
     id: string;
     title: string;
@@ -128,6 +129,7 @@ function serializeCapturedItem(item: CaptureWithRelations): CapturedItemSummary 
       name: row.topic.name,
       slug: row.topic.slug,
       weight: row.weight,
+      kind: isGeneralTopic(row.topic.name) ? "general" : "specific",
     })),
     contentItem: item.contentItem
       ? {

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/server/db";
+import { isGeneralTopic } from "@/server/cognition/generalTopics";
 
 const DAY_MS = 86_400_000;
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -9,7 +10,11 @@ export interface WrappedStats {
   firstCaptureAt: string | null;
   daysSinceFirst: number;
   distinctTopics: number;
+  /** Coarse fields (general topics), most-captured first. */
+  topFields: { name: string; count: number }[];
+  /** Specific sub-topics, most-captured first. */
   topTopics: { name: string; count: number }[];
+  /** Specific sub-topics that first appeared this calendar month. */
   newTopicsThisMonth: string[];
   busiestDayOfWeek: string | null;
   busiestHour: number | null;
@@ -86,6 +91,7 @@ export async function getWrappedStats(userId: string, db: DbClient = prisma): Pr
     firstCaptureAt: null,
     daysSinceFirst: 0,
     distinctTopics: 0,
+    topFields: [],
     topTopics: [],
     newTopicsThisMonth: [],
     busiestDayOfWeek: null,
@@ -104,21 +110,30 @@ export async function getWrappedStats(userId: string, db: DbClient = prisma): Pr
   const firstCaptureAt = capturedAts[0];
   const now = new Date();
 
-  // Topics: totals, top list, and which topics first showed up this month.
-  const topicMentions: string[] = [];
+  // Topics: split the coarse fields (general) from specific sub-topics so the
+  // You page can talk about both "the fields you live in" and "what you're
+  // digging into". `newTopicsThisMonth` tracks new SPECIFIC territory (new
+  // fields are rare and less interesting to surface).
+  const fieldMentions: string[] = [];
+  const specificMentions: string[] = [];
   const topicFirstSeen = new Map<string, number>();
+  const specificFirstSeen = new Map<string, number>();
   for (const capture of captures) {
     const at = new Date(capture.capturedAt).getTime();
     for (const link of capture.topics) {
       const name = link.topic.name;
-      topicMentions.push(name);
+      const general = isGeneralTopic(name);
+      (general ? fieldMentions : specificMentions).push(name);
       if (!topicFirstSeen.has(name) || at < topicFirstSeen.get(name)!) {
         topicFirstSeen.set(name, at);
+      }
+      if (!general && (!specificFirstSeen.has(name) || at < specificFirstSeen.get(name)!)) {
+        specificFirstSeen.set(name, at);
       }
     }
   }
   const thisMonthKey = monthKey(now);
-  const newTopicsThisMonth = [...topicFirstSeen.entries()]
+  const newTopicsThisMonth = [...specificFirstSeen.entries()]
     .filter(([, firstAt]) => monthKey(new Date(firstAt)) === thisMonthKey)
     .map(([name]) => name);
 
@@ -152,7 +167,8 @@ export async function getWrappedStats(userId: string, db: DbClient = prisma): Pr
     firstCaptureAt: firstCaptureAt.toISOString(),
     daysSinceFirst: Math.max(0, Math.floor((now.getTime() - firstCaptureAt.getTime()) / DAY_MS)),
     distinctTopics: topicFirstSeen.size,
-    topTopics: countTop(topicMentions, 5),
+    topFields: countTop(fieldMentions, 5),
+    topTopics: countTop(specificMentions, 5),
     newTopicsThisMonth,
     busiestDayOfWeek: WEEKDAYS[busiestWeekdayIdx] ?? null,
     busiestHour,

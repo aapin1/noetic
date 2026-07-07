@@ -231,6 +231,15 @@ export function WrappedSection({ scrollY }: { scrollY: SharedValue<number> }) {
         )}
       </RevealCard>
 
+      {w.topFields.length > 0 ? (
+        <RevealCard {...cardProps}>
+          <Text variant="serif" style={styles.cardTitle}>
+            The fields you live in.
+          </Text>
+          <Chips items={w.topFields} />
+        </RevealCard>
+      ) : null}
+
       {w.topTopics.length > 0 ? (
         <RevealCard {...cardProps}>
           <Text variant="serif" style={styles.cardTitle}>

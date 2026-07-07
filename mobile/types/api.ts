@@ -22,11 +22,15 @@ export type MemoryEdgeType =
   | 'EVOLVES_FROM'
   | 'RELATED';
 
+export type TopicKind = 'general' | 'specific';
+
 export interface CaptureTopic {
   topicId: string;
   name: string;
   slug: string;
   weight: number;
+  /** general = coarse onboarding-style field; specific = fine-grained label. */
+  kind: TopicKind;
 }
 
 export interface CaptureContent {
@@ -108,7 +112,7 @@ export interface MemoryGraphResponse {
     id: string;
     label: string;
     kind: CaptureKind;
-    topics: { topicId: string; name: string }[];
+    topics: { topicId: string; name: string; kind: TopicKind }[];
     capturedAt: string;
     reaction: string | null;
     keyIdea: string | null;
@@ -203,6 +207,9 @@ export interface WrappedStats {
   firstCaptureAt: string | null;
   daysSinceFirst: number;
   distinctTopics: number;
+  /** Coarse fields (general topics), most-captured first. */
+  topFields: { name: string; count: number }[];
+  /** Specific sub-topics, most-captured first. */
   topTopics: { name: string; count: number }[];
   newTopicsThisMonth: string[];
   busiestDayOfWeek: string | null;
