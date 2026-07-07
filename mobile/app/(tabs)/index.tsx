@@ -37,6 +37,7 @@ import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
+import { useTutorial } from '@/contexts/TutorialContext';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
 import type { AppThemeColors } from '@/constants/theme';
@@ -1037,6 +1038,7 @@ export default function MapScreen() {
   const { setMode: setThemeMode } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { start: startTutorial } = useTutorial();
   const [infoVisible, setInfoVisible] = useState(false);
   // Measured header height, so the timeline rail can center itself in the
   // actual gap below the header instead of guessing. Falls back to a sane
@@ -2317,6 +2319,15 @@ export default function MapScreen() {
                   pointerEvents="auto"
                 >
                   <Text style={{ color: 'rgba(236,236,236,0.35)', fontSize: 16 }}>ⓘ</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => startTutorial()}
+                  hitSlop={12}
+                  accessibilityLabel="Start tutorial"
+                  style={{ marginLeft: Spacing[3] }}
+                  pointerEvents="auto"
+                >
+                  <Text style={{ color: 'rgba(236,236,236,0.35)', fontSize: 16 }}>ⓣ</Text>
                 </Pressable>
               </View>
               {/* Lens picker */}
