@@ -398,12 +398,14 @@ function Divider({ c }: { c: AppThemeColors }) {
 
 function StepOne({
   mode, setMode, payload, setPayload, imageUri, uploading, onPickImage, error, onNext, onClose, onPaste, c,
+  disableAutoFocus,
 }: {
   mode: CaptureMode; setMode: (m: CaptureMode) => void;
   payload: string; setPayload: (s: string) => void;
   imageUri: string | null; uploading: boolean; onPickImage: (source: 'camera' | 'library') => void;
   error: string; onNext: () => void; onClose: () => void; onPaste: () => void;
   c: AppThemeColors;
+  disableAutoFocus?: boolean;
 }) {
   return (
     <View>
@@ -462,7 +464,7 @@ function StepOne({
             multiline={mode !== 'link'}
             autoCapitalize={mode === 'link' ? 'none' : 'sentences'}
             keyboardType={mode === 'link' ? 'url' : 'default'}
-            autoFocus
+            autoFocus={!disableAutoFocus}
           />
           <Pressable onPress={onPaste} accessibilityLabel="Paste from clipboard">
             <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>paste from clipboard ↑</Text>
@@ -525,6 +527,7 @@ function PreflightStatus({ loading, preflight, c }: {
 function StepTwo({
   reaction, setReaction, error, busy, onBack, onCommit, c,
   isLink, preflight, preflightLoading, userContext, setUserContext, onVoiceError,
+  disableAutoFocus,
 }: {
   reaction: string; setReaction: (s: string) => void;
   error: string; busy: boolean; onBack: () => void; onCommit: () => void;
@@ -534,6 +537,7 @@ function StepTwo({
   preflightLoading: boolean;
   userContext: string; setUserContext: (s: string) => void;
   onVoiceError: (message: string) => void;
+  disableAutoFocus?: boolean;
 }) {
   // The fail-safe: when we couldn't read the source (or barely could), the
   // user's own account becomes the ground truth the insight pipeline works from.
@@ -555,7 +559,7 @@ function StepTwo({
           placeholder="a quick reaction, or nothing."
           placeholderTextColor={c.faint}
           multiline
-          autoFocus={!needsContext}
+          autoFocus={!needsContext && !disableAutoFocus}
         />
       </View>
       {needsContext && (
@@ -1765,24 +1769,41 @@ export default function MapScreen() {
   // Onboarding: drive the screen behind the tutorial card to actually show
   // what each step describes, instead of leaving whatever was already open.
   useEffect(() => {
-    if (!tutorialActive || tutorialStep.tab !== 'index') return;
-    if (tutorialStep.id === 'capture') {
-      openCapture();
-    } else if (tutorialStep.id === 'reading-source') {
-      closeDrawer();
-      setSelectedNode(null);
-      setMode('link');
-      setPayload('https://example.com/the-article-you-saved');
-      setReaction('');
+    const wantsCapture =
+      tutorialActive &&
+      tutorialStep.tab === 'index' &&
+      (tutorialStep.id === 'capture' || tutorialStep.id === 'reading-source');
+
+    if (wantsCapture) {
+      if (tutorialStep.id === 'capture') {
+        openCapture();
+      } else {
+        closeDrawer();
+        setSelectedNode(null);
+        setMode('link');
+        setPayload('https://example.com/the-article-you-saved');
+        setReaction('');
+        setImageUri(null); setMediaUrl(null); setUploading(false);
+        setCaptureError(''); setUserContext('');
+        setPreflightLoading(false);
+        setPreflight({ confidence: 'thin' });
+        setStep(2);
+        setShowCapture(true);
+        slideY.setValue(0);
+      }
+      return;
+    }
+
+    // Every other moment — a non-capture step, another tab, or the tutorial
+    // ending — must leave nothing behind. The tour only previews the capture
+    // sheet; it must never persist it or the state it faked into place.
+    if (showCapture) {
+      setShowCapture(false);
+      slideY.setValue(SH);
+      setStep(1); setPayload(''); setReaction('');
       setImageUri(null); setMediaUrl(null); setUploading(false);
-      setCaptureError(''); setUserContext('');
-      setPreflightLoading(false);
-      setPreflight({ confidence: 'thin' });
-      setStep(2);
-      setShowCapture(true);
-      slideY.setValue(0);
-    } else if (showCapture) {
-      closeCapture();
+      setCaptureError(''); setMode('link');
+      setPreflight(null); setPreflightLoading(false); setUserContext('');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tutorialActive, tutorialStep]);
@@ -2711,6 +2732,7 @@ export default function MapScreen() {
                       onClose={closeCapture}
                       onPaste={() => void pasteFromClipboard()}
                       c={c}
+                      disableAutoFocus={tutorialActive}
                     />
                   )}
                   {step === 2 && (
@@ -2725,6 +2747,7 @@ export default function MapScreen() {
                       preflightLoading={preflightLoading}
                       userContext={userContext} setUserContext={setUserContext}
                       onVoiceError={setCaptureError}
+                      disableAutoFocus={tutorialActive}
                     />
                   )}
                 </View>
