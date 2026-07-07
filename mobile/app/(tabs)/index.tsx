@@ -3,6 +3,7 @@ import {
   Alert,
   Animated as RNAnimated,
   Dimensions,
+  Easing,
   KeyboardAvoidingView,
   PanResponder,
   Platform,
@@ -1730,8 +1731,12 @@ export default function MapScreen() {
   useEffect(() => {
     const loop = RNAnimated.loop(
       RNAnimated.sequence([
-        RNAnimated.timing(fabPulse, { toValue: 1, duration: 2600, useNativeDriver: true }),
-        RNAnimated.timing(fabPulse, { toValue: 0, duration: 2600, useNativeDriver: true }),
+        RNAnimated.timing(fabPulse, {
+          toValue: 1, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true,
+        }),
+        RNAnimated.timing(fabPulse, {
+          toValue: 0, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true,
+        }),
       ]),
     );
     loop.start();
@@ -1872,8 +1877,8 @@ export default function MapScreen() {
     if (/^https?:\/\//i.test(t)) setMode('link');
   }, []);
 
-  const ringOpacity = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [0.0, 0.4] });
-  const ringScale = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [1.0, 1.75] });
+  const glowOpacity = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [0.0, 0.22] });
+  const glowScale = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.1] });
   const isEmpty = !graphLoading && nodes.length === 0;
 
   useEffect(() => {
@@ -2607,7 +2612,7 @@ export default function MapScreen() {
         {!showCapture && !drawerVisible && (
           <View style={[styles.fabWrap, { bottom: TAB_H + Spacing[5] }]} pointerEvents="box-none">
             <RNAnimated.View
-              style={[styles.fabRing, { borderColor: MAP_NODE, opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
+              style={[styles.fabGlow, { backgroundColor: MAP_NODE, opacity: glowOpacity, transform: [{ scale: glowScale }] }]}
               pointerEvents="none"
             />
             <Pressable
@@ -2817,11 +2822,10 @@ const styles = StyleSheet.create({
     left: 0, right: 0,
     alignItems: 'center',
   },
-  fabRing: {
+  fabGlow: {
     position: 'absolute',
-    width: FAB_SIZE, height: FAB_SIZE,
-    borderRadius: FAB_SIZE / 2,
-    borderWidth: 1,
+    width: FAB_SIZE * 1.6, height: FAB_SIZE * 1.6,
+    borderRadius: (FAB_SIZE * 1.6) / 2,
   },
   fab: {
     width: FAB_SIZE, height: FAB_SIZE,
