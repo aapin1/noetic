@@ -52,7 +52,7 @@ function SocraticFab() {
     <Pressable
       onPress={() => void handlePress()}
       disabled={loading}
-      style={[styles.fab, { borderColor: c.muted, backgroundColor: c.background }]}
+      style={[styles.fab, { borderColor: c.border, backgroundColor: c.elevated }]}
       accessibilityLabel="Open Socratic dialogue"
       accessibilityRole="button"
     >
@@ -164,8 +164,13 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    borderWidth: 1.5,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 8,
   },
 });

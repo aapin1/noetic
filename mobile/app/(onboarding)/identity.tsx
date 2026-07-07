@@ -51,7 +51,7 @@ export default function IdentityScreen() {
         insightStyle,
       });
       await refreshProfile();
-      router.replace('/(onboarding)/starter-links');
+      router.replace('/(onboarding)/walkthrough');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not finish setup.');
     } finally {
