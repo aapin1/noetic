@@ -39,7 +39,14 @@ import { InfoModal } from '@/components/ui/InfoModal';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
 import type { AppThemeColors } from '@/constants/theme';
-import type { CaptureKind, CapturePreflight, MemoryGraphResponse } from '@/types/api';
+import type {
+  CaptureKind,
+  CapturePreflight,
+  MemoryGraphResponse,
+  MemoryTrendsResponse,
+  PersonalIntelligenceResponse,
+  PulseResponse,
+} from '@/types/api';
 
 type GraphNode = MemoryGraphResponse['nodes'][number];
 type GraphEdge = MemoryGraphResponse['edges'][number];
@@ -691,6 +698,69 @@ const tb = StyleSheet.create({
   sep: { width: 1, height: 18 },
 });
 
+// ── Info panel (top-right map summary) ────────────────────────────
+
+interface ExcitingLine {
+  text: string;
+  route: string;
+}
+
+function InfoPanel({
+  top, pointCount, topicCount, connectionCount, tensionCount, exciting, onNavigate,
+}: {
+  top: number;
+  pointCount: number;
+  topicCount: number;
+  connectionCount: number;
+  tensionCount: number;
+  exciting: ExcitingLine | null;
+  onNavigate: (route: string) => void;
+}) {
+  return (
+    <View style={[infoPanelStyles.wrap, { top }]} pointerEvents="box-none">
+      <Text variant="monoSmall" style={infoPanelStyles.line}>
+        {pointCount} {pointCount === 1 ? 'point' : 'points'}
+      </Text>
+      <Text variant="monoSmall" style={infoPanelStyles.line}>
+        {topicCount} {topicCount === 1 ? 'topic' : 'topics'}
+      </Text>
+      {connectionCount > 0 && (
+        <Text variant="monoSmall" style={infoPanelStyles.line}>
+          {connectionCount} {connectionCount === 1 ? 'connection' : 'connections'}
+        </Text>
+      )}
+      {tensionCount > 0 && (
+        <Pressable onPress={() => onNavigate('/(tabs)/mind')} hitSlop={6}>
+          <Text variant="monoSmall" style={infoPanelStyles.exciting}>
+            {tensionCount} {tensionCount === 1 ? 'tension' : 'tensions'} to explore →
+          </Text>
+        </Pressable>
+      )}
+      {exciting && (
+        <Pressable onPress={() => onNavigate(exciting.route)} hitSlop={6}>
+          <Text variant="monoSmall" style={infoPanelStyles.exciting}>{exciting.text}</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+const infoPanelStyles = StyleSheet.create({
+  wrap: {
+    position: 'absolute',
+    right: Spacing[6],
+    alignItems: 'flex-end',
+  },
+  line: {
+    color: 'rgba(236,236,236,0.28)',
+    marginBottom: 4,
+  },
+  exciting: {
+    color: 'rgba(236,236,236,0.5)',
+    marginBottom: 4,
+  },
+});
+
 // ── Timeline scrubber (temporal lens) ─────────────────────────────
 
 interface TimelineScrubberProps {
@@ -992,9 +1062,40 @@ export default function MapScreen() {
     return created ? new Date(created).getTime() : null;
   }, [profileData]);
 
+  // Info panel: independent, non-blocking fetches — each line appears as
+  // soon as its own data resolves, without gating on the others.
+  const { data: intelligenceData } = useApiQuery(() => api.memory.intelligence(), []);
+  const { data: trendsData } = useApiQuery(() => api.memory.trends({ window: 'week' }), []);
+  const { data: pulseData } = useApiQuery(() => api.social.pulse(), []);
+
   const nodes = graphData?.nodes ?? [];
   const edges = graphData?.edges ?? [];
   const clusters = graphData?.clusters ?? [];
+
+  const topicCount = useMemo(() => {
+    const ids = new Set<string>();
+    for (const n of nodes) for (const t of n.topics) ids.add(t.topicId);
+    return ids.size;
+  }, [nodes]);
+
+  const tensionCount = intelligenceData?.contradictionCards.length ?? 0;
+
+  const excitingLine = useMemo((): ExcitingLine | null => {
+    const friendWithRecent = pulseData?.friends.find((f) => {
+      const latest = f.latest[0];
+      return latest && Date.now() - new Date(latest.capturedAt).getTime() < DAY_MS;
+    });
+    if (friendWithRecent) {
+      return { text: `${friendWithRecent.user.displayName} just added something →`, route: '/(tabs)/pulse' };
+    }
+    const risingTheme = trendsData?.shifts
+      .filter((s) => s.delta > 0)
+      .sort((a, b) => b.delta - a.delta)[0];
+    if (risingTheme) {
+      return { text: `${risingTheme.name} is rising this week →`, route: '/(tabs)/trends' };
+    }
+    return null;
+  }, [pulseData, trendsData]);
 
   // ── Lens mode ──────────────────────────────────────────────────
   const [lensMode, setLensMode] = useState<LensMode>('semantic');
@@ -2279,6 +2380,20 @@ export default function MapScreen() {
           body="Your knowledge map. Every node is something you saved. Lines appear when ideas share a topic, contradict each other, or grow out of one another. Switch lenses to sort the map by meaning, time, or source."
         />
 
+        {/* Info panel (top-right map summary) */}
+        {nodes.length > 0 && !showCapture && !drawerVisible && lensMode !== 'temporal' &&
+          toolMode !== 'search' && !(toolMode === 'discover' && discoveryNodeIds.length > 0) && (
+          <InfoPanel
+            top={insets.top + 80}
+            pointCount={nodes.length}
+            topicCount={topicCount}
+            connectionCount={edges.length}
+            tensionCount={tensionCount}
+            exciting={excitingLine}
+            onNavigate={(route) => router.push(route as never)}
+          />
+        )}
+
         {/* Focus mode indicator */}
         {focusedTopicId && !showCapture && (
           <View style={[styles.focusBadge, { top: insets.top + 80, backgroundColor: 'rgba(10,10,10,0.85)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
@@ -2369,18 +2484,6 @@ export default function MapScreen() {
             </Text>
             <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.2)', textAlign: 'center', lineHeight: 20 }}>
               {'Tap the + below to save your\nfirst thing and watch it appear.'}
-            </Text>
-          </View>
-        )}
-
-        {/* Node count (bottom-left) */}
-        {nodes.length > 0 && !showCapture && !drawerVisible && lensMode !== 'temporal' && (
-          <View
-            style={[styles.mapMeta, { bottom: TAB_H + Spacing[5] }]}
-            pointerEvents="none"
-          >
-            <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.20)' }}>
-              {nodes.length} {nodes.length === 1 ? 'point' : 'points'}
             </Text>
           </View>
         )}
@@ -2682,12 +2785,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  mapMeta: {
-    position: 'absolute',
-    left: Spacing[5],
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   centerBtn: {
     borderWidth: 1,
