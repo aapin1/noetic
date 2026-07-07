@@ -1119,7 +1119,7 @@ export async function generateCompanionResponse(args: {
       ? [
           args.focusBlock,
           "",
-          "Ground your answer specifically in the focus items above — they are what the user is asking about right now. Use the rest of the knowledge map only for supporting context.",
+          "The user has already selected the focus items above as exactly what they're asking about — the message names them directly. Answer using them immediately; never ask which items or connection they mean, and never respond with a clarifying question in place of an answer. Use the rest of the knowledge map only for supporting context.",
           "",
         ]
       : []),

@@ -53,6 +53,8 @@ type GraphEdge = MemoryGraphResponse['edges'][number];
 const { width: SW, height: SH } = Dimensions.get('window');
 const TAB_H = Platform.OS === 'ios' ? 86 : 68;
 const FAB_SIZE = 64;
+// Just barely larger than the button itself — a subtle breathing ring, not a halo.
+const FAB_GLOW_SIZE = FAB_SIZE * 1.14;
 // Mirrors the global SocraticFab's position (app/(tabs)/_layout.tsx) — it
 // floats above the tab bar on the same right edge as the timeline rail, so
 // the rail's bottom bound must clear it, not just the tab bar.
@@ -1038,7 +1040,7 @@ export default function MapScreen() {
   const { setMode: setThemeMode } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { start: startTutorial } = useTutorial();
+  const { start: startTutorial, active: tutorialActive, step: tutorialStep } = useTutorial();
   const [infoVisible, setInfoVisible] = useState(false);
   // Measured header height, so the timeline rail can center itself in the
   // actual gap below the header instead of guessing. Falls back to a sane
@@ -1760,6 +1762,31 @@ export default function MapScreen() {
     });
   }, [slideY]);
 
+  // Onboarding: drive the screen behind the tutorial card to actually show
+  // what each step describes, instead of leaving whatever was already open.
+  useEffect(() => {
+    if (!tutorialActive || tutorialStep.tab !== 'index') return;
+    if (tutorialStep.id === 'capture') {
+      openCapture();
+    } else if (tutorialStep.id === 'reading-source') {
+      closeDrawer();
+      setSelectedNode(null);
+      setMode('link');
+      setPayload('https://example.com/the-article-you-saved');
+      setReaction('');
+      setImageUri(null); setMediaUrl(null); setUploading(false);
+      setCaptureError(''); setUserContext('');
+      setPreflightLoading(false);
+      setPreflight({ confidence: 'thin' });
+      setStep(2);
+      setShowCapture(true);
+      slideY.setValue(0);
+    } else if (showCapture) {
+      closeCapture();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tutorialActive, tutorialStep]);
+
   const goNext = useCallback(() => {
     if (mode === 'image') {
       if (uploading) { setCaptureError('Still reading the image…'); return; }
@@ -1876,8 +1903,8 @@ export default function MapScreen() {
     if (/^https?:\/\//i.test(t)) setMode('link');
   }, []);
 
-  const glowOpacity = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [0.0, 0.22] });
-  const glowScale = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.1] });
+  const glowOpacity = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [0.0, 0.16] });
+  const glowScale = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1.05] });
   const isEmpty = !graphLoading && nodes.length === 0;
 
   useEffect(() => {
@@ -2832,8 +2859,13 @@ const styles = StyleSheet.create({
   },
   fabGlow: {
     position: 'absolute',
-    width: FAB_SIZE * 1.6, height: FAB_SIZE * 1.6,
-    borderRadius: (FAB_SIZE * 1.6) / 2,
+    // Centered on the FAB: the wrap has no explicit height (it sizes to the
+    // FAB), so an absolutely-positioned sibling defaults to the same top edge
+    // as the FAB — offset it upward by half the size difference to make the
+    // two circles concentric instead of the glow bulging out below.
+    top: -(FAB_GLOW_SIZE - FAB_SIZE) / 2,
+    width: FAB_GLOW_SIZE, height: FAB_GLOW_SIZE,
+    borderRadius: FAB_GLOW_SIZE / 2,
   },
   fab: {
     width: FAB_SIZE, height: FAB_SIZE,

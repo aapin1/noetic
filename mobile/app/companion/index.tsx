@@ -18,6 +18,17 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import type { CompanionMessage, CompanionThread } from '@/types/api';
 
+// Names the selected items directly in the message text, so the question is
+// unambiguous even if the server-side focus lookup ever comes back thin.
+function buildContextPrompt(lead: string, labels: string[]): string {
+  if (labels.length === 0) return lead.endsWith('these ideas') ? lead : `${lead} these ideas?`;
+  const quoted = labels.map((l) => `"${l}"`);
+  const list = quoted.length === 1
+    ? quoted[0]
+    : `${quoted.slice(0, -1).join(', ')} and ${quoted[quoted.length - 1]}`;
+  return `${lead} ${list}?`;
+}
+
 function MessageBlock({ message }: { message: CompanionMessage }) {
   const c = useThemeColors();
   const isUser = message.role === 'USER';
@@ -71,6 +82,13 @@ export default function CompanionScreen() {
   const [error, setError] = useState<string | null>(null);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
+
+  // Fresh multi-select-into-companion flow: only the seeded opening message
+  // is present. Let the suggestion chips + input sit right under it instead
+  // of being pushed to the very bottom by a flex:1 scroll view with nothing
+  // in it — once a real conversation exists, fall back to the normal
+  // bottom-pinned chat layout.
+  const isFreshContext = contextItemIds.length > 0 && !suggestionsUsed && messages.length <= 1;
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -165,7 +183,7 @@ export default function CompanionScreen() {
         >
           <ScrollView
             ref={scrollRef}
-            style={styles.flex}
+            style={isFreshContext ? styles.scrollCompact : styles.flex}
             contentContainerStyle={[
               styles.messageList,
               messages.length === 0 && styles.messageListEmpty,
@@ -210,16 +228,16 @@ export default function CompanionScreen() {
               )}
               <View style={styles.suggestionRow}>
                 <Pressable
-                  onPress={() => handleSend('Find the connection')}
+                  onPress={() => handleSend(buildContextPrompt('Find the connection between', contextLabelList))}
                   style={[styles.suggestionChip, { borderColor: c.border }]}
                 >
-                  <Text variant="monoSmall" style={{ color: c.text }}>Find the connection</Text>
+                  <Text variant="monoSmall" style={{ color: c.text, textAlign: 'center' }}>Find the connection</Text>
                 </Pressable>
                 <Pressable
-                  onPress={() => handleSend("What's the tension between these ideas?")}
+                  onPress={() => handleSend(buildContextPrompt("What's the tension between", contextLabelList))}
                   style={[styles.suggestionChip, { borderColor: c.border }]}
                 >
-                  <Text variant="monoSmall" style={{ color: c.text }}>What&apos;s the tension between these ideas?</Text>
+                  <Text variant="monoSmall" style={{ color: c.text, textAlign: 'center' }}>What&apos;s the tension?</Text>
                 </Pressable>
               </View>
             </View>
@@ -271,6 +289,7 @@ export default function CompanionScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   flex: { flex: 1 },
+  scrollCompact: { flexGrow: 0 },
   contextBlock: {
     paddingHorizontal: Spacing[5],
     paddingTop: Spacing[3],
@@ -280,14 +299,15 @@ const styles = StyleSheet.create({
   },
   suggestionRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: Spacing[2],
   },
   suggestionChip: {
+    flex: 1,
     borderWidth: 1,
-    borderRadius: Radius.full,
-    paddingVertical: 6,
+    borderRadius: Radius.sm,
+    paddingVertical: 8,
     paddingHorizontal: Spacing[3],
+    alignItems: 'center',
   },
   header: {
     flexDirection: 'row',
