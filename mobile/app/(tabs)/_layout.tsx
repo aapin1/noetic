@@ -15,6 +15,8 @@ import { FontFamily, Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { SocraticProvider, useSocratic } from '@/contexts/SocraticContext';
+import { useTutorialTarget } from '@/contexts/TutorialContext';
+import { TUTORIAL_TARGET } from '@/constants/tutorialSteps';
 import { api } from '@/lib/api';
 
 function TabBarIcon({ color, icon: Icon }: { color: string; icon: React.ElementType }) {
@@ -26,9 +28,11 @@ function SocraticFab() {
   const router = useRouter();
   const { topicId } = useSocratic();
   const [loading, setLoading] = useState(false);
+  const companionTarget = useTutorialTarget(TUTORIAL_TARGET.companionFab);
 
   const handlePress = async () => {
     if (loading) return;
+    companionTarget.press();
     let tid = topicId;
     if (!tid) {
       setLoading(true);
@@ -50,6 +54,8 @@ function SocraticFab() {
 
   return (
     <Pressable
+      ref={companionTarget.isActive ? companionTarget.ref : undefined}
+      onLayout={companionTarget.isActive ? companionTarget.onLayout : undefined}
       onPress={() => void handlePress()}
       disabled={loading}
       style={[styles.fab, { borderColor: c.border, backgroundColor: c.elevated }]}

@@ -59,37 +59,47 @@ export function TutorialOverlay() {
   }
 
   const isCard = step.target.kind === 'card';
-  // Card sits clear of what it points at. Every spotlight target lives in the
-  // lower half (FAB, capture form, tabs) → card at top. Card-only steps get
-  // pinned to the bottom, keeping the centered map/node visible above.
-  const cardAtTop = hole !== null;
+  // Card sits clear of what it points at. Steps can force a side (the capture
+  // form fills the whole screen, so its own heading sits where a top-pinned
+  // card would land); otherwise default to top when there's a hole to clear,
+  // bottom for plain informational cards.
+  const cardAtTop = step.cardSide ? step.cardSide === 'top' : hole !== null;
+  // Registered/tab steps normally only advance by the user touching the real
+  // control; a few also offer the card's own button as a fallback so the
+  // walkthrough can't strand someone on a target that never resolves.
+  const showCardButton = isCard || !!step.dismissible;
 
   const isLast = stepIndex === totalSteps - 1;
   const cardButtonLabel = isLast ? 'done' : stepIndex === 0 ? 'begin' : 'got it';
   const body = note ?? step.body;
 
-  // A soft, off-center glow rather than a hard-edged cutout: fully normal at
-  // the focus point, gradually darkening outward to the same ambient level
-  // everywhere, on every step.
+  // A soft, tightly-contained glow rather than a hard-edged cutout or a huge
+  // halo: fully normal right at the focus point, darkening to the same
+  // ambient level within a short, fixed distance. Card-only steps (nothing
+  // specific on screen to point at) just get a flat, even dim.
   const holeSpan = hole ? Math.max(hole.width, hole.height) : 0;
   const focusX = hole ? hole.x + hole.width / 2 : SW / 2;
-  const focusY = hole ? hole.y + hole.height / 2 : SH * 0.42;
-  const innerR = hole ? holeSpan / 2 + 18 : SW * 0.22;
-  const outerR = hole ? holeSpan / 2 + 150 : SW * 0.62;
+  const focusY = hole ? hole.y + hole.height / 2 : SH / 2;
+  const innerR = holeSpan / 2 + 10;
+  const outerR = innerR + 46;
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <Svg width={SW} height={SH}>
-          <Defs>
-            <RadialGradient id="tutorialDim" cx={focusX} cy={focusY} r={outerR} gradientUnits="userSpaceOnUse">
-              <Stop offset={0} stopColor="#000" stopOpacity={0} />
-              <Stop offset={Math.min(0.98, innerR / outerR)} stopColor="#000" stopOpacity={0} />
-              <Stop offset={1} stopColor="#000" stopOpacity={AMBIENT_DIM} />
-            </RadialGradient>
-          </Defs>
-          <Rect x={0} y={0} width={SW} height={SH} fill="url(#tutorialDim)" />
-        </Svg>
+        {hole ? (
+          <Svg width={SW} height={SH}>
+            <Defs>
+              <RadialGradient id="tutorialDim" cx={focusX} cy={focusY} r={outerR} gradientUnits="userSpaceOnUse">
+                <Stop offset={0} stopColor="#000" stopOpacity={0} />
+                <Stop offset={Math.min(0.98, innerR / outerR)} stopColor="#000" stopOpacity={0} />
+                <Stop offset={1} stopColor="#000" stopOpacity={AMBIENT_DIM} />
+              </RadialGradient>
+            </Defs>
+            <Rect x={0} y={0} width={SW} height={SH} fill="url(#tutorialDim)" />
+          </Svg>
+        ) : (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: AMBIENT_DIM }]} />
+        )}
       </View>
 
       {hole ? (
@@ -158,7 +168,7 @@ export function TutorialOverlay() {
                     exit
                   </Text>
                 </Pressable>
-                {isCard ? (
+                {showCardButton ? (
                   <Button label={cardButtonLabel} variant="primary" size="sm" onPress={isLast ? stop : next} />
                 ) : (
                   <Text variant="monoSmall" style={{ color: c.muted, letterSpacing: 0.5 }}>

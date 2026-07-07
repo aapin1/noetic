@@ -4,8 +4,8 @@
 export type TutorialTabSeg = 'memory' | 'pulse' | 'trends' | 'mind' | 'profile';
 
 export type TutorialTarget =
-  // A measured on-screen region (the + FAB, the capture form). The region
-  // reports its rect via useTutorialTarget; the step advances when its
+  // A measured on-screen region (the + FAB, the capture form, a node). The
+  // region reports its rect via useTutorialTarget; the step advances when its
   // relevant control is pressed.
   | { kind: 'registered'; id: string }
   // A bottom-tab, spotlit geometrically (equal columns). Advances when the
@@ -19,6 +19,16 @@ export interface TutorialStep {
   title: string;
   body: string;
   target: TutorialTarget;
+  // Which side of the screen the card is pinned to. Defaults to top when
+  // there's a hole to stay clear of (bottom otherwise) — override when the
+  // hole sits inside a full-screen surface that already has its own text
+  // above it (the capture form), where a top-pinned card would cover it.
+  cardSide?: 'top' | 'bottom';
+  // Registered/tab steps normally only advance when the user touches the
+  // real control. Set this when the target might never resolve (e.g. it
+  // depends on something from an earlier step that could have failed) so the
+  // card's own button is always there as a way to move on.
+  dismissible?: boolean;
 }
 
 // Registered-target ids, shared between the steps, the context, and the
@@ -27,6 +37,9 @@ export const TUTORIAL_TARGET = {
   captureFab: 'capture-fab',
   captureNext: 'capture-next',
   captureCommit: 'capture-commit',
+  nodeTap: 'node-tap',
+  nodeDelete: 'node-delete',
+  companionFab: 'companion-fab',
 } as const;
 
 // A stable, richly-scrapeable article used for the guided first capture. If the
@@ -56,18 +69,44 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     title: 'the source',
     body: "that's the link, ready to go. tap next and mneme fetches the actual page — title, text, everything — so it understands what's in it before asking your take.",
     target: { kind: 'registered', id: TUTORIAL_TARGET.captureNext },
+    cardSide: 'bottom',
   },
   {
     id: 'capture-commit',
     title: 'react',
-    body: 'committing is what puts this on your map — mneme reads what you saved, places it near related ideas, and starts building the connections behind your insights and history. a reaction is optional.',
+    body: "committing saves this to your map — mneme reads it, places it near related ideas, and builds the connections behind your insights over time. a reaction is optional; commit whenever you're ready.",
     target: { kind: 'registered', id: TUTORIAL_TARGET.captureCommit },
+    cardSide: 'bottom',
   },
   {
     id: 'atlas',
     title: 'atlas',
-    body: "that's your first node, placed by what it's about — this is the map. tap any node to reopen or delete it, and as you save more, lines will form between ideas that relate.",
+    body: "that's your first node, placed by what it's about — this is the map. as you save more, lines will form between ideas that relate. next, a quick look at what you can do with a node.",
     target: { kind: 'card' },
+  },
+  {
+    id: 'node-manage-prompt',
+    title: 'manage nodes',
+    body: "every node opens the same way. tap your new node to see it again.",
+    target: { kind: 'registered', id: TUTORIAL_TARGET.nodeTap },
+    dismissible: true,
+  },
+  {
+    id: 'node-manage-info',
+    title: 'node detail',
+    body: "this is what opens for any node: its title, your reaction, and a link to its full insight — the AI-built writeup of how it connects to everything else.",
+    target: { kind: 'card' },
+  },
+  {
+    id: 'node-delete',
+    title: 'delete',
+    body: "you can remove anything you've saved. tap delete below, then confirm — this was just a demo entry, so clearing it keeps your real map accurate.",
+    target: { kind: 'registered', id: TUTORIAL_TARGET.nodeDelete },
+    dismissible: true,
+    // The delete button sits inside the right-side drawer, which has its own
+    // text above it — a top-pinned card would cover that, same issue as the
+    // capture form.
+    cardSide: 'bottom',
   },
   {
     id: 'share',
@@ -134,6 +173,13 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     title: 'you',
     body: 'your profile, account, and preferences live here. want to see this walkthrough again? the ⓣ icon on the atlas screen starts it over any time.',
     target: { kind: 'card' },
+  },
+  {
+    id: 'companion',
+    title: 'companion',
+    body: "one more thing: the floating chat icon is mneme's companion. tap it any time to talk through what you've saved — ask it questions, or let it ask you some.",
+    target: { kind: 'registered', id: TUTORIAL_TARGET.companionFab },
+    dismissible: true,
   },
   {
     id: 'done',

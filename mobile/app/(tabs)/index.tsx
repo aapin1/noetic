@@ -4,6 +4,7 @@ import {
   Animated as RNAnimated,
   Dimensions,
   Easing,
+  Keyboard,
   KeyboardAvoidingView,
   PanResponder,
   Platform,
@@ -558,9 +559,13 @@ function StepTwo({
     if (!commitTarget.isActive) return;
     setStepNote(
       needsContext
-        ? "mneme could only skim this one instead of reading it fully — that happens sometimes. type a few words about it below, or tap the mic and speak them, so it still understands what you saved. then commit."
+        ? "mneme scans and tries to understand whatever you save — this time it could only partly read the source. you can optionally add a few words to help, typed or spoken, but there's no rush. commit whenever you're ready."
         : null,
     );
+    // The fallback box is inert during the walkthrough (see below) — make
+    // sure any keyboard already up from the reaction field doesn't linger
+    // and obscure it once it appears.
+    if (needsContext) Keyboard.dismiss();
     return () => setStepNote(null);
   }, [commitTarget.isActive, needsContext, setStepNote]);
 
@@ -592,10 +597,15 @@ function StepTwo({
               <Text variant="monoSmall" style={[sh.inputLabel, { color: contextThin ? c.danger : c.muted }]}>
                 WHAT WAS IT ABOUT?_
               </Text>
-              <VoiceNoteButton
-                onText={(t) => setUserContext(userContext ? `${userContext.trim()} ${t}` : t)}
-                onError={onVoiceError}
-              />
+              {/* Inert during the walkthrough: this box is only being shown
+                  off, not something the demo needs filled in, and letting it
+                  grab the keyboard or open the mic mid-tutorial derails both. */}
+              <View pointerEvents={commitTarget.isActive ? 'none' : 'auto'}>
+                <VoiceNoteButton
+                  onText={(t) => setUserContext(userContext ? `${userContext.trim()} ${t}` : t)}
+                  onError={onVoiceError}
+                />
+              </View>
             </View>
             <TextInput
               style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
@@ -604,6 +614,7 @@ function StepTwo({
               placeholder="a few sentences in your own words. speak or type."
               placeholderTextColor={c.faint}
               multiline
+              editable={!commitTarget.isActive}
             />
             <Text variant="monoSmall" style={{ color: c.faint, marginTop: Spacing[2] }}>
               {contextThin
@@ -1077,6 +1088,10 @@ export default function MapScreen() {
   const router = useRouter();
   const { start: startTutorial, active: tutorialActive, notifyTargetPressed } = useTutorial();
   const fabTarget = useTutorialTarget(TUTORIAL_TARGET.captureFab);
+  // The node-management steps target the walkthrough's own demo node/delete
+  // control specifically, not any node — reused below by id match.
+  const nodeTarget = useTutorialTarget(TUTORIAL_TARGET.nodeTap);
+  const deleteTarget = useTutorialTarget(TUTORIAL_TARGET.nodeDelete);
   const [infoVisible, setInfoVisible] = useState(false);
   // Measured header height, so the timeline rail can center itself in the
   // actual gap below the header instead of guessing. Falls back to a sane
@@ -1720,6 +1735,7 @@ export default function MapScreen() {
               await api.captures.delete(node.id);
               closeDrawer();
               await refetchGraph();
+              if (tutorialActive) notifyTargetPressed(TUTORIAL_TARGET.nodeDelete);
             } catch (e) {
               Alert.alert('Could not delete', e instanceof Error ? e.message : 'Try again.');
             } finally {
@@ -1729,7 +1745,7 @@ export default function MapScreen() {
         },
       ],
     );
-  }, [closeDrawer, refetchGraph]);
+  }, [closeDrawer, refetchGraph, tutorialActive, notifyTargetPressed]);
 
   // ── Capture state ─────────────────────────────────────────────
   const [showCapture, setShowCapture] = useState(false);
@@ -2292,9 +2308,15 @@ export default function MapScreen() {
               const screenY = (p.y - vbPos.y) * zoom;
               const HIT = 38;
               if (screenX < -HIT || screenX > SW + HIT || screenY < -HIT || screenY > SH + HIT) return null;
+              // The walkthrough's node-management step points at the demo
+              // node specifically, so its rect is only reported while that's
+              // both the active target and the node being rendered.
+              const isTutorialNode = nodeTarget.isActive && node.id === newNodeId;
               return (
                 <Pressable
                   key={node.id}
+                  ref={isTutorialNode ? nodeTarget.ref : undefined}
+                  onLayout={isTutorialNode ? nodeTarget.onLayout : undefined}
                   style={{ position: 'absolute', width: HIT * 2, height: HIT * 2, left: screenX - HIT, top: screenY - HIT, borderRadius: HIT }}
                   onPress={() => {
                     if (toolMode === 'discover') {
@@ -2307,6 +2329,7 @@ export default function MapScreen() {
                         setDrawerCluster(null);
                         openDrawer(null);
                       }
+                      if (isTutorialNode) nodeTarget.press();
                     }
                   }}
                   accessibilityLabel={node.label}
@@ -2661,6 +2684,8 @@ export default function MapScreen() {
                       <Text variant="monoSmall" color="muted">view insight →</Text>
                     </Pressable>
                     <Pressable
+                      ref={deleteTarget.isActive ? deleteTarget.ref : undefined}
+                      onLayout={deleteTarget.isActive ? deleteTarget.onLayout : undefined}
                       onPress={() => handleDeleteNode(selectedNode)}
                       disabled={deletingNode}
                       style={{ marginTop: Spacing[4], flexDirection: 'row', alignItems: 'center', gap: Spacing[2], opacity: deletingNode ? 0.5 : 1 }}
