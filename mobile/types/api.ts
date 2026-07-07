@@ -197,6 +197,22 @@ export interface OwnerProfile {
   createdAt?: string;
 }
 
+/** Personal "Wrapped" stats over the owner's full capture history. */
+export interface WrappedStats {
+  totalCaptures: number;
+  firstCaptureAt: string | null;
+  daysSinceFirst: number;
+  distinctTopics: number;
+  topTopics: { name: string; count: number }[];
+  newTopicsThisMonth: string[];
+  busiestDayOfWeek: string | null;
+  busiestHour: number | null;
+  formats: { name: string; count: number }[];
+  currentStreak: number;
+  longestStreak: number;
+  monthlyArc: { month: string; count: number }[];
+}
+
 export interface IngestedMetadata {
   id?: string;
   title?: string;

@@ -267,17 +267,15 @@ export default function MindScreen() {
 
   const positionByTopic = new Map((positions ?? []).map((p) => [p.topicId, p]));
 
-  const isEmpty =
-    !loading &&
-    !error &&
-    data !== null &&
-    data !== undefined &&
-    data.contradictionCards.length === 0 &&
-    data.threadSyntheses.length === 0 &&
-    data.convergenceSignals.length === 0 &&
-    data.evolutionArcs.length === 0 &&
-    data.dormantThreads.length === 0 &&
-    (positions ?? []).length === 0;
+  // Derive purely from loaded data (not `loading`) so the lead line never
+  // flashes during the focus-triggered refetch of an empty mind.
+  const hasContent =
+    (data?.contradictionCards.length ?? 0) > 0 ||
+    (data?.threadSyntheses.length ?? 0) > 0 ||
+    (data?.convergenceSignals.length ?? 0) > 0 ||
+    (data?.evolutionArcs.length ?? 0) > 0 ||
+    (data?.dormantThreads.length ?? 0) > 0 ||
+    (positions ?? []).length > 0;
 
   if (loading && !data) {
     return (
@@ -322,15 +320,15 @@ export default function MindScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {isEmpty ? (
+        {hasContent ? (
+          <Text variant="serif" color="secondary" style={styles.lead}>
+            What you didn't know you know.
+          </Text>
+        ) : (
           <ScreenIntro
             title="Your mind is quiet for now"
             body="Save a few more things and patterns start showing up here: contradictions, repeats, and ideas that connect."
           />
-        ) : (
-          <Text variant="serif" color="secondary" style={styles.lead}>
-            What you didn't know you know.
-          </Text>
         )}
 
         {(data?.contradictionCards.length ?? 0) > 0 && (

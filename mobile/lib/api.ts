@@ -15,6 +15,7 @@ import type {
   MemoryGraphResponse,
   MemoryTrendsResponse,
   OwnerProfile,
+  WrappedStats,
   PersonalIntelligenceResponse,
   PulseResponse,
   UserPreference,
@@ -136,6 +137,27 @@ export const api = {
         body: JSON.stringify(body),
       });
       return { profile: { ...composed.user.profile, id: composed.user.id } };
+    },
+    async uploadAvatar(imageBase64: string, mimeType?: string): Promise<{ profile: OwnerProfile }> {
+      const composed = await request<{
+        user: { id: string; createdAt?: string; profile: OwnerProfile };
+      }>('/api/profile/avatar', {
+        method: 'POST',
+        body: JSON.stringify({ imageBase64, mimeType }),
+      });
+      return { profile: { ...composed.user.profile, id: composed.user.id, createdAt: composed.user.createdAt } };
+    },
+    async removeAvatar(): Promise<{ profile: OwnerProfile }> {
+      const composed = await request<{
+        user: { id: string; createdAt?: string; profile: OwnerProfile };
+      }>('/api/profile/avatar', {
+        method: 'POST',
+        body: JSON.stringify({ remove: true }),
+      });
+      return { profile: { ...composed.user.profile, id: composed.user.id, createdAt: composed.user.createdAt } };
+    },
+    wrapped(): Promise<WrappedStats> {
+      return request<WrappedStats>('/api/me/wrapped');
     },
   },
 

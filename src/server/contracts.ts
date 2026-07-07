@@ -209,6 +209,17 @@ export const captureUploadSchema = z.object({
   mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]).optional(),
 });
 
+export const avatarUploadSchema = z
+  .object({
+    imageBase64: z.string().min(100).max(8_000_000).optional(),
+    mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]).optional(),
+    remove: z.boolean().optional(),
+  })
+  .refine((value) => value.remove === true || !!value.imageBase64, {
+    message: "imageBase64 is required unless remove is true",
+    path: ["imageBase64"],
+  });
+
 export const createPositionSchema = z.object({
   topicId: z.string().min(1),
   statement: z.string().min(10).max(2000),
