@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Platform, Pressable, StyleSheet, View } from 'react-native';
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Spacing, Radius } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
@@ -13,7 +14,13 @@ const TAB_H = Platform.OS === 'ios' ? 86 : 68;
 // spotlighting (the rest of the tab-bar height is safe-area padding).
 const TAB_HIT_H = 52;
 const HOLE_PAD = 8;
-const SPOTLIGHT_SCRIM = 'rgba(0,0,0,0.72)';
+// One darkness level, used on every step (hole or card) so nothing flickers
+// between slides — only the focus point moves.
+const AMBIENT_DIM = 0.55;
+// How long a freshly-opened step sits dimmed, with no card, before it fades
+// in — gives the user a beat to look at the real screen first.
+const CARD_REVEAL_DELAY = 1000;
+const CARD_FADE_MS = 420;
 
 /**
  * The interactive walkthrough surface. Rendered at the app root as a plain
@@ -21,22 +28,24 @@ const SPOTLIGHT_SCRIM = 'rgba(0,0,0,0.72)';
  * real control beneath, and so it can measure controls anywhere in the tree.
  */
 export function TutorialOverlay() {
-  const { active, step, stepIndex, totalSteps, targetRects, next, stop } = useTutorial();
+  const { active, step, stepIndex, totalSteps, targetRects, next, stop, note } = useTutorial();
   const c = useThemeColors();
   const insets = useSafeAreaInsets();
-  const pulse = useRef(new Animated.Value(0)).current;
+  const [collapsed, setCollapsed] = useState(false);
+  const cardOpacity = useRef(new Animated.Value(0)).current;
 
+  // Let the dimmed screen sit alone for a moment before the card slides in —
+  // abrupt cards covering a chunk of an unfamiliar screen feel jarring.
   useEffect(() => {
     if (!active) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 900, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [active, pulse]);
+    setCollapsed(false);
+    cardOpacity.setValue(0);
+    const t = setTimeout(() => {
+      Animated.timing(cardOpacity, { toValue: 1, duration: CARD_FADE_MS, useNativeDriver: true }).start();
+    }, CARD_REVEAL_DELAY);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, step.id]);
 
   if (!active) return null;
 
@@ -50,52 +59,53 @@ export function TutorialOverlay() {
   }
 
   const isCard = step.target.kind === 'card';
-  const scrimColor = isCard ? `rgba(0,0,0,${step.scrim ?? 0.6})` : SPOTLIGHT_SCRIM;
-
   // Card sits clear of what it points at. Every spotlight target lives in the
-  // lower half (FAB, capture buttons, tabs) → card at top. Card-only steps get
+  // lower half (FAB, capture form, tabs) → card at top. Card-only steps get
   // pinned to the bottom, keeping the centered map/node visible above.
   const cardAtTop = hole !== null;
 
   const isLast = stepIndex === totalSteps - 1;
   const cardButtonLabel = isLast ? 'done' : stepIndex === 0 ? 'begin' : 'got it';
+  const body = note ?? step.body;
 
-  const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 0.35] });
-  const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
-  // A circle around the round FAB, rounded rects around wider targets.
-  const ringRadius = hole ? Math.min(hole.width, hole.height) / 2 + HOLE_PAD : 0;
+  // A soft, off-center glow rather than a hard-edged cutout: fully normal at
+  // the focus point, gradually darkening outward to the same ambient level
+  // everywhere, on every step.
+  const holeSpan = hole ? Math.max(hole.width, hole.height) : 0;
+  const focusX = hole ? hole.x + hole.width / 2 : SW / 2;
+  const focusY = hole ? hole.y + hole.height / 2 : SH * 0.42;
+  const innerR = hole ? holeSpan / 2 + 18 : SW * 0.22;
+  const outerR = hole ? holeSpan / 2 + 150 : SW * 0.62;
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <Svg width={SW} height={SH}>
+          <Defs>
+            <RadialGradient id="tutorialDim" cx={focusX} cy={focusY} r={outerR} gradientUnits="userSpaceOnUse">
+              <Stop offset={0} stopColor="#000" stopOpacity={0} />
+              <Stop offset={Math.min(0.98, innerR / outerR)} stopColor="#000" stopOpacity={0} />
+              <Stop offset={1} stopColor="#000" stopOpacity={AMBIENT_DIM} />
+            </RadialGradient>
+          </Defs>
+          <Rect x={0} y={0} width={SW} height={SH} fill="url(#tutorialDim)" />
+        </Svg>
+      </View>
+
       {hole ? (
-        // Four dim panels framing the hole. The hole itself has no view over
-        // it, so taps land on the real control underneath.
+        // Four invisible panels framing the hole absorb stray taps. The hole
+        // itself has no view over it, so taps land on the real control(s)
+        // beneath it — the visual dimming above already lights that area.
         <>
-          <View style={[styles.dim, { top: 0, left: 0, right: 0, height: Math.max(0, hole.y - HOLE_PAD), backgroundColor: scrimColor }]} />
-          <View style={[styles.dim, { top: hole.y + hole.height + HOLE_PAD, left: 0, right: 0, bottom: 0, backgroundColor: scrimColor }]} />
-          <View style={[styles.dim, { top: hole.y - HOLE_PAD, left: 0, width: Math.max(0, hole.x - HOLE_PAD), height: hole.height + HOLE_PAD * 2, backgroundColor: scrimColor }]} />
-          <View style={[styles.dim, { top: hole.y - HOLE_PAD, left: hole.x + hole.width + HOLE_PAD, right: 0, height: hole.height + HOLE_PAD * 2, backgroundColor: scrimColor }]} />
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.ring,
-              {
-                left: hole.x - HOLE_PAD,
-                top: hole.y - HOLE_PAD,
-                width: hole.width + HOLE_PAD * 2,
-                height: hole.height + HOLE_PAD * 2,
-                borderRadius: ringRadius,
-                borderColor: c.text,
-                opacity: ringOpacity,
-                transform: [{ scale: ringScale }],
-              },
-            ]}
-          />
+          <View pointerEvents="auto" style={[styles.absorb, { top: 0, left: 0, right: 0, height: Math.max(0, hole.y - HOLE_PAD) }]} />
+          <View pointerEvents="auto" style={[styles.absorb, { top: hole.y + hole.height + HOLE_PAD, left: 0, right: 0, bottom: 0 }]} />
+          <View pointerEvents="auto" style={[styles.absorb, { top: hole.y - HOLE_PAD, left: 0, width: Math.max(0, hole.x - HOLE_PAD), height: hole.height + HOLE_PAD * 2 }]} />
+          <View pointerEvents="auto" style={[styles.absorb, { top: hole.y - HOLE_PAD, left: hole.x + hole.width + HOLE_PAD, right: 0, height: hole.height + HOLE_PAD * 2 }]} />
         </>
       ) : (
         // Card-only step, or a registered target we haven't measured yet: a
-        // full-screen scrim that simply absorbs taps (the screen stays inert).
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: scrimColor }]} />
+        // full-screen absorber that simply keeps the screen inert.
+        <View pointerEvents="auto" style={StyleSheet.absoluteFill} />
       )}
 
       <View
@@ -107,65 +117,96 @@ export function TutorialOverlay() {
             : { bottom: insets.bottom + TAB_H + Spacing[6] },
         ]}
       >
-        <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
-          <View style={styles.cardHead}>
-            <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 2 }}>
-              {step.title.toUpperCase()}
-            </Text>
-            <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 1 }}>
-              {stepIndex + 1} / {totalSteps}
-            </Text>
-          </View>
-
-          <Text variant="serif" color="secondary" style={styles.body}>
-            {step.body}
-          </Text>
-
-          <View style={styles.footer}>
-            <Pressable onPress={stop} hitSlop={12} accessibilityRole="button" accessibilityLabel="Exit walkthrough">
-              <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 1 }}>
-                exit
-              </Text>
+        <Animated.View style={{ opacity: cardOpacity }}>
+          {collapsed ? (
+            <Pressable
+              onPress={() => setCollapsed(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Reopen walkthrough card"
+              style={[styles.collapsedTab, { backgroundColor: c.surface, borderColor: c.border }]}
+            >
+              <Text variant="monoSmall" style={{ color: c.muted }}>{'‹'}</Text>
             </Pressable>
-            {isCard ? (
-              <Button label={cardButtonLabel} variant="primary" size="sm" onPress={isLast ? stop : next} />
-            ) : (
-              <Text variant="monoSmall" style={{ color: c.muted, letterSpacing: 0.5 }}>
-                tap the highlighted spot
+          ) : (
+            <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
+              <View style={styles.cardHead}>
+                <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 2 }}>
+                  {step.title.toUpperCase()}
+                </Text>
+                <View style={styles.cardHeadRight}>
+                  <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 1 }}>
+                    {stepIndex + 1} / {totalSteps}
+                  </Text>
+                  <Pressable
+                    onPress={() => setCollapsed(true)}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel="Collapse walkthrough card"
+                  >
+                    <Text variant="monoSmall" style={{ color: c.faint }}>{'›'}</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <Text variant="serif" color="secondary" style={styles.body}>
+                {body}
               </Text>
-            )}
-          </View>
-        </View>
+
+              <View style={styles.footer}>
+                <Pressable onPress={stop} hitSlop={12} accessibilityRole="button" accessibilityLabel="Exit walkthrough">
+                  <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 1 }}>
+                    exit
+                  </Text>
+                </Pressable>
+                {isCard ? (
+                  <Button label={cardButtonLabel} variant="primary" size="sm" onPress={isLast ? stop : next} />
+                ) : (
+                  <Text variant="monoSmall" style={{ color: c.muted, letterSpacing: 0.5 }}>
+                    tap the highlighted spot
+                  </Text>
+                )}
+              </View>
+            </View>
+          )}
+        </Animated.View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  dim: {
+  absorb: {
     position: 'absolute',
-  },
-  ring: {
-    position: 'absolute',
-    borderWidth: 2,
-    borderRadius: Radius.md,
   },
   cardWrap: {
     position: 'absolute',
     left: Spacing[5],
     right: Spacing[5],
+    alignItems: 'flex-end',
   },
   card: {
+    width: '100%',
     borderWidth: 1,
     borderRadius: Radius.lg,
     paddingHorizontal: Spacing[5],
     paddingVertical: Spacing[4],
+  },
+  collapsedTab: {
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing[3],
+    paddingHorizontal: Spacing[3],
   },
   cardHead: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: Spacing[3],
+  },
+  cardHeadRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[3],
   },
   body: {
     lineHeight: 24,

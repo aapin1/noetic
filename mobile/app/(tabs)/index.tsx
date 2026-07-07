@@ -428,65 +428,67 @@ function StepOne({
           );
         })}
       </View>
-      {mode === 'image' ? (
-        <View style={[sh.inputBox, { borderColor: c.border }]}>
-          <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>IMAGE_</Text>
-          {imageUri ? (
-            <Image source={{ uri: imageUri }} style={sh.thumb} contentFit="cover" />
-          ) : (
-            <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3] }}>
-              a screenshot, book page, or photo.
+      {/* Wrapped as one region so the tutorial's spotlight (and its tap
+          passthrough) covers the whole visible form, not just the button. */}
+      <View ref={nextTarget.ref} onLayout={nextTarget.onLayout}>
+        {mode === 'image' ? (
+          <View style={[sh.inputBox, { borderColor: c.border }]}>
+            <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>IMAGE_</Text>
+            {imageUri ? (
+              <Image source={{ uri: imageUri }} style={sh.thumb} contentFit="cover" />
+            ) : (
+              <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3] }}>
+                a screenshot, book page, or photo.
+              </Text>
+            )}
+            <View style={{ flexDirection: 'row', gap: Spacing[3], marginTop: Spacing[3] }}>
+              <Pressable onPress={() => onPickImage('camera')} style={[sh.modeChip, { borderColor: c.borderSubtle }]}>
+                <Text variant="monoSmall" style={{ color: c.text }}>take photo</Text>
+              </Pressable>
+              <Pressable onPress={() => onPickImage('library')} style={[sh.modeChip, { borderColor: c.borderSubtle }]}>
+                <Text variant="monoSmall" style={{ color: c.text }}>{imageUri ? 'replace ↑' : 'choose ↑'}</Text>
+              </Pressable>
+            </View>
+            {uploading && (
+              <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>reading image…</Text>
+            )}
+          </View>
+        ) : (
+          <View style={[sh.inputBox, { borderColor: c.border }]}>
+            <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>
+              {mode === 'link' ? 'URL_' : mode === 'quote' ? 'PASSAGE_' : 'THOUGHT_'}
             </Text>
-          )}
-          <View style={{ flexDirection: 'row', gap: Spacing[3], marginTop: Spacing[3] }}>
-            <Pressable onPress={() => onPickImage('camera')} style={[sh.modeChip, { borderColor: c.borderSubtle }]}>
-              <Text variant="monoSmall" style={{ color: c.text }}>take photo</Text>
-            </Pressable>
-            <Pressable onPress={() => onPickImage('library')} style={[sh.modeChip, { borderColor: c.borderSubtle }]}>
-              <Text variant="monoSmall" style={{ color: c.text }}>{imageUri ? 'replace ↑' : 'choose ↑'}</Text>
+            <TextInput
+              style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
+              value={payload}
+              onChangeText={setPayload}
+              placeholder={mode === 'link' ? 'https://...' : mode === 'quote' ? 'a line worth keeping...' : 'fragments are fine.'}
+              placeholderTextColor={c.faint}
+              multiline={mode !== 'link'}
+              autoCapitalize={mode === 'link' ? 'none' : 'sentences'}
+              keyboardType={mode === 'link' ? 'url' : 'default'}
+              autoFocus={!nextTarget.isActive}
+            />
+            <Pressable onPress={onPaste} accessibilityLabel="Paste from clipboard">
+              <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>paste from clipboard ↑</Text>
             </Pressable>
           </View>
-          {uploading && (
-            <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>reading image…</Text>
-          )}
-        </View>
-      ) : (
-        <View style={[sh.inputBox, { borderColor: c.border }]}>
-          <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>
-            {mode === 'link' ? 'URL_' : mode === 'quote' ? 'PASSAGE_' : 'THOUGHT_'}
-          </Text>
-          <TextInput
-            style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
-            value={payload}
-            onChangeText={setPayload}
-            placeholder={mode === 'link' ? 'https://...' : mode === 'quote' ? 'a line worth keeping...' : 'fragments are fine.'}
-            placeholderTextColor={c.faint}
-            multiline={mode !== 'link'}
-            autoCapitalize={mode === 'link' ? 'none' : 'sentences'}
-            keyboardType={mode === 'link' ? 'url' : 'default'}
-            autoFocus={!nextTarget.isActive}
-          />
-          <Pressable onPress={onPaste} accessibilityLabel="Paste from clipboard">
-            <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>paste from clipboard ↑</Text>
+        )}
+        {!!error && (
+          <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
+        )}
+        <Divider c={c} />
+        <View style={sh.actions}>
+          <Pressable onPress={onClose} style={sh.secondaryBtn}>
+            <Text variant="monoSmall" style={{ color: c.muted }}>close ✕</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => { onNext(); nextTarget.press(); }}
+            style={[sh.primaryBtn, { backgroundColor: c.text }]}
+          >
+            <Text variant="monoSmall" style={{ color: c.background }}>next →</Text>
           </Pressable>
         </View>
-      )}
-      {!!error && (
-        <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
-      )}
-      <Divider c={c} />
-      <View style={sh.actions}>
-        <Pressable onPress={onClose} style={sh.secondaryBtn}>
-          <Text variant="monoSmall" style={{ color: c.muted }}>close ✕</Text>
-        </Pressable>
-        <Pressable
-          ref={nextTarget.ref}
-          onLayout={nextTarget.onLayout}
-          onPress={() => { onNext(); nextTarget.press(); }}
-          style={[sh.primaryBtn, { backgroundColor: c.text }]}
-        >
-          <Text variant="monoSmall" style={{ color: c.background }}>next →</Text>
-        </Pressable>
       </View>
     </View>
   );
@@ -547,6 +549,20 @@ function StepTwo({
   const needsContext = isLink && !preflightLoading && !!preflight && preflight.confidence !== 'rich';
   const contextThin = preflight?.confidence === 'thin';
   const commitTarget = useTutorialTarget(TUTORIAL_TARGET.captureCommit);
+  const { setStepNote } = useTutorial();
+
+  // The moment the "couldn't fully read this" state actually happens during
+  // the walkthrough, swap in a card that explains it — rather than assuming
+  // upfront that it will, or leaving the red text unexplained.
+  useEffect(() => {
+    if (!commitTarget.isActive) return;
+    setStepNote(
+      needsContext
+        ? "mneme could only skim this one instead of reading it fully — that happens sometimes. type a few words about it below, or tap the mic and speak them, so it still understands what you saved. then commit."
+        : null,
+    );
+    return () => setStepNote(null);
+  }, [commitTarget.isActive, needsContext, setStepNote]);
 
   return (
     <View>
@@ -554,63 +570,66 @@ function StepTwo({
       <Text variant="monoSmall" color="muted" style={sh.sub}>Optional. One line, just for you.</Text>
       {isLink && <PreflightStatus loading={preflightLoading} preflight={preflight} c={c} />}
       <Divider c={c} />
-      <View style={[sh.inputBox, { borderColor: c.border }]}>
-        <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>REACTION_</Text>
-        <TextInput
-          style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
-          value={reaction}
-          onChangeText={setReaction}
-          placeholder="a quick reaction, or nothing."
-          placeholderTextColor={c.faint}
-          multiline
-          autoFocus={!needsContext && !commitTarget.isActive}
-        />
-      </View>
-      {needsContext && (
-        <View style={[sh.inputBox, { borderColor: contextThin ? c.danger : c.border }]}>
-          <View style={sh.contextHeader}>
-            <Text variant="monoSmall" style={[sh.inputLabel, { color: contextThin ? c.danger : c.muted }]}>
-              WHAT WAS IT ABOUT?_
-            </Text>
-            <VoiceNoteButton
-              onText={(t) => setUserContext(userContext ? `${userContext.trim()} ${t}` : t)}
-              onError={onVoiceError}
-            />
-          </View>
+      {/* Wrapped as one region so the tutorial's spotlight (and its tap
+          passthrough) covers the reaction box, the context/voice fallback
+          when it appears, and the commit button together. */}
+      <View ref={commitTarget.ref} onLayout={commitTarget.onLayout}>
+        <View style={[sh.inputBox, { borderColor: c.border }]}>
+          <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>REACTION_</Text>
           <TextInput
             style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
-            value={userContext}
-            onChangeText={setUserContext}
-            placeholder="a few sentences in your own words. speak or type."
+            value={reaction}
+            onChangeText={setReaction}
+            placeholder="a quick reaction, or nothing."
             placeholderTextColor={c.faint}
             multiline
+            autoFocus={!needsContext && !commitTarget.isActive}
           />
-          <Text variant="monoSmall" style={{ color: c.faint, marginTop: Spacing[2] }}>
-            {contextThin
-              ? 'we build the connections and insight from this.'
-              : 'optional. helps when the excerpt is short.'}
-          </Text>
         </View>
-      )}
-      {!!error && (
-        <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
-      )}
-      <Divider c={c} />
-      <View style={sh.actions}>
-        <Pressable onPress={onBack} style={sh.secondaryBtn}>
-          <Text variant="monoSmall" style={{ color: c.muted }}>← back</Text>
-        </Pressable>
-        <Pressable
-          ref={commitTarget.ref}
-          onLayout={commitTarget.onLayout}
-          onPress={onCommit}
-          disabled={busy}
-          style={[sh.primaryBtn, { backgroundColor: c.text, opacity: busy ? 0.55 : 1 }]}
-        >
-          <Text variant="monoSmall" style={{ color: c.background }}>
-            {busy ? 'saving...' : 'commit →'}
-          </Text>
-        </Pressable>
+        {needsContext && (
+          <View style={[sh.inputBox, { borderColor: contextThin ? c.danger : c.border }]}>
+            <View style={sh.contextHeader}>
+              <Text variant="monoSmall" style={[sh.inputLabel, { color: contextThin ? c.danger : c.muted }]}>
+                WHAT WAS IT ABOUT?_
+              </Text>
+              <VoiceNoteButton
+                onText={(t) => setUserContext(userContext ? `${userContext.trim()} ${t}` : t)}
+                onError={onVoiceError}
+              />
+            </View>
+            <TextInput
+              style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
+              value={userContext}
+              onChangeText={setUserContext}
+              placeholder="a few sentences in your own words. speak or type."
+              placeholderTextColor={c.faint}
+              multiline
+            />
+            <Text variant="monoSmall" style={{ color: c.faint, marginTop: Spacing[2] }}>
+              {contextThin
+                ? 'we build the connections and insight from this.'
+                : 'optional. helps when the excerpt is short.'}
+            </Text>
+          </View>
+        )}
+        {!!error && (
+          <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
+        )}
+        <Divider c={c} />
+        <View style={sh.actions}>
+          <Pressable onPress={onBack} style={sh.secondaryBtn}>
+            <Text variant="monoSmall" style={{ color: c.muted }}>← back</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => { onCommit(); commitTarget.press(); }}
+            disabled={busy}
+            style={[sh.primaryBtn, { backgroundColor: c.text, opacity: busy ? 0.55 : 1 }]}
+          >
+            <Text variant="monoSmall" style={{ color: c.background }}>
+              {busy ? 'saving...' : 'commit →'}
+            </Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -1897,11 +1916,11 @@ export default function MapScreen() {
       void refetchGraph();
       closeCapture();
       // During the walkthrough, stay on the map so the user sees their first
-      // node land (and the tutorial moves to the atlas step) instead of being
-      // whisked to the insight screen.
-      if (tutorialActive) {
-        notifyTargetPressed(TUTORIAL_TARGET.captureCommit);
-      } else {
+      // node land instead of being whisked to the insight screen. The
+      // walkthrough itself already advanced when the commit button was
+      // pressed, independent of this request's outcome, so it never stalls
+      // on a slow or failed save.
+      if (!tutorialActive) {
         router.push(`/insight/${res.id}` as never);
       }
     } catch (e) {
@@ -1909,7 +1928,7 @@ export default function MapScreen() {
     } finally {
       setBusy(false);
     }
-  }, [mode, payload, mediaUrl, reaction, userContext, refetchGraph, closeCapture, router, tutorialActive, notifyTargetPressed]);
+  }, [mode, payload, mediaUrl, reaction, userContext, refetchGraph, closeCapture, router, tutorialActive]);
 
   const pasteFromClipboard = useCallback(async () => {
     const t = (await Clipboard.getStringAsync()).trim();

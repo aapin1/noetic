@@ -32,6 +32,10 @@ interface TutorialContextValue {
   reportTargetRect: (id: string, rect: TutorialRect) => void;
   /** A registered control was pressed — advances if it's the active target. */
   notifyTargetPressed: (id: string) => void;
+  /** Runtime override of the current step's body — e.g. explaining a failure
+   * state (a source that couldn't be read) the moment it actually happens. */
+  note: string | null;
+  setStepNote: (note: string | null) => void;
 }
 
 const TutorialContext = createContext<TutorialContextValue | null>(null);
@@ -40,13 +44,20 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
   const [active, setActive] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRects, setTargetRects] = useState<Record<string, TutorialRect>>({});
+  const [note, setStepNote] = useState<string | null>(null);
   const segments = useSegments();
 
   const step = TUTORIAL_STEPS[stepIndex];
 
+  // Any override only ever applies to the step it was set for.
+  useEffect(() => {
+    setStepNote(null);
+  }, [stepIndex]);
+
   const start = useCallback(() => {
     setStepIndex(0);
     setTargetRects({});
+    setStepNote(null);
     setActive(true);
   }, []);
 
@@ -108,8 +119,10 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
       stop,
       reportTargetRect,
       notifyTargetPressed,
+      note,
+      setStepNote,
     }),
-    [active, stepIndex, step, targetRects, start, next, stop, reportTargetRect, notifyTargetPressed],
+    [active, stepIndex, step, targetRects, start, next, stop, reportTargetRect, notifyTargetPressed, note],
   );
 
   return <TutorialContext.Provider value={value}>{children}</TutorialContext.Provider>;
