@@ -86,6 +86,26 @@ describe("extractSemanticTopics", () => {
     });
     expect(result.classifications).toEqual([]);
   });
+
+  it("includes the word 'json' in the prompt so OpenAI accepts json_object mode", async () => {
+    // OpenAI 400s any response_format:json_object request whose messages omit
+    // the literal word "json". Without this guard the call fails on every
+    // capture and silently drops to the keyword/general fallback.
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: JSON.stringify({ classifications: [] }) } }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await extractSemanticTopics({ title: "Anything", combinedText: "x".repeat(80) });
+
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body);
+    expect(body.response_format).toEqual({ type: "json_object" });
+    expect(JSON.stringify(body.messages)).toMatch(/json/i);
+  });
 });
 
 describe("embedText", () => {

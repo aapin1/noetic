@@ -128,7 +128,7 @@ export async function classifyTopics(args: {
       // Preserve plan priority order (generals first, by score) so topics[0] is
       // the primary general anchor the map clusters on.
       const ordered = Array.from(byId.values()).sort((a, b) => b.score - a.score);
-      return await ensureGeneral(args.db, args.userId, ordered);
+      return await ensureGeneral(args.db, ordered);
     }
   }
 
@@ -186,40 +186,27 @@ export async function classifyTopics(args: {
     if (topicMap.size >= max) break;
   }
 
-  return await ensureGeneral(args.db, args.userId, Array.from(topicMap.values()).slice(0, max));
+  return await ensureGeneral(args.db, Array.from(topicMap.values()).slice(0, max));
 }
 
 /**
  * Guarantees every node ends up with at least one GENERAL topic. The LLM path
  * always yields one, but the keyword fallback (and total-LLM-failure) can come
- * back with only specifics or nothing at all. In that case we file the node
- * under the user's dominant declared interest — or a neutral "general" bucket
- * when they have none — so no node is ever left unclassified.
+ * back with only specifics or nothing at all. In that case we can't know what
+ * the node is actually about, so it goes in a neutral "general" bucket rather
+ * than being guessed into the user's dominant existing field — a genuinely
+ * unrelated capture must never be silently mislabeled as the user's biggest
+ * topic just because nothing else could be determined.
  */
 async function ensureGeneral(
   db: DbClient,
-  userId: string,
   topics: ClassifiedTopic[],
 ): Promise<ClassifiedTopic[]> {
   if (topics.some((t) => t.kind === "general")) return topics;
 
-  // Prefer the user's dominant declared field (onboarding picks are all general
-  // fields), so an unclassifiable capture lands in their main area rather than a
-  // neutral bucket. `loadTopicsForUser` returns topics weighted by the user's
-  // interest, so the first general is their strongest field.
-  const candidates = await loadTopicsForUser(db, userId);
-  const general = candidates.find((c) => isGeneralTopic(c.name));
-
-  let anchor: ClassifiedTopic;
-  if (general) {
-    anchor = { topicId: general.id, name: general.name, slug: general.slug, score: 1, kind: "general" };
-  } else {
-    // Absolute last resort (user with no fields + unclassifiable content): a
-    // neutral bucket so the node is never left without a topic.
-    const [record] = await upsertTopics(db, ["general"]);
-    if (!record) return topics;
-    anchor = { topicId: record.id, name: record.name, slug: record.slug, score: 1, kind: "general" };
-  }
+  const [record] = await upsertTopics(db, ["general"]);
+  if (!record) return topics;
+  const anchor: ClassifiedTopic = { topicId: record.id, name: record.name, slug: record.slug, score: 1, kind: "general" };
 
   // Anchor leads at 1.0 so the map still has a field to cluster on; demote any
   // existing specifics below it.
