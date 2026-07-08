@@ -314,7 +314,10 @@ export async function extractSemanticTopics(args: {
 }): Promise<SemanticTopics> {
   const empty: SemanticTopics = { classifications: [] };
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return empty;
+  if (!apiKey) {
+    console.error("extractSemanticTopics: OPENAI_API_KEY is not set; falling back to keyword classification");
+    return empty;
+  }
 
   const content = [args.title, args.combinedText?.slice(0, 2000)]
     .filter(Boolean)
@@ -347,7 +350,11 @@ export async function extractSemanticTopics(args: {
           "Rules:",
           "- All lowercase. No duplicate general fields. Exclude generic words (video, article, blog, content) and vague terms (ideas, thoughts, things).",
           "",
-          "Return strictly: {\"classifications\": [{\"general\": \"...\", \"specific\": \"...\"}, ...]}",
+          // The literal word "JSON" MUST appear somewhere in the messages —
+          // OpenAI 400s any response_format:json_object request whose prompt
+          // omits it ("'messages' must contain the word 'json'…"), which would
+          // silently drop every capture to the keyword/general fallback.
+          "Respond strictly as JSON: {\"classifications\": [{\"general\": \"...\", \"specific\": \"...\"}, ...]}",
         ].join("\n"),
       },
       {
@@ -374,7 +381,10 @@ export async function extractSemanticTopics(args: {
         body,
       });
 
-      if (!response.ok) return null;
+      if (!response.ok) {
+        console.error("extractSemanticTopics: OpenAI request failed", response.status, await response.text().catch(() => ""));
+        return null;
+      }
 
       const payload = (await response.json()) as {
         choices?: { message?: { content?: string } }[];
@@ -411,7 +421,8 @@ export async function extractSemanticTopics(args: {
       }
 
       return { classifications };
-    } catch {
+    } catch (err) {
+      console.error("extractSemanticTopics: request/parse error", err);
       return null;
     } finally {
       clearTimeout(timer);
