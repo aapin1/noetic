@@ -5,15 +5,29 @@ import {
   generateContradictionTension,
   generateThreadSynthesis,
   generateConvergenceSignal,
+  generateTopicTension,
 } from "@/server/cognition/llm";
 
-const DORMANT_ACTIVE_MIN = 3;
-const DORMANT_SILENT_DAYS = 21;
-const CONVERGENCE_SOURCE_MIN = 3;
+// Thresholds are deliberately low so insights start surfacing within the
+// first handful of captures and keep refreshing as new ones land. Mind is a
+// living picture of how you're thinking, not a report that only appears once
+// you've amassed a large archive.
+const DORMANT_ACTIVE_MIN = 2;
+const DORMANT_SILENT_DAYS = 14;
+const DORMANT_LIMIT = 4;
+const CONVERGENCE_SOURCE_MIN = 2;
+const CONVERGENCE_LIMIT = 3;
 const CAPTURE_SCAN_LIMIT = 200;
-const CONTRADICTION_LIMIT = 3;
-const THREAD_SYNTHESIS_THRESHOLD = 5;
-const THREAD_SYNTHESIS_LIMIT = 2;
+const CONTRADICTION_EDGE_LIMIT = 5;
+const CONTRADICTION_CARD_LIMIT = 6;
+// Topics with at least this many captures are scanned by the LLM for internal
+// tension (friction / ambivalence / competing intuitions), not just the hard
+// polarity-based CONTRADICTS edges.
+const TOPIC_TENSION_MIN = 3;
+const TOPIC_TENSION_SCAN = 4;
+const THREAD_SYNTHESIS_THRESHOLD = 3;
+const THREAD_SYNTHESIS_LIMIT = 4;
+const THREAD_ITEM_IDS_LIMIT = 12;
 
 export type LoadedCapture = {
   id: string;
@@ -47,6 +61,8 @@ export type ThreadSynthesis = {
   captureCount: number;
   position: string;
   openQuestion: string;
+  /** Capture ids feeding this thread — used to deep-link into companion/Atlas. */
+  itemIds: string[];
 };
 
 export type ConvergenceSignal = {
@@ -55,19 +71,6 @@ export type ConvergenceSignal = {
   captureCount: number;
   sourceCount: number;
   signal: string;
-};
-
-export type EvolutionPeriod = {
-  month: string;
-  captureCount: number;
-  keyIdeas: string[];
-};
-
-export type EvolutionArc = {
-  topicId: string;
-  topicName: string;
-  captureCount: number;
-  periods: EvolutionPeriod[];
 };
 
 export type DormantThread = {
@@ -82,7 +85,6 @@ export type PersonalIntelligenceData = {
   contradictionCards: ContradictionCard[];
   threadSyntheses: ThreadSynthesis[];
   convergenceSignals: ConvergenceSignal[];
-  evolutionArcs: EvolutionArc[];
   dormantThreads: DormantThread[];
 };
 
@@ -126,35 +128,7 @@ export function findDormantThreads(topicGroups: TopicGroup[], now: Date): Dorman
     }
   }
 
-  return result.sort((a, b) => b.captureCount - a.captureCount).slice(0, 3);
-}
-
-export function buildEvolutionArc(group: TopicGroup): EvolutionArc {
-  const byMonth = new Map<string, LoadedCapture[]>();
-  for (const capture of group.captures) {
-    const month = capture.capturedAt.toISOString().slice(0, 7);
-    const list = byMonth.get(month) ?? [];
-    list.push(capture);
-    byMonth.set(month, list);
-  }
-
-  const periods: EvolutionPeriod[] = Array.from(byMonth.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([month, items]) => ({
-      month,
-      captureCount: items.length,
-      keyIdeas: items
-        .filter((i) => i.keyIdea)
-        .map((i) => i.keyIdea as string)
-        .slice(0, 3),
-    }));
-
-  return {
-    topicId: group.topicId,
-    topicName: group.topicName,
-    captureCount: group.captures.length,
-    periods,
-  };
+  return result.sort((a, b) => b.captureCount - a.captureCount).slice(0, DORMANT_LIMIT);
 }
 
 export function findConvergenceCandidates(topicGroups: TopicGroup[]): TopicGroup[] {
@@ -183,7 +157,7 @@ export async function getPersonalIntelligence(args: {
     db.memoryEdge.findMany({
       where: { userId: args.userId, type: MemoryEdgeType.CONTRADICTS },
       orderBy: { createdAt: "desc" },
-      take: CONTRADICTION_LIMIT,
+      take: CONTRADICTION_EDGE_LIMIT,
       include: {
         fromItem: { include: { contentItem: true } },
         toItem: { include: { contentItem: true } },
@@ -206,14 +180,25 @@ export async function getPersonalIntelligence(args: {
 
   const now = new Date();
   const dormantThreads = findDormantThreads(allGroups, now);
-  const evolutionArcs = threadCandidates.slice(0, 3).map(buildEvolutionArc);
-  const convergenceCandidates = findConvergenceCandidates(threadCandidates);
+  const convergenceCandidates = findConvergenceCandidates(allGroups).slice(0, CONVERGENCE_LIMIT);
+
+  // Pairs already captured as hard CONTRADICTS edges — so the softer LLM
+  // tension scan doesn't surface the same pair twice.
+  const edgePairKeys = new Set(
+    contradictEdges.flatMap((e) => [
+      `${e.fromItemId}:${e.toItemId}`,
+      `${e.toItemId}:${e.fromItemId}`,
+    ]),
+  );
+  const tensionGroups = allGroups
+    .filter((g) => g.captures.length >= TOPIC_TENSION_MIN)
+    .slice(0, TOPIC_TENSION_SCAN);
 
   function edgeItemLabel(item: { rawText: string | null; contentItem: { title: string } | null }): string {
     return item.contentItem?.title ?? item.rawText?.slice(0, 80) ?? "Untitled capture";
   }
 
-  const [cardTensions, syntheses, firstConvergenceSignal] = await Promise.all([
+  const [cardTensions, syntheses, convergenceTexts, topicTensions] = await Promise.all([
     Promise.all(
       contradictEdges.map((edge) =>
         generateContradictionTension({
@@ -236,19 +221,33 @@ export async function getPersonalIntelligence(args: {
         }),
       ),
     ),
-    convergenceCandidates.length > 0
-      ? generateConvergenceSignal({
-          topicName: convergenceCandidates[0].topicName,
-          captures: convergenceCandidates[0].captures.slice(0, 8).map((c) => ({
+    Promise.all(
+      convergenceCandidates.map((group) =>
+        generateConvergenceSignal({
+          topicName: group.topicName,
+          captures: group.captures.slice(0, 8).map((c) => ({
             label: c.label,
             source: c.sourceName,
             keyIdea: c.keyIdea,
           })),
-        })
-      : Promise.resolve(null),
+        }),
+      ),
+    ),
+    Promise.all(
+      tensionGroups.map((group) =>
+        generateTopicTension({
+          topicName: group.topicName,
+          captures: group.captures.slice(0, 8).map((c) => ({
+            label: c.label,
+            keyIdea: c.keyIdea,
+            text: c.rawText ?? "",
+          })),
+        }),
+      ),
+    ),
   ]);
 
-  const contradictionCards: ContradictionCard[] = contradictEdges
+  const edgeCards: ContradictionCard[] = contradictEdges
     .map((edge, i) => {
       const tension = cardTensions[i];
       if (!tension) return null;
@@ -264,6 +263,37 @@ export async function getPersonalIntelligence(args: {
     })
     .filter((c): c is ContradictionCard => c !== null);
 
+  const tensionCards: ContradictionCard[] = tensionGroups
+    .map((group, i) => {
+      const result = topicTensions[i];
+      if (!result) return null;
+      const a = group.captures[result.aIndex];
+      const b = group.captures[result.bIndex];
+      if (!a || !b || a.id === b.id) return null;
+      if (edgePairKeys.has(`${a.id}:${b.id}`)) return null;
+      return {
+        itemAId: a.id,
+        itemBId: b.id,
+        labelA: a.label,
+        labelB: b.label,
+        previewA: (a.rawText ?? a.keyIdea ?? "").slice(0, 200),
+        previewB: (b.rawText ?? b.keyIdea ?? "").slice(0, 200),
+        tension: result.tension,
+      };
+    })
+    .filter((c): c is ContradictionCard => c !== null);
+
+  // Hard edges first, then softer topic tensions; dedupe by unordered pair.
+  const seenPairs = new Set<string>();
+  const contradictionCards: ContradictionCard[] = [];
+  for (const card of [...edgeCards, ...tensionCards]) {
+    const key = [card.itemAId, card.itemBId].sort().join(":");
+    if (seenPairs.has(key)) continue;
+    seenPairs.add(key);
+    contradictionCards.push(card);
+    if (contradictionCards.length >= CONTRADICTION_CARD_LIMIT) break;
+  }
+
   const threadSyntheses: ThreadSynthesis[] = threadCandidates
     .slice(0, THREAD_SYNTHESIS_LIMIT)
     .map((group, i) => {
@@ -275,30 +305,29 @@ export async function getPersonalIntelligence(args: {
         captureCount: group.captures.length,
         position: synthesis.position,
         openQuestion: synthesis.openQuestion,
+        itemIds: group.captures.slice(0, THREAD_ITEM_IDS_LIMIT).map((c) => c.id),
       };
     })
     .filter((s): s is ThreadSynthesis => s !== null);
 
-  const convergenceSignals: ConvergenceSignal[] =
-    firstConvergenceSignal && convergenceCandidates.length > 0
-      ? [
-          {
-            topicId: convergenceCandidates[0].topicId,
-            topicName: convergenceCandidates[0].topicName,
-            captureCount: convergenceCandidates[0].captures.length,
-            sourceCount: new Set(
-              convergenceCandidates[0].captures.map((c) => c.sourceName ?? "__unknown__"),
-            ).size,
-            signal: firstConvergenceSignal,
-          },
-        ]
-      : [];
+  const convergenceSignals: ConvergenceSignal[] = convergenceCandidates
+    .map((group, i) => {
+      const signal = convergenceTexts[i];
+      if (!signal) return null;
+      return {
+        topicId: group.topicId,
+        topicName: group.topicName,
+        captureCount: group.captures.length,
+        sourceCount: new Set(group.captures.map((c) => c.sourceName ?? "__unknown__")).size,
+        signal,
+      };
+    })
+    .filter((s): s is ConvergenceSignal => s !== null);
 
   return {
     contradictionCards,
     threadSyntheses,
     convergenceSignals,
-    evolutionArcs,
     dormantThreads,
   };
 }

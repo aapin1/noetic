@@ -267,6 +267,8 @@ export interface ThreadSynthesis {
   captureCount: number;
   position: string;
   openQuestion: string;
+  /** Capture ids feeding this thread — used to deep-link into companion/Atlas. */
+  itemIds: string[];
 }
 
 export interface ConvergenceSignal {
@@ -275,19 +277,6 @@ export interface ConvergenceSignal {
   captureCount: number;
   sourceCount: number;
   signal: string;
-}
-
-export interface EvolutionPeriod {
-  month: string;
-  captureCount: number;
-  keyIdeas: string[];
-}
-
-export interface EvolutionArc {
-  topicId: string;
-  topicName: string;
-  captureCount: number;
-  periods: EvolutionPeriod[];
 }
 
 export interface DormantThread {
@@ -431,6 +420,5 @@ export interface PersonalIntelligenceResponse {
   contradictionCards: ContradictionCard[];
   threadSyntheses: ThreadSynthesis[];
   convergenceSignals: ConvergenceSignal[];
-  evolutionArcs: EvolutionArc[];
   dormantThreads: DormantThread[];
 }

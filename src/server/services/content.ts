@@ -111,12 +111,15 @@ export async function ingestUrl(url: string, db: DbClient = prisma) {
             data: {
               bodyText: body,
               bodySource: refetched.metadata?.bodySource,
-              description: existing.description ?? refetched.metadata?.description ?? body,
+              // Never let description become the full body/transcript — it is
+              // surfaced as a short gist. Leave it null if we have no real
+              // excerpt; the capture pipeline derives its own summary.
+              description: existing.description ?? refetched.metadata?.description,
             },
           });
           existing.bodyText = body;
           if (!existing.description) {
-            existing.description = refetched.metadata?.description ?? body;
+            existing.description = refetched.metadata?.description ?? null;
           }
         }
       } catch {
@@ -331,25 +334,42 @@ export async function createManualContentItem(input: {
   const source = await ensureContentSource(db, input.sourceName ?? input.siteName, input.sourceDomain);
   const contentType = await ensureContentType(db, input.contentType);
 
-  const created = await db.contentItem.create({
-    data: {
-      title: input.title,
-      description: input.description,
-      canonicalUrl,
-      originalUrl,
-      siteName: input.siteName,
-      imageUrl: input.imageUrl,
-      authorName: input.authorName,
-      publishedAt: input.publishedAt ? new Date(input.publishedAt) : undefined,
-      metadataStatus: canonicalUrl || originalUrl ? MetadataStatus.COMPLETE : MetadataStatus.MANUAL_ONLY,
-      sourceId: source?.id,
-      contentTypeId: contentType?.id,
-      manualFields: {
+  let created;
+  try {
+    created = await db.contentItem.create({
+      data: {
         title: input.title,
         description: input.description,
+        canonicalUrl,
+        originalUrl,
+        siteName: input.siteName,
+        imageUrl: input.imageUrl,
+        authorName: input.authorName,
+        publishedAt: input.publishedAt ? new Date(input.publishedAt) : undefined,
+        metadataStatus: canonicalUrl || originalUrl ? MetadataStatus.COMPLETE : MetadataStatus.MANUAL_ONLY,
+        sourceId: source?.id,
+        contentTypeId: contentType?.id,
+        manualFields: {
+          title: input.title,
+          description: input.description,
+        },
       },
-    },
-  });
+    });
+  } catch (err: unknown) {
+    // The pre-check above can miss a concurrent insert of the same canonical
+    // URL (e.g. capture's preflight and commit racing). Fall back to the
+    // existing row instead of surfacing a duplicate-key error to the user.
+    if (
+      canonicalUrl &&
+      err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002"
+    ) {
+      const existingByCanonical = await db.contentItem.findUnique({ where: { canonicalUrl } });
+      if (existingByCanonical) {
+        return serializeContentItem(db, existingByCanonical.id);
+      }
+    }
+    throw err;
+  }
 
   await attachContentTopics(db, created.id, input.topics);
 

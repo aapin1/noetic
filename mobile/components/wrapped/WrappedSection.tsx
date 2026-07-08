@@ -34,7 +34,6 @@ function formatMonthYear(iso: string): string {
 const ARCHETYPES: Record<string, { name: string; line: string }> = {
   link: { name: 'The Link Hoarder', line: 'Every tab open, forever, just in case.' },
   text: { name: 'The Note-Taker', line: 'You type the thought before it can run off.' },
-  quote: { name: 'The Quote Collector', line: 'Other people said it better and you kept the receipts.' },
   image: { name: 'The Screenshotter', line: 'Why write it down when you can just screenshot it.' },
 };
 

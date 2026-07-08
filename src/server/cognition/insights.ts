@@ -206,7 +206,19 @@ export function draftInsights(args: {
     });
   }
 
-  return drafts;
+  // Cap how many insights a single capture yields. Emitting one per signal
+  // (recur + reinforce + contradict + pattern + trajectory) overwhelms the
+  // reader and wastes tokens polishing them. Keep the two strongest, and a
+  // third only when it clears a higher bar (a genuinely strong extra signal).
+  const REGULAR_INSIGHTS = 2;
+  const THIRD_INSIGHT_MIN_STRENGTH = 0.6;
+  drafts.sort((a, b) => b.strength - a.strength);
+  const selected = drafts.slice(0, REGULAR_INSIGHTS);
+  const third = drafts[REGULAR_INSIGHTS];
+  if (third && third.strength >= THIRD_INSIGHT_MIN_STRENGTH) {
+    selected.push(third);
+  }
+  return selected;
 }
 
 /**
@@ -229,8 +241,10 @@ export function classifyEdgeSemantic(args: {
     return null;
   }
 
-  // Related in meaning but opposing stance → contradiction.
-  if (similarity >= 0.4 && polarityDelta >= 0.08) {
+  // Related in meaning but diverging stance → contradiction. Kept deliberately
+  // loose so everyday friction (not only stark polar opposites) forms an edge
+  // and surfaces in Mind's Contradictions region.
+  if (similarity >= 0.34 && polarityDelta >= 0.05) {
     return MemoryEdgeType.CONTRADICTS;
   }
 

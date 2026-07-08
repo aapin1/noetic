@@ -94,11 +94,20 @@ export default function InsightDetailScreen() {
   const showReaction = !!data.reaction && norm(data.reaction) !== titleN;
 
   // The AI's understanding of the content — the user's own account wins over
-  // the scraped excerpt, and either can be corrected (which reprocesses the
-  // capture). Only link/image captures have an AI reading to correct; text and
-  // quote captures ARE the user's words already.
+  // the AI summary, and either can be corrected (which reprocesses the
+  // capture). We show a short AI-written gist, never the raw scraped body or
+  // transcript. Only link/image captures have an AI reading to correct; text
+  // and quote captures ARE the user's words already.
   const showAbout = data.kind === 'LINK' || data.kind === 'IMAGE';
-  const aboutText = data.userContext ?? data.contentItem?.description ?? null;
+  // Legacy captures (saved before summaries existed) have no summary but do
+  // have a description. Fall back to it only when it's short — a real excerpt
+  // is a sentence or two; a scraped transcript/body is long, so length-gating
+  // keeps raw transcriptions from ever leaking through.
+  const legacyDescription =
+    data.contentItem?.description && data.contentItem.description.length <= 400
+      ? data.contentItem.description
+      : null;
+  const aboutText = data.userContext ?? data.summary ?? legacyDescription;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>

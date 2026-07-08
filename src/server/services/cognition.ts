@@ -447,6 +447,9 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   let contentTitle: string | undefined;
   let contentDescription: string | undefined;
   let contentBodyText: string | undefined;
+  // A clean, short "what this is about" line for display — never the full
+  // scraped body/transcript. Shown on the insight screen as the AI summary.
+  let captureSummary: string | null = null;
 
   if (payload.kind === CaptureKind.LINK && payload.url) {
     const resolved = await ingestOrStubUrl(payload.url, db);
@@ -454,6 +457,13 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     contentTitle = resolved.contentTitle;
     contentDescription = resolved.contentDescription;
     contentBodyText = resolved.bodyText;
+    // The cleaned excerpt is a 1-2 sentence gist; a bare URL (metadata scrape
+    // failed → stub) is not a summary, so skip it and let the user's own
+    // account fill in instead.
+    captureSummary =
+      resolved.contentDescription && !/^https?:\/\//i.test(resolved.contentDescription)
+        ? resolved.contentDescription
+        : null;
   }
 
   // For images, let a vision model extract the meaning (transcribed text or a
@@ -468,6 +478,9 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
         contentTitle = described.title;
         contentDescription = described.description;
         contentBodyText = described.description;
+        // Short gist for display — the description itself may be a verbatim
+        // transcription, which we keep for grounding but never surface raw.
+        captureSummary = described.summary;
       }
     }
   }
@@ -593,9 +606,10 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
         mediaUrl: payload.mediaUrl ?? null,
         reaction: payload.reaction ?? null,
         userContext: payload.userContext ?? null,
-        // Excerpt-style summary/keyIdea are intentionally not generated: the
-        // reading surfaces show only title, author, reaction, and insight.
-        summary: null,
+        // A short "what this is about" gist shown on the insight screen as the
+        // AI summary — never the raw scraped body/transcript. keyIdea stays
+        // unused; the reading surfaces show title, summary, reaction, insight.
+        summary: captureSummary,
         keyIdea: null,
         terms: topTerms(termVector, 24),
         embedding: embedding ?? [],

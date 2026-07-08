@@ -64,7 +64,7 @@ export default function CompanionScreen() {
   const c = useThemeColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { contextIds, contextLabels } = useLocalSearchParams<{ contextIds?: string; contextLabels?: string }>();
+  const { contextIds, contextLabels, prefill } = useLocalSearchParams<{ contextIds?: string; contextLabels?: string; prefill?: string }>();
 
   const contextItemIds = useMemo(
     () => (contextIds ? contextIds.split(',').filter(Boolean) : []),
@@ -82,6 +82,16 @@ export default function CompanionScreen() {
   const [error, setError] = useState<string | null>(null);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
+
+  // Seed the input with a pre-filled draft when arriving from a Mind thread
+  // ("Continue in companion"), so the user only has to write their own take.
+  const prefilledRef = useRef(false);
+  useEffect(() => {
+    if (prefill && !prefilledRef.current) {
+      prefilledRef.current = true;
+      setReply(prefill);
+    }
+  }, [prefill]);
 
   // Fresh multi-select-into-companion flow: only the seeded opening message
   // is present. Let the suggestion chips + input sit right under it instead

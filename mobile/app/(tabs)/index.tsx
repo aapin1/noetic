@@ -294,10 +294,12 @@ function layoutSource(nodes: GraphNode[], w: number, h: number): PositionMap {
   const pos: PositionMap = {};
   if (nodes.length === 0) return pos;
 
-  const kinds: CaptureKind[] = ['LINK', 'TEXT', 'QUOTE'];
-  const byKind: Record<string, GraphNode[]> = { LINK: [], TEXT: [], QUOTE: [] };
+  const kinds: CaptureKind[] = ['LINK', 'TEXT', 'IMAGE'];
+  const byKind: Record<string, GraphNode[]> = { LINK: [], TEXT: [], IMAGE: [] };
   for (const node of nodes) {
-    const bucket = byKind[node.kind] ?? byKind.TEXT;
+    // Legacy QUOTE captures were folded into text, so they group with thoughts.
+    const bucketKey = node.kind === 'QUOTE' ? 'TEXT' : node.kind;
+    const bucket = byKind[bucketKey] ?? byKind.TEXT;
     bucket.push(node);
   }
 
@@ -384,7 +386,7 @@ function computeCameraFit(nodes: GraphNode[], positions: PositionMap): { x: numb
 
 // ── Capture step components ────────────────────────────────────────
 
-type CaptureMode = 'link' | 'text' | 'quote' | 'image';
+type CaptureMode = 'link' | 'text' | 'image';
 
 function normalizeLinkInput(raw: string): string {
   const v = raw.trim();
@@ -411,10 +413,10 @@ function StepOne({
   return (
     <View>
       <Text variant="serifLg" color="primary" style={sh.heading}>What are you saving?</Text>
-      <Text variant="monoSmall" color="muted" style={sh.sub}>A link, thought, passage, or image.</Text>
+      <Text variant="monoSmall" color="muted" style={sh.sub}>A link, thought, or image.</Text>
       <Divider c={c} />
       <View style={sh.modeRow}>
-        {(['link', 'text', 'quote', 'image'] as CaptureMode[]).map((m) => {
+        {(['link', 'text', 'image'] as CaptureMode[]).map((m) => {
           const active = mode === m;
           return (
             <Pressable
@@ -438,7 +440,7 @@ function StepOne({
             {imageUri ? (
               <Image source={{ uri: imageUri }} style={sh.thumb} contentFit="cover" />
             ) : (
-              <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3] }}>
+              <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3], fontSize: FontSize.base }}>
                 a screenshot, book page, or photo.
               </Text>
             )}
@@ -457,13 +459,13 @@ function StepOne({
         ) : (
           <View style={[sh.inputBox, { borderColor: c.border }]}>
             <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>
-              {mode === 'link' ? 'URL_' : mode === 'quote' ? 'PASSAGE_' : 'THOUGHT_'}
+              {mode === 'link' ? 'URL_' : 'THOUGHT_'}
             </Text>
             <TextInput
               style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
               value={payload}
               onChangeText={setPayload}
-              placeholder={mode === 'link' ? 'https://...' : mode === 'quote' ? 'a line worth keeping...' : 'fragments are fine.'}
+              placeholder={mode === 'link' ? 'https://...' : 'a thought, a quote, a fragment.'}
               placeholderTextColor={c.faint}
               multiline={mode !== 'link'}
               autoCapitalize={mode === 'link' ? 'none' : 'sentences'}
@@ -501,14 +503,9 @@ function PreflightStatus({ loading, preflight, c }: {
   preflight: CapturePreflight | null;
   c: AppThemeColors;
 }) {
-  if (loading) {
-    return (
-      <View style={sh.preflightRow}>
-        <LoadingDots size={4} />
-        <Text variant="monoSmall" style={{ color: c.muted }}>reading the source…</Text>
-      </View>
-    );
-  }
+  // While the source is still being read, the greyed-out Commit button already
+  // signals "working" — so we show nothing here rather than a redundant line.
+  if (loading) return null;
   if (!preflight) return null;
   if (preflight.confidence === 'rich') {
     const label = preflight.bodySource === 'transcript' ? 'got the full transcript ✓' : 'read the full content ✓';
@@ -549,6 +546,11 @@ function StepTwo({
   // user's own account becomes the ground truth the insight pipeline works from.
   const needsContext = isLink && !preflightLoading && !!preflight && preflight.confidence !== 'rich';
   const contextThin = preflight?.confidence === 'thin';
+  // Block Commit while a link is still being read — committing mid-scrape races
+  // the preflight (which creates/refreshes the ContentItem) and produces a
+  // messy, half-resolved capture.
+  const commitBlockedByPreflight = isLink && preflightLoading;
+  const commitDisabled = busy || commitBlockedByPreflight;
   const commitTarget = useTutorialTarget(TUTORIAL_TARGET.captureCommit);
   const { setStepNote } = useTutorial();
 
@@ -572,7 +574,7 @@ function StepTwo({
   return (
     <View>
       <Text variant="serifLg" color="primary" style={sh.heading}>Your reaction.</Text>
-      <Text variant="monoSmall" color="muted" style={sh.sub}>Optional. One line, just for you.</Text>
+      <Text variant="monoSmall" color="muted" style={sh.sub}>Optional — just for you.</Text>
       {isLink && <PreflightStatus loading={preflightLoading} preflight={preflight} c={c} />}
       <Divider c={c} />
       {/* Wrapped as one region so the tutorial's spotlight (and its tap
@@ -580,12 +582,11 @@ function StepTwo({
           when it appears, and the commit button together. */}
       <View ref={commitTarget.ref} onLayout={commitTarget.onLayout}>
         <View style={[sh.inputBox, { borderColor: c.border }]}>
-          <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>REACTION_</Text>
           <TextInput
             style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
             value={reaction}
             onChangeText={setReaction}
-            placeholder="a quick reaction, or nothing."
+            placeholder="one line, or nothing."
             placeholderTextColor={c.faint}
             multiline
             autoFocus={!needsContext && !commitTarget.isActive}
@@ -633,8 +634,8 @@ function StepTwo({
           </Pressable>
           <Pressable
             onPress={() => { onCommit(); commitTarget.press(); }}
-            disabled={busy}
-            style={[sh.primaryBtn, { backgroundColor: c.text, opacity: busy ? 0.55 : 1 }]}
+            disabled={commitDisabled}
+            style={[sh.primaryBtn, { backgroundColor: c.text, opacity: commitDisabled ? 0.55 : 1 }]}
           >
             <Text variant="monoSmall" style={{ color: c.background }}>
               {busy ? 'saving...' : 'commit →'}
@@ -1837,6 +1838,9 @@ export default function MapScreen() {
     } else if (!payload.trim()) {
       setCaptureError('Enter a URL or thought first.'); return;
     }
+    // Drop the keyboard as we advance to the reaction step so it doesn't cover
+    // the preflight status or the reaction field on the way in.
+    Keyboard.dismiss();
     if (mode === 'link') {
       runPreflight(normalizeLinkInput(payload));
     }
@@ -1848,6 +1852,7 @@ export default function MapScreen() {
   // reaction step so every capture goes through the same flow.
   const shareParams = useLocalSearchParams<{
     shareKind?: string; shareUrl?: string; shareText?: string; shareMediaUrl?: string;
+    selectIds?: string;
   }>();
   useEffect(() => {
     const kind = shareParams.shareKind;
@@ -1880,6 +1885,23 @@ export default function MapScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shareParams.shareKind, shareParams.shareUrl, shareParams.shareText, shareParams.shareMediaUrl]);
 
+  // Arriving from Mind's "View in Atlas" — pre-select the thread's captures in
+  // the multi-select (discover) tool and fly the camera to fit them.
+  useEffect(() => {
+    const raw = shareParams.selectIds;
+    if (!raw || nodes.length === 0) return;
+    const valid = String(raw).split(',').filter((id) => id && pos[id]);
+    if (valid.length === 0) { router.setParams({ selectIds: '' }); return; }
+    closeDrawer();
+    setSelectedNode(null);
+    setToolMode('discover');
+    setDiscoveryNodeIds(valid);
+    const fit = computeCameraFit(nodes.filter((n) => valid.includes(n.id)), pos);
+    if (fit) animateCamera(fit.x, fit.y, fit.zoom, 700);
+    router.setParams({ selectIds: '' });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shareParams.selectIds, nodes.length]);
+
   const pickImage = useCallback(async (source: 'camera' | 'library') => {
     setCaptureError('');
     try {
@@ -1911,13 +1933,15 @@ export default function MapScreen() {
   }, []);
 
   const commit = useCallback(async () => {
+    // Drop the keyboard the moment they commit, so it doesn't linger over the
+    // saving state or the map while the insight is generated.
+    Keyboard.dismiss();
     setBusy(true); setCaptureError('');
     try {
       let kind: CaptureKind = 'TEXT';
       let url: string | undefined;
       let text: string | undefined;
       if (mode === 'link') { kind = 'LINK'; url = normalizeLinkInput(payload); }
-      else if (mode === 'quote') { kind = 'QUOTE'; text = payload.trim(); }
       else if (mode === 'image') { kind = 'IMAGE'; }
       else { kind = 'TEXT'; text = payload.trim(); }
       const res = await api.captures.create({
@@ -2027,7 +2051,7 @@ export default function MapScreen() {
   const kindLabels = lensMode === 'source' && !lensTransitioning ? [
     { kind: 'LINK' as CaptureKind, label: 'links', x: MAP_PAD + LAYOUT_W * 0.2, y: MAP_PAD + LAYOUT_H * 0.15 },
     { kind: 'TEXT' as CaptureKind, label: 'thoughts', x: MAP_PAD + LAYOUT_W * 0.5, y: MAP_PAD + LAYOUT_H * 0.15 },
-    { kind: 'QUOTE' as CaptureKind, label: 'quotes', x: MAP_PAD + LAYOUT_W * 0.8, y: MAP_PAD + LAYOUT_H * 0.15 },
+    { kind: 'IMAGE' as CaptureKind, label: 'images', x: MAP_PAD + LAYOUT_W * 0.8, y: MAP_PAD + LAYOUT_H * 0.15 },
   ] : [];
 
   // ── Node opacity: terrain + focus + discovery + timeline ───────

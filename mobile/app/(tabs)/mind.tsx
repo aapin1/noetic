@@ -32,61 +32,65 @@ import type {
   ContradictionCard,
   ConvergenceSignal,
   DormantThread,
-  EvolutionArc,
-  EvolutionPeriod,
   PersonalIntelligenceResponse,
   ThreadSynthesis,
 } from '@/types/api';
 
 // ─────────────────────────────────────────────────────────────────────────
-// The Mind is a single spatial canvas (a companion to Atlas). It reuses the
-// Atlas camera model: an SVG viewBox driven by a pannable/pinchable camera and
-// a requestAnimationFrame `animateCamera` tween for Google-Maps-style flights.
-// Five cognitive regions live at fixed positions on a large world canvas.
+// Mind is a single spatial canvas — a companion to Atlas. It reuses Atlas's
+// camera model verbatim: an SVG viewBox driven by a pannable/pinchable camera
+// and a requestAnimationFrame `animateCamera` easing tween for Maps-style
+// flights. Four cognitive regions (Threads, Contradictions, Convergence,
+// Dormant) live on a large world canvas. Only regions that actually have
+// something to say are placed, and the layout re-centers around them.
 // ─────────────────────────────────────────────────────────────────────────
 
 const { width: SW, height: SH } = Dimensions.get('window');
-const MAP_BG = '#070707';
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 3.0;
 
-// World canvas — regions are placed in absolute world coordinates so the
-// layout is stable regardless of screen size (the camera fits it to screen).
-const CANVAS_W = 2640;
-const CANVAS_H = 2520;
+const CANVAS_W = 2800;
+const CANVAS_H = 2500;
 const REGION_R = 430;
 
-type RegionKey = 'threads' | 'evolution' | 'contradictions' | 'convergence' | 'dormant';
+// The map is dark in both themes (Atlas convention); on-canvas text is light.
+const ink = (o: number) => `rgba(236,236,236,${o})`;
 
-type RegionDef = {
+type RegionKey = 'threads' | 'contradictions' | 'convergence' | 'dormant';
+
+type RegionMeta = {
   key: RegionKey;
   name: string;
-  color: string;
-  cx: number;
-  cy: number;
+  color: string; // dulled, minimal accents — not vibrant
   sides: number; // geometric boundary sides (0 = organic circle)
+  noun: (n: number) => string;
 };
 
-const REGIONS: RegionDef[] = [
-  { key: 'threads', name: 'THREADS', color: '#6B9FD4', cx: 730, cy: 660, sides: 0 },
-  { key: 'evolution', name: 'EVOLUTION', color: '#7EC8A0', cx: 1910, cy: 620, sides: 4 },
-  { key: 'convergence', name: 'CONVERGENCE', color: '#9B84CC', cx: 1320, cy: 1250, sides: 3 },
-  { key: 'contradictions', name: 'CONTRADICTIONS', color: '#E8896B', cx: 720, cy: 1840, sides: 6 },
-  { key: 'dormant', name: 'DORMANT', color: '#7A7A82', cx: 1930, cy: 1880, sides: 0 },
+// Deliberately desaturated so the canvas reads calm and minimal.
+const REGION_META: RegionMeta[] = [
+  { key: 'threads', name: 'THREADS', color: '#6E90AE', sides: 0, noun: (n) => `${n} ${n === 1 ? 'thread' : 'threads'}` },
+  { key: 'contradictions', name: 'CONTRADICTIONS', color: '#B08276', sides: 6, noun: (n) => `${n} ${n === 1 ? 'tension' : 'tensions'}` },
+  { key: 'convergence', name: 'CONVERGENCE', color: '#8A7EA6', sides: 3, noun: (n) => `${n} ${n === 1 ? 'signal' : 'signals'}` },
+  { key: 'dormant', name: 'DORMANT', color: '#7C7C82', sides: 0, noun: (n) => `${n} dormant` },
 ];
+const META_BY_KEY: Record<RegionKey, RegionMeta> = Object.fromEntries(
+  REGION_META.map((m) => [m.key, m]),
+) as Record<RegionKey, RegionMeta>;
 
-const REGION_BY_KEY: Record<RegionKey, RegionDef> = Object.fromEntries(
-  REGIONS.map((r) => [r.key, r]),
-) as Record<RegionKey, RegionDef>;
+// Slot layouts (normalized) — regions spread far apart, re-centered by count.
+const SLOTS: Record<number, { x: number; y: number }[]> = {
+  1: [{ x: 0.5, y: 0.5 }],
+  2: [{ x: 0.3, y: 0.5 }, { x: 0.7, y: 0.5 }],
+  3: [{ x: 0.5, y: 0.3 }, { x: 0.3, y: 0.72 }, { x: 0.7, y: 0.72 }],
+  4: [{ x: 0.3, y: 0.3 }, { x: 0.7, y: 0.3 }, { x: 0.3, y: 0.72 }, { x: 0.7, y: 0.72 }],
+};
 
-// ── Small deterministic helpers ───────────────────────────────────────────
+// ── Deterministic helpers ─────────────────────────────────────────────────
 function hashId(id: string): number {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (Math.imul(31, h) + id.charCodeAt(i)) | 0;
   return Math.abs(h);
 }
-
-// Golden-angle spiral — spreads N items organically inside a disc.
 function spiral(cx: number, cy: number, i: number, n: number, maxR: number) {
   const golden = Math.PI * (3 - Math.sqrt(5));
   const t = n <= 1 ? 0 : i / (n - 1);
@@ -94,7 +98,6 @@ function spiral(cx: number, cy: number, i: number, n: number, maxR: number) {
   const a = i * golden;
   return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
 }
-
 function polygonPath(cx: number, cy: number, r: number, sides: number, rot = 0) {
   const pts: string[] = [];
   for (let i = 0; i < sides; i++) {
@@ -103,16 +106,11 @@ function polygonPath(cx: number, cy: number, r: number, sides: number, rot = 0) 
   }
   return `M${pts.join('L')}Z`;
 }
-
-function sizeFor(count: number, max: number, min = 12, cap = 34) {
+function sizeFor(count: number, max: number, min: number, cap: number) {
   if (max <= 0) return min;
   return min + (Math.min(count, max) / max) * (cap - min);
 }
-
 function clampVBX(v: number, vbW: number) {
-  // Allow some over-pan so edge regions can be centered even when the fitted
-  // zoom makes a region wider than the canvas — but never enough to lose the
-  // canvas entirely.
   const slack = vbW * 0.55;
   return Math.max(-slack, Math.min(CANVAS_W - vbW + slack, v));
 }
@@ -120,8 +118,6 @@ function clampVBY(v: number, vbH: number) {
   const slack = vbH * 0.55;
   return Math.max(-slack, Math.min(CANVAS_H - vbH + slack, v));
 }
-
-// Camera fit for a centered bounding box (halfW/halfH in world units).
 function fitTo(cx: number, cy: number, halfW: number, halfH: number, pad: number) {
   const zoom = Math.max(
     ZOOM_MIN,
@@ -132,110 +128,144 @@ function fitTo(cx: number, cy: number, halfW: number, halfH: number, pad: number
   return { x: cx - vbW / 2, y: cy - vbH / 2, zoom };
 }
 
-const OVERVIEW = fitTo(CANVAS_W / 2, CANVAS_H / 2, CANVAS_W / 2, CANVAS_H / 2, 1.06);
-function regionCamera(r: RegionDef) {
-  return fitTo(r.cx, r.cy, REGION_R, REGION_R, 1.16);
-}
+// ── Region content layouts ────────────────────────────────────────────────
+type ThreadItem = { id: string; x: number; y: number; r: number; rings: number; d: ThreadSynthesis };
+type TensionNode = { id: string; x: number; y: number; label: string };
+type TensionEdge = { id: string; a: TensionNode; b: TensionNode; d: ContradictionCard };
+type ConvItem = { id: string; x: number; y: number; r: number; streams: { x: number; y: number }[]; d: ConvergenceSignal };
+type DormantItem = { id: string; x: number; y: number; dots: { x: number; y: number; r: number }[]; d: DormantThread };
 
-// ── Per-region world layout (computed once from data) ─────────────────────
-type ThreadItem = { id: string; x: number; y: number; r: number; d: ThreadSynthesis };
-type PairItem = { id: string; ax: number; ay: number; bx: number; by: number; d: ContradictionCard };
-type ConvItem = {
-  id: string; x: number; y: number; r: number;
-  sources: { x: number; y: number }[]; d: ConvergenceSignal;
-};
-type DormantItem = {
-  id: string; x: number; y: number; dots: { x: number; y: number; r: number }[]; d: DormantThread;
-};
-type EvoTrack = {
-  id: string; y: number; arc: EvolutionArc;
-  dots: { x: number; r: number; period: EvolutionPeriod }[];
-};
-
-type Layout = {
+type RegionLayout = {
   threads: { hubX: number; hubY: number; items: ThreadItem[] };
-  contradictions: PairItem[];
+  contradictions: { nodes: TensionNode[]; edges: TensionEdge[] };
   convergence: ConvItem[];
   dormant: DormantItem[];
-  evolution: { left: number; right: number; tracks: EvoTrack[] };
 };
 
-function buildLayout(intel: PersonalIntelligenceResponse): Layout {
-  const rThreads = REGION_BY_KEY.threads;
+type Model = {
+  activeKeys: RegionKey[];
+  centers: Map<RegionKey, { cx: number; cy: number }>;
+  counts: Record<RegionKey, number>;
+  layout: RegionLayout;
+};
+
+function buildModel(intel: PersonalIntelligenceResponse): Model {
+  const counts: Record<RegionKey, number> = {
+    threads: intel.threadSyntheses.length,
+    contradictions: intel.contradictionCards.length,
+    convergence: intel.convergenceSignals.length,
+    dormant: intel.dormantThreads.length,
+  };
+  const activeKeys = REGION_META.map((m) => m.key).filter((k) => counts[k] > 0);
+
+  const centers = new Map<RegionKey, { cx: number; cy: number }>();
+  const slots = SLOTS[activeKeys.length] ?? SLOTS[4];
+  activeKeys.forEach((k, i) => {
+    const s = slots[i] ?? { x: 0.5, y: 0.5 };
+    centers.set(k, { cx: s.x * CANVAS_W, cy: s.y * CANVAS_H });
+  });
+
+  // Threads — hub-and-spoke bundle; orb size + tree-ring depth ∝ captureCount.
+  const tc = centers.get('threads');
   const threadArr = intel.threadSyntheses.slice(0, 9);
   const maxThread = Math.max(1, ...threadArr.map((t) => t.captureCount));
-  const threadItems: ThreadItem[] = threadArr.map((d, i) => {
-    const p = spiral(rThreads.cx, rThreads.cy, i + 1, threadArr.length + 1, REGION_R * 0.78);
-    return { id: d.topicId, x: p.x, y: p.y, r: sizeFor(d.captureCount, maxThread, 16, 40), d };
-  });
+  const threadItems: ThreadItem[] = tc
+    ? threadArr.map((d, i) => {
+        const p = spiral(tc.cx, tc.cy, i + 1, threadArr.length + 1, REGION_R * 0.72);
+        return {
+          id: d.topicId,
+          x: p.x,
+          y: p.y,
+          r: sizeFor(d.captureCount, maxThread, 18, 42),
+          rings: Math.min(5, Math.max(1, Math.round((d.captureCount / maxThread) * 5))),
+          d,
+        };
+      })
+    : [];
 
-  const rC = REGION_BY_KEY.contradictions;
-  const pairs: PairItem[] = intel.contradictionCards.slice(0, 7).map((d, i, arr) => {
-    const p = spiral(rC.cx, rC.cy, i, arr.length, REGION_R * 0.72);
-    const seed = hashId(d.itemAId) % 100;
-    const spread = 46 + (seed % 30);
-    return {
-      id: `${d.itemAId}-${d.itemBId}`,
-      ax: p.x - spread, ay: p.y - 12 + (seed % 16),
-      bx: p.x + spread, by: p.y + 12 - (seed % 16),
-      d,
-    };
-  });
-
-  const rConv = REGION_BY_KEY.convergence;
-  const conv: ConvItem[] = intel.convergenceSignals.slice(0, 6).map((d, i, arr) => {
-    const p = spiral(rConv.cx, rConv.cy, i, arr.length, REGION_R * 0.66);
-    const n = Math.max(2, Math.min(5, d.sourceCount));
-    const sources = Array.from({ length: n }, (_, k) => {
-      const a = (k / n) * Math.PI * 2 + hashId(d.topicId);
-      const rr = 74;
-      return { x: p.x + rr * Math.cos(a), y: p.y + rr * Math.sin(a) };
+  // Contradictions — a tension network. Shared captures become shared nodes.
+  const cc = centers.get('contradictions');
+  const tensionNodes: TensionNode[] = [];
+  const tensionEdges: TensionEdge[] = [];
+  if (cc) {
+    const cards = intel.contradictionCards.slice(0, 6);
+    const nodeMap = new Map<string, TensionNode>();
+    const ids: { id: string; label: string }[] = [];
+    for (const card of cards) {
+      if (!nodeMap.has(card.itemAId)) ids.push({ id: card.itemAId, label: card.labelA });
+      if (!nodeMap.has(card.itemBId)) ids.push({ id: card.itemBId, label: card.labelB });
+      nodeMap.set(card.itemAId, {} as TensionNode);
+      nodeMap.set(card.itemBId, {} as TensionNode);
+    }
+    ids.forEach((entry, i) => {
+      const p = spiral(cc.cx, cc.cy, i, ids.length, REGION_R * 0.68);
+      const node: TensionNode = { id: entry.id, x: p.x, y: p.y, label: entry.label };
+      nodeMap.set(entry.id, node);
     });
-    return { id: d.topicId, x: p.x, y: p.y, r: 18, sources, d };
-  });
+    for (const card of cards) {
+      const a = nodeMap.get(card.itemAId);
+      const b = nodeMap.get(card.itemBId);
+      if (a && b) tensionEdges.push({ id: `${card.itemAId}-${card.itemBId}`, a, b, d: card });
+    }
+    tensionNodes.push(...Array.from(nodeMap.values()).filter((n) => typeof n.x === 'number'));
+  }
 
-  const rD = REGION_BY_KEY.dormant;
-  const dormant: DormantItem[] = intel.dormantThreads.slice(0, 8).map((d, i, arr) => {
-    const p = spiral(rD.cx, rD.cy, i, arr.length, REGION_R * 0.74);
-    const seed = hashId(d.topicId);
-    const n = 3 + (seed % 3);
-    const dots = Array.from({ length: n }, (_, k) => {
-      const a = (k / n) * Math.PI * 2 + seed;
-      const rr = 20 + (seed % 18);
-      return { x: p.x + rr * Math.cos(a), y: p.y + rr * Math.sin(a), r: 3 + (k % 3) };
-    });
-    return { id: d.topicId, x: p.x, y: p.y, dots, d };
-  });
+  // Convergence — tributaries streaming into a shared theme (delta).
+  const cvc = centers.get('convergence');
+  const conv: ConvItem[] = cvc
+    ? intel.convergenceSignals.slice(0, 6).map((d, i, arr) => {
+        const p = spiral(cvc.cx, cvc.cy, i, arr.length, REGION_R * 0.62);
+        const n = Math.max(2, Math.min(6, d.sourceCount));
+        const streams = Array.from({ length: n }, (_, k) => {
+          const a = (k / n) * Math.PI * 2 + hashId(d.topicId);
+          const rr = 90;
+          return { x: p.x + rr * Math.cos(a), y: p.y + rr * Math.sin(a) };
+        });
+        return { id: d.topicId, x: p.x, y: p.y, r: 20, streams, d };
+      })
+    : [];
 
-  const rE = REGION_BY_KEY.evolution;
-  const arcs = intel.evolutionArcs.slice(0, 5);
-  const left = rE.cx - REGION_R * 0.74;
-  const right = rE.cx + REGION_R * 0.74;
-  const width = right - left;
-  const maxPeriodCount = Math.max(
-    1,
-    ...arcs.flatMap((a) => a.periods.map((p) => p.captureCount)),
-  );
-  const totalH = REGION_R * 1.15;
-  const spacing = arcs.length > 0 ? totalH / arcs.length : 0;
-  const evoTracks: EvoTrack[] = arcs.map((arc, i) => {
-    const y = rE.cy - totalH / 2 + spacing * (i + 0.5);
-    const maxLen = Math.max(1, arc.periods.length);
-    const dots = arc.periods.map((period, j) => ({
-      x: maxLen <= 1 ? rE.cx : left + (j / (maxLen - 1)) * width,
-      r: sizeFor(period.captureCount, maxPeriodCount, 5, 22),
-      period,
-    }));
-    return { id: arc.topicId, y, arc, dots };
-  });
+  // Dormant — faint constellations that can be reawakened.
+  const dc = centers.get('dormant');
+  const dormant: DormantItem[] = dc
+    ? intel.dormantThreads.slice(0, 8).map((d, i, arr) => {
+        const p = spiral(dc.cx, dc.cy, i, arr.length, REGION_R * 0.7);
+        const seed = hashId(d.topicId);
+        const n = 3 + (seed % 3);
+        const dots = Array.from({ length: n }, (_, k) => {
+          const a = (k / n) * Math.PI * 2 + seed;
+          const rr = 22 + (seed % 20);
+          return { x: p.x + rr * Math.cos(a), y: p.y + rr * Math.sin(a), r: 3 + (k % 3) };
+        });
+        return { id: d.topicId, x: p.x, y: p.y, dots, d };
+      })
+    : [];
 
   return {
-    threads: { hubX: rThreads.cx, hubY: rThreads.cy, items: threadItems },
-    contradictions: pairs,
-    convergence: conv,
-    dormant,
-    evolution: { left, right, tracks: evoTracks },
+    activeKeys,
+    centers,
+    counts,
+    layout: {
+      threads: { hubX: tc?.cx ?? 0, hubY: tc?.cy ?? 0, items: threadItems },
+      contradictions: { nodes: tensionNodes, edges: tensionEdges },
+      convergence: conv,
+      dormant,
+    },
   };
+}
+
+function overviewCamera(centers: { cx: number; cy: number }[]) {
+  if (centers.length === 0) return fitTo(CANVAS_W / 2, CANVAS_H / 2, CANVAS_W / 2, CANVAS_H / 2, 1.1);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const c of centers) {
+    minX = Math.min(minX, c.cx - REGION_R);
+    maxX = Math.max(maxX, c.cx + REGION_R);
+    minY = Math.min(minY, c.cy - REGION_R);
+    maxY = Math.max(maxY, c.cy + REGION_R);
+  }
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  return fitTo(cx, cy, (maxX - minX) / 2, (maxY - minY) / 2, 1.12);
 }
 
 // ── Selection (drives the AI-explanation panel) ───────────────────────────
@@ -244,8 +274,11 @@ type Selection =
   | { type: 'contradiction'; d: ContradictionCard }
   | { type: 'convergence'; d: ConvergenceSignal }
   | { type: 'dormant'; d: DormantThread }
-  | { type: 'evolution'; arc: EvolutionArc; period: EvolutionPeriod }
   | null;
+
+const EMPTY_INTEL: PersonalIntelligenceResponse = {
+  contradictionCards: [], threadSyntheses: [], convergenceSignals: [], dormantThreads: [],
+};
 
 export default function MindScreen() {
   const c = useThemeColors();
@@ -253,83 +286,49 @@ export default function MindScreen() {
   const [infoVisible, setInfoVisible] = useState(false);
 
   const { data, loading, error, refetch } = useApiQuery(() => api.memory.intelligence(), []);
-  const { data: positions, refetch: refetchPositions } = useApiQuery(() => api.positions.list(), []);
+  useFocusEffect(useCallback(() => { void refetch(); }, [refetch]));
 
-  useFocusEffect(
-    useCallback(() => {
-      void refetch();
-      void refetchPositions();
-    }, [refetch, refetchPositions]),
-  );
-
-  const positionByTopic = useMemo(
-    () => new Map((positions ?? []).map((p) => [p.topicId, p] as const)),
-    [positions],
-  );
-
-  const counts = useMemo(
-    () => ({
-      threads: data?.threadSyntheses.length ?? 0,
-      evolution: data?.evolutionArcs.length ?? 0,
-      contradictions: data?.contradictionCards.length ?? 0,
-      convergence: data?.convergenceSignals.length ?? 0,
-      dormant: data?.dormantThreads.length ?? 0,
-    }),
-    [data],
-  );
-  const hasContent = Object.values(counts).some((n) => n > 0);
-
-  const layout = useMemo(
-    () =>
-      buildLayout(
-        data ?? {
-          contradictionCards: [], threadSyntheses: [], convergenceSignals: [],
-          evolutionArcs: [], dormantThreads: [],
-        },
-      ),
-    [data],
+  const model = useMemo(() => buildModel(data ?? EMPTY_INTEL), [data]);
+  const hasContent = model.activeKeys.length > 0;
+  const overviewCam = useMemo(
+    () => overviewCamera(model.activeKeys.map((k) => model.centers.get(k)!)),
+    [model],
   );
 
   // ── Camera (viewBox model, ported from Atlas) ───────────────────────────
-  const savedVB = useRef({ x: OVERVIEW.x, y: OVERVIEW.y });
-  const [vbPos, setVbPos] = useState({ x: OVERVIEW.x, y: OVERVIEW.y });
-  const savedZoom = useRef(OVERVIEW.zoom);
-  const [zoom, setZoom] = useState(OVERVIEW.zoom);
+  const savedVB = useRef({ x: overviewCam.x, y: overviewCam.y });
+  const [vbPos, setVbPos] = useState({ x: overviewCam.x, y: overviewCam.y });
+  const savedZoom = useRef(overviewCam.zoom);
+  const [zoom, setZoom] = useState(overviewCam.zoom);
   const pinchStartRef = useRef<{ dist: number; zoom: number } | null>(null);
   const animCancelRef = useRef<(() => void) | null>(null);
   const momentumFrameRef = useRef<number | null>(null);
 
-  const animateCamera = useCallback(
-    (tx: number, ty: number, tz: number, duration = 780) => {
-      if (animCancelRef.current) animCancelRef.current();
-      const sx = savedVB.current.x;
-      const sy = savedVB.current.y;
-      const sz = savedZoom.current;
-      const start = Date.now();
-      let frameId: number;
-      let cancelled = false;
-      const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
-      const frame = () => {
-        if (cancelled) return;
-        const t = Math.min(1, (Date.now() - start) / duration);
-        const e = ease(t);
-        const z = sz + (tz - sz) * e;
-        const x = clampVBX(sx + (tx - sx) * e, SW / z);
-        const y = clampVBY(sy + (ty - sy) * e, SH / z);
-        savedVB.current = { x, y };
-        savedZoom.current = z;
-        setVbPos({ x, y });
-        setZoom(z);
-        if (t < 1) frameId = requestAnimationFrame(frame);
-      };
-      frameId = requestAnimationFrame(frame);
-      animCancelRef.current = () => {
-        cancelled = true;
-        cancelAnimationFrame(frameId);
-      };
-    },
-    [],
-  );
+  const animateCamera = useCallback((tx: number, ty: number, tz: number, duration = 780) => {
+    if (animCancelRef.current) animCancelRef.current();
+    const sx = savedVB.current.x;
+    const sy = savedVB.current.y;
+    const sz = savedZoom.current;
+    const start = Date.now();
+    let frameId: number;
+    let cancelled = false;
+    const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+    const frame = () => {
+      if (cancelled) return;
+      const t = Math.min(1, (Date.now() - start) / duration);
+      const e = ease(t);
+      const z = sz + (tz - sz) * e;
+      const x = clampVBX(sx + (tx - sx) * e, SW / z);
+      const y = clampVBY(sy + (ty - sy) * e, SH / z);
+      savedVB.current = { x, y };
+      savedZoom.current = z;
+      setVbPos({ x, y });
+      setZoom(z);
+      if (t < 1) frameId = requestAnimationFrame(frame);
+    };
+    frameId = requestAnimationFrame(frame);
+    animCancelRef.current = () => { cancelled = true; cancelAnimationFrame(frameId); };
+  }, []);
 
   const mapPan = useRef(
     PanResponder.create({
@@ -376,25 +375,18 @@ export default function MindScreen() {
         setVbPos({ x: nx, y: ny });
       },
       onPanResponderRelease: (evt, gs) => {
-        if (pinchStartRef.current) {
-          pinchStartRef.current = null;
-          return;
-        }
+        if (pinchStartRef.current) { pinchStartRef.current = null; return; }
         const nx = clampVBX(savedVB.current.x - gs.dx / savedZoom.current, SW / savedZoom.current);
         const ny = clampVBY(savedVB.current.y - gs.dy / savedZoom.current, SH / savedZoom.current);
         savedVB.current = { x: nx, y: ny };
         setVbPos({ x: nx, y: ny });
-
         let velX = gs.vx * 0.6;
         let velY = gs.vy * 0.6;
         if (Math.hypot(velX, velY) < 0.3) return;
         const step = () => {
           velX *= 0.88;
           velY *= 0.88;
-          if (Math.abs(velX) < 0.05 && Math.abs(velY) < 0.05) {
-            momentumFrameRef.current = null;
-            return;
-          }
+          if (Math.abs(velX) < 0.05 && Math.abs(velY) < 0.05) { momentumFrameRef.current = null; return; }
           const z = savedZoom.current;
           const mx = clampVBX(savedVB.current.x - (velX * 12) / z, SW / z);
           const my = clampVBY(savedVB.current.y - (velY * 12) / z, SH / z);
@@ -407,76 +399,77 @@ export default function MindScreen() {
     }),
   ).current;
 
-  // ── Region focus / selection ────────────────────────────────────────────
   const [active, setActive] = useState<RegionKey | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
   const [reawakened, setReawakened] = useState<Set<string>>(new Set());
-  const [scrubPct, setScrubPct] = useState(1);
 
-  const goToRegion = useCallback(
-    (key: RegionKey) => {
-      setActive(key);
-      setSelection(null);
-      const cam = regionCamera(REGION_BY_KEY[key]);
-      animateCamera(cam.x, cam.y, cam.zoom, 820);
-    },
-    [animateCamera],
-  );
+  // Snap to the overview once real data first arrives (don't fight the user after).
+  const initedRef = useRef(false);
+  useEffect(() => {
+    if (initedRef.current || !hasContent) return;
+    initedRef.current = true;
+    savedVB.current = { x: overviewCam.x, y: overviewCam.y };
+    savedZoom.current = overviewCam.zoom;
+    setVbPos({ x: overviewCam.x, y: overviewCam.y });
+    setZoom(overviewCam.zoom);
+  }, [hasContent, overviewCam]);
+
+  useEffect(() => () => {
+    if (animCancelRef.current) animCancelRef.current();
+    if (momentumFrameRef.current !== null) cancelAnimationFrame(momentumFrameRef.current);
+  }, []);
+
+  const goToRegion = useCallback((key: RegionKey) => {
+    const center = model.centers.get(key);
+    if (!center) return;
+    setActive(key);
+    setSelection(null);
+    const cam = fitTo(center.cx, center.cy, REGION_R, REGION_R, 1.16);
+    animateCamera(cam.x, cam.y, cam.zoom, 820);
+  }, [model, animateCamera]);
 
   const goToOverview = useCallback(() => {
     setActive(null);
     setSelection(null);
-    animateCamera(OVERVIEW.x, OVERVIEW.y, OVERVIEW.zoom, 760);
-  }, [animateCamera]);
+    animateCamera(overviewCam.x, overviewCam.y, overviewCam.zoom, 760);
+  }, [overviewCam, animateCamera]);
 
   const reawaken = useCallback((id: string) => {
-    setReawakened((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
+    setReawakened((prev) => new Set(prev).add(id));
   }, []);
 
-  // Evolution scrubber (its own PanResponder over a bottom rail).
-  const scrubRailW = SW - Spacing[6] * 2;
-  const scrub = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt) => {
-        const x = evt.nativeEvent.locationX;
-        setScrubPct(Math.max(0, Math.min(1, x / scrubRailW)));
+  // ── Deep links (request 5) ──────────────────────────────────────────────
+  const continueInCompanion = useCallback((d: ThreadSynthesis) => {
+    const prefill =
+      `Here's where I seem to have landed on ${d.topicName}: "${d.position}"\n\n` +
+      `The open question: ${d.openQuestion}\n\n` +
+      `My take: `;
+    router.push({
+      pathname: '/companion',
+      params: {
+        contextIds: d.itemIds.join(','),
+        contextLabels: d.topicName,
+        prefill,
       },
-      onPanResponderMove: (evt) => {
-        const x = evt.nativeEvent.locationX;
-        setScrubPct(Math.max(0, Math.min(1, x / scrubRailW)));
-      },
-    }),
-  ).current;
+    } as never);
+  }, [router]);
 
-  // Cleanup rAF on unmount.
-  useEffect(
-    () => () => {
-      if (animCancelRef.current) animCancelRef.current();
-      if (momentumFrameRef.current !== null) cancelAnimationFrame(momentumFrameRef.current);
-    },
-    [],
-  );
+  const viewInAtlas = useCallback((d: ThreadSynthesis) => {
+    router.navigate({ pathname: '/(tabs)', params: { selectIds: d.itemIds.join(',') } } as never);
+  }, [router]);
 
   const vbW = SW / zoom;
   const vbH = SH / zoom;
   const sx = (wx: number) => (wx - vbPos.x) * zoom;
   const sy = (wy: number) => (wy - vbPos.y) * zoom;
-
-  // Region label font grows as you zoom out so it stays screen-legible.
-  const labelFont = Math.max(11, Math.min(58, 15 / zoom));
-  const subFont = Math.max(8, Math.min(30, 9 / zoom));
+  const labelFont = Math.max(11, Math.min(52, 15 / zoom));
+  const subFont = Math.max(8, Math.min(26, 9 / zoom));
 
   // ── Loading / error / empty ─────────────────────────────────────────────
   if (loading && !data) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-        <View style={[styles.header, { borderBottomColor: c.border }]}>
+        <View style={[styles.headerFlat, { borderBottomColor: c.border }]}>
           <Text variant="wordmark">mind</Text>
         </View>
         <SkeletonCard />
@@ -486,7 +479,7 @@ export default function MindScreen() {
   if (error) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-        <View style={[styles.header, { borderBottomColor: c.border }]}>
+        <View style={[styles.headerFlat, { borderBottomColor: c.border }]}>
           <Text variant="wordmark">mind</Text>
         </View>
         <ScreenIntro title="Mind unavailable" body={error} />
@@ -499,258 +492,182 @@ export default function MindScreen() {
   if (!hasContent) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-        <View style={[styles.header, { borderBottomColor: c.border }]}>
+        <View style={[styles.headerFlat, { borderBottomColor: c.border }]}>
           <Text variant="wordmark">mind</Text>
         </View>
         <ScreenIntro
           title="Your mind is quiet for now"
-          body="Save a few more things and this space fills in: threads you're chasing, ideas that contradict, topics converging and going dormant."
+          body="Save a few more things and regions surface here on their own: threads you're chasing, ideas in tension, topics converging or going dormant."
         />
       </SafeAreaView>
     );
   }
 
-  const evo = layout.evolution;
-  const scrubWorldX = evo.left + scrubPct * (evo.right - evo.left);
-
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: c.mapBackground }]}>
       {/* ── Spatial canvas ─────────────────────────────────────────────── */}
       <View style={StyleSheet.absoluteFill} {...mapPan.panHandlers}>
         <Svg width={SW} height={SH} viewBox={`${vbPos.x} ${vbPos.y} ${vbW} ${vbH}`}>
           <Defs>
-            {REGIONS.map((r) => (
-              <RadialGradient key={`g-${r.key}`} id={`g-${r.key}`} cx="50%" cy="50%" r="50%">
-                <Stop offset="0%" stopColor={r.color} stopOpacity={0.16} />
-                <Stop offset="60%" stopColor={r.color} stopOpacity={0.05} />
-                <Stop offset="100%" stopColor={r.color} stopOpacity={0} />
+            {REGION_META.map((m) => (
+              <RadialGradient key={`g-${m.key}`} id={`g-${m.key}`} cx="50%" cy="50%" r="50%">
+                <Stop offset="0%" stopColor={m.color} stopOpacity={0.12} />
+                <Stop offset="62%" stopColor={m.color} stopOpacity={0.035} />
+                <Stop offset="100%" stopColor={m.color} stopOpacity={0} />
               </RadialGradient>
             ))}
           </Defs>
 
-          <Rect x={0} y={0} width={CANVAS_W} height={CANVAS_H} fill={MAP_BG} />
+          <Rect x={0} y={0} width={CANVAS_W} height={CANVAS_H} fill={c.mapBackground} />
 
-          {REGIONS.map((r) => {
-            const dim = active && active !== r.key ? 0.28 : 1;
-            const isActive = active === r.key;
-            const cnt = counts[r.key];
+          {model.activeKeys.map((key) => {
+            const m = META_BY_KEY[key];
+            const center = model.centers.get(key)!;
+            const isActive = active === key;
+            const dim = active && !isActive ? 0.26 : 1;
             return (
-              <G key={r.key} opacity={dim}>
-                {/* Region halo + boundary */}
-                <Circle cx={r.cx} cy={r.cy} r={REGION_R} fill={`url(#g-${r.key})`} />
-                {r.sides === 0 ? (
-                  <Circle
-                    cx={r.cx}
-                    cy={r.cy}
-                    r={REGION_R * 0.92}
-                    fill="none"
-                    stroke={r.color}
-                    strokeOpacity={0.22}
-                    strokeWidth={1.4}
-                    strokeDasharray="2 10"
-                  />
+              <G key={key} opacity={dim}>
+                <Circle cx={center.cx} cy={center.cy} r={REGION_R} fill={`url(#g-${key})`} />
+                {m.sides === 0 ? (
+                  <Circle cx={center.cx} cy={center.cy} r={REGION_R * 0.92} fill="none"
+                    stroke={m.color} strokeOpacity={0.2} strokeWidth={1.3} strokeDasharray="2 12" />
                 ) : (
-                  <Path
-                    d={polygonPath(r.cx, r.cy, REGION_R * 0.94, r.sides, hashId(r.key))}
-                    fill="none"
-                    stroke={r.color}
-                    strokeOpacity={0.22}
-                    strokeWidth={1.4}
-                    strokeDasharray="2 12"
-                  />
+                  <Path d={polygonPath(center.cx, center.cy, REGION_R * 0.94, m.sides, hashId(key))}
+                    fill="none" stroke={m.color} strokeOpacity={0.2} strokeWidth={1.3} strokeDasharray="2 13" />
                 )}
 
-                {/* Region contents */}
-                {r.key === 'threads' &&
-                  renderThreads(layout, isActive, r.color)}
-                {r.key === 'contradictions' &&
-                  renderContradictions(layout, r.color)}
-                {r.key === 'convergence' &&
-                  renderConvergence(layout, r.color)}
-                {r.key === 'dormant' &&
-                  renderDormant(layout, r.color, reawakened)}
-                {r.key === 'evolution' &&
-                  renderEvolution(layout, r.color, isActive, scrubWorldX)}
+                {key === 'threads' && renderThreads(model.layout, m.color)}
+                {key === 'contradictions' && renderContradictions(model.layout, m.color)}
+                {key === 'convergence' && renderConvergence(model.layout, m.color)}
+                {key === 'dormant' && renderDormant(model.layout, m.color, reawakened)}
 
                 {/* Always-visible region label */}
-                <SvgText
-                  x={r.cx}
-                  y={r.cy - REGION_R * 0.78}
-                  fontSize={labelFont}
-                  fontFamily={FontFamily.mono}
-                  fill={r.color}
-                  fillOpacity={0.92}
-                  textAnchor="middle"
-                  letterSpacing={2}
-                >
-                  {r.name}
+                <SvgText x={center.cx} y={center.cy - REGION_R * 0.8} fontSize={labelFont}
+                  fontFamily={FontFamily.mono} fill={m.color} fillOpacity={0.95} textAnchor="middle" letterSpacing={2}>
+                  {m.name}
                 </SvgText>
-                <SvgText
-                  x={r.cx}
-                  y={r.cy - REGION_R * 0.78 + labelFont * 1.05}
-                  fontSize={subFont}
-                  fontFamily={FontFamily.mono}
-                  fill="#FFFFFF"
-                  fillOpacity={0.35}
-                  textAnchor="middle"
-                  letterSpacing={1.5}
-                >
-                  {cnt === 0 ? 'quiet' : `${cnt} ${cnt === 1 ? 'signal' : 'signals'}`}
+                <SvgText x={center.cx} y={center.cy - REGION_R * 0.8 + labelFont * 1.05} fontSize={subFont}
+                  fontFamily={FontFamily.mono} fill={ink(0.4)} textAnchor="middle" letterSpacing={1.5}>
+                  {m.noun(model.counts[key])}
                 </SvgText>
 
-                {/* Item labels only when this region is active & zoomed in */}
-                {isActive && zoom > 0.4 && renderItemLabels(r.key, layout, subFont)}
+                {isActive && zoom > 0.4 && renderItemLabels(key, model.layout, subFont)}
               </G>
             );
           })}
         </Svg>
 
-        {/* ── Touch overlay (screen-space Pressables) ──────────────────── */}
+        {/* ── Touch overlay ────────────────────────────────────────────── */}
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-          {/* Non-active regions: one tap flies you there */}
-          {REGIONS.map((r) => {
-            if (active === r.key) return null;
-            const cxs = sx(r.cx);
-            const cys = sy(r.cy);
+          {model.activeKeys.map((key) => {
+            if (active === key) return null;
+            const center = model.centers.get(key)!;
+            const cxs = sx(center.cx);
+            const cys = sy(center.cy);
             const rs = REGION_R * zoom;
             if (cxs < -rs || cxs > SW + rs || cys < -rs || cys > SH + rs) return null;
             const size = rs * 1.4;
             return (
-              <Pressable
-                key={`hit-${r.key}`}
+              <Pressable key={`hit-${key}`}
                 style={{ position: 'absolute', left: cxs - size / 2, top: cys - size / 2, width: size, height: size, borderRadius: size / 2 }}
-                onPress={() => goToRegion(r.key)}
-                accessibilityLabel={`${r.name} region`}
-              />
+                onPress={() => goToRegion(key)}
+                accessibilityLabel={`${META_BY_KEY[key].name} region`} />
             );
           })}
 
-          {/* Active region: per-item taps */}
-          {active && renderItemHits(active, layout, sx, sy, zoom, {
+          {active && renderItemHits(active, model.layout, sx, sy, zoom, {
             selectThread: (d) => setSelection({ type: 'thread', d }),
             selectContradiction: (d) => setSelection({ type: 'contradiction', d }),
             selectConvergence: (d) => setSelection({ type: 'convergence', d }),
             selectDormant: (d) => { reawaken(d.topicId); setSelection({ type: 'dormant', d }); },
-            selectEvolution: (arc, period) => setSelection({ type: 'evolution', arc, period }),
           })}
         </View>
       </View>
 
-      {/* ── Header (fades minimal when a region is active) ───────────────── */}
+      {/* ── Header ───────────────────────────────────────────────────────── */}
       <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.headerOverlay}>
         <View style={styles.headerRow} pointerEvents="box-none">
           {active ? (
             <Pressable onPress={goToOverview} hitSlop={12} style={styles.backBtn}>
-              <Text variant="monoSmall" style={{ color: '#ECECEC' }}>← overview</Text>
+              <Text variant="monoSmall" style={{ color: ink(0.9) }}>← overview</Text>
             </Pressable>
           ) : (
-            <Text variant="wordmark" style={{ color: '#ECECEC' }}>mind</Text>
+            <Text variant="wordmark" style={{ color: ink(0.92) }}>mind</Text>
           )}
           <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About mind">
-            <Text style={{ color: 'rgba(236,236,236,0.5)', fontSize: 16 }}>ⓘ</Text>
+            <Text style={{ color: ink(0.5), fontSize: 16 }}>ⓘ</Text>
           </Pressable>
         </View>
         {active && (
-          <Text variant="monoSmall" style={styles.activeName}>
-            {REGION_BY_KEY[active].name.toLowerCase()}
+          <Text variant="monoSmall" style={[styles.activeName, { color: ink(0.4) }]}>
+            {META_BY_KEY[active].name.toLowerCase()}
           </Text>
         )}
       </SafeAreaView>
 
-      {/* ── Evolution scrubber ──────────────────────────────────────────── */}
-      {active === 'evolution' && counts.evolution > 0 && (
-        <View style={[styles.scrubWrap, { width: scrubRailW }]}>
-          <Text variant="monoSmall" style={styles.scrubHint}>drag to scrub through time</Text>
-          <View style={styles.scrubRail} {...scrub.panHandlers}>
-            <View style={styles.scrubTrack} />
-            <View style={[styles.scrubFill, { width: scrubPct * scrubRailW }]} />
-            <View style={[styles.scrubThumb, { left: scrubPct * scrubRailW - 8 }]} />
-          </View>
-        </View>
-      )}
-
-      {/* ── Region legend (overview only) ───────────────────────────────── */}
-      {!active && (
+      {/* ── Overview hint ─────────────────────────────────────────────────── */}
+      {!active && !selection && (
         <View style={styles.legend} pointerEvents="none">
-          <Text variant="monoSmall" style={styles.legendText}>
+          <Text variant="monoSmall" style={{ color: ink(0.4), letterSpacing: 1 }}>
             tap a region to explore · pinch to zoom
           </Text>
         </View>
       )}
 
-      {/* ── AI-explanation panel (only on intentional selection) ─────────── */}
+      {/* ── AI-explanation panel ──────────────────────────────────────────── */}
       {selection && (
-        <View style={styles.panel}>
-          <View style={styles.panelHandle} />
+        <View style={[styles.panel, { backgroundColor: c.background, borderColor: c.border }]}>
+          <View style={[styles.panelHandle, { backgroundColor: c.border }]} />
           {selection.type === 'thread' && (
             <>
               <PanelMeta left={selection.d.topicName} right={`${selection.d.captureCount} captures`} />
-              <Text style={styles.panelBody}>{selection.d.position}</Text>
-              <Text style={styles.panelSub}>Open question — {selection.d.openQuestion}</Text>
-              <Pressable
-                onPress={() => {
-                  const pos = positionByTopic.get(selection.d.topicId);
-                  if (pos) {
-                    router.push({ pathname: '/position/[topicId]' as never, params: { topicId: selection.d.topicId } });
-                  } else {
-                    router.push({
-                      pathname: '/position/create' as never,
-                      params: {
-                        topicId: selection.d.topicId,
-                        topicName: selection.d.topicName,
-                        captureCount: String(selection.d.captureCount),
-                      },
-                    });
-                  }
-                }}
-                style={styles.panelCta}
-              >
-                <Text style={styles.panelCtaText}>
-                  {positionByTopic.get(selection.d.topicId) ? 'View position →' : 'Take a position →'}
-                </Text>
-              </Pressable>
+              <Text variant="body" style={{ marginTop: Spacing[2] }}>{selection.d.position}</Text>
+              <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3] }}>
+                Open question — {selection.d.openQuestion}
+              </Text>
+              <View style={[styles.ctaRow, { borderTopColor: c.borderSubtle }]}>
+                <Pressable onPress={() => continueInCompanion(selection.d)} hitSlop={8}>
+                  <Text variant="monoSmall" color="muted">Continue in companion →</Text>
+                </Pressable>
+                <Pressable onPress={() => viewInAtlas(selection.d)} hitSlop={8}>
+                  <Text variant="monoSmall" color="muted">View in Atlas →</Text>
+                </Pressable>
+              </View>
             </>
           )}
           {selection.type === 'contradiction' && (
             <>
               <View style={styles.pairRow}>
                 <Pressable style={styles.pairSide} onPress={() => router.push(`/insight/${selection.d.itemAId}` as never)}>
-                  <Text style={styles.pairTag}>A</Text>
-                  <Text style={styles.panelBody} numberOfLines={3}>{selection.d.labelA}</Text>
+                  <Text variant="monoSmall" color="muted">A</Text>
+                  <Text variant="bodyMedium" numberOfLines={3} style={{ marginTop: 4 }}>{selection.d.labelA}</Text>
                 </Pressable>
                 <Pressable style={styles.pairSide} onPress={() => router.push(`/insight/${selection.d.itemBId}` as never)}>
-                  <Text style={styles.pairTag}>B</Text>
-                  <Text style={styles.panelBody} numberOfLines={3}>{selection.d.labelB}</Text>
+                  <Text variant="monoSmall" color="muted">B</Text>
+                  <Text variant="bodyMedium" numberOfLines={3} style={{ marginTop: 4 }}>{selection.d.labelB}</Text>
                 </Pressable>
               </View>
-              <Text style={styles.panelSub}>Tension — {selection.d.tension}</Text>
+              <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3] }}>
+                Tension — {selection.d.tension}
+              </Text>
             </>
           )}
           {selection.type === 'convergence' && (
             <>
               <PanelMeta left={selection.d.topicName} right={`${selection.d.sourceCount} sources`} />
-              <Text style={styles.panelBody}>{selection.d.signal}</Text>
+              <Text variant="body" style={{ marginTop: Spacing[2] }}>{selection.d.signal}</Text>
             </>
           )}
           {selection.type === 'dormant' && (
             <>
               <PanelMeta left={selection.d.topicName} right={`${selection.d.captureCount} captures`} />
-              <Text style={styles.panelBody}>
-                Quiet for {selection.d.daysSilent} days. You went deep here once — worth a revisit?
-              </Text>
-            </>
-          )}
-          {selection.type === 'evolution' && (
-            <>
-              <PanelMeta left={selection.arc.topicName} right={selection.period.month} />
-              <Text style={styles.panelBody}>
-                {selection.period.captureCount} captures that month
-                {selection.period.keyIdeas.length > 0 ? ` · ${selection.period.keyIdeas[0]}` : ''}
+              <Text variant="body" style={{ marginTop: Spacing[2] }}>
+                Quiet for {selection.d.daysSilent} days. You went deep here once — worth reawakening?
               </Text>
             </>
           )}
           <Pressable onPress={() => setSelection(null)} style={styles.panelClose} hitSlop={12}>
-            <Text style={styles.panelCloseText}>close</Text>
+            <Text variant="monoSmall" color="faint">close</Text>
           </Pressable>
         </View>
       )}
@@ -759,81 +676,91 @@ export default function MindScreen() {
         visible={infoVisible}
         onClose={() => setInfoVisible(false)}
         title="mind"
-        body="A map of how you're thinking. Five regions — threads you're chasing, how they've evolved, where they contradict, where they converge, and what's gone dormant. Fly into a region to see the detail; tap something for the explanation."
+        body="A map of how you're thinking. Regions appear as they fill in — threads you're chasing, ideas in tension, topics converging, and threads gone dormant. Fly into a region for the detail; tap something for the explanation."
       />
     </View>
   );
 }
 
 // ── SVG region renderers ───────────────────────────────────────────────────
-function renderThreads(layout: Layout, isActive: boolean, color: string) {
+function renderThreads(layout: RegionLayout, color: string) {
   const { threads } = layout;
   return (
     <G>
       {threads.items.map((it) => (
-        <Line
-          key={`tl-${it.id}`}
-          x1={threads.hubX} y1={threads.hubY} x2={it.x} y2={it.y}
-          stroke={color} strokeOpacity={isActive ? 0.4 : 0.18} strokeWidth={1.1}
-        />
+        <Line key={`tl-${it.id}`} x1={threads.hubX} y1={threads.hubY} x2={it.x} y2={it.y}
+          stroke={color} strokeOpacity={0.22} strokeWidth={1.1} />
       ))}
-      {/* faint bundle links between neighbours */}
       {threads.items.map((it, i) => {
         const nxt = threads.items[(i + 1) % threads.items.length];
         if (!nxt || threads.items.length < 3) return null;
         return (
           <Line key={`tb-${it.id}`} x1={it.x} y1={it.y} x2={nxt.x} y2={nxt.y}
-            stroke={color} strokeOpacity={0.08} strokeWidth={0.8} />
+            stroke={color} strokeOpacity={0.07} strokeWidth={0.8} />
         );
       })}
-      <Circle cx={threads.hubX} cy={threads.hubY} r={10} fill={color} fillOpacity={0.5} />
+      <Circle cx={threads.hubX} cy={threads.hubY} r={9} fill={color} fillOpacity={0.5} />
       {threads.items.map((it) => (
         <G key={`tn-${it.id}`}>
-          <Circle cx={it.x} cy={it.y} r={it.r * 1.7} fill={color} fillOpacity={0.08} />
-          <Circle cx={it.x} cy={it.y} r={it.r} fill={color} fillOpacity={0.78} />
+          {/* tree-ring depth: more rings = deeper investigation */}
+          {Array.from({ length: it.rings }, (_, k) => (
+            <Circle key={k} cx={it.x} cy={it.y} r={it.r + 6 + k * 7} fill="none"
+              stroke={color} strokeOpacity={0.12 - k * 0.015} strokeWidth={0.8} />
+          ))}
+          <Circle cx={it.x} cy={it.y} r={it.r} fill={color} fillOpacity={0.72} />
         </G>
       ))}
     </G>
   );
 }
 
-function renderContradictions(layout: Layout, color: string) {
+function renderContradictions(layout: RegionLayout, color: string) {
+  const { contradictions } = layout;
   return (
     <G>
-      {layout.contradictions.map((p) => {
-        // jagged tension line between the pair
-        const mx = (p.ax + p.bx) / 2;
-        const my = (p.ay + p.by) / 2;
-        const nx = -(p.by - p.ay);
-        const ny = p.bx - p.ax;
+      {contradictions.edges.map((e) => {
+        // jagged tension bolt between the two poles
+        const mx = (e.a.x + e.b.x) / 2;
+        const my = (e.a.y + e.b.y) / 2;
+        const nx = -(e.b.y - e.a.y);
+        const ny = e.b.x - e.a.x;
         const len = Math.hypot(nx, ny) || 1;
-        const off = 9;
+        const off = 11;
         const jx = mx + (nx / len) * off;
         const jy = my + (ny / len) * off;
         return (
-          <G key={`cn-${p.id}`}>
-            <Path d={`M${p.ax},${p.ay}L${jx},${jy}L${p.bx},${p.by}`}
-              fill="none" stroke={color} strokeOpacity={0.55} strokeWidth={1.3} />
-            <Circle cx={p.ax} cy={p.ay} r={15} fill={color} fillOpacity={0.7} />
-            <Circle cx={p.bx} cy={p.by} r={15} fill={color} fillOpacity={0.7} />
+          <G key={`ce-${e.id}`}>
+            <Path d={`M${e.a.x},${e.a.y}L${jx},${jy}L${e.b.x},${e.b.y}`}
+              fill="none" stroke={color} strokeOpacity={0.5} strokeWidth={1.3} />
+            {/* spark at the point of tension */}
+            <Circle cx={mx} cy={my} r={3} fill={color} fillOpacity={0.85} />
           </G>
         );
       })}
+      {contradictions.nodes.map((n) => (
+        <Circle key={`cn-${n.id}`} cx={n.x} cy={n.y} r={15} fill={color} fillOpacity={0.7} />
+      ))}
     </G>
   );
 }
 
-function renderConvergence(layout: Layout, color: string) {
+function renderConvergence(layout: RegionLayout, color: string) {
   return (
     <G>
       {layout.convergence.map((g) => (
         <G key={`cv-${g.id}`}>
-          {g.sources.map((s, i) => (
-            <G key={i}>
-              <Line x1={s.x} y1={s.y} x2={g.x} y2={g.y} stroke={color} strokeOpacity={0.3} strokeWidth={1} />
-              <Circle cx={s.x} cy={s.y} r={5} fill={color} fillOpacity={0.5} />
-            </G>
-          ))}
+          {g.streams.map((s, i) => {
+            // curved tributary flowing toward the shared theme node
+            const mx = (s.x + g.x) / 2 + (g.y - s.y) * 0.18;
+            const my = (s.y + g.y) / 2 + (s.x - g.x) * 0.18;
+            return (
+              <G key={i}>
+                <Path d={`M${s.x},${s.y}Q${mx},${my} ${g.x},${g.y}`}
+                  fill="none" stroke={color} strokeOpacity={0.28} strokeWidth={1} />
+                <Circle cx={s.x} cy={s.y} r={4.5} fill={color} fillOpacity={0.45} />
+              </G>
+            );
+          })}
           <Circle cx={g.x} cy={g.y} r={g.r * 1.9} fill={color} fillOpacity={0.1} />
           <Circle cx={g.x} cy={g.y} r={g.r} fill={color} fillOpacity={0.82} />
         </G>
@@ -842,27 +769,27 @@ function renderConvergence(layout: Layout, color: string) {
   );
 }
 
-function renderDormant(layout: Layout, color: string, reawakened: Set<string>) {
+function renderDormant(layout: RegionLayout, color: string, reawakened: Set<string>) {
   return (
     <G>
       {layout.dormant.map((d) => {
         const awake = reawakened.has(d.id);
-        const op = awake ? 0.7 : 0.24;
+        const op = awake ? 0.7 : 0.22;
         return (
           <G key={`dm-${d.id}`}>
+            <Circle cx={d.x} cy={d.y} r={40} fill="none" stroke={color}
+              strokeOpacity={awake ? 0.3 : 0.12} strokeWidth={0.8} strokeDasharray="2 8" />
             {d.dots.map((dot, i) => {
               const nxt = d.dots[(i + 1) % d.dots.length];
               return (
                 <G key={i}>
-                  {nxt && (
-                    <Line x1={dot.x} y1={dot.y} x2={nxt.x} y2={nxt.y}
-                      stroke={color} strokeOpacity={op * 0.4} strokeWidth={0.7} />
-                  )}
+                  {nxt && <Line x1={dot.x} y1={dot.y} x2={nxt.x} y2={nxt.y}
+                    stroke={color} strokeOpacity={op * 0.4} strokeWidth={0.7} />}
                   <Circle cx={dot.x} cy={dot.y} r={dot.r} fill={color} fillOpacity={op} />
                 </G>
               );
             })}
-            <Circle cx={d.x} cy={d.y} r={awake ? 8 : 5} fill={color} fillOpacity={awake ? 0.85 : 0.4} />
+            <Circle cx={d.x} cy={d.y} r={awake ? 8 : 5} fill={color} fillOpacity={awake ? 0.85 : 0.38} />
           </G>
         );
       })}
@@ -870,50 +797,22 @@ function renderDormant(layout: Layout, color: string, reawakened: Set<string>) {
   );
 }
 
-function renderEvolution(layout: Layout, color: string, isActive: boolean, scrubWorldX: number) {
-  const { evolution } = layout;
-  return (
-    <G>
-      {isActive && (
-        <Line x1={scrubWorldX} y1={REGION_BY_KEY.evolution.cy - REGION_R * 0.7}
-          x2={scrubWorldX} y2={REGION_BY_KEY.evolution.cy + REGION_R * 0.7}
-          stroke="#FFFFFF" strokeOpacity={0.35} strokeWidth={1} strokeDasharray="3 5" />
-      )}
-      {evolution.tracks.map((t) => (
-        <G key={`ev-${t.id}`}>
-          <Line x1={evolution.left} y1={t.y} x2={evolution.right} y2={t.y}
-            stroke={color} strokeOpacity={0.16} strokeWidth={1} />
-          {t.dots.map((dot, i) => {
-            const near = isActive && Math.abs(dot.x - scrubWorldX) < 40;
-            return (
-              <Circle key={i} cx={dot.x} cy={t.y} r={near ? dot.r * 1.4 : dot.r}
-                fill={color} fillOpacity={near ? 0.95 : 0.6} />
-            );
-          })}
-        </G>
-      ))}
-    </G>
-  );
-}
-
-function renderItemLabels(key: RegionKey, layout: Layout, font: number) {
-  const props = (x: number, y: number, txt: string) => (
+function renderItemLabels(key: RegionKey, layout: RegionLayout, font: number) {
+  const label = (x: number, y: number, txt: string) => (
     <SvgText x={x} y={y} fontSize={font} fontFamily={FontFamily.mono}
-      fill="#FFFFFF" fillOpacity={0.6} textAnchor="middle" letterSpacing={0.5}>
+      fill={ink(0.62)} textAnchor="middle" letterSpacing={0.5}>
       {txt.length > 18 ? `${txt.slice(0, 17)}…` : txt}
     </SvgText>
   );
-  if (key === 'threads') return <G>{layout.threads.items.map((it) => <G key={it.id}>{props(it.x, it.y + it.r + font * 1.1, it.d.topicName)}</G>)}</G>;
-  if (key === 'convergence') return <G>{layout.convergence.map((g) => <G key={g.id}>{props(g.x, g.y + g.r + font * 1.6, g.d.topicName)}</G>)}</G>;
-  if (key === 'dormant') return <G>{layout.dormant.map((d) => <G key={d.id}>{props(d.x, d.y + font * 2.4, d.d.topicName)}</G>)}</G>;
-  if (key === 'evolution') return <G>{layout.evolution.tracks.map((t) => <G key={t.id}>{props(layout.evolution.left - 4, t.y + font * 0.35, t.arc.topicName)}</G>)}</G>;
+  if (key === 'threads') return <G>{layout.threads.items.map((it) => <G key={it.id}>{label(it.x, it.y + it.r + font * 1.2, it.d.topicName)}</G>)}</G>;
+  if (key === 'convergence') return <G>{layout.convergence.map((g) => <G key={g.id}>{label(g.x, g.y + g.r + font * 1.7, g.d.topicName)}</G>)}</G>;
+  if (key === 'dormant') return <G>{layout.dormant.map((d) => <G key={d.id}>{label(d.x, d.y + font * 2.6, d.d.topicName)}</G>)}</G>;
   return null;
 }
 
-// ── Screen-space hit targets for the active region ─────────────────────────
 function renderItemHits(
   key: RegionKey,
-  layout: Layout,
+  layout: RegionLayout,
   sx: (n: number) => number,
   sy: (n: number) => number,
   zoom: number,
@@ -922,61 +821,39 @@ function renderItemHits(
     selectContradiction: (d: ContradictionCard) => void;
     selectConvergence: (d: ConvergenceSignal) => void;
     selectDormant: (d: DormantThread) => void;
-    selectEvolution: (arc: EvolutionArc, period: EvolutionPeriod) => void;
   },
 ) {
   const hit = (id: string, wx: number, wy: number, r: number, onPress: () => void) => {
     const x = sx(wx);
     const y = sy(wy);
-    const s = Math.max(38, r * zoom * 2.4);
+    const s = Math.max(40, r * zoom * 2.4);
     if (x < -s || x > SW + s || y < -s || y > SH + s) return null;
     return (
-      <Pressable
-        key={id}
+      <Pressable key={id}
         style={{ position: 'absolute', left: x - s / 2, top: y - s / 2, width: s, height: s, borderRadius: s / 2 }}
-        onPress={onPress}
-      />
+        onPress={onPress} />
     );
   };
-
   if (key === 'threads') return <>{layout.threads.items.map((it) => hit(`h-${it.id}`, it.x, it.y, it.r, () => cb.selectThread(it.d)))}</>;
-  if (key === 'contradictions')
-    return (
-      <>
-        {layout.contradictions.map((p) =>
-          hit(`h-${p.id}`, (p.ax + p.bx) / 2, (p.ay + p.by) / 2, 40, () => cb.selectContradiction(p.d)),
-        )}
-      </>
-    );
+  if (key === 'contradictions') return <>{layout.contradictions.edges.map((e) => hit(`h-${e.id}`, (e.a.x + e.b.x) / 2, (e.a.y + e.b.y) / 2, 40, () => cb.selectContradiction(e.d)))}</>;
   if (key === 'convergence') return <>{layout.convergence.map((g) => hit(`h-${g.id}`, g.x, g.y, g.r, () => cb.selectConvergence(g.d)))}</>;
   if (key === 'dormant') return <>{layout.dormant.map((d) => hit(`h-${d.id}`, d.x, d.y, 26, () => cb.selectDormant(d.d)))}</>;
-  if (key === 'evolution')
-    return (
-      <>
-        {layout.evolution.tracks.flatMap((t) =>
-          t.dots.map((dot, i) => hit(`h-${t.id}-${i}`, dot.x, t.y, Math.max(dot.r, 12), () => cb.selectEvolution(t.arc, dot.period))),
-        )}
-      </>
-    );
   return null;
 }
 
 function PanelMeta({ left, right }: { left: string; right: string }) {
   return (
     <View style={styles.panelMeta}>
-      <Text style={styles.panelMetaText}>{left}</Text>
-      <Text style={styles.panelMetaText}>{right}</Text>
+      <Text variant="monoSmall" color="muted">{left}</Text>
+      <Text variant="monoSmall" color="muted">{right}</Text>
     </View>
   );
 }
 
-const PANEL_TEXT = 'rgba(236,236,236,0.92)';
-const PANEL_MUTED = 'rgba(236,236,236,0.55)';
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: MAP_BG },
+  root: { flex: 1 },
   safe: { flex: 1 },
-  header: {
+  headerFlat: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: Spacing[6], paddingVertical: Spacing[4], borderBottomWidth: 1,
   },
@@ -988,47 +865,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[6], paddingTop: Spacing[3], paddingBottom: Spacing[2],
   },
   backBtn: { paddingVertical: 2 },
-  activeName: {
-    paddingHorizontal: Spacing[6], color: 'rgba(236,236,236,0.4)',
-    letterSpacing: 2, textTransform: 'uppercase',
-  },
+  activeName: { paddingHorizontal: Spacing[6], letterSpacing: 2, textTransform: 'uppercase' },
 
   legend: {
     position: 'absolute', bottom: Platform.OS === 'ios' ? 100 : 82,
     left: 0, right: 0, alignItems: 'center',
   },
-  legendText: { color: 'rgba(236,236,236,0.4)', letterSpacing: 1 },
-
-  scrubWrap: {
-    position: 'absolute', bottom: Platform.OS === 'ios' ? 100 : 82,
-    left: Spacing[6], alignItems: 'stretch',
-  },
-  scrubHint: { color: 'rgba(236,236,236,0.4)', marginBottom: Spacing[2], letterSpacing: 1 },
-  scrubRail: { height: 24, justifyContent: 'center' },
-  scrubTrack: { position: 'absolute', left: 0, right: 0, height: 2, borderRadius: 1, backgroundColor: 'rgba(236,236,236,0.14)' },
-  scrubFill: { position: 'absolute', left: 0, height: 2, borderRadius: 1, backgroundColor: 'rgba(126,200,160,0.7)' },
-  scrubThumb: { position: 'absolute', width: 16, height: 16, borderRadius: 8, backgroundColor: '#7EC8A0' },
 
   panel: {
     position: 'absolute', left: Spacing[4], right: Spacing[4],
     bottom: Platform.OS === 'ios' ? 96 : 78,
-    backgroundColor: 'rgba(20,20,20,0.96)',
-    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 16, padding: Spacing[4],
+    borderWidth: StyleSheet.hairlineWidth, borderRadius: 16, padding: Spacing[4],
   },
-  panelHandle: {
-    alignSelf: 'center', width: 34, height: 3, borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.16)', marginBottom: Spacing[3],
+  panelHandle: { alignSelf: 'center', width: 34, height: 3, borderRadius: 2, marginBottom: Spacing[3] },
+  panelMeta: { flexDirection: 'row', justifyContent: 'space-between' },
+  ctaRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    marginTop: Spacing[4], paddingTop: Spacing[3], borderTopWidth: StyleSheet.hairlineWidth,
   },
-  panelMeta: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing[2] },
-  panelMetaText: { fontFamily: FontFamily.mono, fontSize: 10, color: PANEL_MUTED, letterSpacing: 0.5 },
-  panelBody: { fontFamily: FontFamily.sans, fontSize: 14, lineHeight: 20, color: PANEL_TEXT },
-  panelSub: { fontFamily: FontFamily.mono, fontSize: 11, lineHeight: 17, color: PANEL_MUTED, marginTop: Spacing[3] },
-  panelCta: { marginTop: Spacing[4], paddingTop: Spacing[3], borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.1)' },
-  panelCtaText: { fontFamily: FontFamily.mono, fontSize: 11, color: PANEL_MUTED },
-  pairRow: { flexDirection: 'row', gap: Spacing[3], marginBottom: Spacing[2] },
+  pairRow: { flexDirection: 'row', gap: Spacing[4] },
   pairSide: { flex: 1 },
-  pairTag: { fontFamily: FontFamily.mono, fontSize: 10, color: PANEL_MUTED, marginBottom: 4 },
   panelClose: { position: 'absolute', top: Spacing[3], right: Spacing[4] },
-  panelCloseText: { fontFamily: FontFamily.mono, fontSize: 10, color: PANEL_MUTED },
 });

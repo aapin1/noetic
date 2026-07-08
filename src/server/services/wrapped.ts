@@ -173,7 +173,9 @@ export async function getWrappedStats(userId: string, db: DbClient = prisma): Pr
     busiestDayOfWeek: WEEKDAYS[busiestWeekdayIdx] ?? null,
     busiestHour,
     formats: countTop(
-      captures.map((c) => c.kind.toLowerCase()),
+      // Quotes are folded into text (the quote capture type was retired), so
+      // legacy QUOTE captures count toward the "text" format/persona.
+      captures.map((c) => (c.kind === "QUOTE" ? "text" : c.kind.toLowerCase())),
       4,
     ),
     currentStreak: current,

@@ -193,6 +193,8 @@ export async function cleanContentMetadata(args: {
 export type ImageDescription = {
   title: string;
   description: string;
+  /** Short, non-verbatim gist of the image for display (never the full transcription). */
+  summary: string | null;
 };
 
 /**
@@ -217,7 +219,8 @@ export async function describeImage(args: {
     "Extract the substantive meaning of this image for a personal knowledge library. Work only from what is visible; never fabricate.",
     "- If the image contains meaningful text (a screenshot, book page, slide, quote, article), transcribe that text verbatim into the description.",
     "- If it is a photo, diagram, or artwork with little text, describe the subject and what makes it noteworthy.",
-    "Return strictly valid JSON (no markdown): {\"title\": \"...\", \"description\": \"...\"} where title is a short handle and description is 1-3 sentences (or the transcribed text) of substance.",
+    "Also return a summary: ONE short sentence naming what the image is about, in your own words — never a verbatim transcription. This is shown to the user as the gist.",
+    "Return strictly valid JSON (no markdown): {\"title\": \"...\", \"description\": \"...\", \"summary\": \"...\"} where title is a short handle, description is 1-3 sentences (or the transcribed text) of substance, and summary is one plain sentence.",
   ].join("\n");
 
   const dataUrl = `data:${args.mimeType};base64,${args.base64}`;
@@ -255,7 +258,7 @@ export async function describeImage(args: {
     const raw = payload.choices?.[0]?.message?.content;
     if (!raw) return null;
 
-    const parsed = JSON.parse(raw) as { title?: unknown; description?: unknown };
+    const parsed = JSON.parse(raw) as { title?: unknown; description?: unknown; summary?: unknown };
     const description =
       typeof parsed.description === "string" && parsed.description.trim().length > 0
         ? parsed.description.trim()
@@ -266,8 +269,12 @@ export async function describeImage(args: {
       typeof parsed.title === "string" && parsed.title.trim().length > 0
         ? parsed.title.trim()
         : description.slice(0, 80);
+    const summary =
+      typeof parsed.summary === "string" && parsed.summary.trim().length > 0
+        ? parsed.summary.trim()
+        : null;
 
-    return { title, description };
+    return { title, description, summary };
   } catch {
     return null;
   } finally {
@@ -479,22 +486,21 @@ export async function polishInsights(args: PolishContext): Promise<InsightDraft[
 
   const systemPrompt = [
     "You are a knowledge analyst in a personal memory graph.",
-    "Rewrite each insight draft. Be specific and direct — no flattery, no filler, nothing generic.",
+    "Rewrite each insight draft to be genuinely useful and CONCISE. Say something smart — do not perform being smart. Plain, direct language beats erudition. If a phrase only exists to sound clever, cut it.",
     "",
     "HEADLINE:",
-    "- One sentence. A specific intellectual CLAIM, not a description.",
-    "- Bad: 'This touches on philosophy.' Good: 'The cogito shifts the epistemic question from God to self-grounding — a move that haunts modern AI alignment.'",
-    "- Identify the non-obvious tension, inversion, or implication. If neighbors exist, name the specific bridge.",
+    "- One plain sentence: a specific point about this capture or its link to the user's other saved items.",
+    "- No jargon, name-dropping, or rhetorical flourish for effect. Say the actual point.",
+    "- When related_items exist, name the concrete connection to them (reference the item by title) rather than the category.",
     "",
     "BODY:",
-    "- 2 tight sentences. Each must add something the previous didn't.",
-    "- Name the tradition, person, counterargument, or mechanism. Never say 'interesting' or 'important'.",
-    "- No filler: cut 'It may be worth noting', 'One might consider', 'This is significant because'.",
-    "- Contradiction neighbors: name WHAT is in tension (mechanism, not category). Reinforcement: say what belief gets strengthened and whether it's convergence or echo.",
+    "- One sentence. Add a second only if it makes a genuinely distinct point — never to pad.",
+    "- Say it directly. No filler ('it may be worth noting', 'this is significant because'), no throat-clearing, no restating the headline.",
+    "- Never use 'interesting', 'important', 'fascinating', 'delve', or em-dash-strung clauses that add length without meaning.",
+    "- Contradiction neighbors: name WHAT is in tension. Reinforcement: say what belief gets strengthened, and whether it's real convergence or just an echo.",
     "",
-    "OPEN_QUESTION:",
-    "- One question the user hasn't asked. Must be specific and generative — answerable with more research.",
-    "- Bad: 'What do you think about X?' Good: 'Does Descartes' move to res cogitans depend on the same certainty-in-doubt he claims to dissolve?'",
+    "OPEN_QUESTION (optional):",
+    "- Include ONLY if a genuinely generative, specific question exists. One short line. Omit it otherwise — never force one.",
     "",
     "Do not start with 'This capture', 'This article', or the title verbatim. Do not overstate thin evidence.",
     groundingDirective(args.contentGrounding),
@@ -535,7 +541,7 @@ export async function polishInsights(args: PolishContext): Promise<InsightDraft[
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.4,
-        max_tokens: 480,
+        max_tokens: 360,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -736,13 +742,105 @@ export async function generateContradictionTension(args: {
   }
 }
 
+/**
+ * Softer, broader counterpart to generateContradictionTension. Rather than
+ * requiring a hard polarity-opposed edge, this scans the captures within a
+ * single topic for the sharpest *unresolved tension* — friction, ambivalence,
+ * or competing intuitions that don't fully add up. Returns the two captures in
+ * tension (by index into the provided array) or null when nothing genuinely
+ * pulls against anything else.
+ */
+export async function generateTopicTension(args: {
+  topicName: string;
+  captures: { label: string; keyIdea: string | null; text: string }[];
+}): Promise<{ aIndex: number; bIndex: number; tension: string } | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  if (args.captures.length < 2) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  const systemPrompt = [
+    "You are given a numbered list of things a user has saved under one topic.",
+    "Find the single sharpest UNRESOLVED TENSION between two of them.",
+    "This need NOT be a direct logical contradiction ('X is opposed to Y').",
+    "It counts as tension whenever two ideas pull against each other, sit in",
+    "uneasy balance, reveal ambivalence, or simply don't add up together.",
+    "Requirements:",
+    "- Pick the two items (by their index numbers) that are most in tension.",
+    "- Name the specific friction in 1-2 sentences, addressing the user as 'you'.",
+    "- Do not start with 'These captures' or 'These items'.",
+    "- If nothing genuinely pulls against anything else, return null.",
+    'Return strictly valid JSON (no markdown): {"a": <index>, "b": <index>, "tension": "..."} or {"tension": null}',
+  ].join("\n");
+
+  try {
+    const response = await fetch(OPENAI_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+        temperature: 0.3,
+        max_tokens: 200,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: JSON.stringify({
+              topic: args.topicName,
+              items: args.captures.map((c, i) => ({
+                index: i,
+                title: c.label,
+                key_idea: c.keyIdea ?? "",
+                excerpt: c.text.slice(0, 400),
+              })),
+            }),
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = payload.choices?.[0]?.message?.content;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { a?: unknown; b?: unknown; tension?: unknown };
+    if (typeof parsed.tension !== "string" || parsed.tension.trim().length === 0) return null;
+    if (typeof parsed.a !== "number" || typeof parsed.b !== "number") return null;
+
+    const aIndex = Math.trunc(parsed.a);
+    const bIndex = Math.trunc(parsed.b);
+    if (
+      aIndex === bIndex ||
+      aIndex < 0 || aIndex >= args.captures.length ||
+      bIndex < 0 || bIndex >= args.captures.length
+    ) {
+      return null;
+    }
+
+    return { aIndex, bIndex, tension: parsed.tension.trim() };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function generateThreadSynthesis(args: {
   topicName: string;
   captures: { label: string; keyIdea: string | null; text: string }[];
 }): Promise<{ position: string; openQuestion: string } | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
-  if (args.captures.length < 5) return null;
+  if (args.captures.length < 3) return null;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
