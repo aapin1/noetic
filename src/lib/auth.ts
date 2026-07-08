@@ -124,7 +124,17 @@ export async function getRequestUserId(request: Request) {
     const userId = await verifyApiToken(token);
 
     if (userId) {
-      return userId;
+      // A valid signature only proves we once issued this token — not that the
+      // account still exists. If the user was deleted (or the DB was reset), a
+      // stale device token must NOT authenticate; otherwise it silently "signs
+      // in" to a ghost account and drops the user into onboarding. Confirm the
+      // account is real before trusting the token.
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true },
+      });
+
+      return user ? userId : null;
     }
   }
 
