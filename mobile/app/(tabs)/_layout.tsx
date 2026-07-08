@@ -3,8 +3,8 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-
 import { Tabs, useRouter } from 'expo-router';
 import { Redirect } from 'expo-router';
 import {
+  FlaskConicalIcon,
   GitGraphIcon,
-  LineChartIcon,
   ListIcon,
   MessageCircleIcon,
   UserIcon,
@@ -127,17 +127,17 @@ function TabsWithFab() {
           }}
         />
         <Tabs.Screen
-          name="trends"
-          options={{
-            title: 'drift',
-            tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={LineChartIcon} />,
-          }}
-        />
-        <Tabs.Screen
           name="mind"
           options={{
             title: 'mind',
             tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={ZapIcon} />,
+          }}
+        />
+        <Tabs.Screen
+          name="lab"
+          options={{
+            title: 'lab',
+            tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={FlaskConicalIcon} />,
           }}
         />
         <Tabs.Screen
