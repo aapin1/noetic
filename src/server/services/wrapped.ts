@@ -23,6 +23,12 @@ export interface WrappedStats {
   longestStreak: number;
   /** Last 6 calendar months (oldest → newest), zero-filled. */
   monthlyArc: { month: string; count: number }[];
+  followingCount: number;
+  followerCount: number;
+  /** The first person this user ever followed. */
+  firstFollow: { handle: string; displayName: string; followedAt: string } | null;
+  /** People this user follows who've captured something in the last 7 days, busiest first. */
+  friendActivity: { handle: string; displayName: string; count: number }[];
 }
 
 function monthKey(date: Date): string {
@@ -73,7 +79,64 @@ function computeStreaks(capturedAts: Date[]): { current: number; longest: number
   return { current, longest };
 }
 
+async function getSocialWrappedStats(
+  userId: string,
+  db: DbClient,
+): Promise<Pick<WrappedStats, "followingCount" | "followerCount" | "firstFollow" | "friendActivity">> {
+  const following = await db.follow.findMany({
+    where: { followerId: userId },
+    orderBy: { createdAt: "asc" },
+    select: {
+      createdAt: true,
+      following: { select: { id: true, profile: { select: { handle: true, displayName: true } } } },
+    },
+  });
+
+  const followerCount = await db.follow.count({ where: { followingId: userId } });
+
+  const first = following[0];
+  const firstFollow = first
+    ? {
+        handle: first.following.profile?.handle ?? first.following.id,
+        displayName: first.following.profile?.displayName ?? "Unknown",
+        followedAt: first.createdAt.toISOString(),
+      }
+    : null;
+
+  let friendActivity: { handle: string; displayName: string; count: number }[] = [];
+  if (following.length > 0) {
+    const since = new Date(Date.now() - 7 * DAY_MS);
+    const followingIds = following.map((f) => f.following.id);
+    const recentCaptures = await db.capturedItem.findMany({
+      where: { userId: { in: followingIds }, capturedAt: { gte: since } },
+      select: {
+        userId: true,
+        user: { select: { profile: { select: { handle: true, displayName: true } } } },
+      },
+    });
+
+    const counts = new Map<string, { handle: string; displayName: string; count: number }>();
+    for (const capture of recentCaptures) {
+      const existing = counts.get(capture.userId);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        counts.set(capture.userId, {
+          handle: capture.user.profile?.handle ?? capture.userId,
+          displayName: capture.user.profile?.displayName ?? "Unknown",
+          count: 1,
+        });
+      }
+    }
+    friendActivity = [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 3);
+  }
+
+  return { followingCount: following.length, followerCount, firstFollow, friendActivity };
+}
+
 export async function getWrappedStats(userId: string, db: DbClient = prisma): Promise<WrappedStats> {
+  const social = await getSocialWrappedStats(userId, db);
+
   const captures = await db.capturedItem.findMany({
     where: { userId },
     select: {
@@ -100,6 +163,7 @@ export async function getWrappedStats(userId: string, db: DbClient = prisma): Pr
     currentStreak: 0,
     longestStreak: 0,
     monthlyArc: [],
+    ...social,
   };
 
   if (captures.length === 0) {
@@ -181,5 +245,6 @@ export async function getWrappedStats(userId: string, db: DbClient = prisma): Pr
     currentStreak: current,
     longestStreak: longest,
     monthlyArc,
+    ...social,
   };
 }

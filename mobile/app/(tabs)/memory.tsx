@@ -8,6 +8,7 @@ import { FontFamily, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
+import { ScreenIntro } from '@/components/ui/ScreenIntro';
 import { FolderGrid } from '@/components/archive/FolderGrid';
 import type { ArchiveFolderSummary } from '@/types/api';
 
@@ -74,7 +75,7 @@ export default function ArchiveScreen() {
         body="Everything you've saved, organized into folders by topic. Open a folder to browse its entries — and its sub-topics, if it has any."
       />
 
-      {!isEmpty && (
+      {folders && folders.length > 0 && (
         <View style={styles.sortRow}>
           {SORT_OPTIONS.map((opt) => {
             const selected = sort === opt.key;
@@ -116,11 +117,10 @@ export default function ArchiveScreen() {
         )}
 
         {isEmpty && (
-          <View style={styles.emptyWrap}>
-            <Text variant="monoSmall" style={{ color: c.muted, textAlign: 'center', letterSpacing: 1.5 }}>
-              {'nothing here yet.\ncapture something from the map.'}
-            </Text>
-          </View>
+          <ScreenIntro
+            title="Nothing here yet"
+            body="Capture something from the map and it'll show up here, organized into folders by topic."
+          />
         )}
 
         <FolderGrid folders={sortedFolders} />
@@ -168,8 +168,4 @@ const styles = StyleSheet.create({
   },
   skeletonIcon: { width: 56, height: 46, borderRadius: Radius.sm },
   skeletonLine: { width: '70%', height: 10, borderRadius: Radius.xs, marginTop: Spacing[2] },
-  emptyWrap: {
-    paddingTop: Spacing[20],
-    alignItems: 'center',
-  },
 });

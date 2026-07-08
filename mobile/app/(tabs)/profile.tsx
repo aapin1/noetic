@@ -29,9 +29,6 @@ export default function YouScreen() {
     [],
   );
 
-  const { data: capList, refetch: refetchCaps } = useApiQuery(() => api.captures.list({ limit: 80 }), []);
-  const count = capList?.length ?? 0;
-
   // Optimistic override so a freshly-changed avatar shows immediately.
   const [override, setOverride] = useState<OwnerProfile | null>(null);
   const p = override ?? profile ?? authProfile;
@@ -39,8 +36,7 @@ export default function YouScreen() {
   useFocusEffect(
     useCallback(() => {
       void refetch();
-      void refetchCaps();
-    }, [refetch, refetchCaps]),
+    }, [refetch]),
   );
 
   const handleRefresh = useCallback(async () => {
@@ -95,23 +91,15 @@ export default function YouScreen() {
 
         <WrappedSection scrollY={scrollY} />
 
-        <View style={[styles.statCard, { borderColor: c.border }]}>
-          <Text variant="label" color="muted">
-            captures
-          </Text>
-          <Text variant="h2" style={{ marginTop: Spacing[2] }}>
-            {count === 0 ? '—' : count}
-          </Text>
+        <View style={styles.editButtonWrap}>
+          <Button
+            label="Edit profile"
+            variant="secondary"
+            size="md"
+            fullWidth
+            onPress={() => router.push('/profile/edit' as never)}
+          />
         </View>
-
-        <Button
-          label="Edit profile"
-          variant="secondary"
-          size="md"
-          fullWidth
-          onPress={() => router.push('/profile/edit' as never)}
-          style={styles.editButton}
-        />
       </Animated.ScrollView>
     </SafeAreaView>
   );
@@ -130,12 +118,5 @@ const styles = StyleSheet.create({
   content: { paddingBottom: Spacing[16] },
   hero: { alignItems: 'center', paddingHorizontal: Spacing[6], paddingVertical: Spacing[8] },
   bio: { marginTop: Spacing[3], textAlign: 'center', maxWidth: 320 },
-  statCard: {
-    marginHorizontal: Spacing[6],
-    marginTop: Spacing[6],
-    padding: Spacing[5],
-    borderWidth: 1,
-    borderRadius: 12,
-  },
-  editButton: { marginHorizontal: Spacing[6], marginTop: Spacing[6] },
+  editButtonWrap: { paddingHorizontal: Spacing[6], marginTop: Spacing[6] },
 });

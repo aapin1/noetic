@@ -237,6 +237,10 @@ export interface WrappedStats {
   currentStreak: number;
   longestStreak: number;
   monthlyArc: { month: string; count: number }[];
+  followingCount: number;
+  followerCount: number;
+  firstFollow: { handle: string; displayName: string; followedAt: string } | null;
+  friendActivity: { handle: string; displayName: string; count: number }[];
 }
 
 export interface IngestedMetadata {

@@ -31,6 +31,45 @@ function formatMonthYear(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 }
 
+const FOLLOWER_MILESTONES = [1000, 500, 250, 100, 50, 25, 10, 5];
+
+function formatFirstFollow(firstFollow: WrappedStats['firstFollow']): string {
+  if (!firstFollow) {
+    return "You haven't followed anyone yet. Find people in Pulse and their world shows up here too.";
+  }
+  return `Your first follow was @${firstFollow.handle}, back in ${formatMonthYear(firstFollow.followedAt)}.`;
+}
+
+function formatFriendActivity(
+  friendActivity: WrappedStats['friendActivity'],
+  followingCount: number,
+): string | null {
+  if (followingCount === 0) return null;
+  if (friendActivity.length === 0) {
+    return 'Quiet week — no new activity from who you follow.';
+  }
+  const [top, ...rest] = friendActivity;
+  const topLine = `@${top.handle} added ${top.count} thing${top.count === 1 ? '' : 's'} this week`;
+  if (rest.length === 0) {
+    return `${topLine}.`;
+  }
+  return `${topLine}, plus ${rest.length} other${rest.length === 1 ? '' : 's'} have been busy too.`;
+}
+
+function formatFollowerMilestone(followerCount: number): string {
+  if (followerCount === 0) {
+    return 'No followers yet. Someone will spot your map eventually.';
+  }
+  if (followerCount === 1) {
+    return "You've got your first follower.";
+  }
+  const milestone = FOLLOWER_MILESTONES.find((m) => followerCount >= m);
+  if (milestone) {
+    return `You've passed ${milestone} followers.`;
+  }
+  return `${followerCount} people follow you now.`;
+}
+
 const ARCHETYPES: Record<string, { name: string; line: string }> = {
   link: { name: 'The Link Hoarder', line: 'Every tab open, forever, just in case.' },
   text: { name: 'The Note-Taker', line: 'You type the thought before it can run off.' },
@@ -173,13 +212,16 @@ export function WrappedSection({ scrollY }: { scrollY: SharedValue<number> }) {
 
   const fireHero = () => {
     setHeroActive(true);
-    setConfettiKey((k) => k + 1);
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (w.totalCaptures > 0) {
+      setConfettiKey((k) => k + 1);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
   };
 
   const cardProps = { scrollY, sectionY, screenH };
   const topFormat = w.formats[0]?.name;
   const archetype = topFormat ? ARCHETYPES[topFormat] : undefined;
+  const friendActivityLine = formatFriendActivity(w.friendActivity, w.followingCount);
 
   return (
     <View
@@ -194,7 +236,7 @@ export function WrappedSection({ scrollY }: { scrollY: SharedValue<number> }) {
 
       {/* Hero — milestone + confetti */}
       <RevealCard {...cardProps} onReveal={fireHero} style={styles.hero}>
-        <Confetti trigger={confettiKey} />
+        {w.totalCaptures > 0 && <Confetti trigger={confettiKey} />}
         {w.totalCaptures === 0 ? (
           <>
             <Text variant="h2" style={styles.heroTitle}>
@@ -314,6 +356,20 @@ export function WrappedSection({ scrollY }: { scrollY: SharedValue<number> }) {
           </Text>
         </RevealCard>
       ) : null}
+
+      <RevealCard {...cardProps}>
+        <Text variant="serif" style={styles.cardTitle}>
+          {formatFirstFollow(w.firstFollow)}
+        </Text>
+        {friendActivityLine ? (
+          <Text variant="mono" color="muted" style={{ marginTop: Spacing[2] }}>
+            {friendActivityLine}
+          </Text>
+        ) : null}
+        <Text variant="mono" color="muted" style={{ marginTop: Spacing[2] }}>
+          {formatFollowerMilestone(w.followerCount)}
+        </Text>
+      </RevealCard>
     </View>
   );
 }
@@ -338,6 +394,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing[8],
     minHeight: 180,
     justifyContent: 'center',
+    overflow: 'visible',
   },
   heroNumber: {
     fontSize: 72,

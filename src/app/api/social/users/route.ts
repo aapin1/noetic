@@ -9,11 +9,12 @@ const searchSchema = z.object({
 
 export async function GET(request: Request) {
   return handleRoute(async () => {
-    await requireRequestUserId(request);
+    const userId = await requireRequestUserId(request);
     const { q } = await parseSearchParams(request, searchSchema);
 
     const profiles = await prisma.profile.findMany({
       where: {
+        userId: { not: userId },
         OR: [
           { handle: { contains: q, mode: "insensitive" } },
           { displayName: { contains: q, mode: "insensitive" } },

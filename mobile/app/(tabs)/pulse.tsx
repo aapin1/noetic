@@ -120,20 +120,14 @@ function UserResult({
 }) {
   const c = useThemeColors();
   const [followed, setFollowed] = useState(false);
-  const [busy, setBusy] = useState(false);
 
-  const handleFollow = async () => {
-    if (busy || followed) return;
-    setBusy(true);
-    try {
-      await api.social.follow(user.id);
-    } catch {
+  const handleFollow = () => {
+    if (followed) return;
+    setFollowed(true);
+    onFollow(user.id);
+    void api.social.follow(user.id).catch(() => {
       // already following is fine
-    } finally {
-      setFollowed(true);
-      setBusy(false);
-      onFollow(user.id);
-    }
+    });
   };
 
   return (
@@ -144,9 +138,14 @@ function UserResult({
         <Text variant="monoSmall" style={{ color: c.muted }}>@{user.handle}</Text>
       </View>
       <Pressable
-        onPress={() => void handleFollow()}
-        disabled={busy || followed}
-        style={[styles.followBtn, { borderColor: followed ? c.faint : c.text }]}
+        onPress={handleFollow}
+        disabled={followed}
+        hitSlop={8}
+        style={({ pressed }) => [
+          styles.followBtn,
+          { borderColor: followed ? c.faint : c.text },
+          pressed && !followed && styles.followBtnPressed,
+        ]}
       >
         <Text variant="monoSmall" style={{ color: followed ? c.faint : c.text }}>
           {followed ? 'following' : 'follow'}
@@ -164,6 +163,7 @@ export default function PulseScreen() {
   const [searching, setSearching] = useState(false);
   const [friends, setFriends] = useState<PulseFriend[]>([]);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchInputRef = useRef<TextInput>(null);
 
   const { data, loading, error, refetch } = useApiQuery(
     () => api.social.pulse(),
@@ -192,6 +192,14 @@ export default function PulseScreen() {
       }
     }, 400);
   }, []);
+
+  const handleFollowed = useCallback(() => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchInputRef.current?.blur();
+    setSearchQuery('');
+    setSearchResults([]);
+    void refetch();
+  }, [refetch]);
 
   const handleUnfollow = useCallback(async (id: string) => {
     setFriends((prev) => prev.filter((f) => f.user.id !== id));
@@ -242,6 +250,7 @@ export default function PulseScreen() {
                 FIND_
               </Text>
               <TextInput
+                ref={searchInputRef}
                 style={{ flex: 1, fontFamily: FontFamily.mono, fontSize: FontSize.sm, color: c.text, paddingVertical: 0 }}
                 value={searchQuery}
                 onChangeText={handleSearchChange}
@@ -259,7 +268,7 @@ export default function PulseScreen() {
                 <Text variant="monoSmall" style={{ color: c.faint, paddingHorizontal: Spacing[6], paddingTop: Spacing[4] }}>no results</Text>
               )}
               {searchResults.map((u) => (
-                <UserResult key={u.id} user={u} onFollow={() => void refetch()} />
+                <UserResult key={u.id} user={u} onFollow={handleFollowed} />
               ))}
             </View>
           ) : (
@@ -325,5 +334,6 @@ const styles = StyleSheet.create({
   },
   userInfo: { flex: 1, gap: 2 },
   followBtn: { borderWidth: 1, borderRadius: Radius.xs, paddingVertical: Spacing[2], paddingHorizontal: Spacing[3] },
+  followBtnPressed: { opacity: 0.5 },
   centered: { paddingTop: Spacing[12], alignItems: 'center', paddingHorizontal: Spacing[6] },
 });
