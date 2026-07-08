@@ -171,24 +171,44 @@ export async function ingestUrl(url: string, db: DbClient = prisma) {
   const description = cleaned?.excerpt ?? metadata.description;
   const authorName = cleaned?.author ?? metadata.authorName;
 
-  const created = await db.contentItem.create({
-    data: {
-      title,
-      description,
-      bodyText: metadata.bodyText,
-      bodySource: metadata.bodySource,
-      canonicalUrl,
-      originalUrl: metadata.originalUrl,
-      siteName: metadata.siteName,
-      imageUrl: metadata.imageUrl,
-      authorName,
-      publishedAt: metadata.publishedAt,
-      metadataStatus: MetadataStatus.COMPLETE,
-      sourceId: source?.id,
-      contentTypeId: contentType?.id,
-      manualFields: undefined,
-    },
-  });
+  let created;
+  try {
+    created = await db.contentItem.create({
+      data: {
+        title,
+        description,
+        bodyText: metadata.bodyText,
+        bodySource: metadata.bodySource,
+        canonicalUrl,
+        originalUrl: metadata.originalUrl,
+        siteName: metadata.siteName,
+        imageUrl: metadata.imageUrl,
+        authorName,
+        publishedAt: metadata.publishedAt,
+        metadataStatus: MetadataStatus.COMPLETE,
+        sourceId: source?.id,
+        contentTypeId: contentType?.id,
+        manualFields: undefined,
+      },
+    });
+  } catch (err: unknown) {
+    // The pre-check above compares against the raw input URL, but this
+    // insert is keyed on the page's own declared canonical URL (og:url /
+    // link[rel=canonical]), which can differ (AMP variants, redirects,
+    // extra query params the site itself drops). When another request
+    // already created that row first, fall back to it instead of failing.
+    if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002") {
+      const existingByCanonical = await db.contentItem.findUnique({ where: { canonicalUrl } });
+      if (existingByCanonical) {
+        return {
+          status: "existing" as const,
+          requiresManualInput: false,
+          contentItem: await serializeContentItem(db, existingByCanonical.id),
+        };
+      }
+    }
+    throw err;
+  }
 
   return {
     status: "created" as const,
