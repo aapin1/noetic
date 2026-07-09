@@ -7,6 +7,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import { AccentList } from '@/constants/theme';
 
 /**
  * A one-shot confetti burst driven entirely on the UI thread. Each piece gets a
@@ -16,8 +17,7 @@ import Animated, {
  * burst still feels like mneme on both the light and dark backgrounds.
  */
 
-// Mid-tone, low-saturation accents that stay legible on paper (#F5F4F0) and ink (#060606).
-const COLORS = ['#B8894B', '#6B7F5B', '#8A5A5A', '#5B6E7F', '#C08A5A', '#7A6E8A'];
+const COLORS = AccentList;
 
 interface Piece {
   vx: number;
@@ -42,10 +42,19 @@ interface Props {
   duration?: number;
   /** How far down the container the burst originates (0–1). */
   originY?: number;
+  /** Origin in pixels from the container's top. Wins over `originY` when set. */
+  originTop?: number;
   onDone?: () => void;
 }
 
-export function Confetti({ trigger, count = 26, duration = 2200, originY = 0.32, onDone }: Props) {
+export function Confetti({
+  trigger,
+  count = 26,
+  duration = 2200,
+  originY = 0.32,
+  originTop,
+  onDone,
+}: Props) {
   const progress = useSharedValue(0);
 
   const pieces = useMemo<Piece[]>(
@@ -75,7 +84,10 @@ export function Confetti({ trigger, count = 26, duration = 2200, originY = 0.32,
   }, [trigger]);
 
   return (
-    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { top: `${originY * 100}%` }]}>
+    <Animated.View
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, { top: originTop ?? `${originY * 100}%` }]}
+    >
       {pieces.map((piece, i) => (
         <ConfettiPiece key={i} piece={piece} progress={progress} />
       ))}

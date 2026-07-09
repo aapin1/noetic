@@ -92,6 +92,41 @@ export const darkColors: AppThemeColors = {
   mapBackgroundOverlay: 'rgba(6,6,6,0.88)',
 };
 
+/**
+ * Mid-tone, low-saturation accents. Every one of these stays legible on both
+ * paper (#F5F4F0) and ink (#060606), so a single palette serves both themes.
+ */
+export const Accents = {
+  amber: '#B8894B',
+  moss: '#6B7F5B',
+  clay: '#8A5A5A',
+  slate: '#5B6E7F',
+  ochre: '#C08A5A',
+  plum: '#7A6E8A',
+} as const;
+
+export const AccentList: readonly string[] = [
+  Accents.amber,
+  Accents.moss,
+  Accents.clay,
+  Accents.slate,
+  Accents.ochre,
+  Accents.plum,
+];
+
+/** Picks a stable accent from any number, so a card keeps its colour. */
+export function accentFor(seed: number): string {
+  return AccentList[Math.abs(Math.trunc(seed)) % AccentList.length];
+}
+
+/** Time-of-day bands, used to colour the clock face. */
+export function hourAccent(hour: number): string {
+  if (hour < 6) return Accents.plum;
+  if (hour < 12) return Accents.moss;
+  if (hour < 18) return Accents.amber;
+  return Accents.slate;
+}
+
 export const FontSize = {
   xs: 10,
   sm: 12,
