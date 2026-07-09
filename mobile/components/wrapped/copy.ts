@@ -41,9 +41,10 @@ export function monthYear(iso: string): string {
   return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-export function formatHour(h: number): string {
-  if (h === 0) return 'midnight';
-  if (h === 12) return 'noon';
+/** Short enough to sit inside the clock face: "12am", "3pm". */
+export function formatHourCompact(h: number): string {
+  if (h === 0) return '12am';
+  if (h === 12) return '12pm';
   return h < 12 ? `${h}am` : `${h - 12}pm`;
 }
 
@@ -167,6 +168,14 @@ export function heroNoun(total: number): string {
   return pick(HERO_NOUNS, 'noun', total);
 }
 
+/** The stamp on the hero: the last milestone you actually cleared. */
+export function milestoneBadge(total: number): string | null {
+  if (total < 1) return null;
+  if (total === 1) return 'first';
+  const band = MILESTONES.find((m) => total >= m.min && m.min >= 5);
+  return band ? `${band.min}+` : null;
+}
+
 export function sinceLine(firstCaptureIso: string, total: number): string {
   return pick(SINCE_LINES, 'since', total)(monthYear(firstCaptureIso));
 }
@@ -193,7 +202,7 @@ const NEW_TOPIC_TITLES = [
   'Fresh rabbit holes',
   'New this month',
   'Doors you opened recently',
-  'Territory you did not have last month',
+  'First time here',
 ];
 
 const TIMELINE_TITLES = [
