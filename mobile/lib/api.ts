@@ -159,7 +159,10 @@ export const api = {
       return { profile: { ...composed.user.profile, id: composed.user.id, createdAt: composed.user.createdAt } };
     },
     wrapped(): Promise<WrappedStats> {
-      return request<WrappedStats>('/api/me/wrapped');
+      // Buckets ("last 24 hours", "Tuesdays at 3pm") only make sense on the
+      // device's clock, so the server needs the offset to bucket against.
+      const tzOffsetMinutes = -new Date().getTimezoneOffset();
+      return request<WrappedStats>(`/api/me/wrapped?tzOffsetMinutes=${tzOffsetMinutes}`);
     },
   },
 
