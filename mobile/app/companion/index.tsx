@@ -29,6 +29,14 @@ function buildContextPrompt(lead: string, labels: string[]): string {
   return `${lead} ${list}?`;
 }
 
+// A prompt seeded from specific edges the user highlighted on the map, so the
+// companion reasons about *those* links rather than the nodes in general.
+function buildConnectionPrompt(pairs: string[][]): string {
+  const rendered = pairs.map(([a, b]) => `"${a}" and "${b}"`).join('; ');
+  const plural = pairs.length > 1 ? 's' : '';
+  return `Focus on the connection${plural} I highlighted between ${rendered}. What ties them together, and what does that link reveal?`;
+}
+
 function MessageBlock({ message }: { message: CompanionMessage }) {
   const c = useThemeColors();
   const isUser = message.role === 'USER';
@@ -64,7 +72,7 @@ export default function CompanionScreen() {
   const c = useThemeColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { contextIds, contextLabels, prefill } = useLocalSearchParams<{ contextIds?: string; contextLabels?: string; prefill?: string }>();
+  const { contextIds, contextLabels, connections, prefill } = useLocalSearchParams<{ contextIds?: string; contextLabels?: string; connections?: string; prefill?: string }>();
 
   const contextItemIds = useMemo(
     () => (contextIds ? contextIds.split(',').filter(Boolean) : []),
@@ -73,6 +81,15 @@ export default function CompanionScreen() {
   const contextLabelList = useMemo(
     () => (contextLabels ? contextLabels.split(',').filter(Boolean) : []),
     [contextLabels],
+  );
+  // Each highlighted connection arrives as "labelA ~ labelB"; pairs are comma-
+  // separated (labels have their own commas/tildes stripped upstream).
+  const connectionList = useMemo(
+    () =>
+      (connections ? connections.split(',') : [])
+        .map((c) => c.split(' ~ ').map((s) => s.trim()))
+        .filter((p) => p.length === 2 && p[0] && p[1]),
+    [connections],
   );
   const [suggestionsUsed, setSuggestionsUsed] = useState(false);
 
@@ -227,7 +244,16 @@ export default function CompanionScreen() {
 
           {contextItemIds.length > 0 && !suggestionsUsed && (
             <View style={styles.contextBlock}>
-              {contextLabelList.length > 0 && (
+              {connectionList.length > 0 ? (
+                <Text
+                  variant="monoSmall"
+                  color="muted"
+                  style={styles.contextLabel}
+                  numberOfLines={2}
+                >
+                  connection: {connectionList.map(([a, b]) => `${a} ↔ ${b}`).join(', ')}
+                </Text>
+              ) : contextLabelList.length > 0 && (
                 <Text
                   variant="monoSmall"
                   color="muted"
@@ -239,10 +265,16 @@ export default function CompanionScreen() {
               )}
               <View style={styles.suggestionRow}>
                 <Pressable
-                  onPress={() => handleSend(buildContextPrompt('Find the connection between', contextLabelList))}
+                  onPress={() => handleSend(
+                    connectionList.length > 0
+                      ? buildConnectionPrompt(connectionList)
+                      : buildContextPrompt('Find the connection between', contextLabelList),
+                  )}
                   style={[styles.suggestionChip, { borderColor: c.border }]}
                 >
-                  <Text variant="monoSmall" style={{ color: c.text, textAlign: 'center' }}>Find the connection</Text>
+                  <Text variant="monoSmall" style={{ color: c.text, textAlign: 'center' }}>
+                    {connectionList.length > 0 ? 'Explore this connection' : 'Find the connection'}
+                  </Text>
                 </Pressable>
                 <Pressable
                   onPress={() => handleSend(buildContextPrompt("What's the tension between", contextLabelList))}

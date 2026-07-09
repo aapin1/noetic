@@ -31,7 +31,7 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
-import { Crosshair, Moon, Search, Sun, Trash2Icon } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Crosshair, Moon, Search, Sun, Trash2Icon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
@@ -66,7 +66,11 @@ const SOCRATIC_FAB_SIZE = 50;
 // Always-dark map colors (map is always dark regardless of theme)
 const MAP_BG = '#060606';
 const MAP_NODE = 'rgba(236,236,236,0.9)';
-const MAP_LINE = 'rgba(255,255,255,0.12)';
+const MAP_LINE = 'rgba(255,255,255,0.5)';
+// Green accent shared by every discovery/multi-select affordance.
+const DISCOVERY_ACCENT = '#7EC8A0';
+// Stable identity for an edge, independent of its array index.
+const edgeKey = (fromItemId: string, toItemId: string) => `${fromItemId}__${toItemId}`;
 
 // Layout area — nodes distributed within this space
 const LAYOUT_W = SW * 2.2;
@@ -748,47 +752,63 @@ interface ExcitingLine {
 }
 
 function InfoPanel({
-  top, pointCount, fieldCount, topicCount, connectionCount, tensionCount, exciting, onNavigate,
+  top, collapsed, onToggle, pointCount, fieldCount, connectionCount, tensionCount, exciting, onNavigate,
 }: {
   top: number;
+  collapsed: boolean;
+  onToggle: () => void;
   pointCount: number;
   fieldCount: number;
-  topicCount: number;
   connectionCount: number;
   tensionCount: number;
   exciting: ExcitingLine | null;
   onNavigate: (route: string) => void;
 }) {
+  // At most five lines, most-pertinent first. Topics are intentionally omitted
+  // here (they're surfaced on Archive and elsewhere) to keep this compact.
+  const items: React.ReactNode[] = [
+    <Text key="points" variant="monoSmall" style={infoPanelStyles.line}>
+      {pointCount} {pointCount === 1 ? 'point' : 'points'}
+    </Text>,
+  ];
+  if (fieldCount > 0) items.push(
+    <Text key="fields" variant="monoSmall" style={infoPanelStyles.line}>
+      {fieldCount} {fieldCount === 1 ? 'field' : 'fields'}
+    </Text>,
+  );
+  if (connectionCount > 0) items.push(
+    <Text key="connections" variant="monoSmall" style={infoPanelStyles.line}>
+      {connectionCount} {connectionCount === 1 ? 'connection' : 'connections'}
+    </Text>,
+  );
+  if (tensionCount > 0) items.push(
+    <Pressable key="tensions" onPress={() => onNavigate('/(tabs)/mind')} hitSlop={6} pointerEvents="auto">
+      <Text variant="monoSmall" style={infoPanelStyles.exciting}>
+        {tensionCount} {tensionCount === 1 ? 'tension' : 'tensions'} →
+      </Text>
+    </Pressable>,
+  );
+  if (exciting) items.push(
+    <Pressable key="exciting" onPress={() => onNavigate(exciting.route)} hitSlop={6} pointerEvents="auto">
+      <Text variant="monoSmall" style={infoPanelStyles.exciting} numberOfLines={1}>{exciting.text}</Text>
+    </Pressable>,
+  );
+
   return (
     <View style={[infoPanelStyles.wrap, { top }]} pointerEvents="box-none">
-      <Text variant="monoSmall" style={infoPanelStyles.line}>
-        {pointCount} {pointCount === 1 ? 'point' : 'points'}
-      </Text>
-      {fieldCount > 0 && (
-        <Text variant="monoSmall" style={infoPanelStyles.line}>
-          {fieldCount} {fieldCount === 1 ? 'field' : 'fields'}
-        </Text>
-      )}
-      <Text variant="monoSmall" style={infoPanelStyles.line}>
-        {topicCount} {topicCount === 1 ? 'topic' : 'topics'}
-      </Text>
-      {connectionCount > 0 && (
-        <Text variant="monoSmall" style={infoPanelStyles.line}>
-          {connectionCount} {connectionCount === 1 ? 'connection' : 'connections'}
-        </Text>
-      )}
-      {tensionCount > 0 && (
-        <Pressable onPress={() => onNavigate('/(tabs)/mind')} hitSlop={6}>
-          <Text variant="monoSmall" style={infoPanelStyles.exciting}>
-            {tensionCount} {tensionCount === 1 ? 'tension' : 'tensions'} to explore →
-          </Text>
-        </Pressable>
-      )}
-      {exciting && (
-        <Pressable onPress={() => onNavigate(exciting.route)} hitSlop={6}>
-          <Text variant="monoSmall" style={infoPanelStyles.exciting}>{exciting.text}</Text>
-        </Pressable>
-      )}
+      {!collapsed && <View style={infoPanelStyles.lines}>{items.slice(0, 5)}</View>}
+      <Pressable
+        onPress={onToggle}
+        hitSlop={10}
+        style={infoPanelStyles.toggle}
+        pointerEvents="auto"
+        accessibilityLabel={collapsed ? 'Show map summary' : 'Hide map summary'}
+        accessibilityRole="button"
+      >
+        {collapsed
+          ? <ChevronDown size={16} color="rgba(236,236,236,0.4)" strokeWidth={1.5} />
+          : <ChevronUp size={16} color="rgba(236,236,236,0.4)" strokeWidth={1.5} />}
+      </Pressable>
     </View>
   );
 }
@@ -798,6 +818,14 @@ const infoPanelStyles = StyleSheet.create({
     position: 'absolute',
     right: Spacing[6],
     alignItems: 'flex-end',
+    maxWidth: 210,
+  },
+  lines: {
+    alignItems: 'flex-end',
+  },
+  toggle: {
+    marginTop: 2,
+    padding: 2,
   },
   line: {
     color: 'rgba(236,236,236,0.28)',
@@ -1126,15 +1154,14 @@ export default function MapScreen() {
   const edges = graphData?.edges ?? [];
   const clusters = graphData?.clusters ?? [];
 
-  const { fieldCount, topicCount } = useMemo(() => {
+  const fieldCount = useMemo(() => {
     const fieldIds = new Set<string>();
-    const topicIds = new Set<string>();
     for (const n of nodes) {
       for (const t of n.topics) {
-        (t.kind === 'general' ? fieldIds : topicIds).add(t.topicId);
+        if (t.kind === 'general') fieldIds.add(t.topicId);
       }
     }
-    return { fieldCount: fieldIds.size, topicCount: topicIds.size };
+    return fieldIds.size;
   }, [nodes]);
 
   const tensionCount = intelligenceData?.contradictionCards.length ?? 0;
@@ -1145,13 +1172,14 @@ export default function MapScreen() {
       return latest && Date.now() - new Date(latest.capturedAt).getTime() < DAY_MS;
     });
     if (friendWithRecent) {
-      return { text: `${friendWithRecent.user.displayName} just added something →`, route: '/(tabs)/pulse' };
+      return { text: `${friendWithRecent.user.displayName} added something →`, route: '/(tabs)/pulse' };
     }
     const risingTheme = trendsData?.shifts
       .filter((s) => s.delta > 0)
       .sort((a, b) => b.delta - a.delta)[0];
     if (risingTheme) {
-      return { text: `${risingTheme.name} is rising this week →`, route: '/(tabs)/trends' };
+      // Route to the topic's archive (a real screen) — there is no trends tab.
+      return { text: `${risingTheme.name} rising →`, route: `/archive/${risingTheme.topicId}` };
     }
     return null;
   }, [pulseData, trendsData]);
@@ -1392,9 +1420,9 @@ export default function MapScreen() {
     const m = new Map<string, { r: number; baseOpacity: number }>();
     for (const node of nodes) {
       const rng = seededRng(hashId(node.id));
-      const base = 2.2 + rng() * 1.8;
+      const base = 3.2 + rng() * 2.0;
       const deg = Math.min(edgeCounts[node.id] ?? 0, 8);
-      m.set(node.id, { r: base + deg * 0.45, baseOpacity: 0.65 + rng() * 0.35 });
+      m.set(node.id, { r: base + deg * 0.5, baseOpacity: 0.72 + rng() * 0.28 });
     }
     return m;
   }, [nodes, edgeCounts]);
@@ -1406,6 +1434,7 @@ export default function MapScreen() {
   );
 
   // ── Tool state ─────────────────────────────────────────────────
+  const [infoCollapsed, setInfoCollapsed] = useState(false);
   const [toolMode, setToolMode] = useState<ToolMode>('default');
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
@@ -1427,6 +1456,7 @@ export default function MapScreen() {
 
   // ── Discovery mode ─────────────────────────────────────────────
   const [discoveryNodeIds, setDiscoveryNodeIds] = useState<string[]>([]);
+  const [discoveryEdgeKeys, setDiscoveryEdgeKeys] = useState<string[]>([]);
 
   const toggleDiscoveryNode = useCallback((nodeId: string) => {
     setDiscoveryNodeIds((prev) => {
@@ -1436,23 +1466,83 @@ export default function MapScreen() {
     });
   }, []);
 
+  // Tapping a connection selects the line *and* both endpoints in one go, so a
+  // single tap on the line is enough to open it in the companion. Deselecting
+  // releases the endpoints unless another still-selected edge needs them.
+  const toggleDiscoveryEdge = useCallback((fromItemId: string, toItemId: string) => {
+    const key = edgeKey(fromItemId, toItemId);
+    if (discoveryEdgeKeys.includes(key)) {
+      const remaining = discoveryEdgeKeys.filter((k) => k !== key);
+      const stillNeeded = new Set<string>();
+      for (const e of edges) {
+        if (remaining.includes(edgeKey(e.fromItemId, e.toItemId))) {
+          stillNeeded.add(e.fromItemId);
+          stillNeeded.add(e.toItemId);
+        }
+      }
+      setDiscoveryEdgeKeys(remaining);
+      setDiscoveryNodeIds((prev) =>
+        prev.filter((id) => (id !== fromItemId && id !== toItemId) || stillNeeded.has(id)),
+      );
+    } else {
+      setDiscoveryEdgeKeys((prev) => (prev.length >= 5 ? [...prev.slice(1), key] : [...prev, key]));
+      setDiscoveryNodeIds((prev) => {
+        const next = [...prev];
+        for (const id of [fromItemId, toItemId]) if (!next.includes(id)) next.push(id);
+        return next;
+      });
+    }
+  }, [discoveryEdgeKeys, edges]);
+
   const clearDiscovery = useCallback(() => {
     setDiscoveryNodeIds([]);
+    setDiscoveryEdgeKeys([]);
   }, []);
 
+  // Nodes selected outright plus the endpoints of every selected connection —
+  // the union is what the companion reasons over.
+  const discoveryContextIds = useMemo(() => {
+    const s = new Set(discoveryNodeIds);
+    for (const e of edges) {
+      if (discoveryEdgeKeys.includes(edgeKey(e.fromItemId, e.toItemId))) {
+        s.add(e.fromItemId);
+        s.add(e.toItemId);
+      }
+    }
+    return s;
+  }, [discoveryNodeIds, discoveryEdgeKeys, edges]);
+
   const openDiscoveryCompanion = useCallback(() => {
-    if (discoveryNodeIds.length < 2) return;
-    const labels = discoveryNodeIds
-      .map((id) => nodes.find((n) => n.id === id)?.label ?? '')
+    const labelFor = (id: string) =>
+      (nodes.find((n) => n.id === id)?.label ?? '').replace(/[,~]/g, ';');
+
+    const ids = Array.from(discoveryContextIds);
+    if (ids.length < 2) return;
+    const labels = ids.map(labelFor).filter(Boolean);
+
+    // A readable description of each highlighted link so the companion knows
+    // *which* connection between the nodes the user is pointing at.
+    const connections = edges
+      .filter((e) => discoveryEdgeKeys.includes(edgeKey(e.fromItemId, e.toItemId)))
+      .map((e) => {
+        const a = labelFor(e.fromItemId);
+        const b = labelFor(e.toItemId);
+        return a && b ? `${a} ~ ${b}` : '';
+      })
       .filter(Boolean)
-      .map((l) => l.replace(/,/g, ';'));
+      .join(',');
+
     router.push({
       pathname: '/companion' as never,
-      params: { contextIds: discoveryNodeIds.join(','), contextLabels: labels.join(',') },
+      params: {
+        contextIds: ids.join(','),
+        contextLabels: labels.join(','),
+        ...(connections ? { connections } : {}),
+      },
     });
     clearDiscovery();
     setToolMode('default');
-  }, [discoveryNodeIds, nodes, router, clearDiscovery]);
+  }, [discoveryContextIds, discoveryEdgeKeys, edges, nodes, router, clearDiscovery]);
 
   // ── Timeline state (temporal lens) ────────────────────────────
   const [timelinePct, setTimelinePct] = useState(1.0);
@@ -1626,7 +1716,12 @@ export default function MapScreen() {
           setVbPos({ x: nx, y: ny });
           return;
         }
-        // Pan
+        // Pan. If a pinch is in progress — including the frame or two at the end
+        // where one finger lifts before the other — never treat the lone touch
+        // as a pan. Otherwise `gs.dx/dy` (accumulated across the whole pinch)
+        // yanks the map sideways, then it snaps back on the next gesture: the
+        // "auto-correcting" jitter after zooming.
+        if (pinchStartRef.current) return;
         const vbW = SW / savedZoom.current;
         const vbH = SH / savedZoom.current;
         const nx = clampVBX(savedVB.current.x - gs.dx / savedZoom.current, vbW);
@@ -2228,7 +2323,9 @@ export default function MapScreen() {
                 const b = pos[e.toItemId];
                 if (!a || !b) return null;
 
-                const baseOpacity = 0.07 + e.weight * 0.24;
+                const isSelectedEdge = discoveryEdgeKeys.includes(edgeKey(e.fromItemId, e.toItemId));
+
+                const baseOpacity = 0.14 + e.weight * 0.26;
                 let edgeOpacity = baseOpacity;
                 if (focusedTopicId) {
                   const fromNode = nodeById.get(e.fromItemId);
@@ -2242,9 +2339,9 @@ export default function MapScreen() {
                   <Line
                     key={`e${i}`}
                     x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                    stroke={MAP_LINE}
-                    strokeWidth={0.7}
-                    strokeOpacity={edgeOpacity}
+                    stroke={isSelectedEdge ? DISCOVERY_ACCENT : MAP_LINE}
+                    strokeWidth={isSelectedEdge ? 2.4 : 1.1}
+                    strokeOpacity={isSelectedEdge ? 0.95 : edgeOpacity}
                   />
                 );
               })}
@@ -2325,6 +2422,30 @@ export default function MapScreen() {
             style={StyleSheet.absoluteFill}
             pointerEvents="box-none"
           >
+            {/* Connection touch targets (discover mode only) — several small hits
+                spread along the middle of each line so you can tap the line
+                itself, not just its exact midpoint. The endpoints are left to
+                the node targets (rendered after, so a node always wins). */}
+            {toolMode === 'discover' && edges.flatMap((e, i) => {
+              const a = pos[e.fromItemId];
+              const b = pos[e.toItemId];
+              if (!a || !b) return [];
+              const EHIT = 16;
+              return [0.3, 0.45, 0.6, 0.75].map((t) => {
+                const screenX = (a.x + (b.x - a.x) * t - vbPos.x) * zoom;
+                const screenY = (a.y + (b.y - a.y) * t - vbPos.y) * zoom;
+                if (screenX < -EHIT || screenX > SW + EHIT || screenY < -EHIT || screenY > SH + EHIT) return null;
+                return (
+                  <Pressable
+                    key={`etap-${i}-${t}`}
+                    style={{ position: 'absolute', width: EHIT * 2, height: EHIT * 2, left: screenX - EHIT, top: screenY - EHIT, borderRadius: EHIT }}
+                    onPress={() => toggleDiscoveryEdge(e.fromItemId, e.toItemId)}
+                    accessibilityLabel="Toggle connection"
+                    accessibilityRole="button"
+                  />
+                );
+              });
+            })}
             {nodes.map((node) => {
               const p = pos[node.id];
               if (!p) return null;
@@ -2503,12 +2624,13 @@ export default function MapScreen() {
 
         {/* Info panel (top-right map summary) */}
         {nodes.length > 0 && !showCapture && !drawerVisible && lensMode !== 'temporal' &&
-          toolMode !== 'search' && !(toolMode === 'discover' && discoveryNodeIds.length > 0) && (
+          toolMode !== 'search' && !(toolMode === 'discover' && (discoveryNodeIds.length > 0 || discoveryEdgeKeys.length > 0)) && (
           <InfoPanel
-            top={insets.top + 80}
+            top={insets.top + 58}
+            collapsed={infoCollapsed}
+            onToggle={() => setInfoCollapsed((v) => !v)}
             pointCount={nodes.length}
             fieldCount={fieldCount}
-            topicCount={topicCount}
             connectionCount={edges.length}
             tensionCount={tensionCount}
             exciting={excitingLine}
@@ -2561,25 +2683,29 @@ export default function MapScreen() {
         )}
 
         {/* Discover mode: selection count + open-in-companion button */}
-        {toolMode === 'discover' && discoveryNodeIds.length > 0 && !showCapture && !drawerVisible && (
+        {toolMode === 'discover' && (discoveryNodeIds.length > 0 || discoveryEdgeKeys.length > 0) && !showCapture && !drawerVisible && (
           <View style={[styles.discoveryBar, { bottom: TAB_H + Spacing[5] + FAB_SIZE + Spacing[3] }]} pointerEvents="box-none">
-            <View style={[styles.discoveryPill, { backgroundColor: 'rgba(10,10,10,0.88)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
+            <View style={[styles.discoveryPill, { backgroundColor: 'rgba(10,10,10,0.9)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
               <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.5)' }]}>
-                {discoveryNodeIds.length} selected
+                {[
+                  discoveryNodeIds.length > 0 && `${discoveryNodeIds.length} ${discoveryNodeIds.length === 1 ? 'point' : 'points'}`,
+                  discoveryEdgeKeys.length > 0 && `${discoveryEdgeKeys.length} ${discoveryEdgeKeys.length === 1 ? 'link' : 'links'}`,
+                ].filter(Boolean).join(' · ')}
               </Text>
-              {discoveryNodeIds.length >= 2 && (
-                <>
-                  <View style={[styles.discoverySep, { backgroundColor: 'rgba(255,255,255,0.1)' }]} />
-                  <Pressable onPress={openDiscoveryCompanion} hitSlop={8}>
-                    <Text style={[styles.discoveryAction, { color: '#7EC8A0' }]}>
-                      open in companion →
-                    </Text>
-                  </Pressable>
-                </>
+              {discoveryContextIds.size >= 2 && (
+                <Pressable
+                  onPress={openDiscoveryCompanion}
+                  hitSlop={8}
+                  style={[styles.discoveryActionBtn, { backgroundColor: 'rgba(126,200,160,0.15)', borderColor: 'rgba(126,200,160,0.32)' }]}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.discoveryAction, { color: DISCOVERY_ACCENT }]}>
+                    open in companion →
+                  </Text>
+                </Pressable>
               )}
-              <View style={[styles.discoverySep, { backgroundColor: 'rgba(255,255,255,0.1)' }]} />
-              <Pressable onPress={() => { clearDiscovery(); setToolMode('default'); }} hitSlop={8}>
-                <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.3)' }]}>✕</Text>
+              <Pressable onPress={() => { clearDiscovery(); setToolMode('default'); }} hitSlop={10} style={styles.discoveryClose}>
+                <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.35)' }]}>✕</Text>
               </Pressable>
             </View>
           </View>
@@ -2892,8 +3018,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderRadius: Radius.full,
-    paddingVertical: 8,
-    paddingHorizontal: Spacing[4],
+    paddingVertical: 6,
+    paddingLeft: Spacing[4],
+    paddingRight: 6,
     gap: Spacing[3],
   },
   discoveryCount: {
@@ -2901,12 +3028,18 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     letterSpacing: 1,
   },
+  discoveryActionBtn: {
+    borderWidth: 1,
+    borderRadius: Radius.full,
+    paddingVertical: 6,
+    paddingHorizontal: Spacing[3],
+  },
   discoveryAction: {
     fontFamily: FontFamily.mono,
     fontSize: FontSize.xs,
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
-  discoverySep: { width: 1, height: 14 },
+  discoveryClose: { paddingHorizontal: Spacing[2] },
   emptyHint: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',

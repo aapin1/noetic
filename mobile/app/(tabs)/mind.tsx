@@ -77,6 +77,20 @@ const META_BY_KEY: Record<RegionKey, RegionMeta> = Object.fromEntries(
   REGION_META.map((m) => [m.key, m]),
 ) as Record<RegionKey, RegionMeta>;
 
+// Selection type → region (for the detail card's accent colour + label).
+const TYPE_TO_KEY: Record<'thread' | 'contradiction' | 'convergence' | 'dormant', RegionKey> = {
+  thread: 'threads',
+  contradiction: 'contradictions',
+  convergence: 'convergence',
+  dormant: 'dormant',
+};
+const TYPE_LABEL: Record<'thread' | 'contradiction' | 'convergence' | 'dormant', string> = {
+  thread: 'THREAD',
+  contradiction: 'TENSION',
+  convergence: 'CONVERGENCE',
+  dormant: 'DORMANT',
+};
+
 // Slot layouts (normalized) — regions spread far apart, re-centered by count.
 const SLOTS: Record<number, { x: number; y: number }[]> = {
   1: [{ x: 0.5, y: 0.5 }],
@@ -615,16 +629,33 @@ export default function MindScreen() {
       )}
 
       {/* ── AI-explanation panel ──────────────────────────────────────────── */}
-      {selection && (
+      {selection && (() => {
+        const accent = META_BY_KEY[TYPE_TO_KEY[selection.type]].color;
+        return (
         <View style={[styles.panel, { backgroundColor: c.background, borderColor: c.border }]}>
           <View style={[styles.panelHandle, { backgroundColor: c.border }]} />
+
+          {/* Identity chip — gives every card a recognizable, non-textual header */}
+          <View style={styles.cardHead}>
+            <View style={styles.cardHeadLeft}>
+              <View style={[styles.cardDot, { backgroundColor: accent }]} />
+              <Text variant="monoSmall" style={[styles.cardType, { color: accent }]}>
+                {TYPE_LABEL[selection.type]}
+              </Text>
+            </View>
+            <Pressable onPress={() => setSelection(null)} hitSlop={12}>
+              <Text variant="monoSmall" color="faint">close</Text>
+            </Pressable>
+          </View>
+
           {selection.type === 'thread' && (
             <>
               <PanelMeta left={selection.d.topicName} right={`${selection.d.captureCount} captures`} />
-              <Text variant="body" style={{ marginTop: Spacing[2] }}>{selection.d.position}</Text>
-              <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3] }}>
-                Open question — {selection.d.openQuestion}
-              </Text>
+              <View style={[styles.quote, { borderLeftColor: accent }]}>
+                <Text variant="body" numberOfLines={5}>{selection.d.position}</Text>
+              </View>
+              <Text variant="monoSmall" style={[styles.sectionLabel, { color: accent }]}>OPEN QUESTION</Text>
+              <Text variant="bodyMedium" numberOfLines={3}>{selection.d.openQuestion}</Text>
               <View style={[styles.ctaRow, { borderTopColor: c.borderSubtle }]}>
                 <Pressable onPress={() => continueInCompanion(selection.d)} hitSlop={8}>
                   <Text variant="monoSmall" color="muted">Continue in companion →</Text>
@@ -638,39 +669,40 @@ export default function MindScreen() {
           {selection.type === 'contradiction' && (
             <>
               <View style={styles.pairRow}>
-                <Pressable style={styles.pairSide} onPress={() => router.push(`/insight/${selection.d.itemAId}` as never)}>
-                  <Text variant="monoSmall" color="muted">A</Text>
+                <Pressable style={[styles.pairBox, { borderColor: c.borderSubtle }]} onPress={() => router.push(`/insight/${selection.d.itemAId}` as never)}>
+                  <Text variant="monoSmall" style={{ color: accent }}>A</Text>
                   <Text variant="bodyMedium" numberOfLines={3} style={{ marginTop: 4 }}>{selection.d.labelA}</Text>
                 </Pressable>
-                <Pressable style={styles.pairSide} onPress={() => router.push(`/insight/${selection.d.itemBId}` as never)}>
-                  <Text variant="monoSmall" color="muted">B</Text>
+                <Pressable style={[styles.pairBox, { borderColor: c.borderSubtle }]} onPress={() => router.push(`/insight/${selection.d.itemBId}` as never)}>
+                  <Text variant="monoSmall" style={{ color: accent }}>B</Text>
                   <Text variant="bodyMedium" numberOfLines={3} style={{ marginTop: 4 }}>{selection.d.labelB}</Text>
                 </Pressable>
               </View>
-              <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3] }}>
-                Tension — {selection.d.tension}
-              </Text>
+              <Text variant="monoSmall" style={[styles.sectionLabel, { color: accent }]}>TENSION</Text>
+              <Text variant="bodyMedium" numberOfLines={4}>{selection.d.tension}</Text>
             </>
           )}
           {selection.type === 'convergence' && (
             <>
               <PanelMeta left={selection.d.topicName} right={`${selection.d.sourceCount} sources`} />
-              <Text variant="body" style={{ marginTop: Spacing[2] }}>{selection.d.signal}</Text>
+              <View style={[styles.quote, { borderLeftColor: accent }]}>
+                <Text variant="body" numberOfLines={5}>{selection.d.signal}</Text>
+              </View>
             </>
           )}
           {selection.type === 'dormant' && (
             <>
               <PanelMeta left={selection.d.topicName} right={`${selection.d.captureCount} captures`} />
-              <Text variant="body" style={{ marginTop: Spacing[2] }}>
-                Quiet for {selection.d.daysSilent} days. You went deep here once — worth reawakening?
-              </Text>
+              <View style={[styles.quote, { borderLeftColor: accent }]}>
+                <Text variant="body" numberOfLines={4}>
+                  Quiet for {selection.d.daysSilent} days. You went deep here once — worth reawakening?
+                </Text>
+              </View>
             </>
           )}
-          <Pressable onPress={() => setSelection(null)} style={styles.panelClose} hitSlop={12}>
-            <Text variant="monoSmall" color="faint">close</Text>
-          </Pressable>
         </View>
-      )}
+        );
+      })()}
 
       <InfoModal
         visible={infoVisible}
@@ -689,25 +721,25 @@ function renderThreads(layout: RegionLayout, color: string) {
     <G>
       {threads.items.map((it) => (
         <Line key={`tl-${it.id}`} x1={threads.hubX} y1={threads.hubY} x2={it.x} y2={it.y}
-          stroke={color} strokeOpacity={0.22} strokeWidth={1.1} />
+          stroke={color} strokeOpacity={0.32} strokeWidth={1.5} />
       ))}
       {threads.items.map((it, i) => {
         const nxt = threads.items[(i + 1) % threads.items.length];
         if (!nxt || threads.items.length < 3) return null;
         return (
           <Line key={`tb-${it.id}`} x1={it.x} y1={it.y} x2={nxt.x} y2={nxt.y}
-            stroke={color} strokeOpacity={0.07} strokeWidth={0.8} />
+            stroke={color} strokeOpacity={0.1} strokeWidth={1} />
         );
       })}
-      <Circle cx={threads.hubX} cy={threads.hubY} r={9} fill={color} fillOpacity={0.5} />
+      <Circle cx={threads.hubX} cy={threads.hubY} r={11} fill={color} fillOpacity={0.6} />
       {threads.items.map((it) => (
         <G key={`tn-${it.id}`}>
           {/* tree-ring depth: more rings = deeper investigation */}
           {Array.from({ length: it.rings }, (_, k) => (
             <Circle key={k} cx={it.x} cy={it.y} r={it.r + 6 + k * 7} fill="none"
-              stroke={color} strokeOpacity={0.12 - k * 0.015} strokeWidth={0.8} />
+              stroke={color} strokeOpacity={0.16 - k * 0.02} strokeWidth={1} />
           ))}
-          <Circle cx={it.x} cy={it.y} r={it.r} fill={color} fillOpacity={0.72} />
+          <Circle cx={it.x} cy={it.y} r={it.r} fill={color} fillOpacity={0.82} />
         </G>
       ))}
     </G>
@@ -731,14 +763,17 @@ function renderContradictions(layout: RegionLayout, color: string) {
         return (
           <G key={`ce-${e.id}`}>
             <Path d={`M${e.a.x},${e.a.y}L${jx},${jy}L${e.b.x},${e.b.y}`}
-              fill="none" stroke={color} strokeOpacity={0.5} strokeWidth={1.3} />
+              fill="none" stroke={color} strokeOpacity={0.6} strokeWidth={1.8} />
             {/* spark at the point of tension */}
-            <Circle cx={mx} cy={my} r={3} fill={color} fillOpacity={0.85} />
+            <Circle cx={mx} cy={my} r={4.5} fill={color} fillOpacity={0.95} />
           </G>
         );
       })}
       {contradictions.nodes.map((n) => (
-        <Circle key={`cn-${n.id}`} cx={n.x} cy={n.y} r={15} fill={color} fillOpacity={0.7} />
+        <G key={`cn-${n.id}`}>
+          <Circle cx={n.x} cy={n.y} r={26} fill={color} fillOpacity={0.08} />
+          <Circle cx={n.x} cy={n.y} r={18} fill={color} fillOpacity={0.82} />
+        </G>
       ))}
     </G>
   );
@@ -756,13 +791,13 @@ function renderConvergence(layout: RegionLayout, color: string) {
             return (
               <G key={i}>
                 <Path d={`M${s.x},${s.y}Q${mx},${my} ${g.x},${g.y}`}
-                  fill="none" stroke={color} strokeOpacity={0.28} strokeWidth={1} />
-                <Circle cx={s.x} cy={s.y} r={4.5} fill={color} fillOpacity={0.45} />
+                  fill="none" stroke={color} strokeOpacity={0.36} strokeWidth={1.3} />
+                <Circle cx={s.x} cy={s.y} r={5.5} fill={color} fillOpacity={0.55} />
               </G>
             );
           })}
-          <Circle cx={g.x} cy={g.y} r={g.r * 1.9} fill={color} fillOpacity={0.1} />
-          <Circle cx={g.x} cy={g.y} r={g.r} fill={color} fillOpacity={0.82} />
+          <Circle cx={g.x} cy={g.y} r={g.r * 1.9} fill={color} fillOpacity={0.12} />
+          <Circle cx={g.x} cy={g.y} r={g.r} fill={color} fillOpacity={0.88} />
         </G>
       ))}
     </G>
@@ -774,22 +809,22 @@ function renderDormant(layout: RegionLayout, color: string, reawakened: Set<stri
     <G>
       {layout.dormant.map((d) => {
         const awake = reawakened.has(d.id);
-        const op = awake ? 0.7 : 0.22;
+        const op = awake ? 0.75 : 0.3;
         return (
           <G key={`dm-${d.id}`}>
             <Circle cx={d.x} cy={d.y} r={40} fill="none" stroke={color}
-              strokeOpacity={awake ? 0.3 : 0.12} strokeWidth={0.8} strokeDasharray="2 8" />
+              strokeOpacity={awake ? 0.32 : 0.16} strokeWidth={1} strokeDasharray="2 8" />
             {d.dots.map((dot, i) => {
               const nxt = d.dots[(i + 1) % d.dots.length];
               return (
                 <G key={i}>
                   {nxt && <Line x1={dot.x} y1={dot.y} x2={nxt.x} y2={nxt.y}
-                    stroke={color} strokeOpacity={op * 0.4} strokeWidth={0.7} />}
-                  <Circle cx={dot.x} cy={dot.y} r={dot.r} fill={color} fillOpacity={op} />
+                    stroke={color} strokeOpacity={op * 0.45} strokeWidth={0.9} />}
+                  <Circle cx={dot.x} cy={dot.y} r={dot.r + 0.5} fill={color} fillOpacity={op} />
                 </G>
               );
             })}
-            <Circle cx={d.x} cy={d.y} r={awake ? 8 : 5} fill={color} fillOpacity={awake ? 0.85 : 0.38} />
+            <Circle cx={d.x} cy={d.y} r={awake ? 9 : 6} fill={color} fillOpacity={awake ? 0.88 : 0.45} />
           </G>
         );
       })}
@@ -804,9 +839,11 @@ function renderItemLabels(key: RegionKey, layout: RegionLayout, font: number) {
       {txt.length > 18 ? `${txt.slice(0, 17)}…` : txt}
     </SvgText>
   );
-  if (key === 'threads') return <G>{layout.threads.items.map((it) => <G key={it.id}>{label(it.x, it.y + it.r + font * 1.2, it.d.topicName)}</G>)}</G>;
-  if (key === 'convergence') return <G>{layout.convergence.map((g) => <G key={g.id}>{label(g.x, g.y + g.r + font * 1.7, g.d.topicName)}</G>)}</G>;
-  if (key === 'dormant') return <G>{layout.dormant.map((d) => <G key={d.id}>{label(d.x, d.y + font * 2.6, d.d.topicName)}</G>)}</G>;
+  // Labels sit clear of each item's outermost mark (rings / glow / constellation)
+  // so dots and strokes never bleed into the text.
+  if (key === 'threads') return <G>{layout.threads.items.map((it) => <G key={it.id}>{label(it.x, it.y + it.r + 6 + Math.max(0, it.rings - 1) * 7 + font * 1.3, it.d.topicName)}</G>)}</G>;
+  if (key === 'convergence') return <G>{layout.convergence.map((g) => <G key={g.id}>{label(g.x, g.y + g.r * 1.9 + font * 1.3, g.d.topicName)}</G>)}</G>;
+  if (key === 'dormant') return <G>{layout.dormant.map((d) => <G key={d.id}>{label(d.x, d.y + 40 + font * 1.3, d.d.topicName)}</G>)}</G>;
   return null;
 }
 
@@ -826,7 +863,7 @@ function renderItemHits(
   const hit = (id: string, wx: number, wy: number, r: number, onPress: () => void) => {
     const x = sx(wx);
     const y = sy(wy);
-    const s = Math.max(40, r * zoom * 2.4);
+    const s = Math.max(46, r * zoom * 2.4);
     if (x < -s || x > SW + s || y < -s || y > SH + s) return null;
     return (
       <Pressable key={id}
@@ -835,7 +872,20 @@ function renderItemHits(
     );
   };
   if (key === 'threads') return <>{layout.threads.items.map((it) => hit(`h-${it.id}`, it.x, it.y, it.r, () => cb.selectThread(it.d)))}</>;
-  if (key === 'contradictions') return <>{layout.contradictions.edges.map((e) => hit(`h-${e.id}`, (e.a.x + e.b.x) / 2, (e.a.y + e.b.y) / 2, 40, () => cb.selectContradiction(e.d)))}</>;
+  if (key === 'contradictions') {
+    // Both the tension poles (the visible circles) and the spark at the middle
+    // of each bolt open the card — tapping any part of a tension resolves.
+    const { nodes, edges } = layout.contradictions;
+    const nodeHits = nodes.map((n) => {
+      const edge = edges.find((e) => e.a.id === n.id || e.b.id === n.id);
+      if (!edge) return null;
+      return hit(`hn-${n.id}`, n.x, n.y, 18, () => cb.selectContradiction(edge.d));
+    });
+    const edgeHits = edges.map((e) =>
+      hit(`he-${e.id}`, (e.a.x + e.b.x) / 2, (e.a.y + e.b.y) / 2, 22, () => cb.selectContradiction(e.d)),
+    );
+    return <>{nodeHits}{edgeHits}</>;
+  }
   if (key === 'convergence') return <>{layout.convergence.map((g) => hit(`h-${g.id}`, g.x, g.y, g.r, () => cb.selectConvergence(g.d)))}</>;
   if (key === 'dormant') return <>{layout.dormant.map((d) => hit(`h-${d.id}`, d.x, d.y, 26, () => cb.selectDormant(d.d)))}</>;
   return null;
@@ -878,12 +928,26 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth, borderRadius: 16, padding: Spacing[4],
   },
   panelHandle: { alignSelf: 'center', width: 34, height: 3, borderRadius: 2, marginBottom: Spacing[3] },
+  cardHead: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: Spacing[2],
+  },
+  cardHeadLeft: { flexDirection: 'row', alignItems: 'center' },
+  cardDot: { width: 7, height: 7, borderRadius: 4, marginRight: Spacing[2] },
+  cardType: { letterSpacing: 2 },
   panelMeta: { flexDirection: 'row', justifyContent: 'space-between' },
+  quote: {
+    marginTop: Spacing[3], marginBottom: Spacing[1],
+    paddingLeft: Spacing[3], borderLeftWidth: 2,
+  },
+  sectionLabel: { letterSpacing: 1.5, marginTop: Spacing[4], marginBottom: Spacing[1] },
   ctaRow: {
     flexDirection: 'row', justifyContent: 'space-between',
     marginTop: Spacing[4], paddingTop: Spacing[3], borderTopWidth: StyleSheet.hairlineWidth,
   },
-  pairRow: { flexDirection: 'row', gap: Spacing[4] },
-  pairSide: { flex: 1 },
-  panelClose: { position: 'absolute', top: Spacing[3], right: Spacing[4] },
+  pairRow: { flexDirection: 'row', gap: Spacing[3], marginTop: Spacing[2] },
+  pairBox: {
+    flex: 1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10,
+    padding: Spacing[3],
+  },
 });
