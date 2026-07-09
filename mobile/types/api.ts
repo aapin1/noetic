@@ -220,6 +220,19 @@ export interface OwnerProfile {
   createdAt?: string;
 }
 
+export interface ArcBucket {
+  label: string;
+  count: number;
+}
+
+/** The owner's capture history bucketed four ways, each oldest → newest. */
+export interface WrappedArcs {
+  hours: ArcBucket[];
+  days: ArcBucket[];
+  weeks: ArcBucket[];
+  months: ArcBucket[];
+}
+
 /** Personal "Wrapped" stats over the owner's full capture history. */
 export interface WrappedStats {
   totalCaptures: number;
@@ -233,14 +246,27 @@ export interface WrappedStats {
   newTopicsThisMonth: string[];
   busiestDayOfWeek: string | null;
   busiestHour: number | null;
+  /** Captures per hour of day (0–23) and per weekday (index 0 = Sunday). */
+  hourHistogram: number[];
+  weekdayHistogram: number[];
   formats: { name: string; count: number }[];
   currentStreak: number;
   longestStreak: number;
-  monthlyArc: { month: string; count: number }[];
+  arcs: WrappedArcs;
   followingCount: number;
   followerCount: number;
-  firstFollow: { handle: string; displayName: string; followedAt: string } | null;
-  friendActivity: { handle: string; displayName: string; count: number }[];
+  firstFollow: {
+    handle: string;
+    displayName: string;
+    avatarUrl: string | null;
+    followedAt: string;
+  } | null;
+  friendActivity: {
+    handle: string;
+    displayName: string;
+    avatarUrl: string | null;
+    count: number;
+  }[];
 }
 
 export interface IngestedMetadata {

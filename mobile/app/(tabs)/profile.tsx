@@ -28,21 +28,25 @@ export default function YouScreen() {
     () => api.profile.me().then((r) => r.profile),
     [],
   );
+  const { data: wrapped, refetch: refetchWrapped } = useApiQuery(() => api.profile.wrapped(), []);
 
   // Optimistic override so a freshly-changed avatar shows immediately.
   const [override, setOverride] = useState<OwnerProfile | null>(null);
   const p = override ?? profile ?? authProfile;
 
+  // Captures can be deleted from anywhere in the app, so the stats are only
+  // trustworthy if they're re-read every time this tab comes back into view.
   useFocusEffect(
     useCallback(() => {
       void refetch();
-    }, [refetch]),
+      void refetchWrapped();
+    }, [refetch, refetchWrapped]),
   );
 
   const handleRefresh = useCallback(async () => {
-    await refetch();
+    await Promise.all([refetch(), refetchWrapped()]);
     await refreshProfile();
-  }, [refetch, refreshProfile]);
+  }, [refetch, refetchWrapped, refreshProfile]);
 
   const handleAvatarChanged = useCallback(
     (updated: OwnerProfile) => {
@@ -89,7 +93,7 @@ export default function YouScreen() {
           ) : null}
         </View>
 
-        <WrappedSection scrollY={scrollY} />
+        <WrappedSection scrollY={scrollY} stats={wrapped} />
 
         <View style={styles.editButtonWrap}>
           <Button
