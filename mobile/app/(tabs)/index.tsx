@@ -133,6 +133,9 @@ const RECOMMIT_ZOOM_IN = 1.4;
 const GLOW_W = 640;
 const GLOW_H = (GLOW_W * CANVAS_H) / CANVAS_W;
 
+// Static: the world SVG is always offset by exactly the overscan margin.
+const MAP_WORLD_STYLE = { position: 'absolute' as const, left: -MARGIN_X, top: -MARGIN_Y };
+
 const CLUSTER_PALETTE = [
   '#6B9FD4',
   '#9B84CC',
@@ -2650,7 +2653,7 @@ export default function MapScreen() {
       width={OS_W}
       height={OS_H}
       viewBox={`${vbPos.x - MARGIN_X / zoom} ${vbPos.y - MARGIN_Y / zoom} ${OS_W / zoom} ${OS_H / zoom}`}
-      style={{ position: 'absolute', left: -MARGIN_X, top: -MARGIN_Y }}
+      style={MAP_WORLD_STYLE}
     >
       {worldDefs}
       {worldBody}
@@ -2807,8 +2810,9 @@ export default function MapScreen() {
       </View>
 
       {/* Pannable map canvas. The wrapper transform carries per-frame gesture
-          motion (live camera); the memoized world + touch layer inside are
-          rendered at the committed camera and never re-render mid-gesture. */}
+          motion (live camera); the memoized world inside is rendered at the
+          committed camera and never re-renders mid-gesture. Keep this subtree
+          small — every child is recomposited on each frame of the transform. */}
       <View
         style={StyleSheet.absoluteFill}
         onLayout={(e) => {
@@ -2835,11 +2839,19 @@ export default function MapScreen() {
                 a commit only moves and scales this view. */}
             <View style={glowStyle} pointerEvents="none">{ambientGlow}</View>
             {mapWorld}
-            {/* Node touch targets — always active; PanResponder steals drag gestures */}
-            {touchLayer}
             {/* New node landing animation */}
             {landingRing}
           </RNAnimated.View>
+
+          {/* Node touch targets — deliberately OUTSIDE the transform. They are
+              built against the settled camera, so when the map is at rest the
+              wrapper transform is the identity and they sit exactly over their
+              nodes. Riding along inside meant CoreAnimation recomposited one
+              native view per node on every gesture frame — the cost that grew
+              with how fast you moved — to keep hit targets aligned that the
+              PanResponder makes unreachable until the gesture settles.
+              PanResponder still steals drags from them. */}
+          {touchLayer}
         </View>
       </View>
 
