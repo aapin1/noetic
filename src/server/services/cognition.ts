@@ -580,22 +580,33 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     contentThin,
   });
 
-  const polishedDrafts = await polishInsights({
-    style: insightStyle,
-    itemTitle,
-    contentText: combinedText,
-    contentGrounding,
-    userContext: payload.userContext,
-    topicNames: classified.map((topic) => topic.name),
-    neighborContext: neighborInfo.neighbors.map((n) => ({
-      title: n.title,
-      edgeType: n.edgeType,
-    })),
-    drafts,
-  });
+  // Polish and recommendations are independent LLM calls (both need only the
+  // classification + neighbors), so they run concurrently — serializing them
+  // was ~2s of avoidable capture latency the user sits through.
+  const [polishedDrafts, recommendations] = await Promise.all([
+    polishInsights({
+      style: insightStyle,
+      itemTitle,
+      contentText: combinedText,
+      contentGrounding,
+      userContext: payload.userContext,
+      topicNames: classified.map((topic) => topic.name),
+      neighborContext: neighborInfo.neighbors.map((n) => ({
+        title: n.title,
+        edgeType: n.edgeType,
+      })),
+      drafts,
+    }),
+    generateRecommendations({
+      itemTitle,
+      contentText: combinedText,
+      topicNames: classified.map((t) => t.name),
+      threadContext: threadContext ?? undefined,
+      neighborTitles: neighborInfo.neighbors.slice(0, 3).map((n) => n.title),
+    }),
+  ]);
 
-  const [txResult, recommendations] = await Promise.all([
-    prisma.$transaction(async (tx: DbClient) => {
+  const txResult = await prisma.$transaction(async (tx: DbClient) => {
     const created = await tx.capturedItem.create({
       data: {
         userId: payload.userId,
@@ -758,15 +769,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
         weight: Number(neighbor.similarity.toFixed(4)),
       })),
     };
-  }),
-    generateRecommendations({
-      itemTitle,
-      contentText: combinedText,
-      topicNames: classified.map((t) => t.name),
-      threadContext: threadContext ?? undefined,
-      neighborTitles: neighborInfo.neighbors.slice(0, 3).map((n) => n.title),
-    }),
-  ]);
+  });
 
   return { ...txResult, threadContext, recommendations };
 }

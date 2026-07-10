@@ -642,7 +642,7 @@ function StepTwo({
             style={[sh.primaryBtn, { backgroundColor: c.text, opacity: commitDisabled ? 0.55 : 1 }]}
           >
             <Text variant="monoSmall" style={{ color: c.background }}>
-              {busy ? 'saving...' : 'commit →'}
+              {busy ? 'saving...' : commitBlockedByPreflight ? 'reading the source…' : 'commit →'}
             </Text>
           </Pressable>
         </View>
@@ -764,35 +764,66 @@ function InfoPanel({
   exciting: ExcitingLine | null;
   onNavigate: (route: string) => void;
 }) {
-  // At most five lines, most-pertinent first. Topics are intentionally omitted
-  // here (they're surfaced on Archive and elsewhere) to keep this compact.
-  const items: React.ReactNode[] = [
-    <Text key="points" variant="monoSmall" style={infoPanelStyles.line}>
-      {pointCount} {pointCount === 1 ? 'point' : 'points'}
-    </Text>,
-  ];
-  if (fieldCount > 0) items.push(
-    <Text key="fields" variant="monoSmall" style={infoPanelStyles.line}>
-      {fieldCount} {fieldCount === 1 ? 'field' : 'fields'}
-    </Text>,
-  );
-  if (connectionCount > 0) items.push(
-    <Text key="connections" variant="monoSmall" style={infoPanelStyles.line}>
-      {connectionCount} {connectionCount === 1 ? 'connection' : 'connections'}
-    </Text>,
-  );
-  if (tensionCount > 0) items.push(
-    <Pressable key="tensions" onPress={() => onNavigate('/(tabs)/mind')} hitSlop={6} pointerEvents="auto">
-      <Text variant="monoSmall" style={infoPanelStyles.exciting}>
-        {tensionCount} {tensionCount === 1 ? 'tension' : 'tensions'} →
-      </Text>
-    </Pressable>,
-  );
-  if (exciting) items.push(
-    <Pressable key="exciting" onPress={() => onNavigate(exciting.route)} hitSlop={6} pointerEvents="auto">
-      <Text variant="monoSmall" style={infoPanelStyles.exciting} numberOfLines={1}>{exciting.text}</Text>
-    </Pressable>,
-  );
+  // At most five lines. Topics are intentionally omitted here (they're
+  // surfaced on Archive and elsewhere) to keep this compact. Lines are
+  // ordered longest-first so the right-aligned block tapers cleanly.
+  const entries: { key: string; label: string; node: React.ReactNode }[] = [];
+
+  const pointsLabel = `${pointCount} ${pointCount === 1 ? 'point' : 'points'}`;
+  entries.push({
+    key: 'points',
+    label: pointsLabel,
+    node: (
+      <Text key="points" variant="monoSmall" style={infoPanelStyles.line}>{pointsLabel}</Text>
+    ),
+  });
+  if (fieldCount > 0) {
+    const label = `${fieldCount} ${fieldCount === 1 ? 'field' : 'fields'}`;
+    entries.push({
+      key: 'fields',
+      label,
+      node: (
+        <Text key="fields" variant="monoSmall" style={infoPanelStyles.line}>{label}</Text>
+      ),
+    });
+  }
+  if (connectionCount > 0) {
+    const label = `${connectionCount} ${connectionCount === 1 ? 'connection' : 'connections'}`;
+    entries.push({
+      key: 'connections',
+      label,
+      node: (
+        <Text key="connections" variant="monoSmall" style={infoPanelStyles.line}>{label}</Text>
+      ),
+    });
+  }
+  if (tensionCount > 0) {
+    const label = `${tensionCount} ${tensionCount === 1 ? 'tension' : 'tensions'} →`;
+    entries.push({
+      key: 'tensions',
+      label,
+      node: (
+        <Pressable key="tensions" onPress={() => onNavigate('/(tabs)/mind')} hitSlop={6} pointerEvents="auto">
+          <Text variant="monoSmall" style={infoPanelStyles.exciting}>{label}</Text>
+        </Pressable>
+      ),
+    });
+  }
+  if (exciting) {
+    entries.push({
+      key: 'exciting',
+      label: exciting.text,
+      node: (
+        <Pressable key="exciting" onPress={() => onNavigate(exciting.route)} hitSlop={6} pointerEvents="auto">
+          <Text variant="monoSmall" style={infoPanelStyles.exciting} numberOfLines={1}>{exciting.text}</Text>
+        </Pressable>
+      ),
+    });
+  }
+
+  const items = entries
+    .sort((a, b) => b.label.length - a.label.length)
+    .map((e) => e.node);
 
   return (
     <View style={[infoPanelStyles.wrap, { top }]} pointerEvents="box-none">
@@ -1209,8 +1240,15 @@ export default function MapScreen() {
   const liveTy = useRef(new RNAnimated.Value(0)).current;
   const liveScale = useRef(new RNAnimated.Value(1)).current;
 
+  // RN scales about the transformed view's ACTUAL centre — and inside the tab
+  // navigator the map container is shorter than the window (tab bar), so the
+  // centre compensation must use the measured size, not SW/SH. Using SH/2
+  // here made every pinch drift vertically mid-gesture and then visibly
+  // "correct" itself on commit.
+  const wrapperSize = useRef({ w: SW, h: SH });
+
   // Express the live camera as a transform of the committed rendering.
-  // screen = (world − live)·z_live must equal scale-about-screen-centre (RN's
+  // screen = (world − live)·z_live must equal scale-about-view-centre (RN's
   // transform origin) plus translate of the committed rendering, which solves
   // to k = z_live/z_committed, t = (committed − live)·z_live, with the usual
   // centre-origin compensation C·(k−1).
@@ -1218,8 +1256,8 @@ export default function MapScreen() {
     liveCam.current = { x, y, zoom: z };
     const c = committedCam.current;
     const k = z / c.zoom;
-    liveTx.setValue((c.x - x) * z + (SW / 2) * (k - 1));
-    liveTy.setValue((c.y - y) * z + (SH / 2) * (k - 1));
+    liveTx.setValue((c.x - x) * z + (wrapperSize.current.w / 2) * (k - 1));
+    liveTy.setValue((c.y - y) * z + (wrapperSize.current.h / 2) * (k - 1));
     liveScale.setValue(k);
   }, [liveTx, liveTy, liveScale]);
 
@@ -1754,6 +1792,13 @@ export default function MapScreen() {
           savedZoom.current = newZoom;
           savedVB.current = { x: nx, y: ny };
           applyLiveCamera(nx, ny, newZoom);
+          // Mid-pinch checkpoint: past ~1.4× in either direction, re-render
+          // the world at the current camera. Zooming out, the committed
+          // rendering only covers so much beyond the old viewport — without
+          // this the user sees unpainted "uncharted" edges until release;
+          // zooming in, it re-rasterizes before vectors get visibly soft.
+          const drift = newZoom / committedCam.current.zoom;
+          if (drift < 0.7 || drift > 1.4) commitCamera();
           return;
         }
         // Pan. If a pinch is in progress — including the frame or two at the end
@@ -2555,22 +2600,39 @@ export default function MapScreen() {
   return (
     <View style={[styles.root, { backgroundColor: mapBg }]}>
 
-      {/* Static background dot grid */}
+      {/* Static background dot grid + the same tonal wash the world draws —
+          so any area the (transformed) world doesn't cover mid-gesture reads
+          as more map, not as a darker box around charted territory. */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <Svg width={SW} height={SH} style={StyleSheet.absoluteFill}>
           <Defs>
             <Pattern id="staticDotGrid" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
               <Circle cx="16" cy="16" r="0.9" fill={MAP_NODE} fillOpacity={0.04} />
             </Pattern>
+            <LinearGradient id="staticBgTone" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0%" stopColor={MAP_NODE} stopOpacity={0.012} />
+              <Stop offset="100%" stopColor={MAP_NODE} stopOpacity={0.03} />
+            </LinearGradient>
           </Defs>
           <Rect x="0" y="0" width={SW} height={SH} fill="url(#staticDotGrid)" />
+          <Rect x="0" y="0" width={SW} height={SH} fill="url(#staticBgTone)" />
         </Svg>
       </View>
 
       {/* Pannable map canvas. The wrapper transform carries per-frame gesture
           motion (live camera); the memoized world + touch layer inside are
           rendered at the committed camera and never re-render mid-gesture. */}
-      <View style={StyleSheet.absoluteFill}>
+      <View
+        style={StyleSheet.absoluteFill}
+        onLayout={(e) => {
+          const { width, height } = e.nativeEvent.layout;
+          if (width > 0 && height > 0) {
+            wrapperSize.current = { w: width, h: height };
+            // Keep any in-flight transform consistent with the new centre.
+            applyLiveCamera(liveCam.current.x, liveCam.current.y, liveCam.current.zoom);
+          }
+        }}
+      >
         <View style={StyleSheet.absoluteFill} {...mapPan.panHandlers}>
           <RNAnimated.View
             style={[
