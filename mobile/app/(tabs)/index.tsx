@@ -72,6 +72,40 @@ const DISCOVERY_ACCENT = '#7EC8A0';
 // Stable identity for an edge, independent of its array index.
 const edgeKey = (fromItemId: string, toItemId: string) => `${fromItemId}__${toItemId}`;
 
+// ── Edge salience ─────────────────────────────────────────────
+// Edge count grows superlinearly in nodes, so painting every edge at a similar
+// weight turns the map into a hairball. Salience (0..1) drives both opacity and
+// width, so a node's few real connections read as connections and the long tail
+// recedes into texture rather than competing with them.
+//
+// `weight` is embedding cosine similarity. The backend only creates an edge at
+// >=0.30, and >=0.75 is a near-restatement, so the useful signal lives in that
+// band — anchor the ramp there rather than to the observed min/max, which would
+// make an edge's appearance depend on whatever else is on screen.
+const EDGE_WEIGHT_FLOOR = 0.3;
+const EDGE_WEIGHT_CEIL = 0.75;
+// Similarity is bunched near the floor. Squaring pulls the crowd down without
+// touching the top, which is what actually separates the strong few.
+const EDGE_WEIGHT_GAMMA = 2;
+// Rank an edge holds among its endpoints' edges, best endpoint wins. The top
+// two keep full salience — those are the "this connects to that" lines the map
+// exists to show. Past that, each further rank costs ~45%.
+const EDGE_FULL_RANK = 2;
+const EDGE_RANK_FALLOFF = 0.55;
+// Salience 0 is still faintly drawn: a weak connection should be hard to see,
+// not absent. Strongest edges land at roughly today's appearance.
+const EDGE_MIN_OPACITY = 0.04;
+const EDGE_MAX_OPACITY = 0.42;
+const EDGE_MIN_WIDTH = 0.4;
+const EDGE_MAX_WIDTH = 1.5;
+
+const edgeSalience = (weight: number, rank: number) => {
+  const t = Math.max(0, Math.min(1, (weight - EDGE_WEIGHT_FLOOR) / (EDGE_WEIGHT_CEIL - EDGE_WEIGHT_FLOOR)));
+  const byWeight = Math.pow(t, EDGE_WEIGHT_GAMMA);
+  const byRank = rank < EDGE_FULL_RANK ? 1 : Math.pow(EDGE_RANK_FALLOFF, rank - EDGE_FULL_RANK + 1);
+  return byWeight * byRank;
+};
+
 // Layout area — nodes distributed within this space
 const LAYOUT_W = SW * 2.2;
 const LAYOUT_H = SH * 2.0;
@@ -1211,8 +1245,6 @@ export default function MapScreen() {
     [],
   );
 
-  useFocusEffect(useCallback(() => { void refetchGraph(); }, [refetchGraph]));
-
   // Account creation date anchors the temporal timeline's start.
   const { data: profileData } = useApiQuery(() => api.profile.me(), []);
   const accountCreatedMs = useMemo(() => {
@@ -1222,9 +1254,22 @@ export default function MapScreen() {
 
   // Info panel: independent, non-blocking fetches — each line appears as
   // soon as its own data resolves, without gating on the others.
-  const { data: intelligenceData } = useApiQuery(() => api.memory.intelligence(), []);
-  const { data: trendsData } = useApiQuery(() => api.memory.trends({ window: 'week' }), []);
-  const { data: pulseData } = useApiQuery(() => api.social.pulse(), []);
+  const { data: intelligenceData, refetch: refetchIntelligence } = useApiQuery(() => api.memory.intelligence(), []);
+  const { data: trendsData, refetch: refetchTrends } = useApiQuery(() => api.memory.trends({ window: 'week' }), []);
+  const { data: pulseData, refetch: refetchPulse } = useApiQuery(() => api.social.pulse(), []);
+
+  // Revalidate every map surface at once. The info panel's counts (tensions,
+  // rising themes, connections) derive from these side-fetches, so refetching
+  // only the graph after a capture/delete left the panel showing pre-mutation
+  // numbers until a full app restart.
+  const refetchMapData = useCallback(() => {
+    void refetchGraph();
+    void refetchIntelligence();
+    void refetchTrends();
+    void refetchPulse();
+  }, [refetchGraph, refetchIntelligence, refetchTrends, refetchPulse]);
+
+  useFocusEffect(refetchMapData);
 
   const nodes = graphData?.nodes ?? [];
   const edges = graphData?.edges ?? [];
@@ -1645,6 +1690,37 @@ export default function MapScreen() {
     return counts;
   }, [edges]);
 
+  // Per-edge salience. An edge's rank is the best (lowest) position it holds in
+  // either endpoint's weight-sorted edge list, so a hub's weak edge still reads
+  // as strong from the leaf node whose single connection it is.
+  const edgeSalienceByKey = useMemo(() => {
+    const incident = new Map<string, { key: string; weight: number }[]>();
+    for (const e of edges) {
+      const entry = { key: edgeKey(e.fromItemId, e.toItemId), weight: e.weight };
+      for (const nodeId of [e.fromItemId, e.toItemId]) {
+        const list = incident.get(nodeId);
+        if (list) list.push(entry);
+        else incident.set(nodeId, [entry]);
+      }
+    }
+
+    const bestRank = new Map<string, number>();
+    for (const list of incident.values()) {
+      list.sort((a, b) => b.weight - a.weight);
+      list.forEach((entry, rank) => {
+        const prior = bestRank.get(entry.key);
+        if (prior === undefined || rank < prior) bestRank.set(entry.key, rank);
+      });
+    }
+
+    const salience = new Map<string, number>();
+    for (const e of edges) {
+      const key = edgeKey(e.fromItemId, e.toItemId);
+      salience.set(key, edgeSalience(e.weight, bestRank.get(key) ?? 0));
+    }
+    return salience;
+  }, [edges]);
+
   // Precompute per-node radius + base opacity (each node's RNG constructed once)
   const nodeMetrics = useMemo(() => {
     const m = new Map<string, { r: number; baseOpacity: number }>();
@@ -2057,6 +2133,9 @@ export default function MapScreen() {
               await api.captures.delete(node.id);
               closeDrawer();
               await refetchGraph();
+              refetchIntelligence();
+              refetchTrends();
+              refetchPulse();
               if (tutorialActive) notifyTargetPressed(TUTORIAL_TARGET.nodeDelete);
             } catch (e) {
               Alert.alert('Could not delete', e instanceof Error ? e.message : 'Try again.');
@@ -2067,7 +2146,7 @@ export default function MapScreen() {
         },
       ],
     );
-  }, [closeDrawer, refetchGraph, tutorialActive, notifyTargetPressed]);
+  }, [closeDrawer, refetchGraph, refetchIntelligence, refetchTrends, refetchPulse, tutorialActive, notifyTargetPressed]);
 
   // ── Capture state ─────────────────────────────────────────────
   const [showCapture, setShowCapture] = useState(false);
@@ -2274,7 +2353,7 @@ export default function MapScreen() {
         userContext: mode === 'link' ? userContext.trim() || undefined : undefined,
       });
       setNewNodeId(res.id);
-      void refetchGraph();
+      refetchMapData();
       closeCapture();
       // During the walkthrough, stay on the map so the user sees their first
       // node land instead of being whisked to the insight screen. The
@@ -2289,7 +2368,7 @@ export default function MapScreen() {
     } finally {
       setBusy(false);
     }
-  }, [mode, payload, mediaUrl, reaction, userContext, refetchGraph, closeCapture, router, tutorialActive]);
+  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, router, tutorialActive]);
 
   const pasteFromClipboard = useCallback(async () => {
     const t = (await Clipboard.getStringAsync()).trim();
@@ -2536,10 +2615,14 @@ export default function MapScreen() {
             const b = pos[e.toItemId];
             if (!a || !b) return null;
 
-            const isSelectedEdge = discoveryEdgeKeys.includes(edgeKey(e.fromItemId, e.toItemId));
+            const key = edgeKey(e.fromItemId, e.toItemId);
+            const isSelectedEdge = discoveryEdgeKeys.includes(key);
 
-            const baseOpacity = 0.14 + e.weight * 0.26;
-            let edgeOpacity = baseOpacity;
+            // Salience maps the strong-few / weak-many split onto both opacity
+            // and width: strong connections stay crisp, the long tail recedes.
+            const salience = edgeSalienceByKey.get(key) ?? 0;
+            let edgeOpacity = EDGE_MIN_OPACITY + salience * (EDGE_MAX_OPACITY - EDGE_MIN_OPACITY);
+            const edgeWidth = EDGE_MIN_WIDTH + salience * (EDGE_MAX_WIDTH - EDGE_MIN_WIDTH);
             if (focusedTopicId) {
               const fromNode = nodeById.get(e.fromItemId);
               const toNode = nodeById.get(e.toItemId);
@@ -2553,7 +2636,7 @@ export default function MapScreen() {
                 key={`e${i}`}
                 x1={a.x} y1={a.y} x2={b.x} y2={b.y}
                 stroke={isSelectedEdge ? DISCOVERY_ACCENT : MAP_LINE}
-                strokeWidth={isSelectedEdge ? 2.4 : 1.1}
+                strokeWidth={isSelectedEdge ? 2.4 : edgeWidth}
                 strokeOpacity={isSelectedEdge ? 0.95 : edgeOpacity}
               />
             );
@@ -2627,7 +2710,7 @@ export default function MapScreen() {
   ), [
     edges, nodes, pos, nodeById, discoveryEdgeKeys, discoveryNodeIds,
     nodeMetrics, nodeColor, isRecentNode, hasSearch, highlightedIds,
-    getNodeOpacity, isEmpty, focusedTopicId, zoomFade,
+    getNodeOpacity, isEmpty, focusedTopicId, zoomFade, edgeSalienceByKey,
   ]);
 
   const worldBody = useMemo(() => (

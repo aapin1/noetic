@@ -26,6 +26,8 @@ import {
   classifyEdge,
   classifyEdgeSemantic,
   draftInsights,
+  RELATED_LIMIT,
+  RELATED_MIN_WEIGHT,
   type Neighbor,
   type TopicCount,
   type TrajectoryShift,
@@ -1073,7 +1075,9 @@ export async function getCapture(args: { userId: string; capturedItemId: string;
       evidence: row.evidence,
     })),
     related: Array.from(relatedById.values())
+      .filter((r) => r.weight >= RELATED_MIN_WEIGHT)
       .sort((a, b) => b.weight - a.weight)
+      .slice(0, RELATED_LIMIT)
       .map((r) => ({
         ...serializeCapturedItem(r.item),
         edgeType: r.edgeType,

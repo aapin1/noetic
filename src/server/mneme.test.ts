@@ -142,6 +142,38 @@ describe("cognition helpers", () => {
     expect(drafts.some((d) => d.type === "PATTERN")).toBe(true);
   });
 
+  it("does not emit both PATTERN and TRAJECTORY for the same topic", () => {
+    // Both describe engagement with the one topic (volume vs direction) and
+    // read as restatements — only the stronger should survive.
+    const drafts = draftInsights({
+      style: "DIRECT",
+      itemTitle: "On philosophy",
+      topicNames: ["philosophy"],
+      topNeighbors: [],
+      topicCounts: [{ topicId: "t1", name: "philosophy", count: 5 }],
+      shift: { topicId: "t1", name: "philosophy", recentCount: 3, priorCount: 1, delta: 2 },
+      isFirstCapture: false,
+    });
+    const kinds = drafts.map((d) => d.type);
+    expect(kinds.includes("PATTERN") && kinds.includes("TRAJECTORY")).toBe(false);
+    expect(kinds.includes("PATTERN") || kinds.includes("TRAJECTORY")).toBe(true);
+  });
+
+  it("keeps both PATTERN and TRAJECTORY when they name different topics", () => {
+    const drafts = draftInsights({
+      style: "DIRECT",
+      itemTitle: "Cross-topic",
+      topicNames: ["philosophy"],
+      topNeighbors: [],
+      topicCounts: [{ topicId: "t1", name: "philosophy", count: 5 }],
+      shift: { topicId: "t2", name: "psychology", recentCount: 4, priorCount: 0, delta: 4 },
+      isFirstCapture: false,
+    });
+    const kinds = drafts.map((d) => d.type);
+    expect(kinds).toContain("PATTERN");
+    expect(kinds).toContain("TRAJECTORY");
+  });
+
   it("falls back when llm polish fails", async () => {
     const drafts = [{ type: "NOVELTY", headline: "Old headline", body: "Body", evidence: {}, strength: 0.5 }] as const;
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false } as Response));

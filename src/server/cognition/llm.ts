@@ -311,10 +311,14 @@ export type SemanticTopics = {
 export async function extractSemanticTopics(args: {
   title?: string;
   combinedText?: string;
-  /** Specific sub-topic labels already in the user's map. The model reuses one
-   * of these (verbatim) when the content fits it, so near-duplicate sub-topics
-   * ("stoic philosophy" vs "stoicism") don't fragment the map. */
-  existingSpecificTopics?: string[];
+  /** The user's existing specific sub-topics, keyed by the general field each
+   * one actually lives under. The model reuses a label (verbatim) when the
+   * content names the same subject, so near-duplicate sub-topics ("stoic
+   * philosophy" vs "stoicism") don't fragment the map. Attributing each label
+   * to its field is what stops the reverse failure: offered a flat list, the
+   * model happily files an LLM article under "ai in biology" because the words
+   * look adjacent. A label is only ever a candidate within its own field. */
+  existingTopicsByGeneral?: Record<string, string[]>;
 }): Promise<SemanticTopics> {
   const empty: SemanticTopics = { classifications: [] };
   const apiKey = process.env.OPENAI_API_KEY;
@@ -330,10 +334,20 @@ export async function extractSemanticTopics(args: {
 
   if (content.length < 6) return empty;
 
-  const existing = (args.existingSpecificTopics ?? [])
-    .map((t) => t.trim().toLowerCase())
-    .filter(Boolean)
-    .slice(0, 40);
+  // Flatten to "field: label, label" lines, capped at 40 labels overall so the
+  // prompt stays a fixed size as the map grows.
+  let budget = 40;
+  const existingLines: string[] = [];
+  for (const [general, specifics] of Object.entries(args.existingTopicsByGeneral ?? {})) {
+    if (budget <= 0) break;
+    const labels = specifics
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, budget);
+    if (labels.length === 0) continue;
+    budget -= labels.length;
+    existingLines.push(`   ${general}: ${labels.join(", ")}`);
+  }
 
   const body = JSON.stringify({
     model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
@@ -351,12 +365,19 @@ export async function extractSemanticTopics(args: {
           `   ${GENERAL_TOPICS.join(", ")}.`,
           "   Pick the closest field even if none is perfect. The general field decides which region of the map the content lands in, so judge it by the ACTUAL subject matter — never by an incidental word. A physics article that mentions a 'thin film' is science, not film. A history essay that mentions a court case is history, not law.",
           "- specific — one precise sub-topic label naming what the content is specifically about within that field. Prefer a named sub-discipline, theory, movement, tradition, or key concept: 'quantum mechanics' under science, 'epistemology' under philosophy, 'metaphysics' under philosophy. Never just restate the general field.",
-          ...(existing.length > 0
+          ...(existingLines.length > 0
             ? [
                 "",
-                "The user's map already contains these specific sub-topics:",
-                `   ${existing.join(", ")}.`,
-                "   If the content belongs to one of them IN MEANING (even under different wording — 'stoicism' covers 'stoic philosophy'), reuse that existing label EXACTLY as written instead of coining a variant. Coin a new specific label only when no existing one genuinely fits. Never stretch a poor fit.",
+                "The user's map already contains these specific sub-topics, listed under the general field each one lives in:",
+                ...existingLines,
+                "",
+                "Reuse an existing label only when ALL of these hold:",
+                "   1. It is listed under the SAME general field you chose. A label filed under a different field is never a candidate, no matter how related its words sound.",
+                "   2. It names the SAME subject as this content, allowing for different wording — 'stoicism' covers 'stoic philosophy', 'epistemology' covers 'theory of knowledge'.",
+                "   3. It is neither broader nor narrower than what the content is actually about.",
+                "   Otherwise coin a new specific label. Adjacency is NOT a fit: an article about large language models is 'large language models', not the existing 'ai in biology' — those share a word, not a subject. A paper on protein folding is not 'machine learning' just because it uses a model.",
+                "   Fragmenting the map with a new label is a much smaller error than filing content under a label that does not describe it. When genuinely torn, coin the new label.",
+                "   When you do reuse, copy the label EXACTLY as written above.",
               ]
             : []),
           "",

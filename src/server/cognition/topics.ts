@@ -47,6 +47,68 @@ async function loadTopicsForUser(db: DbClient, userId: string, limit = 100): Pro
   }));
 }
 
+/** Rows of (item, topic) scanned to learn which general field each specific
+ * label lives under. Bounded so classification cost stays flat as the map grows. */
+const EXISTING_TOPIC_SCAN = 1000;
+/** Labels offered per general field. Stops one dominant field from crowding
+ * every other field out of the classifier's prompt budget. */
+const LABELS_PER_GENERAL = 8;
+
+/**
+ * The user's specific sub-topics, grouped by the general field they actually
+ * live under (learned from co-occurrence on the same capture). The classifier
+ * needs the attribution, not just the labels: a bare list lets it file an LLM
+ * article under a biology field's "ai in biology" purely on word overlap.
+ * Fields are ordered by how much the user uses them, labels by how often each
+ * is used, so the prompt's fixed budget is spent on the buckets most likely to
+ * be the right home.
+ */
+async function loadExistingTopicsByGeneral(
+  db: DbClient,
+  userId: string,
+): Promise<Record<string, string[]>> {
+  const rows = await db.capturedItemTopic.findMany({
+    where: { capturedItem: { userId } },
+    orderBy: { capturedItem: { capturedAt: "desc" } },
+    take: EXISTING_TOPIC_SCAN,
+    select: { capturedItemId: true, topic: { select: { name: true } } },
+  });
+
+  const namesByItem = new Map<string, string[]>();
+  for (const row of rows) {
+    const names = namesByItem.get(row.capturedItemId);
+    if (names) names.push(row.topic.name);
+    else namesByItem.set(row.capturedItemId, [row.topic.name]);
+  }
+
+  const counts = new Map<string, Map<string, number>>();
+  for (const names of namesByItem.values()) {
+    const generals = names.filter((name) => isGeneralTopic(name));
+    const specifics = names.filter((name) => !isGeneralTopic(name));
+    for (const general of generals) {
+      let bucket = counts.get(general);
+      if (!bucket) {
+        bucket = new Map();
+        counts.set(general, bucket);
+      }
+      for (const specific of specifics) {
+        bucket.set(specific, (bucket.get(specific) ?? 0) + 1);
+      }
+    }
+  }
+
+  const ranked = Array.from(counts.entries())
+    .map(([general, bucket]) => {
+      const labels = Array.from(bucket.entries()).sort((a, b) => b[1] - a[1]);
+      const total = labels.reduce((sum, [, count]) => sum + count, 0);
+      return { general, total, labels: labels.slice(0, LABELS_PER_GENERAL).map(([name]) => name) };
+    })
+    .filter((entry) => entry.labels.length > 0)
+    .sort((a, b) => b.total - a.total);
+
+  return Object.fromEntries(ranked.map((entry) => [entry.general, entry.labels]));
+}
+
 export type TopicKind = "general" | "specific";
 
 export type ClassifiedTopic = {
@@ -82,22 +144,15 @@ export async function classifyTopics(args: {
   if (hasContext) {
     // Offer the user's existing specific sub-topics to the classifier so
     // content that fits an established bucket reuses it instead of spawning a
-    // wording variant ("stoic philosophy" next to "stoicism").
-    const existingSpecificTopics = (
-      await args.db.userTopic.findMany({
-        where: { userId: args.userId, weight: { gt: 0 } },
-        orderBy: { weight: "desc" },
-        take: 60,
-        select: { topic: { select: { name: true } } },
-      })
-    )
-      .map((row) => row.topic.name)
-      .filter((name) => !isGeneralTopic(name));
+    // wording variant ("stoic philosophy" next to "stoicism") — but attributed
+    // to their fields, so the classifier can only reuse a label from the field
+    // it actually picked.
+    const existingTopicsByGeneral = await loadExistingTopicsByGeneral(args.db, args.userId);
 
     const { classifications } = await extractSemanticTopics({
       title: args.title,
       combinedText: args.combinedText ?? args.description,
-      existingSpecificTopics,
+      existingTopicsByGeneral,
     });
 
     if (classifications.length > 0) {

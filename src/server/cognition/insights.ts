@@ -150,8 +150,8 @@ export function draftInsights(args: {
 
   const dominantCount = args.topicCounts.find((entry) => entry.name === dominantTopic);
 
-  if (dominantCount && dominantCount.count >= 3) {
-    drafts.push({
+  const patternDraft: InsightDraft | null = dominantCount && dominantCount.count >= 3
+    ? {
       type: InsightType.PATTERN,
       headline: voice.pattern(dominantCount.count, dominantCount.name),
       body: `You have returned to ${dominantCount.name} ${dominantCount.count} times across your saved items — a clear sustained interest. Repeated engagement with a topic is often the precursor to genuine expertise or a crystallised point of view. It may be worth asking: what is the unresolved question that keeps drawing you back here?`,
@@ -161,18 +161,33 @@ export function draftInsights(args: {
         count: dominantCount.count,
       },
       strength: Math.min(1, 0.4 + dominantCount.count / 12),
-    });
-  }
+    }
+    : null;
 
-  if (args.shift && Math.abs(args.shift.delta) >= 1) {
-    const direction = args.shift.delta > 0 ? "rising" : "declining";
-    drafts.push({
+  const trajectoryDraft: InsightDraft | null = args.shift && Math.abs(args.shift.delta) >= 1
+    ? {
       type: InsightType.TRAJECTORY,
       headline: args.shift.delta > 0 ? voice.trajectoryUp(args.shift.name) : voice.trajectoryDown(args.shift.name),
-      body: `Your attention on ${args.shift.name} is ${direction}: ${args.shift.recentCount} captures in the recent window versus ${args.shift.priorCount} in the prior period (delta ${args.shift.delta > 0 ? "+" : ""}${args.shift.delta}). Trajectory shifts often precede a period of consolidation or a pivot. Whether this is deliberate or a drift is worth noticing.`,
+      body: `Your attention on ${args.shift.name} is ${args.shift.delta > 0 ? "rising" : "declining"}: ${args.shift.recentCount} captures in the recent window versus ${args.shift.priorCount} in the prior period (delta ${args.shift.delta > 0 ? "+" : ""}${args.shift.delta}). Trajectory shifts often precede a period of consolidation or a pivot. Whether this is deliberate or a drift is worth noticing.`,
       evidence: args.shift,
       strength: Math.min(1, Math.abs(args.shift.delta) / 5 + 0.3),
-    });
+    }
+    : null;
+
+  // Both read as "you keep engaging with X" when they name the SAME topic —
+  // volume and direction of the one interest. Emit only the stronger of the
+  // two. When they name different topics they say genuinely different things,
+  // so both stand.
+  const sameTopic =
+    patternDraft !== null &&
+    trajectoryDraft !== null &&
+    args.shift!.topicId === dominantCount!.topicId;
+
+  if (sameTopic) {
+    drafts.push(trajectoryDraft!.strength > patternDraft!.strength ? trajectoryDraft! : patternDraft!);
+  } else {
+    if (patternDraft) drafts.push(patternDraft);
+    if (trajectoryDraft) drafts.push(trajectoryDraft);
   }
 
   if (args.topNeighbors.length > 0 && drafts.length < 2) {
@@ -229,6 +244,18 @@ export function draftInsights(args: {
  * unrelated captures never connect.
  */
 export const SEMANTIC_CONNECT_THRESHOLD = 0.3;
+
+/**
+ * The bar for a neighbor to be worth *naming* as a connected memory, and the
+ * most we will name. An edge above SEMANTIC_CONNECT_THRESHOLD is real enough to
+ * draw on the Atlas, but far too loose to headline: a capture accrues an edge
+ * from every later capture that picks it as a neighbor, so a long-lived node
+ * ends up with many more edges than the six it created and the list degenerates
+ * into "everything I ever saved". Require the "strongly related" band (>=0.45,
+ * where REINFORCES begins) and keep at most the three strongest.
+ */
+export const RELATED_MIN_WEIGHT = 0.45;
+export const RELATED_LIMIT = 3;
 
 export function classifyEdgeSemantic(args: {
   similarity: number;

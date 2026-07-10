@@ -30,6 +30,9 @@ function fallbackDb(
         topics.map((t) => ({ topicId: t.id, topic: { description: null, ...t } })),
       ),
     },
+    capturedItemTopic: {
+      findMany: vi.fn(async () => []),
+    },
     topic: {
       findMany: vi.fn(async () => []),
       upsert: vi.fn(async ({ create }: { create: { name: string; slug: string } }) => ({
