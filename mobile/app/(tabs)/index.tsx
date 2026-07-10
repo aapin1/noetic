@@ -93,12 +93,12 @@ const EDGE_WEIGHT_GAMMA = 2;
 const EDGE_FULL_RANK = 2;
 const EDGE_RANK_FALLOFF = 0.55;
 // Every edge stays readable — a weak connection is faint but never invisible —
-// while the strongest land as bold, near-opaque lines. MAP_LINE is near-white,
-// so these opacities are effectively the on-screen alpha.
-const EDGE_MIN_OPACITY = 0.18;
-const EDGE_MAX_OPACITY = 0.72;
-const EDGE_MIN_WIDTH = 0.7;
-const EDGE_MAX_WIDTH = 2.6;
+// while the strongest land as a thin, subdued line, never a bold one. MAP_LINE
+// is near-white, so these opacities are effectively the on-screen alpha.
+const EDGE_MIN_OPACITY = 0.09;
+const EDGE_MAX_OPACITY = 0.4;
+const EDGE_MIN_WIDTH = 0.5;
+const EDGE_MAX_WIDTH = 1.2;
 
 const edgeSalience = (weight: number, rank: number) => {
   const t = Math.max(0, Math.min(1, (weight - EDGE_WEIGHT_FLOOR) / (EDGE_WEIGHT_CEIL - EDGE_WEIGHT_FLOOR)));
@@ -2575,14 +2575,13 @@ export default function MapScreen() {
             }
             if (clOpacity <= 0.005) return null;
             const dimmed = focusedTopicId && cl.topicId !== focusedTopicId;
-            const fill = isDomain ? 'rgba(236,236,236,1)' : (clusterColorMap.get(cl.topicId) ?? 'rgba(236,236,236,1)');
             return (
               <SvgText
                 key={`cl-label-${cl.topicId}`}
                 x={cl.x} y={cl.y}
                 fontSize={clFontSize}
                 fontFamily={FontFamily.mono}
-                fill={fill}
+                fill="rgba(236,236,236,1)"
                 fillOpacity={dimmed ? Math.min(0.08, clOpacity) : Math.min(cap, clOpacity)}
                 textAnchor="middle"
                 letterSpacing={isDomain ? 3.5 : 3}
@@ -2637,7 +2636,7 @@ export default function MapScreen() {
           })()}
       </>
     );
-  }, [zoom, lensMode, lensTransitioning, clusterLabels, clusterColorMap, focusedTopicId, nodes.length]);
+  }, [zoom, lensMode, lensTransitioning, clusterLabels, focusedTopicId, nodes.length]);
 
   // Edges + nodes: the bulk of the SVG tree. Keyed on zoomFade, not zoom, so a
   // zoom commit outside the fade band keeps this element identity and React
