@@ -192,11 +192,11 @@ const FIELD_TITLES = [
 
 // Neutral kickers: the bubbles already name the topics, so the label must not.
 const TOPIC_KICKERS = [
-  'on your mind',
-  'what you keep circling',
-  'where your attention goes',
-  'the usual suspects',
-  'recurring obsessions',
+  'On your mind',
+  'What you keep circling',
+  'Where your attention goes',
+  'The usual suspects',
+  'Recurring obsessions',
 ];
 
 const NEW_TOPIC_TITLES = [

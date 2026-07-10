@@ -553,33 +553,43 @@ function TopicBubbles({
     const W = bw.value;
     const H = bh.value;
     const dt = Math.min(40, info.timeSincePreviousFrame ?? 16) / 16;
-    const REST = 0.9;
+    // Soft, jelly-like impacts rather than a rigid-body bounce: a low
+    // restitution so velocity doesn't reverse sharply, a partial (not full)
+    // positional correction so overlapping bubbles ease apart over a couple
+    // frames instead of teleporting, and squish scaled by how hard the hit
+    // was so light grazes barely wobble and only real hits deform visibly.
+    const REST = 0.5;
+    const CORRECTION = 0.45;
 
     for (let i = 0; i < n; i += 1) {
       const b = bs[i];
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       if (b.x - b.r < 0) {
+        const impact = clampWorklet(Math.abs(b.vx) / 2.4, 0.05, 0.16);
         b.x = b.r;
         b.vx = Math.abs(b.vx) * REST;
-        b.sx = 0.8;
-        b.sy = 1.2;
+        b.sx = 1 - impact;
+        b.sy = 1 + impact;
       } else if (b.x + b.r > W) {
+        const impact = clampWorklet(Math.abs(b.vx) / 2.4, 0.05, 0.16);
         b.x = W - b.r;
         b.vx = -Math.abs(b.vx) * REST;
-        b.sx = 0.8;
-        b.sy = 1.2;
+        b.sx = 1 - impact;
+        b.sy = 1 + impact;
       }
       if (b.y - b.r < 0) {
+        const impact = clampWorklet(Math.abs(b.vy) / 2.4, 0.05, 0.16);
         b.y = b.r;
         b.vy = Math.abs(b.vy) * REST;
-        b.sy = 0.8;
-        b.sx = 1.2;
+        b.sy = 1 - impact;
+        b.sx = 1 + impact;
       } else if (b.y + b.r > H) {
+        const impact = clampWorklet(Math.abs(b.vy) / 2.4, 0.05, 0.16);
         b.y = H - b.r;
         b.vy = -Math.abs(b.vy) * REST;
-        b.sy = 0.8;
-        b.sx = 1.2;
+        b.sy = 1 - impact;
+        b.sx = 1 + impact;
       }
     }
 
@@ -594,7 +604,7 @@ function TopicBubbles({
         if (dist > 0 && dist < minDist) {
           const nx = dx / dist;
           const ny = dy / dist;
-          const overlap = (minDist - dist) / 2;
+          const overlap = ((minDist - dist) / 2) * CORRECTION;
           a.x -= nx * overlap;
           a.y -= ny * overlap;
           b.x += nx * overlap;
@@ -606,9 +616,10 @@ function TopicBubbles({
           a.vy += diff * ny;
           b.vx -= diff * nx;
           b.vy -= diff * ny;
+          const impact = clampWorklet(Math.abs(avn - bvn) / 2.4, 0.05, 0.16);
           const alongX = Math.abs(nx) > Math.abs(ny);
-          a.sx = alongX ? 0.82 : 1.18;
-          a.sy = alongX ? 1.18 : 0.82;
+          a.sx = alongX ? 1 - impact : 1 + impact;
+          a.sy = alongX ? 1 + impact : 1 - impact;
           b.sx = a.sx;
           b.sy = a.sy;
         }
@@ -617,8 +628,8 @@ function TopicBubbles({
 
     for (let i = 0; i < n; i += 1) {
       const b = bs[i];
-      b.sx += (1 - b.sx) * 0.16;
-      b.sy += (1 - b.sy) * 0.16;
+      b.sx += (1 - b.sx) * 0.14;
+      b.sy += (1 - b.sy) * 0.14;
       const sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
       if (sp < 0.25) {
         if (sp < 0.0001) {
@@ -758,7 +769,7 @@ const DIAL = 168;
 const DIAL_R = 42;
 const DIAL_MAX_SPOKE = 26;
 /** Reserved margin around the dial so tick labels sit clear of the longest spoke. */
-const DIAL_TICK_PAD = 22;
+const DIAL_TICK_PAD = 16;
 const WEEKDAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 /**
@@ -1244,7 +1255,7 @@ export function WrappedSection({
       {archetype ? (
         <RevealCard {...cardProps}>
           <Text variant="serif" style={styles.cardTitle}>
-            your type
+            Your type
           </Text>
           <View style={styles.archetypeRow}>
             <View style={[styles.glyph, { borderColor: accent }]}>
@@ -1399,7 +1410,10 @@ const styles = StyleSheet.create({
   tlHint: {
     position: 'absolute',
     right: -4,
-    top: Spacing[5],
+    // tlTrack's marginTop (Spacing[5]) puts the dot row's vertical center at
+    // Spacing[5] + tlDot height / 2; centered here so the hint lines up with
+    // the dots and lines instead of hanging down toward the labels.
+    top: Spacing[5] - 5.5,
     width: 20,
     height: 20,
     borderRadius: Radius.full,
@@ -1420,7 +1434,7 @@ const styles = StyleSheet.create({
   },
   // Pinned to the outer edge of the padded wrap — entirely outside the SVG's
   // bounding box — so a label can never overlap a spoke no matter how long it is.
-  dialTick: { position: 'absolute', fontSize: 9 },
+  dialTick: { position: 'absolute', fontSize: 11 },
   tickTop: { top: 0, left: 0, right: 0, textAlign: 'center' },
   tickBottom: { bottom: 0, left: 0, right: 0, textAlign: 'center' },
   tickLeft: { left: 0, top: (DIAL + DIAL_TICK_PAD * 2) / 2 - 6 },
