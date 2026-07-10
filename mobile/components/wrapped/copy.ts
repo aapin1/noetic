@@ -21,26 +21,6 @@ function pick<T>(list: readonly T[], ...seedParts: (string | number)[]): T {
   return list[hashSeed(...seedParts) % list.length];
 }
 
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-
-export function monthYear(iso: string): string {
-  const d = new Date(iso);
-  return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
-}
-
 /** Short enough to sit inside the clock face: "12am", "3pm". */
 export function formatHourCompact(h: number): string {
   if (h === 0) return '12am';
@@ -143,13 +123,6 @@ const HERO_NOUNS = [
   'still here because of you',
 ];
 
-const SINCE_LINES = [
-  (m: string) => `All of it since ${m}.`,
-  (m: string) => `Started ${m}, never quite stopped.`,
-  (m: string) => `${m} is where this began.`,
-  (m: string) => `Every one of them since ${m}.`,
-];
-
 export function emptyTitle(seed: number): string {
   return pick(EMPTY_TITLES, 'empty-title', seed);
 }
@@ -174,10 +147,6 @@ export function milestoneBadge(total: number): string | null {
   if (total === 1) return 'first';
   const band = MILESTONES.find((m) => total >= m.min && m.min >= 5);
   return band ? `${band.min}+` : null;
-}
-
-export function sinceLine(firstCaptureIso: string, total: number): string {
-  return pick(SINCE_LINES, 'since', total)(monthYear(firstCaptureIso));
 }
 
 /* ------------------------------------------------------------- sections ---- */
