@@ -96,9 +96,9 @@ const EDGE_RANK_FALLOFF = 0.55;
 // while the strongest land as a thin, subdued line, never a bold one. MAP_LINE
 // is near-white, so these opacities are effectively the on-screen alpha.
 const EDGE_MIN_OPACITY = 0.09;
-const EDGE_MAX_OPACITY = 0.4;
+const EDGE_MAX_OPACITY = 0.32;
 const EDGE_MIN_WIDTH = 0.5;
-const EDGE_MAX_WIDTH = 1.2;
+const EDGE_MAX_WIDTH = 1.0;
 
 const edgeSalience = (weight: number, rank: number) => {
   const t = Math.max(0, Math.min(1, (weight - EDGE_WEIGHT_FLOOR) / (EDGE_WEIGHT_CEIL - EDGE_WEIGHT_FLOOR)));
