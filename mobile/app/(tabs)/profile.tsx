@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import Animated, {
   useAnimatedScrollHandler,
@@ -23,6 +23,7 @@ export default function YouScreen() {
   const router = useRouter();
   const { profile: authProfile, refreshProfile } = useAuth();
   const scrollY = useSharedValue(0);
+  const scroller = useRef<Animated.ScrollView>(null);
 
   const { data: profile, loading, refetch } = useApiQuery(
     () => api.profile.me().then((r) => r.profile),
@@ -38,6 +39,8 @@ export default function YouScreen() {
   // trustworthy if they're re-read every time this tab comes back into view.
   useFocusEffect(
     useCallback(() => {
+      // Always land at the hero, even if the tab was left scrolled down.
+      scroller.current?.scrollTo({ y: 0, animated: false });
       void refetch();
       void refetchWrapped();
     }, [refetch, refetchWrapped]),
@@ -70,6 +73,7 @@ export default function YouScreen() {
         </Pressable>
       </View>
       <Animated.ScrollView
+        ref={scroller}
         contentContainerStyle={styles.content}
         onScroll={scrollHandler}
         scrollEventThrottle={16}

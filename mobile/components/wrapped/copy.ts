@@ -190,12 +190,13 @@ const FIELD_TITLES = [
   'Your centre of gravity',
 ];
 
-const TOPIC_TITLES: readonly ((t: string) => string)[] = [
-  (t) => `You cannot stop thinking about ${t}.`,
-  (t) => `${t} has a hold on you.`,
-  (t) => `Lately it is mostly ${t}.`,
-  (t) => `If you only had one subject, it would be ${t}.`,
-  (t) => `${t}, again. And again.`,
+// Neutral kickers: the bubbles already name the topics, so the label must not.
+const TOPIC_KICKERS = [
+  'on your mind',
+  'what you keep circling',
+  'where your attention goes',
+  'the usual suspects',
+  'recurring obsessions',
 ];
 
 const NEW_TOPIC_TITLES = [
@@ -216,8 +217,8 @@ export function fieldsTitle(seed: number): string {
   return pick(FIELD_TITLES, 'fields', seed);
 }
 
-export function topicsTitle(topTopic: string, seed: number): string {
-  return pick(TOPIC_TITLES, 'topics', seed, topTopic)(topTopic.toLowerCase());
+export function topicsKicker(seed: number): string {
+  return pick(TOPIC_KICKERS, 'topics', seed);
 }
 
 export function newTopicsTitle(seed: number): string {

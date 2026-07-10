@@ -13,6 +13,7 @@ import Animated, {
   runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
+  useFrameCallback,
   useSharedValue,
   withDelay,
   withSpring,
@@ -20,6 +21,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import Svg, { Circle, Line } from 'react-native-svg';
+import { useIsFocused } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { Image as ImageIcon, Link2, PenLine } from 'lucide-react-native';
 import { AccentList, Radius, Spacing, accentFor, hourAccent } from '@/constants/theme';
@@ -45,7 +47,7 @@ import {
   rhythmLine,
   sinceLine,
   timelineTitle,
-  topicsTitle,
+  topicsKicker,
 } from './copy';
 import type { ArchetypeFormat } from './copy';
 import type { ArcBucket, WrappedArcs, WrappedStats } from '@/types/api';
@@ -402,61 +404,302 @@ function Spectrum({ items }: { items: { name: string; count: number }[] }) {
 
 /* ---------------------------------------------------------------- topics --- */
 
-/** Topics as type, sized by how often they show up. No boxes, no chips. */
-function TopicMass({ items, accent }: { items: { name: string; count: number }[]; accent: string }) {
-  const c = useThemeColors();
-  const max = Math.max(...items.map((it) => it.count));
-  const min = Math.min(...items.map((it) => it.count));
-  const span = Math.max(1, max - min);
+const BUBBLE_BOX_H = 210;
+const MAX_BUBBLES = 6;
+const MIN_BUBBLE_R = 28;
+
+interface Body {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  r: number;
+  /** Squish factors; spring back to 1 after an impact. */
+  sx: number;
+  sy: number;
+}
+
+/** Small deterministic PRNG so a bubble field lays out the same for the same stats. */
+function makeRng(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** One bubble. Size is fixed; only position and squish are driven per frame. */
+function Bubble({
+  index,
+  bodies,
+  radius,
+  label,
+  fill,
+  border,
+  textColor,
+  fontSize,
+}: {
+  index: number;
+  bodies: SharedValue<Body[]>;
+  radius: number;
+  label: string;
+  fill: string;
+  border: string;
+  textColor: string;
+  fontSize: number;
+}) {
+  const anim = useAnimatedStyle(() => {
+    const b = bodies.value[index];
+    if (!b) return { opacity: 0 };
+    return {
+      opacity: 1,
+      transform: [
+        { translateX: b.x - radius },
+        { translateY: b.y - radius },
+        { scaleX: b.sx },
+        { scaleY: b.sy },
+      ],
+    };
+  });
 
   return (
-    <View style={styles.massWrap}>
-      {items.map((it, i) => {
-        const weight = (it.count - min) / span;
-        const size = 16 + weight * 20;
-        return (
-          <Text
-            key={it.name}
-            variant="serif"
-            style={{
-              fontSize: size,
-              lineHeight: size * 1.25,
-              color: i === 0 ? accent : c.text,
-              opacity: i === 0 ? 1 : 0.9 - Math.min(i, 4) * 0.13,
-            }}
-          >
-            {it.name}
-          </Text>
-        );
-      })}
+    <Animated.View
+      style={[
+        styles.bubble,
+        { width: radius * 2, height: radius * 2, borderRadius: radius, backgroundColor: fill, borderColor: border },
+        anim,
+      ]}
+    >
+      <Text
+        variant="serif"
+        numberOfLines={2}
+        style={{ color: textColor, fontSize, lineHeight: fontSize * 1.12, textAlign: 'center' }}
+      >
+        {label}
+      </Text>
+    </Animated.View>
+  );
+}
+
+/**
+ * Top topics as squishy bubbles that drift, collide, and bounce off each other
+ * and the walls. The physics runs entirely on the UI thread and only while the
+ * card is on screen and the tab is focused, so it costs nothing in the background.
+ */
+function TopicBubbles({
+  items,
+  accent,
+  seed,
+  active,
+}: {
+  items: { name: string; count: number }[];
+  accent: string;
+  seed: number;
+  active: boolean;
+}) {
+  const c = useThemeColors();
+  const isFocused = useIsFocused();
+  const data = useMemo(() => items.slice(0, MAX_BUBBLES), [items]);
+  const [w, setW] = useState(0);
+
+  const bw = useSharedValue(0);
+  const bh = useSharedValue(BUBBLE_BOX_H);
+  const bodies = useSharedValue<Body[]>([]);
+
+  // Radius scales with frequency; the top topic is biggest and wears the accent.
+  const layout = useMemo(() => {
+    const counts = data.map((d) => d.count);
+    const max = Math.max(...counts, 1);
+    const min = Math.min(...counts, 0);
+    const span = Math.max(1, max - min);
+    const maxR = Math.max(MIN_BUBBLE_R + 8, Math.min(46, (w || 320) / 4.2));
+    return data.map((d, i) => {
+      const weight = (d.count - min) / span;
+      const r = Math.max(MIN_BUBBLE_R, 26 + weight * (maxR - 26));
+      return { r, fontSize: clamp(r * 0.3, 8.5, 13), name: d.name, top: i === 0 };
+    });
+  }, [data, w]);
+
+  // Seed positions and gentle velocities once the box is measured.
+  useEffect(() => {
+    if (w === 0 || layout.length === 0) return;
+    bw.value = w;
+    bh.value = BUBBLE_BOX_H;
+    const rng = makeRng(seed + data.length * 97);
+    bodies.value = layout.map((L) => {
+      const r = L.r;
+      const ang = rng() * Math.PI * 2;
+      const sp = 0.4 + rng() * 0.5;
+      return {
+        x: r + rng() * Math.max(1, w - 2 * r),
+        y: r + rng() * Math.max(1, BUBBLE_BOX_H - 2 * r),
+        vx: Math.cos(ang) * sp,
+        vy: Math.sin(ang) * sp,
+        r,
+        sx: 1,
+        sy: 1,
+      };
+    });
+  }, [w, layout, seed, data.length, bodies, bw, bh]);
+
+  const frame = useFrameCallback((info) => {
+    'worklet';
+    const bs = bodies.value;
+    const n = bs.length;
+    if (n === 0) return;
+    const W = bw.value;
+    const H = bh.value;
+    const dt = Math.min(40, info.timeSincePreviousFrame ?? 16) / 16;
+    const REST = 0.9;
+
+    for (let i = 0; i < n; i += 1) {
+      const b = bs[i];
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      if (b.x - b.r < 0) {
+        b.x = b.r;
+        b.vx = Math.abs(b.vx) * REST;
+        b.sx = 0.8;
+        b.sy = 1.2;
+      } else if (b.x + b.r > W) {
+        b.x = W - b.r;
+        b.vx = -Math.abs(b.vx) * REST;
+        b.sx = 0.8;
+        b.sy = 1.2;
+      }
+      if (b.y - b.r < 0) {
+        b.y = b.r;
+        b.vy = Math.abs(b.vy) * REST;
+        b.sy = 0.8;
+        b.sx = 1.2;
+      } else if (b.y + b.r > H) {
+        b.y = H - b.r;
+        b.vy = -Math.abs(b.vy) * REST;
+        b.sy = 0.8;
+        b.sx = 1.2;
+      }
+    }
+
+    for (let i = 0; i < n; i += 1) {
+      for (let j = i + 1; j < n; j += 1) {
+        const a = bs[i];
+        const b = bs[j];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const minDist = a.r + b.r;
+        if (dist > 0 && dist < minDist) {
+          const nx = dx / dist;
+          const ny = dy / dist;
+          const overlap = (minDist - dist) / 2;
+          a.x -= nx * overlap;
+          a.y -= ny * overlap;
+          b.x += nx * overlap;
+          b.y += ny * overlap;
+          const avn = a.vx * nx + a.vy * ny;
+          const bvn = b.vx * nx + b.vy * ny;
+          const diff = (bvn - avn) * REST;
+          a.vx += diff * nx;
+          a.vy += diff * ny;
+          b.vx -= diff * nx;
+          b.vy -= diff * ny;
+          const alongX = Math.abs(nx) > Math.abs(ny);
+          a.sx = alongX ? 0.82 : 1.18;
+          a.sy = alongX ? 1.18 : 0.82;
+          b.sx = a.sx;
+          b.sy = a.sy;
+        }
+      }
+    }
+
+    for (let i = 0; i < n; i += 1) {
+      const b = bs[i];
+      b.sx += (1 - b.sx) * 0.16;
+      b.sy += (1 - b.sy) * 0.16;
+      const sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+      if (sp < 0.25) {
+        if (sp < 0.0001) {
+          b.vx = 0.25;
+        } else {
+          const k = 0.25 / sp;
+          b.vx *= k;
+          b.vy *= k;
+        }
+      } else if (sp > 1.6) {
+        const k = 1.6 / sp;
+        b.vx *= k;
+        b.vy *= k;
+      }
+    }
+
+    bodies.value = bs;
+  }, false);
+
+  useEffect(() => {
+    frame.setActive(active && isFocused && w > 0);
+  }, [active, isFocused, w, frame]);
+
+  return (
+    <View style={styles.bubbleBox} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
+      {layout.map((L, i) => (
+        <Bubble
+          key={data[i].name}
+          index={i}
+          bodies={bodies}
+          radius={L.r}
+          label={L.name}
+          fill={L.top ? accent : c.elevated}
+          border={L.top ? accent : c.border}
+          textColor={L.top ? '#fff' : c.text}
+          fontSize={L.fontSize}
+        />
+      ))}
     </View>
   );
 }
 
 /* ------------------------------------------------------------ new topics --- */
 
-/** New topics strung along a rail, in the order you first wandered into them. */
-function DiscoveryRail({ items, accent }: { items: string[]; accent: string }) {
+/**
+ * New topics as a horizontal timeline, left to right in the order you first
+ * wandered into them. The last node — the most recent — is filled; the rail
+ * scrolls sideways if there are more than fit.
+ */
+function DiscoveryTimeline({ items, accent }: { items: string[]; accent: string }) {
+  const c = useThemeColors();
   return (
-    <View style={styles.rail}>
-      {items.map((name, i) => (
-        <View key={name} style={styles.railRow}>
-          <View style={styles.railGutter}>
-            <View style={[styles.railLine, { backgroundColor: accent, opacity: i === 0 ? 0 : 0.3 }]} />
-            <View style={[styles.railDot, { backgroundColor: accent }]} />
-            <View
-              style={[
-                styles.railLine,
-                { backgroundColor: accent, opacity: i === items.length - 1 ? 0 : 0.3 },
-              ]}
-            />
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.tlTrack}
+    >
+      {items.map((name, i) => {
+        const newest = i === items.length - 1;
+        return (
+          <View key={name} style={styles.tlNode}>
+            <View style={styles.tlLineRow}>
+              <View style={[styles.tlLine, { backgroundColor: accent, opacity: i === 0 ? 0 : 0.3 }]} />
+              <View
+                style={[
+                  styles.tlDot,
+                  newest
+                    ? { backgroundColor: accent }
+                    : { backgroundColor: c.surface, borderWidth: 1.5, borderColor: accent },
+                ]}
+              />
+              <View
+                style={[styles.tlLine, { backgroundColor: accent, opacity: newest ? 0 : 0.3 }]}
+              />
+            </View>
+            <Text variant="serif" numberOfLines={2} style={styles.tlLabel}>
+              {name}
+            </Text>
           </View>
-          <Text variant="serif" style={styles.railName} numberOfLines={1}>
-            {name}
-          </Text>
-        </View>
-      ))}
-    </View>
+        );
+      })}
+    </ScrollView>
   );
 }
 
@@ -470,16 +713,15 @@ const WEEKDAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 /**
  * A 24-hour clock. Midnight sits at the top and noon at the bottom; each spoke
  * is one hour of the day, drawn longer the more you saved during it, and tinted
- * by whether that hour is night, morning, afternoon, or evening.
+ * by whether that hour is night, morning, afternoon, or evening. The peak hour
+ * is stated once in the card header, so the dial itself stays clean.
  */
 function ClockFace({
   hours,
-  weekdays,
   peakHour,
   active,
 }: {
   hours: number[];
-  weekdays: number[];
   peakHour: number;
   active: boolean;
 }) {
@@ -487,98 +729,80 @@ function ClockFace({
   // Kept local: this ticks at 60fps, and the whole section would re-render with it.
   const progress = useDrawIn(active);
   const maxHour = Math.max(1, ...hours);
-  const maxDay = Math.max(1, ...weekdays);
-  const peakDay = weekdays.indexOf(maxDay);
   const peakAccent = hourAccent(peakHour);
   const center = DIAL / 2;
 
   return (
-    <View style={styles.rhythmWrap}>
-      <View style={styles.dialWrap}>
-        <Svg width={DIAL} height={DIAL}>
-          <Circle
-            cx={center}
-            cy={center}
-            r={DIAL_R - 10}
-            stroke={c.border}
-            strokeWidth={1}
-            fill="none"
-          />
-          {hours.map((count, hour) => {
-            const angle = ((hour / 24) * 360 - 90) * (Math.PI / 180);
-            const len = (4 + (count / maxHour) * DIAL_MAX_SPOKE) * progress;
-            const x1 = center + Math.cos(angle) * DIAL_R;
-            const y1 = center + Math.sin(angle) * DIAL_R;
-            const x2 = center + Math.cos(angle) * (DIAL_R + len);
-            const y2 = center + Math.sin(angle) * (DIAL_R + len);
-            const isPeak = hour === peakHour;
-            return (
-              <React.Fragment key={hour}>
-                <Line
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  stroke={count === 0 ? c.border : hourAccent(hour)}
-                  strokeWidth={isPeak ? 3.5 : 2}
-                  strokeLinecap="round"
-                  opacity={count === 0 ? 1 : isPeak ? 1 : 0.45 + (count / maxHour) * 0.35}
-                />
-                {isPeak && progress > 0.9 ? <Circle cx={x2} cy={y2} r={3.5} fill={peakAccent} /> : null}
-              </React.Fragment>
-            );
-          })}
-        </Svg>
+    <View style={styles.dialWrap}>
+      <Svg width={DIAL} height={DIAL}>
+        <Circle cx={center} cy={center} r={DIAL_R - 10} stroke={c.border} strokeWidth={1} fill="none" />
+        {hours.map((count, hour) => {
+          const angle = ((hour / 24) * 360 - 90) * (Math.PI / 180);
+          const len = (4 + (count / maxHour) * DIAL_MAX_SPOKE) * progress;
+          const x1 = center + Math.cos(angle) * DIAL_R;
+          const y1 = center + Math.sin(angle) * DIAL_R;
+          const x2 = center + Math.cos(angle) * (DIAL_R + len);
+          const y2 = center + Math.sin(angle) * (DIAL_R + len);
+          const isPeak = hour === peakHour;
+          return (
+            <React.Fragment key={hour}>
+              <Line
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                stroke={count === 0 ? c.border : hourAccent(hour)}
+                strokeWidth={isPeak ? 3.5 : 2}
+                strokeLinecap="round"
+                opacity={count === 0 ? 1 : isPeak ? 1 : 0.45 + (count / maxHour) * 0.35}
+              />
+              {isPeak && progress > 0.9 ? <Circle cx={x2} cy={y2} r={3.5} fill={peakAccent} /> : null}
+            </React.Fragment>
+          );
+        })}
+      </Svg>
 
-        <View style={styles.dialCenter} pointerEvents="none">
-          <Text variant="h4" style={{ color: peakAccent }}>
-            {formatHourCompact(peakHour)}
-          </Text>
-          <Text variant="monoSmall" color="faint" style={styles.dialTinyLabel}>
-            your hour
+      <Text variant="monoSmall" color="faint" style={[styles.dialTick, styles.tickTop]}>
+        12a
+      </Text>
+      <Text variant="monoSmall" color="faint" style={[styles.dialTick, styles.tickRight]}>
+        6a
+      </Text>
+      <Text variant="monoSmall" color="faint" style={[styles.dialTick, styles.tickBottom]}>
+        12p
+      </Text>
+      <Text variant="monoSmall" color="faint" style={[styles.dialTick, styles.tickLeft]}>
+        6p
+      </Text>
+    </View>
+  );
+}
+
+/** The busiest weekday, as seven bars. Lives in the timeline card now. */
+function WeekdayBars({ weekdays, accent }: { weekdays: number[]; accent: string }) {
+  const c = useThemeColors();
+  const maxDay = Math.max(1, ...weekdays);
+  const peakDay = weekdays.indexOf(maxDay);
+
+  return (
+    <View style={styles.weekRow}>
+      {weekdays.map((count, i) => (
+        <View key={i} style={styles.weekCol}>
+          <View
+            style={[
+              styles.weekBar,
+              {
+                height: 3 + (count / maxDay) * 26,
+                backgroundColor: i === peakDay ? accent : c.text,
+                opacity: i === peakDay ? 1 : 0.2,
+              },
+            ]}
+          />
+          <Text variant="monoSmall" style={{ color: i === peakDay ? accent : c.faint, fontSize: 9 }}>
+            {WEEKDAY_INITIALS[i]}
           </Text>
         </View>
-
-        <Text variant="monoSmall" color="faint" style={[styles.dialTick, styles.tickTop]}>
-          12a
-        </Text>
-        <Text variant="monoSmall" color="faint" style={[styles.dialTick, styles.tickRight]}>
-          6a
-        </Text>
-        <Text variant="monoSmall" color="faint" style={[styles.dialTick, styles.tickBottom]}>
-          12p
-        </Text>
-        <Text variant="monoSmall" color="faint" style={[styles.dialTick, styles.tickLeft]}>
-          6p
-        </Text>
-      </View>
-
-      <Text variant="monoSmall" color="faint" style={styles.dialCaption}>
-        longer spoke = more saved
-      </Text>
-
-      <View style={styles.weekRow}>
-        {weekdays.map((count, i) => (
-          <View key={i} style={styles.weekCol}>
-            <View
-              style={[
-                styles.weekBar,
-                {
-                  height: (3 + (count / maxDay) * 26) * progress,
-                  backgroundColor: i === peakDay ? peakAccent : c.text,
-                  opacity: i === peakDay ? 1 : 0.2,
-                },
-              ]}
-            />
-            <Text
-              variant="monoSmall"
-              style={{ color: i === peakDay ? peakAccent : c.faint, fontSize: 9 }}
-            >
-              {WEEKDAY_INITIALS[i]}
-            </Text>
-          </View>
-        ))}
-      </View>
+      ))}
     </View>
   );
 }
@@ -673,11 +897,13 @@ function Timeline({
   daysSinceFirst,
   seed,
   accent,
+  weekdays,
 }: {
   arcs: WrappedArcs;
   daysSinceFirst: number;
   seed: number;
   accent: string;
+  weekdays?: number[];
 }) {
   const c = useThemeColors();
   const [range, setRange] = useState<RangeKey>(() => defaultRange(daysSinceFirst));
@@ -747,6 +973,15 @@ function Timeline({
           </View>
         </>
       )}
+
+      {weekdays && weekdays.length === 7 && weekdays.some((n) => n > 0) ? (
+        <View style={[styles.weekBlock, { borderTopColor: c.borderSubtle }]}>
+          <Text variant="monoSmall" color="faint" style={styles.weekLabel}>
+            by weekday
+          </Text>
+          <WeekdayBars weekdays={weekdays} accent={accent} />
+        </View>
+      ) : null}
     </>
   );
 }
@@ -832,6 +1067,7 @@ export function WrappedSection({
   const sectionY = useSharedValue(0);
 
   const [heroActive, setHeroActive] = useState(false);
+  const [topicsActive, setTopicsActive] = useState(false);
   const [dialActive, setDialActive] = useState(false);
   const [streakActive, setStreakActive] = useState(false);
   const [confettiKey, setConfettiKey] = useState(0);
@@ -856,6 +1092,8 @@ export function WrappedSection({
   const archetype = archetypeFor(w.formats[0]?.name, seed);
   const hasRhythm =
     w.busiestHour !== null && w.busiestDayOfWeek !== null && w.hourHistogram?.length === 24;
+  // The current run has reached the all-time best, so the two are the same story.
+  const streakOngoing = w.currentStreak >= 2 && w.currentStreak === w.longestStreak;
 
   return (
     <View
@@ -893,11 +1131,11 @@ export function WrappedSection({
       ) : null}
 
       {w.topTopics.length > 0 ? (
-        <RevealCard {...cardProps}>
+        <RevealCard {...cardProps} onReveal={() => setTopicsActive(true)}>
           <Text variant="monoSmall" color="faint" style={styles.overline}>
-            {topicsTitle(w.topTopics[0].name, seed)}
+            {topicsKicker(seed)}
           </Text>
-          <TopicMass items={w.topTopics} accent={accent} />
+          <TopicBubbles items={w.topTopics} accent={accent} seed={seed} active={topicsActive} />
         </RevealCard>
       ) : null}
 
@@ -906,21 +1144,21 @@ export function WrappedSection({
           <Text variant="serif" style={styles.cardTitle}>
             {newTopicsTitle(seed)}
           </Text>
-          <DiscoveryRail items={w.newTopicsThisMonth.slice(0, 6)} accent={accent} />
+          <DiscoveryTimeline items={w.newTopicsThisMonth.slice(0, 6)} accent={accent} />
         </RevealCard>
       ) : null}
 
       {hasRhythm ? (
         <RevealCard {...cardProps} onReveal={() => setDialActive(true)}>
-          <Text variant="serif" style={styles.cardTitle}>
-            {rhythmLine(w.busiestHour!, w.busiestDayOfWeek!)}
-          </Text>
-          <ClockFace
-            hours={w.hourHistogram}
-            weekdays={w.weekdayHistogram}
-            peakHour={w.busiestHour!}
-            active={dialActive}
-          />
+          <View style={styles.rhythmHead}>
+            <Text variant="h3" style={{ color: hourAccent(w.busiestHour!) }}>
+              {formatHourCompact(w.busiestHour!)}
+            </Text>
+            <Text variant="serif" color="secondary" style={styles.rhythmHeadLine}>
+              {rhythmLine(w.busiestHour!, w.busiestDayOfWeek!)}
+            </Text>
+          </View>
+          <ClockFace hours={w.hourHistogram} peakHour={w.busiestHour!} active={dialActive} />
         </RevealCard>
       ) : null}
 
@@ -930,8 +1168,10 @@ export function WrappedSection({
             <Text variant="hero" style={[styles.streakNumber, { color: accent }]}>
               {w.longestStreak}
             </Text>
+            {/* When the current run is the record, the live framing IS the headline,
+                so we never state the same count on a second line below. */}
             <Text variant="serif" color="secondary" style={styles.streakLine}>
-              {longestStreakLine(w.longestStreak)}
+              {streakOngoing ? currentStreakLine(w.currentStreak) : longestStreakLine(w.longestStreak)}
             </Text>
           </View>
           {arcs.days.length > 0 ? (
@@ -942,7 +1182,7 @@ export function WrappedSection({
               active={streakActive}
             />
           ) : null}
-          {w.currentStreak >= 2 ? (
+          {!streakOngoing && w.currentStreak >= 2 ? (
             <Text variant="monoSmall" color="faint" style={styles.currentStreak}>
               {currentStreakLine(w.currentStreak)}
             </Text>
@@ -975,7 +1215,13 @@ export function WrappedSection({
 
       {w.totalCaptures > 0 && arcs.months.length > 0 ? (
         <RevealCard {...cardProps}>
-          <Timeline arcs={arcs} daysSinceFirst={w.daysSinceFirst} seed={seed} accent={accent} />
+          <Timeline
+            arcs={arcs}
+            daysSinceFirst={w.daysSinceFirst}
+            seed={seed}
+            accent={accent}
+            weekdays={hasRhythm ? w.weekdayHistogram : undefined}
+          />
           {w.firstCaptureAt ? (
             <Text variant="monoSmall" color="faint" style={styles.sinceLine}>
               {sinceLine(w.firstCaptureAt, w.totalCaptures)}
@@ -1077,36 +1323,51 @@ const styles = StyleSheet.create({
   swatch: { width: 8, height: 8, borderRadius: 2 },
   legendName: { flex: 1 },
 
-  massWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'baseline',
-    columnGap: Spacing[3],
-    rowGap: 2,
+  bubbleBox: {
+    height: BUBBLE_BOX_H,
+    marginTop: Spacing[4],
+    overflow: 'hidden',
+  },
+  bubble: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    paddingHorizontal: 5,
   },
 
-  rail: { marginTop: Spacing[4] },
-  railRow: { flexDirection: 'row', alignItems: 'stretch', minHeight: 34 },
-  railGutter: { width: 16, alignItems: 'center' },
-  railLine: { width: 1, flex: 1 },
-  railDot: { width: 7, height: 7, borderRadius: Radius.full },
-  railName: { flex: 1, marginLeft: Spacing[3], alignSelf: 'center' },
+  tlTrack: { marginTop: Spacing[5], paddingBottom: Spacing[1] },
+  tlNode: { width: 96, alignItems: 'center' },
+  tlLineRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
+  tlLine: { flex: 1, height: 1.5 },
+  tlDot: { width: 9, height: 9, borderRadius: Radius.full },
+  tlLabel: { marginTop: Spacing[3], textAlign: 'center', fontSize: 13, lineHeight: 17 },
 
-  rhythmWrap: { alignItems: 'center', marginTop: Spacing[4] },
-  dialWrap: { width: DIAL, height: DIAL, alignItems: 'center', justifyContent: 'center' },
-  dialCenter: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
-  dialTinyLabel: { fontSize: 9, marginTop: 2 },
+  rhythmHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing[4] },
+  rhythmHeadLine: { flex: 1, lineHeight: 24 },
+  dialWrap: {
+    width: DIAL,
+    height: DIAL,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing[5],
+  },
+  // Pulled in from the container edges to sit just outside the spokes, so the
+  // labels read as part of the dial rather than floating in the corners.
   dialTick: { position: 'absolute', fontSize: 9 },
-  tickTop: { top: 0, left: 0, right: 0, textAlign: 'center' },
-  tickBottom: { bottom: 0, left: 0, right: 0, textAlign: 'center' },
-  tickLeft: { left: 0, top: DIAL / 2 - 6 },
-  tickRight: { right: 0, top: DIAL / 2 - 6 },
-  dialCaption: { marginTop: Spacing[4], fontSize: 9 },
+  tickTop: { top: 26, left: 0, right: 0, textAlign: 'center' },
+  tickBottom: { bottom: 26, left: 0, right: 0, textAlign: 'center' },
+  tickLeft: { left: 22, top: DIAL / 2 - 6 },
+  tickRight: { right: 22, top: DIAL / 2 - 6 },
+  weekBlock: { marginTop: Spacing[5], paddingTop: Spacing[4], borderTopWidth: 1 },
+  weekLabel: { marginBottom: Spacing[3] },
   weekRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     alignSelf: 'stretch',
-    marginTop: Spacing[5],
   },
   weekCol: { flex: 1, alignItems: 'center', gap: 4 },
   weekBar: { width: 14, borderRadius: 2 },
