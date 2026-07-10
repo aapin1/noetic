@@ -91,6 +91,48 @@ const ZOOM_MIN = 0.22;
 const ZOOM_MAX = 5.0;
 const SCRUBBER_H = 80;
 
+// ── Overscan ──────────────────────────────────────────────────────────
+// An <Svg> clips to its own width/height, so a screen-sized world SVG holds
+// nothing beyond the viewport it was rendered for: the instant the wrapper
+// transform moves it, the strip it uncovers is bare. That is the "uncharted"
+// flash — no drift threshold can fix it, because at zero overscan *any*
+// movement gaps. So render a margin of real map past every edge and let
+// gestures reveal charted territory.
+//
+// Cost is bounded and cheap: the same nodes/edges are drawn either way (the
+// graph is never culled per-node), only the SVG's backing layer grows —
+// ~2.9× screen area here. No extra React work, no extra work per frame.
+const OVERSCAN_PX = Math.round(SW * 0.5);
+const MARGIN_X = OVERSCAN_PX;
+const MARGIN_Y = OVERSCAN_PX;
+const OS_W = SW + MARGIN_X * 2;
+const OS_H = SH + MARGIN_Y * 2;
+
+// Re-render once the painted map extends less than this far past any viewport
+// edge. Headroom for one fast frame (a finger tops out near ~50px/frame), so
+// motion can never jump the remaining margin between two checks.
+const RECOMMIT_SLACK = 64;
+
+// Anchor the raster AHEAD of the camera, along its direction of travel. A
+// centred anchor wastes half the overscan behind you, so a fast pan burns
+// through the leading margin and re-rasterizes twice as often as it needs to.
+// Leading roughly doubles the distance covered per commit — the single
+// cheapest way to smooth out fast, sudden movement, since it costs no extra
+// pixels. Must stay under MARGIN − RECOMMIT_SLACK, or the trailing edge would
+// land inside the threshold and re-fire immediately.
+const RECOMMIT_LEAD_MAX = 120;
+const LEAD_FRAMES = 6;
+const VEL_EMA = 0.4;
+// Zooming in never shrinks coverage; this recommit only re-rasterizes the
+// vectors before the scaled-up layer goes visibly soft. Zoom-out needs no
+// threshold of its own — it shrinks the layer, so the slack check catches it.
+const RECOMMIT_ZOOM_IN = 1.4;
+
+// Fixed raster size for the ambient glow, scaled to canvas size by a view
+// transform. It is one smooth gradient, so it survives any upscale.
+const GLOW_W = 640;
+const GLOW_H = (GLOW_W * CANVAS_H) / CANVAS_W;
+
 const CLUSTER_PALETTE = [
   '#6B9FD4',
   '#9B84CC',
@@ -1234,6 +1276,13 @@ export default function MapScreen() {
   const savedZoom = useRef(0.4);
   const [zoom, setZoom] = useState(0.4);
 
+  // The camera as of the last *settled* gesture/animation. The touch layer is
+  // built against this, not the committed camera: hit targets are invisible
+  // and unreachable mid-gesture (the PanResponder owns the touch), so moving
+  // ~one native view per node on every mid-gesture re-commit bought nothing.
+  // They realign on settle, which is the only time they can be tapped.
+  const [settledCam, setSettledCam] = useState({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
+
   const committedCam = useRef({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
   const liveCam = useRef({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
   const liveTx = useRef(new RNAnimated.Value(0)).current;
@@ -1261,18 +1310,96 @@ export default function MapScreen() {
     liveScale.setValue(k);
   }, [liveTx, liveTy, liveScale]);
 
-  // Commit the live camera into React state: the world re-renders crisp at
-  // the new viewBox, and the layout effect below collapses the transform.
+  // Smoothed live-camera velocity in screen px/frame, used to aim the raster.
+  const camVel = useRef({ x: 0, y: 0 });
+  const lastLive = useRef({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
+
+  const resetVelocity = useCallback(() => {
+    camVel.current = { x: 0, y: 0 };
+    lastLive.current = { ...liveCam.current };
+  }, []);
+
+  // Re-render the world with its raster anchored at (ax, ay) — not necessarily
+  // the live camera; see maybeRecommit. Touches only the rendering tier — NOT
+  // savedVB/savedZoom, which are the gesture's baseline. A pan derives its
+  // position from that baseline minus PanResponder's cumulative `gs.dx`, so
+  // moving the baseline mid-gesture would re-apply the whole accumulated delta
+  // on the next frame and lurch the map sideways.
+  const commitRender = useCallback((ax: number, ay: number, z: number) => {
+    committedCam.current = { x: ax, y: ay, zoom: z };
+    setVbPos({ x: ax, y: ay });
+    setZoom(z);
+  }, []);
+
+  // Commit at the end of a gesture/animation: re-render AND resync the
+  // baseline, so the next gesture starts from where the camera actually is.
+  // Settles the raster on the camera itself — there is no motion to lead.
   const commitCamera = useCallback(() => {
     const { x, y, zoom: z } = liveCam.current;
     savedVB.current = { x, y };
     savedZoom.current = z;
-    committedCam.current = { x, y, zoom: z };
-    setVbPos({ x, y });
-    setZoom(z);
-  }, []);
+    commitRender(x, y, z);
+    setSettledCam({ x, y, zoom: z });
+    resetVelocity();
+  }, [commitRender, resetVelocity]);
 
-  // Move both tiers at once (programmatic, non-animated camera jumps).
+  // Coverage checkpoint — the piece that keeps "uncharted" territory painted.
+  //
+  // The committed world occupies [−MARGIN, screen + MARGIN] in wrapper space.
+  // The wrapper scales it by k about its centre and translates it by t (the
+  // very transform applyLiveCamera computes), so project its edges to the
+  // screen and measure how much painted map still runs past each one. When
+  // that slack falls below RECOMMIT_SLACK, re-render around the live camera.
+  //
+  // Note both scale and the centre-origin compensation matter here: an
+  // off-centre pinch moves t even when the camera's x/y barely change, so a
+  // threshold on camera drift alone silently uncovers an edge.
+  //
+  // Every loop that drives applyLiveCamera — pinch, pan, momentum, animated
+  // fly-to — calls this, so no path can outrun the rendered map.
+  const maybeRecommit = useCallback((x: number, y: number, z: number) => {
+    const c = committedCam.current;
+    const k = z / c.zoom;
+
+    // Track how fast the camera is moving across the screen, smoothed so a
+    // single jittery frame can't swing the aim.
+    const prev = lastLive.current;
+    const zooming = z !== prev.zoom;
+    camVel.current = {
+      x: camVel.current.x * (1 - VEL_EMA) + (x - prev.x) * z * VEL_EMA,
+      y: camVel.current.y * (1 - VEL_EMA) + (y - prev.y) * z * VEL_EMA,
+    };
+    lastLive.current = { x, y, zoom: z };
+
+    // Aim the new raster ahead of the camera. Skip while pinching: the motion
+    // there is scale, not travel, and leading on it only shifts coverage off
+    // the centre the user is zooming into.
+    const commitAimed = () => {
+      const { x: vx, y: vy } = camVel.current;
+      const speed = Math.hypot(vx, vy);
+      if (zooming || speed < 1) { commitRender(x, y, z); return; }
+      const lead = Math.min(RECOMMIT_LEAD_MAX, speed * LEAD_FRAMES) / z;
+      commitRender(x + (lead * vx) / speed, y + (lead * vy) / speed, z);
+    };
+
+    if (k > RECOMMIT_ZOOM_IN) { commitAimed(); return; }
+
+    const { w: vw, h: vh } = wrapperSize.current;
+    const cx = vw / 2;
+    const cy = vh / 2;
+    const tx = (c.x - x) * z + cx * (k - 1);
+    const ty = (c.y - y) * z + cy * (k - 1);
+
+    const left = -(cx + tx + k * (-MARGIN_X - cx));
+    const right = (cx + tx + k * (SW + MARGIN_X - cx)) - vw;
+    const top = -(cy + ty + k * (-MARGIN_Y - cy));
+    const bottom = (cy + ty + k * (SH + MARGIN_Y - cy)) - vh;
+
+    if (Math.min(left, right, top, bottom) < RECOMMIT_SLACK) commitAimed();
+  }, [commitRender]);
+
+  // Move both tiers at once (programmatic, non-animated camera jumps). These
+  // land settled, so the touch layer follows immediately.
   const setCamera = useCallback((x: number, y: number, z: number) => {
     savedVB.current = { x, y };
     savedZoom.current = z;
@@ -1280,6 +1407,9 @@ export default function MapScreen() {
     committedCam.current = { x, y, zoom: z };
     setVbPos({ x, y });
     setZoom(z);
+    setSettledCam({ x, y, zoom: z });
+    camVel.current = { x: 0, y: 0 };
+    lastLive.current = { x, y, zoom: z };
   }, []);
 
   // After every render the world reflects the committed camera, so re-derive
@@ -1702,12 +1832,12 @@ export default function MapScreen() {
       savedVB.current = { x: cx, y: cy };
       savedZoom.current = z;
       applyLiveCamera(cx, cy, z);
-      if (t < 1) frameId = requestAnimationFrame(frame);
+      if (t < 1) { maybeRecommit(cx, cy, z); frameId = requestAnimationFrame(frame); }
       else commitCamera();
     };
     frameId = requestAnimationFrame(frame);
     animCancelRef.current = () => { cancelled = true; cancelAnimationFrame(frameId); commitCamera(); };
-  }, [applyLiveCamera, commitCamera]);
+  }, [applyLiveCamera, commitCamera, maybeRecommit]);
 
   const centerOnNodes = useCallback((posOverride?: PositionMap, animated = false, animDuration = 720) => {
     const positions = posOverride ?? pos;
@@ -1750,11 +1880,13 @@ export default function MapScreen() {
         Math.abs(gs.dx) > 3 || Math.abs(gs.dy) > 3,
 
       onPanResponderGrant: (evt) => {
-        // Cancel any in-flight momentum
+        // Cancel any in-flight momentum. That path skips commitCamera, so drop
+        // its velocity here or the next commit would aim along the old fling.
         if (momentumFrameRef.current !== null) {
           cancelAnimationFrame(momentumFrameRef.current);
           momentumFrameRef.current = null;
         }
+        resetVelocity();
         const touches = evt.nativeEvent.touches;
         if (touches.length >= 2) {
           const dx = touches[0].pageX - touches[1].pageX;
@@ -1792,13 +1924,7 @@ export default function MapScreen() {
           savedZoom.current = newZoom;
           savedVB.current = { x: nx, y: ny };
           applyLiveCamera(nx, ny, newZoom);
-          // Mid-pinch checkpoint: past ~1.4× in either direction, re-render
-          // the world at the current camera. Zooming out, the committed
-          // rendering only covers so much beyond the old viewport — without
-          // this the user sees unpainted "uncharted" edges until release;
-          // zooming in, it re-rasterizes before vectors get visibly soft.
-          const drift = newZoom / committedCam.current.zoom;
-          if (drift < 0.7 || drift > 1.4) commitCamera();
+          maybeRecommit(nx, ny, newZoom);
           return;
         }
         // Pan. If a pinch is in progress — including the frame or two at the end
@@ -1812,6 +1938,7 @@ export default function MapScreen() {
         const nx = clampVBX(savedVB.current.x - gs.dx / savedZoom.current, vbW);
         const ny = clampVBY(savedVB.current.y - gs.dy / savedZoom.current, vbH);
         applyLiveCamera(nx, ny, savedZoom.current);
+        maybeRecommit(nx, ny, savedZoom.current);
         // Track velocity for momentum
         const now = Date.now();
         lastMoveRef.current = { x: gs.vx, y: gs.vy, t: now };
@@ -1865,6 +1992,7 @@ export default function MapScreen() {
           const my = clampVBY(savedVB.current.y - velY * 12 / z, h);
           savedVB.current = { x: mx, y: my };
           applyLiveCamera(mx, my, z);
+          maybeRecommit(mx, my, z);
           momentumFrameRef.current = requestAnimationFrame(step);
         };
         momentumFrameRef.current = requestAnimationFrame(step);
@@ -2243,71 +2371,46 @@ export default function MapScreen() {
     return baseOpacity * zoomFade;
   }, [hasSearch, highlightedIds, lensMode, nodeTimestamps, timelineCutoffMs, focusedTopicId]);
 
-  // ── Map world (SVG) — memoized against the COMMITTED camera ────
-  // Rebuilt only when data, lens, tool state, or the committed camera change.
-  // Gesture frames move the wrapper transform instead, so this tree is never
-  // reconciled mid-gesture — the fix for the map getting chunky as it grows.
-  const mapWorld = useMemo(() => {
-    const vbW = SW / zoom;
-    const vbH = SH / zoom;
+  // ── Map world body — everything drawn in world coordinates ─────
+  // Deliberately independent of vbPos: panning only slides the viewBox, so
+  // this subtree keeps its element identity and React skips reconciling it
+  // entirely on a pan re-commit. Only a zoom change rebuilds it (label sizes
+  // and the zoom fade are the sole zoom-dependent bits).
+  //
+  // The backdrop (dot grid + tonal wash) is NOT drawn here. It lives in the
+  // screen-fixed layer behind the canvas, which paints the same grid and tone.
+  // Filling it here too meant re-rasterizing a Pattern and a gradient across
+  // the whole overscanned area on every commit — a duplicate backdrop, and
+  // the bulk of the per-commit cost.
+  // Nodes stay visible at every zoom level — never fade to zero. Only a gentle
+  // dimming as you pull back, floored so points (and their colour) remain
+  // clearly readable when fully zoomed out. Hoisted out of the node loop: it
+  // is a plain function of zoom, and it is CONSTANT outside 0.6 < zoom < 0.9,
+  // so keying the graph on it (rather than on zoom) means a pinch that stays
+  // zoomed in rebuilds no nodes at all.
+  const zoomFade = useMemo(
+    () => Math.max(0.6, Math.min(1, (zoom - 0.15) / 0.75)),
+    [zoom],
+  );
 
-    // The background (dot grid + tone) must always cover the viewport so the
-    // canvas edge is never visible — even zoomed all the way out, where the
-    // viewport can be larger than the canvas. Anchor a rect 3× the viewport,
-    // centred on it, so it fills the screen at any pan/zoom. (Mid-gesture the
-    // screen-fixed grid behind the canvas covers any briefly exposed edge.)
-    const bgX = vbPos.x - vbW;
-    const bgY = vbPos.y - vbH;
-    const bgW = vbW * 3;
-    const bgH = vbH * 3;
-
-    // Source kind labels for source lens mode. Held back until the lens
-    // transition settles so "links / thoughts / quotes" don't flash over nodes
-    // that are still sliding into their groups.
-    const kindLabels = lensMode === 'source' && !lensTransitioning ? [
-      { kind: 'LINK' as CaptureKind, label: 'links', x: MAP_PAD + LAYOUT_W * 0.2, y: MAP_PAD + LAYOUT_H * 0.15 },
-      { kind: 'TEXT' as CaptureKind, label: 'thoughts', x: MAP_PAD + LAYOUT_W * 0.5, y: MAP_PAD + LAYOUT_H * 0.15 },
-      { kind: 'IMAGE' as CaptureKind, label: 'images', x: MAP_PAD + LAYOUT_W * 0.8, y: MAP_PAD + LAYOUT_H * 0.15 },
-    ] : [];
-
-    return (
-      <Svg
-        width={SW}
-        height={SH}
-        viewBox={`${vbPos.x} ${vbPos.y} ${vbW} ${vbH}`}
-        style={StyleSheet.absoluteFill}
-      >
-        <Defs>
-          <Pattern id="dotGrid" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
-            <Circle cx="16" cy="16" r="0.9" fill={MAP_NODE} fillOpacity={0.04} />
-          </Pattern>
-          <RadialGradient id="ambientGlow" cx="50%" cy="44%" r="48%" fx="50%" fy="44%">
-            <Stop offset="0%" stopColor={MAP_NODE} stopOpacity={0.06} />
-            <Stop offset="100%" stopColor={MAP_NODE} stopOpacity={0} />
+  // Gradients live at the <Svg> level; only the cluster set changes them.
+  const worldDefs = useMemo(() => (
+    <Defs>
+      {clusterLabels.map((cl, i) => {
+        const color = CLUSTER_PALETTE[i % CLUSTER_PALETTE.length];
+        return (
+          <RadialGradient key={`grad-${cl.topicId}`} id={`clGrad-${cl.topicId}`} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+            <Stop offset="0%" stopColor={color} stopOpacity={0.14} />
+            <Stop offset="55%" stopColor={color} stopOpacity={0.04} />
+            <Stop offset="100%" stopColor={color} stopOpacity={0} />
           </RadialGradient>
-          {clusterLabels.map((cl, i) => {
-            const color = CLUSTER_PALETTE[i % CLUSTER_PALETTE.length];
-            return (
-              <RadialGradient key={`grad-${cl.topicId}`} id={`clGrad-${cl.topicId}`} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-                <Stop offset="0%" stopColor={color} stopOpacity={0.14} />
-                <Stop offset="55%" stopColor={color} stopOpacity={0.04} />
-                <Stop offset="100%" stopColor={color} stopOpacity={0} />
-              </RadialGradient>
-            );
-          })}
-          <LinearGradient id="bgTone" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0%" stopColor={MAP_NODE} stopOpacity={0.012} />
-            <Stop offset="100%" stopColor={MAP_NODE} stopOpacity={0.03} />
-          </LinearGradient>
-        </Defs>
+        );
+      })}
+    </Defs>
+  ), [clusterLabels]);
 
-        <G>
-          <Rect x={bgX} y={bgY} width={bgW} height={bgH} fill="url(#dotGrid)" />
-          <Rect x={bgX} y={bgY} width={bgW} height={bgH} fill="url(#bgTone)" />
-          {/* Ambient glow stays anchored to the canvas — it fades to zero
-              well within its bounds, so it never draws a hard edge. */}
-          <Rect width={CANVAS_W} height={CANVAS_H} fill="url(#ambientGlow)" />
-
+  const haloLayer = useMemo(() => (
+    <>
           {/* Cluster region halos — only in semantic mode */}
           {lensMode === 'semantic' && clusterLabels.map((cl) => {
             const clusterR = Math.min(LAYOUT_W, LAYOUT_H) * 0.16;
@@ -2321,7 +2424,24 @@ export default function MapScreen() {
               />
             );
           })}
+    </>
+  ), [lensMode, clusterLabels, focusedTopicId]);
 
+  // The only genuinely zoom-dependent art: text counter-scaled to stay a
+  // constant size on screen. A dozen elements, so rebuilding it per zoom
+  // commit is cheap — which is the whole reason it is split from the graph.
+  const labelLayer = useMemo(() => {
+    // Source kind labels for source lens mode. Held back until the lens
+    // transition settles so "links / thoughts / quotes" don't flash over nodes
+    // that are still sliding into their groups.
+    const kindLabels = lensMode === 'source' && !lensTransitioning ? [
+      { kind: 'LINK' as CaptureKind, label: 'links', x: MAP_PAD + LAYOUT_W * 0.2, y: MAP_PAD + LAYOUT_H * 0.15 },
+      { kind: 'TEXT' as CaptureKind, label: 'thoughts', x: MAP_PAD + LAYOUT_W * 0.5, y: MAP_PAD + LAYOUT_H * 0.15 },
+      { kind: 'IMAGE' as CaptureKind, label: 'images', x: MAP_PAD + LAYOUT_W * 0.8, y: MAP_PAD + LAYOUT_H * 0.15 },
+    ] : [];
+
+    return (
+      <>
           {/* Cluster labels (semantic mode only) — hierarchical: coarse
               domain labels own the zoomed-out view; the more specific
               topic labels fade in as the user zooms into their region. */}
@@ -2398,7 +2518,15 @@ export default function MapScreen() {
               </>
             );
           })()}
+      </>
+    );
+  }, [zoom, lensMode, lensTransitioning, clusterLabels, focusedTopicId, nodes.length]);
 
+  // Edges + nodes: the bulk of the SVG tree. Keyed on zoomFade, not zoom, so a
+  // zoom commit outside the fade band keeps this element identity and React
+  // skips the whole subtree.
+  const graphLayer = useMemo(() => (
+    <>
           {/* Edges */}
           {edges.map((e, i) => {
             const a = pos[e.fromItemId];
@@ -2439,10 +2567,6 @@ export default function MapScreen() {
             const isHighlighted = hasSearch && highlightedIds.has(node.id);
             const isDiscoverySelected = discoveryNodeIds.includes(node.id);
 
-            // Nodes stay visible at every zoom level — never fade to zero.
-            // Only a gentle dimming as you pull back, floored so points (and
-            // their colour) remain clearly readable when fully zoomed out.
-            const zoomFade = Math.max(0.6, Math.min(1, (zoom - 0.15) / 0.75));
             const finalOpacity = getNodeOpacity(node, baseOpacity, zoomFade);
 
             const glowR = isHighlighted || isDiscoverySelected ? baseR * 9 : baseR * 5.5;
@@ -2496,19 +2620,78 @@ export default function MapScreen() {
               r={2.5} fill={MAP_NODE} fillOpacity={0.07}
             />
           ))}
-        </G>
-      </Svg>
-    );
-  }, [
-    vbPos, zoom, lensMode, lensTransitioning, clusterLabels, focusedTopicId,
-    nodes, edges, pos, nodeById, discoveryEdgeKeys, discoveryNodeIds,
+    </>
+  ), [
+    edges, nodes, pos, nodeById, discoveryEdgeKeys, discoveryNodeIds,
     nodeMetrics, nodeColor, isRecentNode, hasSearch, highlightedIds,
-    getNodeOpacity, isEmpty,
+    getNodeOpacity, isEmpty, focusedTopicId, zoomFade,
   ]);
 
-  // ── Touch layer — memoized against the COMMITTED camera ────────
-  // Hit targets are positioned at committed screen coordinates; mid-gesture
-  // they ride along inside the transformed wrapper, staying over their nodes.
+  const worldBody = useMemo(() => (
+    <G>
+      {haloLayer}
+      {labelLayer}
+      {graphLayer}
+    </G>
+  ), [haloLayer, labelLayer, graphLayer]);
+
+  // ── Map world (SVG) — memoized against the COMMITTED camera ────
+  // Render an OVERSCAN margin of real map beyond the viewport. An <Svg> clips
+  // to its own width/height, so a screen-sized one has nothing to show the
+  // instant the wrapper transform moves it. Offsetting the element by −MARGIN
+  // and widening the viewBox to match keeps the scale and the world→screen
+  // mapping identical — (world − vbPos)·zoom, exactly what the touch layer
+  // assumes — while giving pans and zoom-outs charted territory to reveal.
+  //
+  // A pan re-commit changes nothing here but the viewBox string; worldBody
+  // comes through by reference, so React reconciles one element, not the graph.
+  const mapWorld = useMemo(() => (
+    <Svg
+      width={OS_W}
+      height={OS_H}
+      viewBox={`${vbPos.x - MARGIN_X / zoom} ${vbPos.y - MARGIN_Y / zoom} ${OS_W / zoom} ${OS_H / zoom}`}
+      style={{ position: 'absolute', left: -MARGIN_X, top: -MARGIN_Y }}
+    >
+      {worldDefs}
+      {worldBody}
+    </Svg>
+  ), [vbPos, zoom, worldDefs, worldBody]);
+
+  // ── Ambient glow — hoisted out of the re-rasterized layer ──────
+  // A single smooth radial gradient anchored to the canvas. Drawn inside the
+  // world SVG it was a full-area gradient fill re-rasterized on every commit,
+  // the last area-proportional cost left in that layer. Its content is static,
+  // so rasterize it once at a fixed size and let a plain View place and scale
+  // it: a commit now updates a layer transform instead of repainting a million
+  // pixels. Upscaling a smooth gradient is invisible.
+  const ambientGlow = useMemo(() => (
+    <Svg width={GLOW_W} height={GLOW_H}>
+      <Defs>
+        <RadialGradient id="ambientGlow" cx="50%" cy="44%" r="48%" fx="50%" fy="44%">
+          <Stop offset="0%" stopColor={MAP_NODE} stopOpacity={0.06} />
+          <Stop offset="100%" stopColor={MAP_NODE} stopOpacity={0} />
+        </RadialGradient>
+      </Defs>
+      <Rect width={GLOW_W} height={GLOW_H} fill="url(#ambientGlow)" />
+    </Svg>
+  ), []);
+
+  // Place the fixed-size glow over the canvas rect at the committed camera.
+  // Uniform scale, so the aspect stays exactly CANVAS_W : CANVAS_H.
+  const glowStyle = useMemo(() => ({
+    position: 'absolute' as const,
+    left: (CANVAS_W / 2 - vbPos.x) * zoom - GLOW_W / 2,
+    top: (CANVAS_H / 2 - vbPos.y) * zoom - GLOW_H / 2,
+    width: GLOW_W,
+    height: GLOW_H,
+    transform: [{ scale: (CANVAS_W * zoom) / GLOW_W }],
+  }), [vbPos, zoom]);
+
+  // ── Touch layer — memoized against the SETTLED camera ──────────
+  // Hit targets are positioned at settled screen coordinates; mid-gesture they
+  // ride along inside the transformed wrapper. They drift from their nodes
+  // while a gesture is in flight — harmless, since the PanResponder owns the
+  // touch until it settles, and settling realigns them.
   const touchLayer = useMemo(() => (
     <View
       style={StyleSheet.absoluteFill}
@@ -2524,8 +2707,8 @@ export default function MapScreen() {
         if (!a || !b) return [];
         const EHIT = 16;
         return [0.3, 0.45, 0.6, 0.75].map((t) => {
-          const screenX = (a.x + (b.x - a.x) * t - vbPos.x) * zoom;
-          const screenY = (a.y + (b.y - a.y) * t - vbPos.y) * zoom;
+          const screenX = (a.x + (b.x - a.x) * t - settledCam.x) * settledCam.zoom;
+          const screenY = (a.y + (b.y - a.y) * t - settledCam.y) * settledCam.zoom;
           if (screenX < -EHIT || screenX > SW + EHIT || screenY < -EHIT || screenY > SH + EHIT) return null;
           return (
             <Pressable
@@ -2541,8 +2724,8 @@ export default function MapScreen() {
       {nodes.map((node) => {
         const p = pos[node.id];
         if (!p) return null;
-        const screenX = (p.x - vbPos.x) * zoom;
-        const screenY = (p.y - vbPos.y) * zoom;
+        const screenX = (p.x - settledCam.x) * settledCam.zoom;
+        const screenY = (p.y - settledCam.y) * settledCam.zoom;
         const HIT = 38;
         if (screenX < -HIT || screenX > SW + HIT || screenY < -HIT || screenY > SH + HIT) return null;
         // The walkthrough's node-management step points at the demo
@@ -2576,8 +2759,8 @@ export default function MapScreen() {
       })}
       {/* Cluster label touch targets (semantic mode only) */}
       {lensMode === 'semantic' && clusterLabels.map((cl) => {
-        const screenX = (cl.x - vbPos.x) * zoom;
-        const screenY = (cl.y - vbPos.y) * zoom;
+        const screenX = (cl.x - settledCam.x) * settledCam.zoom;
+        const screenY = (cl.y - settledCam.y) * settledCam.zoom;
         if (screenX < -60 || screenX > SW + 60 || screenY < -30 || screenY > SH + 30) return null;
         return (
           <Pressable
@@ -2591,7 +2774,7 @@ export default function MapScreen() {
       })}
     </View>
   ), [
-    toolMode, edges, pos, vbPos, zoom, nodes, nodeTarget, newNodeId,
+    toolMode, edges, pos, settledCam, nodes, nodeTarget, newNodeId,
     selectedNode, toggleDiscoveryEdge, toggleDiscoveryNode, closeDrawer,
     openDrawer, lensMode, clusterLabels, handleClusterTap,
   ]);
@@ -2600,9 +2783,13 @@ export default function MapScreen() {
   return (
     <View style={[styles.root, { backgroundColor: mapBg }]}>
 
-      {/* Static background dot grid + the same tonal wash the world draws —
-          so any area the (transformed) world doesn't cover mid-gesture reads
-          as more map, not as a darker box around charted territory. */}
+      {/* The map's backdrop: dot grid + tonal wash, screen-fixed and drawn
+          once. The world SVG above is transparent, so this shows through
+          everywhere — including any sliver the transformed world hasn't
+          covered mid-gesture, which therefore reads as more map rather than a
+          darker box around charted territory. Keeping it out of the world
+          layer is what stops every re-commit from re-rasterizing a Pattern
+          and a gradient across the whole overscanned area. */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <Svg width={SW} height={SH} style={StyleSheet.absoluteFill}>
           <Defs>
@@ -2633,13 +2820,20 @@ export default function MapScreen() {
           }
         }}
       >
-        <View style={StyleSheet.absoluteFill} {...mapPan.panHandlers}>
+        <View style={[StyleSheet.absoluteFill, { overflow: 'visible' }]} {...mapPan.panHandlers}>
           <RNAnimated.View
             style={[
               StyleSheet.absoluteFill,
+              // The world SVG extends OVERSCAN beyond this view on every side;
+              // it must not be clipped back to the viewport, or the overscan
+              // buys nothing. (Screen edges still clip at the root.)
+              { overflow: 'visible' },
               { transform: [{ translateX: liveTx }, { translateY: liveTy }, { scale: liveScale }] },
             ]}
           >
+            {/* Canvas-anchored ambient glow, under the map. Rasterized once;
+                a commit only moves and scales this view. */}
+            <View style={glowStyle} pointerEvents="none">{ambientGlow}</View>
             {mapWorld}
             {/* Node touch targets — always active; PanResponder steals drag gestures */}
             {touchLayer}
