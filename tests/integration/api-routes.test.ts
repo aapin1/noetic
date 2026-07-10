@@ -20,6 +20,7 @@ const {
   addCompanionReply,
   listArchiveFolders,
   getArchiveFolder,
+  checkCaptureAgainstPositions,
 } = vi.hoisted(() => ({
   requireRequestUserId: vi.fn(),
   getRequestUserId: vi.fn(),
@@ -39,6 +40,7 @@ const {
   addCompanionReply: vi.fn(),
   listArchiveFolders: vi.fn(),
   getArchiveFolder: vi.fn(),
+  checkCaptureAgainstPositions: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -90,6 +92,10 @@ vi.mock("@/server/services/preferences", () => ({
 
 vi.mock("@/server/services/companion", () => ({
   addCompanionReply,
+}));
+
+vi.mock("@/server/services/positions", () => ({
+  checkCaptureAgainstPositions,
 }));
 
 import { GET as getFeedRoute } from "@/app/api/feed/route";
@@ -242,7 +248,17 @@ describe("GET /api/search", () => {
 
 describe("capture routes", () => {
   it("creates a capture with cognition payload", async () => {
-    captureItem.mockResolvedValue({ id: "cap_1", insights: [], related: [], edges: [] });
+    captureItem.mockResolvedValue({
+      id: "cap_1",
+      title: "A capture",
+      rawText: null,
+      summary: null,
+      topics: [],
+      insights: [],
+      related: [],
+      edges: [],
+    });
+    checkCaptureAgainstPositions.mockResolvedValue(null);
 
     const response = await postCapturesRoute(
       new Request("http://localhost/api/captures", {
@@ -264,6 +280,7 @@ describe("capture routes", () => {
       caption: undefined,
       mediaUrl: undefined,
       reaction: undefined,
+      userContext: undefined,
       topicHints: ["philosophy"],
     });
     expect(response.status).toBe(201);

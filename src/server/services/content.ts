@@ -100,8 +100,12 @@ export async function ingestUrl(url: string, db: DbClient = prisma) {
     // Backfill missing body text for items captured before the extraction
     // ladder existed (or when the earlier scrape failed). Without this,
     // re-capturing a URL whose first fetch came back empty stays title-only
-    // forever.
-    if (!existing.bodyText && existing.canonicalUrl) {
+    // forever. Rate-limited to one attempt per day per item: each retry runs
+    // the full ladder (including paid Supadata credits), and a URL that just
+    // failed will almost always fail again minutes later.
+    const RETRY_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+    const retryDue = Date.now() - existing.updatedAt.getTime() > RETRY_COOLDOWN_MS;
+    if (!existing.bodyText && existing.canonicalUrl && retryDue) {
       try {
         const refetched = await fetchMetadata(existing.canonicalUrl);
         const body = refetched.metadata?.bodyText;
@@ -121,6 +125,13 @@ export async function ingestUrl(url: string, db: DbClient = prisma) {
           if (!existing.description) {
             existing.description = refetched.metadata?.description ?? null;
           }
+        } else {
+          // Failed again: touch updatedAt so the cooldown restarts — otherwise
+          // a permanently thin URL would retry the paid ladder on every capture.
+          await db.contentItem.update({
+            where: { id: existing.id },
+            data: { updatedAt: new Date() },
+          });
         }
       } catch {
         // best-effort; fall through with whatever we have

@@ -311,6 +311,10 @@ export type SemanticTopics = {
 export async function extractSemanticTopics(args: {
   title?: string;
   combinedText?: string;
+  /** Specific sub-topic labels already in the user's map. The model reuses one
+   * of these (verbatim) when the content fits it, so near-duplicate sub-topics
+   * ("stoic philosophy" vs "stoicism") don't fragment the map. */
+  existingSpecificTopics?: string[];
 }): Promise<SemanticTopics> {
   const empty: SemanticTopics = { classifications: [] };
   const apiKey = process.env.OPENAI_API_KEY;
@@ -325,6 +329,11 @@ export async function extractSemanticTopics(args: {
     .trim();
 
   if (content.length < 6) return empty;
+
+  const existing = (args.existingSpecificTopics ?? [])
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 40);
 
   const body = JSON.stringify({
     model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
@@ -342,6 +351,14 @@ export async function extractSemanticTopics(args: {
           `   ${GENERAL_TOPICS.join(", ")}.`,
           "   Pick the closest field even if none is perfect. The general field decides which region of the map the content lands in, so judge it by the ACTUAL subject matter — never by an incidental word. A physics article that mentions a 'thin film' is science, not film. A history essay that mentions a court case is history, not law.",
           "- specific — one precise sub-topic label naming what the content is specifically about within that field. Prefer a named sub-discipline, theory, movement, tradition, or key concept: 'quantum mechanics' under science, 'epistemology' under philosophy, 'metaphysics' under philosophy. Never just restate the general field.",
+          ...(existing.length > 0
+            ? [
+                "",
+                "The user's map already contains these specific sub-topics:",
+                `   ${existing.join(", ")}.`,
+                "   If the content belongs to one of them IN MEANING (even under different wording — 'stoicism' covers 'stoic philosophy'), reuse that existing label EXACTLY as written instead of coining a variant. Coin a new specific label only when no existing one genuinely fits. Never stretch a poor fit.",
+              ]
+            : []),
           "",
           "How many classifications:",
           "- Almost always return exactly ONE. Most content lives in a single field.",

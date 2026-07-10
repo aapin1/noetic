@@ -146,6 +146,7 @@ model User {
   positions           UserPosition[]
   socraticThreads     SocraticThread[]
   companionThread     CompanionThread?
+  intelligenceCache   IntelligenceCache?
 }
 
 model Profile {
@@ -712,4 +713,16 @@ model CompanionMessage {
   createdAt DateTime        @default(now())
 
   @@index([threadId, createdAt])
+}
+
+/// Cached LLM-derived Mind intelligence (contradictions, syntheses,
+/// convergence). Keyed on the tasteProfileVersion it was computed at, so it
+/// regenerates only when the memory graph actually changes — not on every
+/// Mind open. Time-sensitive parts (dormant threads) are always recomputed.
+model IntelligenceCache {
+  userId    String   @id
+  version   Int
+  payload   Json
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

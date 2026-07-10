@@ -119,7 +119,9 @@ export async function addUserReply(args: {
       label: c.contentItem?.title ?? "Untitled",
       keyIdea: c.keyIdea,
     })),
-    conversationHistory: thread.messages.map((m) => ({
+    // Recent turns only — the topic captures above carry the durable context,
+    // so an ever-growing history just burns tokens.
+    conversationHistory: thread.messages.slice(-16).map((m) => ({
       role: m.role,
       content: m.content,
     })),

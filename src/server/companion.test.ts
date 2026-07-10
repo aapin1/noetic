@@ -37,7 +37,7 @@ describe("generateCompanionResponse", () => {
     const systemMessage = body.messages[0].content as string;
     expect(systemMessage).toContain("--- FOCUS FOR THIS REPLY ---");
     expect(systemMessage).toContain("Capture A");
-    expect(systemMessage).toContain("Ground your answer specifically in the focus items above");
+    expect(systemMessage).toContain("Answer using them immediately");
   });
 
   it("omits the focus section entirely when no focus block is given", async () => {

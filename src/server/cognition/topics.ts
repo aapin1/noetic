@@ -80,9 +80,24 @@ export async function classifyTopics(args: {
     (args.combinedText && args.combinedText.trim().length >= 40);
 
   if (hasContext) {
+    // Offer the user's existing specific sub-topics to the classifier so
+    // content that fits an established bucket reuses it instead of spawning a
+    // wording variant ("stoic philosophy" next to "stoicism").
+    const existingSpecificTopics = (
+      await args.db.userTopic.findMany({
+        where: { userId: args.userId, weight: { gt: 0 } },
+        orderBy: { weight: "desc" },
+        take: 60,
+        select: { topic: { select: { name: true } } },
+      })
+    )
+      .map((row) => row.topic.name)
+      .filter((name) => !isGeneralTopic(name));
+
     const { classifications } = await extractSemanticTopics({
       title: args.title,
       combinedText: args.combinedText ?? args.description,
+      existingSpecificTopics,
     });
 
     if (classifications.length > 0) {

@@ -68,7 +68,6 @@ function nodeLabel(input: {
 
 type Positionable = {
   id: string;
-  embedding?: number[] | null;
   mapX?: number | null;
   mapY?: number | null;
 };
@@ -98,12 +97,31 @@ async function resolveSemanticCoords(
   // Oldest first, so earlier captures anchor the placement of later ones.
   const ordered = [...captures].reverse();
 
-  const embeddable = ordered.filter(
-    (it) => Array.isArray(it.embedding) && it.embedding.length > 0,
+  // Fast path — embeddings are ~12KB per node, so they are NOT part of the
+  // graph query. When every node already has healthy persisted coordinates
+  // (the steady state: plain refetches, tab focus), skip the fetch entirely.
+  const allPositioned = ordered.filter((it) => it.mapX != null && it.mapY != null);
+  const anyUnpositioned = allPositioned.length < ordered.length;
+  const maybeDegenerate = isDegenerateLayout(
+    allPositioned.map((it) => ({ x: it.mapX!, y: it.mapY! })),
   );
-  const nonEmbeddable = ordered.filter(
-    (it) => !Array.isArray(it.embedding) || it.embedding.length === 0,
-  );
+  if (!anyUnpositioned && !maybeDegenerate) {
+    for (const it of allPositioned) coords[it.id] = { x: it.mapX!, y: it.mapY! };
+    return coords;
+  }
+
+  const embeddingRows = await db.capturedItem.findMany({
+    where: { id: { in: ordered.map((it) => it.id) } },
+    select: { id: true, embedding: true },
+  });
+  const embeddingById = new Map(embeddingRows.map((r) => [r.id, r.embedding]));
+  const withEmbedding = ordered.map((it) => ({
+    ...it,
+    embedding: embeddingById.get(it.id) ?? [],
+  }));
+
+  const embeddable = withEmbedding.filter((it) => it.embedding.length > 0);
+  const nonEmbeddable = withEmbedding.filter((it) => it.embedding.length === 0);
 
   const toPersist: { id: string; x: number; y: number }[] = [];
 
@@ -188,11 +206,22 @@ export async function getMemoryGraph(args: {
   const db = args.db ?? prisma;
   const limit = Math.min(Math.max(args.limit ?? GRAPH_LIMIT_DEFAULT, 10), 200);
 
+  // Narrow select: embeddings (~12KB/node) are deliberately excluded — the
+  // layout resolver fetches them lazily, only when a re-layout is needed.
   const captures = await db.capturedItem.findMany({
     where: { userId: args.userId },
     orderBy: { capturedAt: "desc" },
     take: limit,
-    include: {
+    select: {
+      id: true,
+      kind: true,
+      rawText: true,
+      caption: true,
+      reaction: true,
+      keyIdea: true,
+      capturedAt: true,
+      mapX: true,
+      mapY: true,
       contentItem: { select: { title: true } },
       // Highest-weight topic first: the coarse domain (score 1.0) leads, so the
       // semantic layout anchors each node to its broad field deterministically.

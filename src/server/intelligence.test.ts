@@ -188,6 +188,7 @@ function makeCapture(overrides: Partial<LoadedCapture> & { topics: LoadedCapture
     id: overrides.id ?? "c1",
     label: overrides.label ?? "Untitled",
     rawText: overrides.rawText ?? null,
+    gist: overrides.gist ?? overrides.rawText ?? "",
     keyIdea: overrides.keyIdea ?? null,
     capturedAt: overrides.capturedAt ?? new Date("2026-01-15"),
     sourceName: overrides.sourceName ?? null,

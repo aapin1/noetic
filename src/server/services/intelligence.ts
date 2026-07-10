@@ -1,4 +1,4 @@
-import { MemoryEdgeType } from "@prisma/client";
+import { MemoryEdgeType, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/server/db";
 import {
@@ -33,6 +33,10 @@ export type LoadedCapture = {
   id: string;
   label: string;
   rawText: string | null;
+  /** Best available account of the capture's substance for LLM grounding:
+   * user's own text, else their context note, else the AI summary/excerpt.
+   * Link captures have rawText = null, so without this they were title-only. */
+  gist: string;
   keyIdea: string | null;
   capturedAt: Date;
   sourceName: string | null;
@@ -144,7 +148,16 @@ export async function getPersonalIntelligence(args: {
 }): Promise<PersonalIntelligenceData> {
   const db = args.db ?? prisma;
 
-  const [rawCaptures, contradictEdges] = await Promise.all([
+  // The LLM-derived sections only change when the memory graph does, so they
+  // are cached against tasteProfileVersion (bumped on every capture add/edit/
+  // delete). Dormant threads depend on the passage of time, not the graph, so
+  // they are recomputed from the DB on every request — no LLM involved.
+  const [user, cached, rawCaptures] = await Promise.all([
+    db.user.findUnique({
+      where: { id: args.userId },
+      select: { tasteProfileVersion: true },
+    }),
+    db.intelligenceCache.findUnique({ where: { userId: args.userId } }),
     db.capturedItem.findMany({
       where: { userId: args.userId },
       orderBy: { capturedAt: "desc" },
@@ -154,21 +167,14 @@ export async function getPersonalIntelligence(args: {
         topics: { include: { topic: true } },
       },
     }),
-    db.memoryEdge.findMany({
-      where: { userId: args.userId, type: MemoryEdgeType.CONTRADICTS },
-      orderBy: { createdAt: "desc" },
-      take: CONTRADICTION_EDGE_LIMIT,
-      include: {
-        fromItem: { include: { contentItem: true } },
-        toItem: { include: { contentItem: true } },
-      },
-    }),
   ]);
 
   const captures: LoadedCapture[] = rawCaptures.map((item) => ({
     id: item.id,
     label: item.contentItem?.title ?? item.rawText?.slice(0, 80) ?? "Untitled capture",
     rawText: item.rawText,
+    gist: [item.rawText, item.userContext, item.summary, item.contentItem?.description]
+      .find((part) => part && part.trim().length > 0) ?? "",
     keyIdea: item.keyIdea,
     capturedAt: item.capturedAt,
     sourceName: item.contentItem?.source?.name ?? item.contentItem?.siteName ?? null,
@@ -180,6 +186,24 @@ export async function getPersonalIntelligence(args: {
 
   const now = new Date();
   const dormantThreads = findDormantThreads(allGroups, now);
+
+  if (user && cached && cached.version === user.tasteProfileVersion) {
+    const payload = cached.payload as unknown as PersonalIntelligenceData;
+    if (payload && Array.isArray(payload.contradictionCards)) {
+      return { ...payload, dormantThreads };
+    }
+  }
+
+  const contradictEdges = await db.memoryEdge.findMany({
+    where: { userId: args.userId, type: MemoryEdgeType.CONTRADICTS },
+    orderBy: { createdAt: "desc" },
+    take: CONTRADICTION_EDGE_LIMIT,
+    include: {
+      fromItem: { include: { contentItem: true } },
+      toItem: { include: { contentItem: true } },
+    },
+  });
+
   const convergenceCandidates = findConvergenceCandidates(allGroups).slice(0, CONVERGENCE_LIMIT);
 
   // Pairs already captured as hard CONTRADICTS edges — so the softer LLM
@@ -198,14 +222,25 @@ export async function getPersonalIntelligence(args: {
     return item.contentItem?.title ?? item.rawText?.slice(0, 80) ?? "Untitled capture";
   }
 
+  function edgeItemText(item: {
+    rawText: string | null;
+    userContext: string | null;
+    summary: string | null;
+    keyIdea: string | null;
+    contentItem: { description: string | null } | null;
+  }): string {
+    return [item.rawText, item.userContext, item.summary, item.contentItem?.description, item.keyIdea]
+      .find((part) => part && part.trim().length > 0) ?? "";
+  }
+
   const [cardTensions, syntheses, convergenceTexts, topicTensions] = await Promise.all([
     Promise.all(
       contradictEdges.map((edge) =>
         generateContradictionTension({
           labelA: edgeItemLabel(edge.fromItem),
-          textA: edge.fromItem.rawText ?? edge.fromItem.keyIdea ?? "",
+          textA: edgeItemText(edge.fromItem),
           labelB: edgeItemLabel(edge.toItem),
-          textB: edge.toItem.rawText ?? edge.toItem.keyIdea ?? "",
+          textB: edgeItemText(edge.toItem),
         }),
       ),
     ),
@@ -216,7 +251,7 @@ export async function getPersonalIntelligence(args: {
           captures: group.captures.slice(0, 10).map((c) => ({
             label: c.label,
             keyIdea: c.keyIdea,
-            text: c.rawText ?? "",
+            text: c.gist,
           })),
         }),
       ),
@@ -240,7 +275,7 @@ export async function getPersonalIntelligence(args: {
           captures: group.captures.slice(0, 8).map((c) => ({
             label: c.label,
             keyIdea: c.keyIdea,
-            text: c.rawText ?? "",
+            text: c.gist,
           })),
         }),
       ),
@@ -256,8 +291,8 @@ export async function getPersonalIntelligence(args: {
         itemBId: edge.toItemId,
         labelA: edgeItemLabel(edge.fromItem),
         labelB: edgeItemLabel(edge.toItem),
-        previewA: (edge.fromItem.rawText ?? edge.fromItem.keyIdea ?? "").slice(0, 200),
-        previewB: (edge.toItem.rawText ?? edge.toItem.keyIdea ?? "").slice(0, 200),
+        previewA: edgeItemText(edge.fromItem).slice(0, 200),
+        previewB: edgeItemText(edge.toItem).slice(0, 200),
         tension,
       };
     })
@@ -276,8 +311,8 @@ export async function getPersonalIntelligence(args: {
         itemBId: b.id,
         labelA: a.label,
         labelB: b.label,
-        previewA: (a.rawText ?? a.keyIdea ?? "").slice(0, 200),
-        previewB: (b.rawText ?? b.keyIdea ?? "").slice(0, 200),
+        previewA: a.gist.slice(0, 200),
+        previewB: b.gist.slice(0, 200),
         tension: result.tension,
       };
     })
@@ -324,10 +359,32 @@ export async function getPersonalIntelligence(args: {
     })
     .filter((s): s is ConvergenceSignal => s !== null);
 
-  return {
+  const result: PersonalIntelligenceData = {
     contradictionCards,
     threadSyntheses,
     convergenceSignals,
     dormantThreads,
   };
+
+  if (user) {
+    // Best-effort: a failed cache write must never fail the request.
+    try {
+      await db.intelligenceCache.upsert({
+        where: { userId: args.userId },
+        update: {
+          version: user.tasteProfileVersion,
+          payload: result as unknown as Prisma.InputJsonValue,
+        },
+        create: {
+          userId: args.userId,
+          version: user.tasteProfileVersion,
+          payload: result as unknown as Prisma.InputJsonValue,
+        },
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  return result;
 }

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated as RNAnimated,
@@ -1190,6 +1190,73 @@ export default function MapScreen() {
   // hidden until the map has settled (otherwise they float over moving nodes).
   const [lensTransitioning, setLensTransitioning] = useState(false);
 
+  // ── Viewport: pan + zoom ──────────────────────────────────────
+  // Two-tier camera. The COMMITTED camera (vbPos/zoom React state) is what the
+  // SVG world and its touch targets are rendered against; it changes only when
+  // a gesture or camera animation settles. The LIVE camera (refs) moves every
+  // frame, expressed as a view transform on the map wrapper — one native style
+  // update per frame, zero React re-renders. Re-rendering the whole SVG tree
+  // per gesture frame is what made the map chunky as nodes accumulated.
+  const savedVB = useRef({ x: INIT_VB_X, y: INIT_VB_Y });
+  const [vbPos, setVbPos] = useState({ x: INIT_VB_X, y: INIT_VB_Y });
+
+  const savedZoom = useRef(0.4);
+  const [zoom, setZoom] = useState(0.4);
+
+  const committedCam = useRef({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
+  const liveCam = useRef({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
+  const liveTx = useRef(new RNAnimated.Value(0)).current;
+  const liveTy = useRef(new RNAnimated.Value(0)).current;
+  const liveScale = useRef(new RNAnimated.Value(1)).current;
+
+  // Express the live camera as a transform of the committed rendering.
+  // screen = (world − live)·z_live must equal scale-about-screen-centre (RN's
+  // transform origin) plus translate of the committed rendering, which solves
+  // to k = z_live/z_committed, t = (committed − live)·z_live, with the usual
+  // centre-origin compensation C·(k−1).
+  const applyLiveCamera = useCallback((x: number, y: number, z: number) => {
+    liveCam.current = { x, y, zoom: z };
+    const c = committedCam.current;
+    const k = z / c.zoom;
+    liveTx.setValue((c.x - x) * z + (SW / 2) * (k - 1));
+    liveTy.setValue((c.y - y) * z + (SH / 2) * (k - 1));
+    liveScale.setValue(k);
+  }, [liveTx, liveTy, liveScale]);
+
+  // Commit the live camera into React state: the world re-renders crisp at
+  // the new viewBox, and the layout effect below collapses the transform.
+  const commitCamera = useCallback(() => {
+    const { x, y, zoom: z } = liveCam.current;
+    savedVB.current = { x, y };
+    savedZoom.current = z;
+    committedCam.current = { x, y, zoom: z };
+    setVbPos({ x, y });
+    setZoom(z);
+  }, []);
+
+  // Move both tiers at once (programmatic, non-animated camera jumps).
+  const setCamera = useCallback((x: number, y: number, z: number) => {
+    savedVB.current = { x, y };
+    savedZoom.current = z;
+    liveCam.current = { x, y, zoom: z };
+    committedCam.current = { x, y, zoom: z };
+    setVbPos({ x, y });
+    setZoom(z);
+  }, []);
+
+  // After every render the world reflects the committed camera, so re-derive
+  // the wrapper transform (identity once settled; still correct if an
+  // unrelated re-render lands mid-gesture).
+  useLayoutEffect(() => {
+    applyLiveCamera(liveCam.current.x, liveCam.current.y, liveCam.current.zoom);
+  });
+
+  const pinchStartRef = useRef<{ dist: number; zoom: number } | null>(null);
+
+  const resetView = useCallback(() => {
+    setCamera(INIT_VB_X, INIT_VB_Y, 0.4);
+  }, [setCamera]);
+
   // Compute all 3 layouts upfront
   const semanticPos = useMemo(
     () =>
@@ -1315,12 +1382,7 @@ export default function MapScreen() {
       renderPosRef.current = targetPos;
       setRenderPos(targetPos);
       const fit = computeCameraFit(nodes, targetPos);
-      if (fit) {
-        savedVB.current = { x: fit.x, y: fit.y };
-        savedZoom.current = fit.zoom;
-        setVbPos({ x: fit.x, y: fit.y });
-        setZoom(fit.zoom);
-      }
+      if (fit) setCamera(fit.x, fit.y, fit.zoom);
       return;
     }
 
@@ -1352,13 +1414,10 @@ export default function MapScreen() {
       // Derive the camera from these same in-flight positions every frame
       // instead of flying it toward a separately-eased target — see
       // computeCameraFit for why an independent camera tween causes overshoot.
+      // The lens tick re-renders per frame anyway (node positions are React
+      // state), so committing the camera per frame here costs nothing extra.
       const fit = computeCameraFit(nodes, newPos);
-      if (fit) {
-        savedVB.current = { x: fit.x, y: fit.y };
-        savedZoom.current = fit.zoom;
-        setVbPos({ x: fit.x, y: fit.y });
-        setZoom(fit.zoom);
-      }
+      if (fit) setCamera(fit.x, fit.y, fit.zoom);
 
       if (t < 1) requestAnimationFrame(tick);
       else setLensTransitioning(false);
@@ -1366,7 +1425,7 @@ export default function MapScreen() {
 
     requestAnimationFrame(tick);
     lensAnimCancelRef.current = () => { cancelled = true; setLensTransitioning(false); };
-  }, [lensMode, semanticPos, temporalPos, sourcePos, nodes]);
+  }, [lensMode, semanticPos, temporalPos, sourcePos, nodes, setCamera]);
 
   // Use renderPos for display, fall back to semanticPos on first render
   const pos = Object.keys(renderPos).length > 0 ? renderPos : semanticPos;
@@ -1577,21 +1636,6 @@ export default function MapScreen() {
   // ── Focus mode ────────────────────────────────────────────────
   const [focusedTopicId, setFocusedTopicId] = useState<string | null>(null);
 
-  // ── Viewport: pan + zoom ──────────────────────────────────────
-  const savedVB = useRef({ x: INIT_VB_X, y: INIT_VB_Y });
-  const [vbPos, setVbPos] = useState({ x: INIT_VB_X, y: INIT_VB_Y });
-
-  const savedZoom = useRef(0.4);
-  const [zoom, setZoom] = useState(0.4);
-
-  const pinchStartRef = useRef<{ dist: number; zoom: number } | null>(null);
-
-  const resetView = useCallback(() => {
-    savedVB.current = { x: INIT_VB_X, y: INIT_VB_Y };
-    savedZoom.current = 0.4;
-    setVbPos({ x: INIT_VB_X, y: INIT_VB_Y });
-    setZoom(0.4);
-  }, []);
 
   const animCancelRef = useRef<(() => void) | null>(null);
 
@@ -1619,13 +1663,13 @@ export default function MapScreen() {
       const cy = clampVBY(y, vbH2);
       savedVB.current = { x: cx, y: cy };
       savedZoom.current = z;
-      setVbPos({ x: cx, y: cy });
-      setZoom(z);
+      applyLiveCamera(cx, cy, z);
       if (t < 1) frameId = requestAnimationFrame(frame);
+      else commitCamera();
     };
     frameId = requestAnimationFrame(frame);
-    animCancelRef.current = () => { cancelled = true; cancelAnimationFrame(frameId); };
-  }, []);
+    animCancelRef.current = () => { cancelled = true; cancelAnimationFrame(frameId); commitCamera(); };
+  }, [applyLiveCamera, commitCamera]);
 
   const centerOnNodes = useCallback((posOverride?: PositionMap, animated = false, animDuration = 720) => {
     const positions = posOverride ?? pos;
@@ -1635,12 +1679,9 @@ export default function MapScreen() {
     if (animated) {
       animateCamera(fit.x, fit.y, fit.zoom, animDuration);
     } else {
-      savedVB.current = { x: fit.x, y: fit.y };
-      savedZoom.current = fit.zoom;
-      setVbPos({ x: fit.x, y: fit.y });
-      setZoom(fit.zoom);
+      setCamera(fit.x, fit.y, fit.zoom);
     }
-  }, [nodes, pos, resetView, animateCamera]);
+  }, [nodes, pos, resetView, animateCamera, setCamera]);
 
   // Auto-recenter on first data load
   const hasInitiallyLoadedRef = useRef(false);
@@ -1712,8 +1753,7 @@ export default function MapScreen() {
 
           savedZoom.current = newZoom;
           savedVB.current = { x: nx, y: ny };
-          setZoom(newZoom);
-          setVbPos({ x: nx, y: ny });
+          applyLiveCamera(nx, ny, newZoom);
           return;
         }
         // Pan. If a pinch is in progress — including the frame or two at the end
@@ -1726,15 +1766,21 @@ export default function MapScreen() {
         const vbH = SH / savedZoom.current;
         const nx = clampVBX(savedVB.current.x - gs.dx / savedZoom.current, vbW);
         const ny = clampVBY(savedVB.current.y - gs.dy / savedZoom.current, vbH);
-        setVbPos({ x: nx, y: ny });
+        applyLiveCamera(nx, ny, savedZoom.current);
         // Track velocity for momentum
         const now = Date.now();
         lastMoveRef.current = { x: gs.vx, y: gs.vy, t: now };
       },
 
+      onPanResponderTerminate: () => {
+        pinchStartRef.current = null;
+        commitCamera();
+      },
+
       onPanResponderRelease: (evt, gs) => {
         if (pinchStartRef.current) {
           pinchStartRef.current = null;
+          commitCamera();
           return;
         }
         // Commit final pan position
@@ -1743,13 +1789,16 @@ export default function MapScreen() {
         const nx = clampVBX(savedVB.current.x - gs.dx / savedZoom.current, vbW);
         const ny = clampVBY(savedVB.current.y - gs.dy / savedZoom.current, vbH);
         savedVB.current = { x: nx, y: ny };
-        setVbPos({ x: nx, y: ny });
+        applyLiveCamera(nx, ny, savedZoom.current);
 
         // Momentum scroll — decay velocity over ~400ms
         const vx = gs.vx * 0.6;
         const vy = gs.vy * 0.6;
         const speed = Math.sqrt(vx * vx + vy * vy);
-        if (speed < 0.3) return;
+        if (speed < 0.3) {
+          commitCamera();
+          return;
+        }
 
         let velX = vx;
         let velY = vy;
@@ -1761,6 +1810,7 @@ export default function MapScreen() {
           velY *= decay;
           if (Math.abs(velX) < MIN_VEL && Math.abs(velY) < MIN_VEL) {
             momentumFrameRef.current = null;
+            commitCamera();
             return;
           }
           const z = savedZoom.current;
@@ -1769,7 +1819,7 @@ export default function MapScreen() {
           const mx = clampVBX(savedVB.current.x - velX * 12 / z, w);
           const my = clampVBY(savedVB.current.y - velY * 12 / z, h);
           savedVB.current = { x: mx, y: my };
-          setVbPos({ x: mx, y: my });
+          applyLiveCamera(mx, my, z);
           momentumFrameRef.current = requestAnimationFrame(step);
         };
         momentumFrameRef.current = requestAnimationFrame(step);
@@ -2105,18 +2155,6 @@ export default function MapScreen() {
     return isRecentNode(node) ? '#D4B896' : MAP_NODE;
   }, [clusterColorMap, isRecentNode]);
 
-  const vbW = SW / zoom;
-  const vbH = SH / zoom;
-
-  // The background (dot grid + tone) must always cover the viewport so the
-  // canvas edge is never visible — even zoomed all the way out, where the
-  // viewport can be larger than the canvas. Anchor a rect 3× the viewport,
-  // centred on it, so it fills the screen at any pan/zoom.
-  const bgX = vbPos.x - vbW;
-  const bgY = vbPos.y - vbH;
-  const bgW = vbW * 3;
-  const bgH = vbH * 3;
-
   const landingRing = newNodeId && pos[newNodeId] ? (() => {
     const p = pos[newNodeId]!;
     const screenX = (p.x - vbPos.x) * zoom;
@@ -2140,15 +2178,6 @@ export default function MapScreen() {
     );
   })() : null;
 
-  // Source kind labels for source lens mode. Held back until the lens
-  // transition settles so "links / thoughts / quotes" don't flash over nodes
-  // that are still sliding into their groups.
-  const kindLabels = lensMode === 'source' && !lensTransitioning ? [
-    { kind: 'LINK' as CaptureKind, label: 'links', x: MAP_PAD + LAYOUT_W * 0.2, y: MAP_PAD + LAYOUT_H * 0.15 },
-    { kind: 'TEXT' as CaptureKind, label: 'thoughts', x: MAP_PAD + LAYOUT_W * 0.5, y: MAP_PAD + LAYOUT_H * 0.15 },
-    { kind: 'IMAGE' as CaptureKind, label: 'images', x: MAP_PAD + LAYOUT_W * 0.8, y: MAP_PAD + LAYOUT_H * 0.15 },
-  ] : [];
-
   // ── Node opacity: terrain + focus + discovery + timeline ───────
   const getNodeOpacity = useCallback((node: GraphNode, baseOpacity: number, zoomFade: number) => {
     // Search dimming
@@ -2169,6 +2198,359 @@ export default function MapScreen() {
     return baseOpacity * zoomFade;
   }, [hasSearch, highlightedIds, lensMode, nodeTimestamps, timelineCutoffMs, focusedTopicId]);
 
+  // ── Map world (SVG) — memoized against the COMMITTED camera ────
+  // Rebuilt only when data, lens, tool state, or the committed camera change.
+  // Gesture frames move the wrapper transform instead, so this tree is never
+  // reconciled mid-gesture — the fix for the map getting chunky as it grows.
+  const mapWorld = useMemo(() => {
+    const vbW = SW / zoom;
+    const vbH = SH / zoom;
+
+    // The background (dot grid + tone) must always cover the viewport so the
+    // canvas edge is never visible — even zoomed all the way out, where the
+    // viewport can be larger than the canvas. Anchor a rect 3× the viewport,
+    // centred on it, so it fills the screen at any pan/zoom. (Mid-gesture the
+    // screen-fixed grid behind the canvas covers any briefly exposed edge.)
+    const bgX = vbPos.x - vbW;
+    const bgY = vbPos.y - vbH;
+    const bgW = vbW * 3;
+    const bgH = vbH * 3;
+
+    // Source kind labels for source lens mode. Held back until the lens
+    // transition settles so "links / thoughts / quotes" don't flash over nodes
+    // that are still sliding into their groups.
+    const kindLabels = lensMode === 'source' && !lensTransitioning ? [
+      { kind: 'LINK' as CaptureKind, label: 'links', x: MAP_PAD + LAYOUT_W * 0.2, y: MAP_PAD + LAYOUT_H * 0.15 },
+      { kind: 'TEXT' as CaptureKind, label: 'thoughts', x: MAP_PAD + LAYOUT_W * 0.5, y: MAP_PAD + LAYOUT_H * 0.15 },
+      { kind: 'IMAGE' as CaptureKind, label: 'images', x: MAP_PAD + LAYOUT_W * 0.8, y: MAP_PAD + LAYOUT_H * 0.15 },
+    ] : [];
+
+    return (
+      <Svg
+        width={SW}
+        height={SH}
+        viewBox={`${vbPos.x} ${vbPos.y} ${vbW} ${vbH}`}
+        style={StyleSheet.absoluteFill}
+      >
+        <Defs>
+          <Pattern id="dotGrid" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+            <Circle cx="16" cy="16" r="0.9" fill={MAP_NODE} fillOpacity={0.04} />
+          </Pattern>
+          <RadialGradient id="ambientGlow" cx="50%" cy="44%" r="48%" fx="50%" fy="44%">
+            <Stop offset="0%" stopColor={MAP_NODE} stopOpacity={0.06} />
+            <Stop offset="100%" stopColor={MAP_NODE} stopOpacity={0} />
+          </RadialGradient>
+          {clusterLabels.map((cl, i) => {
+            const color = CLUSTER_PALETTE[i % CLUSTER_PALETTE.length];
+            return (
+              <RadialGradient key={`grad-${cl.topicId}`} id={`clGrad-${cl.topicId}`} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+                <Stop offset="0%" stopColor={color} stopOpacity={0.14} />
+                <Stop offset="55%" stopColor={color} stopOpacity={0.04} />
+                <Stop offset="100%" stopColor={color} stopOpacity={0} />
+              </RadialGradient>
+            );
+          })}
+          <LinearGradient id="bgTone" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%" stopColor={MAP_NODE} stopOpacity={0.012} />
+            <Stop offset="100%" stopColor={MAP_NODE} stopOpacity={0.03} />
+          </LinearGradient>
+        </Defs>
+
+        <G>
+          <Rect x={bgX} y={bgY} width={bgW} height={bgH} fill="url(#dotGrid)" />
+          <Rect x={bgX} y={bgY} width={bgW} height={bgH} fill="url(#bgTone)" />
+          {/* Ambient glow stays anchored to the canvas — it fades to zero
+              well within its bounds, so it never draws a hard edge. */}
+          <Rect width={CANVAS_W} height={CANVAS_H} fill="url(#ambientGlow)" />
+
+          {/* Cluster region halos — only in semantic mode */}
+          {lensMode === 'semantic' && clusterLabels.map((cl) => {
+            const clusterR = Math.min(LAYOUT_W, LAYOUT_H) * 0.16;
+            const dimmed = focusedTopicId && cl.topicId !== focusedTopicId;
+            return (
+              <Circle
+                key={`cl-area-${cl.topicId}`}
+                cx={cl.x} cy={cl.y} r={clusterR}
+                fill={`url(#clGrad-${cl.topicId})`}
+                fillOpacity={dimmed ? 0.2 : 1}
+              />
+            );
+          })}
+
+          {/* Cluster labels (semantic mode only) — hierarchical: coarse
+              domain labels own the zoomed-out view; the more specific
+              topic labels fade in as the user zooms into their region. */}
+          {lensMode === 'semantic' && clusterLabels.map((cl) => {
+            const isDomain = cl.kind === 'domain';
+            const clFontSize = isDomain
+              ? Math.max(9, Math.min(22, 14 / zoom))
+              : Math.max(7, Math.min(14, 10 / zoom));
+            const clOpacity = isDomain
+              ? (zoom <= 1.0
+                ? 0.12 + (1 - zoom) * 0.10
+                : Math.max(0, 0.12 * (1 - (zoom - 1.0) / 0.6)))
+              : (zoom <= 1.1
+                ? 0
+                : Math.min(0.20, ((zoom - 1.1) / 0.5) * 0.20));
+            if (clOpacity <= 0.005) return null;
+            const dimmed = focusedTopicId && cl.topicId !== focusedTopicId;
+            return (
+              <SvgText
+                key={`cl-label-${cl.topicId}`}
+                x={cl.x} y={cl.y}
+                fontSize={clFontSize}
+                fontFamily={FontFamily.mono}
+                fill="rgba(236,236,236,1)"
+                fillOpacity={dimmed ? Math.min(0.05, clOpacity) : Math.min(0.28, clOpacity)}
+                textAnchor="middle"
+                letterSpacing={3.5}
+              >
+                {cl.name.toUpperCase()}
+              </SvgText>
+            );
+          })}
+
+          {/* Source kind labels */}
+          {kindLabels.map((kl) => {
+            const fontSize = Math.max(10, Math.min(20, 13 / zoom));
+            return (
+              <SvgText
+                key={`kl-${kl.kind}`}
+                x={kl.x} y={kl.y}
+                fontSize={fontSize}
+                fontFamily={FontFamily.mono}
+                fill="rgba(236,236,236,1)"
+                fillOpacity={0.18}
+                textAnchor="middle"
+                letterSpacing={3}
+              >
+                {kl.label.toUpperCase()}
+              </SvgText>
+            );
+          })}
+
+          {/* Temporal axis label */}
+          {lensMode === 'temporal' && nodes.length > 0 && (() => {
+            const fontSize = Math.max(8, Math.min(14, 10 / zoom));
+            return (
+              <>
+                <SvgText
+                  x={MAP_PAD + 20} y={MAP_PAD + LAYOUT_H * 0.85}
+                  fontSize={fontSize} fontFamily={FontFamily.mono}
+                  fill="rgba(236,236,236,1)" fillOpacity={0.15}
+                  letterSpacing={2}
+                >
+                  OLDER
+                </SvgText>
+                <SvgText
+                  x={MAP_PAD + LAYOUT_W - 20} y={MAP_PAD + LAYOUT_H * 0.85}
+                  fontSize={fontSize} fontFamily={FontFamily.mono}
+                  fill="rgba(236,236,236,1)" fillOpacity={0.15}
+                  textAnchor="end" letterSpacing={2}
+                >
+                  RECENT
+                </SvgText>
+              </>
+            );
+          })()}
+
+          {/* Edges */}
+          {edges.map((e, i) => {
+            const a = pos[e.fromItemId];
+            const b = pos[e.toItemId];
+            if (!a || !b) return null;
+
+            const isSelectedEdge = discoveryEdgeKeys.includes(edgeKey(e.fromItemId, e.toItemId));
+
+            const baseOpacity = 0.14 + e.weight * 0.26;
+            let edgeOpacity = baseOpacity;
+            if (focusedTopicId) {
+              const fromNode = nodeById.get(e.fromItemId);
+              const toNode = nodeById.get(e.toItemId);
+              const fromInFocus = fromNode?.topics.some((t) => t.topicId === focusedTopicId);
+              const toInFocus = toNode?.topics.some((t) => t.topicId === focusedTopicId);
+              if (!fromInFocus && !toInFocus) edgeOpacity *= 0.08;
+            }
+
+            return (
+              <Line
+                key={`e${i}`}
+                x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                stroke={isSelectedEdge ? DISCOVERY_ACCENT : MAP_LINE}
+                strokeWidth={isSelectedEdge ? 2.4 : 1.1}
+                strokeOpacity={isSelectedEdge ? 0.95 : edgeOpacity}
+              />
+            );
+          })}
+
+          {/* Nodes */}
+          {nodes.map((node) => {
+            const p = pos[node.id];
+            if (!p) return null;
+            const { r: baseR, baseOpacity } = nodeMetrics.get(node.id) ?? { r: 4, baseOpacity: 0.8 };
+            const color = nodeColor(node);
+            const recent = isRecentNode(node);
+
+            const isHighlighted = hasSearch && highlightedIds.has(node.id);
+            const isDiscoverySelected = discoveryNodeIds.includes(node.id);
+
+            // Nodes stay visible at every zoom level — never fade to zero.
+            // Only a gentle dimming as you pull back, floored so points (and
+            // their colour) remain clearly readable when fully zoomed out.
+            const zoomFade = Math.max(0.6, Math.min(1, (zoom - 0.15) / 0.75));
+            const finalOpacity = getNodeOpacity(node, baseOpacity, zoomFade);
+
+            const glowR = isHighlighted || isDiscoverySelected ? baseR * 9 : baseR * 5.5;
+            const glowOp = (isHighlighted || isDiscoverySelected) ? 0.12 : 0.03;
+            const innerGlowOp = (isHighlighted || isDiscoverySelected) ? 0.28 : 0.09;
+
+            return (
+              <G key={node.id}>
+                <Circle cx={p.x} cy={p.y} r={glowR} fill={color} fillOpacity={finalOpacity === 0 ? 0 : glowOp * zoomFade} />
+                <Circle cx={p.x} cy={p.y} r={baseR * 2.8} fill={color} fillOpacity={finalOpacity === 0 ? 0 : innerGlowOp * zoomFade} />
+                <Circle
+                  cx={p.x} cy={p.y}
+                  r={(isHighlighted || isDiscoverySelected) ? baseR * 1.7 : baseR}
+                  fill={(isHighlighted || isDiscoverySelected || recent) ? color : MAP_NODE}
+                  fillOpacity={finalOpacity}
+                />
+                {/* Subtle ring around discovery selected nodes */}
+                {isDiscoverySelected && (
+                  <Circle
+                    cx={p.x} cy={p.y} r={baseR * 2.2}
+                    fill="none"
+                    stroke="#7EC8A0"
+                    strokeWidth={0.8}
+                    strokeOpacity={0.6 * zoomFade}
+                  />
+                )}
+                {/* Subtle pulse ring for recent nodes */}
+                {recent && !isDiscoverySelected && (
+                  <Circle
+                    cx={p.x} cy={p.y} r={baseR * 1.6}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={0.5}
+                    strokeOpacity={0.3 * zoomFade}
+                  />
+                )}
+              </G>
+            );
+          })}
+
+          {/* Empty state ghost dots */}
+          {isEmpty && [
+            [0.28, 0.28], [0.58, 0.22], [0.72, 0.45], [0.62, 0.60],
+            [0.36, 0.58], [0.48, 0.38], [0.42, 0.50], [0.68, 0.33],
+            [0.30, 0.42], [0.55, 0.52], [0.44, 0.30], [0.65, 0.55],
+          ].map(([rx, ry], i) => (
+            <Circle
+              key={`g${i}`}
+              cx={MAP_PAD + LAYOUT_W * rx!}
+              cy={MAP_PAD + LAYOUT_H * ry!}
+              r={2.5} fill={MAP_NODE} fillOpacity={0.07}
+            />
+          ))}
+        </G>
+      </Svg>
+    );
+  }, [
+    vbPos, zoom, lensMode, lensTransitioning, clusterLabels, focusedTopicId,
+    nodes, edges, pos, nodeById, discoveryEdgeKeys, discoveryNodeIds,
+    nodeMetrics, nodeColor, isRecentNode, hasSearch, highlightedIds,
+    getNodeOpacity, isEmpty,
+  ]);
+
+  // ── Touch layer — memoized against the COMMITTED camera ────────
+  // Hit targets are positioned at committed screen coordinates; mid-gesture
+  // they ride along inside the transformed wrapper, staying over their nodes.
+  const touchLayer = useMemo(() => (
+    <View
+      style={StyleSheet.absoluteFill}
+      pointerEvents="box-none"
+    >
+      {/* Connection touch targets (discover mode only) — several small hits
+          spread along the middle of each line so you can tap the line
+          itself, not just its exact midpoint. The endpoints are left to
+          the node targets (rendered after, so a node always wins). */}
+      {toolMode === 'discover' && edges.flatMap((e, i) => {
+        const a = pos[e.fromItemId];
+        const b = pos[e.toItemId];
+        if (!a || !b) return [];
+        const EHIT = 16;
+        return [0.3, 0.45, 0.6, 0.75].map((t) => {
+          const screenX = (a.x + (b.x - a.x) * t - vbPos.x) * zoom;
+          const screenY = (a.y + (b.y - a.y) * t - vbPos.y) * zoom;
+          if (screenX < -EHIT || screenX > SW + EHIT || screenY < -EHIT || screenY > SH + EHIT) return null;
+          return (
+            <Pressable
+              key={`etap-${i}-${t}`}
+              style={{ position: 'absolute', width: EHIT * 2, height: EHIT * 2, left: screenX - EHIT, top: screenY - EHIT, borderRadius: EHIT }}
+              onPress={() => toggleDiscoveryEdge(e.fromItemId, e.toItemId)}
+              accessibilityLabel="Toggle connection"
+              accessibilityRole="button"
+            />
+          );
+        });
+      })}
+      {nodes.map((node) => {
+        const p = pos[node.id];
+        if (!p) return null;
+        const screenX = (p.x - vbPos.x) * zoom;
+        const screenY = (p.y - vbPos.y) * zoom;
+        const HIT = 38;
+        if (screenX < -HIT || screenX > SW + HIT || screenY < -HIT || screenY > SH + HIT) return null;
+        // The walkthrough's node-management step points at the demo
+        // node specifically, so its rect is only reported while that's
+        // both the active target and the node being rendered.
+        const isTutorialNode = nodeTarget.isActive && node.id === newNodeId;
+        return (
+          <Pressable
+            key={node.id}
+            ref={isTutorialNode ? nodeTarget.ref : undefined}
+            onLayout={isTutorialNode ? nodeTarget.onLayout : undefined}
+            style={{ position: 'absolute', width: HIT * 2, height: HIT * 2, left: screenX - HIT, top: screenY - HIT, borderRadius: HIT }}
+            onPress={() => {
+              if (toolMode === 'discover') {
+                toggleDiscoveryNode(node.id);
+              } else {
+                if (selectedNode?.id === node.id) {
+                  closeDrawer();
+                } else {
+                  setSelectedNode(node);
+                  setDrawerCluster(null);
+                  openDrawer(null);
+                }
+                if (isTutorialNode) nodeTarget.press();
+              }
+            }}
+            accessibilityLabel={node.label}
+            accessibilityRole="button"
+          />
+        );
+      })}
+      {/* Cluster label touch targets (semantic mode only) */}
+      {lensMode === 'semantic' && clusterLabels.map((cl) => {
+        const screenX = (cl.x - vbPos.x) * zoom;
+        const screenY = (cl.y - vbPos.y) * zoom;
+        if (screenX < -60 || screenX > SW + 60 || screenY < -30 || screenY > SH + 30) return null;
+        return (
+          <Pressable
+            key={`cl-tap-${cl.topicId}`}
+            style={{ position: 'absolute', left: screenX - 52, top: screenY - 18, width: 104, height: 36 }}
+            onPress={() => handleClusterTap(cl)}
+            accessibilityLabel={`${cl.name} cluster`}
+            accessibilityRole="button"
+          />
+        );
+      })}
+    </View>
+  ), [
+    toolMode, edges, pos, vbPos, zoom, nodes, nodeTarget, newNodeId,
+    selectedNode, toggleDiscoveryEdge, toggleDiscoveryNode, closeDrawer,
+    openDrawer, lensMode, clusterLabels, handleClusterTap,
+  ]);
+
   // ── Render ────────────────────────────────────────────────────
   return (
     <View style={[styles.root, { backgroundColor: mapBg }]}>
@@ -2185,325 +2567,24 @@ export default function MapScreen() {
         </Svg>
       </View>
 
-      {/* Pannable map canvas */}
+      {/* Pannable map canvas. The wrapper transform carries per-frame gesture
+          motion (live camera); the memoized world + touch layer inside are
+          rendered at the committed camera and never re-render mid-gesture. */}
       <View style={StyleSheet.absoluteFill}>
         <View style={StyleSheet.absoluteFill} {...mapPan.panHandlers}>
-
-          <Svg
-            width={SW}
-            height={SH}
-            viewBox={`${vbPos.x} ${vbPos.y} ${vbW} ${vbH}`}
-            style={StyleSheet.absoluteFill}
+          <RNAnimated.View
+            style={[
+              StyleSheet.absoluteFill,
+              { transform: [{ translateX: liveTx }, { translateY: liveTy }, { scale: liveScale }] },
+            ]}
           >
-            <Defs>
-              <Pattern id="dotGrid" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
-                <Circle cx="16" cy="16" r="0.9" fill={MAP_NODE} fillOpacity={0.04} />
-              </Pattern>
-              <RadialGradient id="ambientGlow" cx="50%" cy="44%" r="48%" fx="50%" fy="44%">
-                <Stop offset="0%" stopColor={MAP_NODE} stopOpacity={0.06} />
-                <Stop offset="100%" stopColor={MAP_NODE} stopOpacity={0} />
-              </RadialGradient>
-              {clusterLabels.map((cl, i) => {
-                const color = CLUSTER_PALETTE[i % CLUSTER_PALETTE.length];
-                return (
-                  <RadialGradient key={`grad-${cl.topicId}`} id={`clGrad-${cl.topicId}`} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-                    <Stop offset="0%" stopColor={color} stopOpacity={0.14} />
-                    <Stop offset="55%" stopColor={color} stopOpacity={0.04} />
-                    <Stop offset="100%" stopColor={color} stopOpacity={0} />
-                  </RadialGradient>
-                );
-              })}
-              <LinearGradient id="bgTone" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor={MAP_NODE} stopOpacity={0.012} />
-                <Stop offset="100%" stopColor={MAP_NODE} stopOpacity={0.03} />
-              </LinearGradient>
-            </Defs>
-
-            <G>
-              <Rect x={bgX} y={bgY} width={bgW} height={bgH} fill="url(#dotGrid)" />
-              <Rect x={bgX} y={bgY} width={bgW} height={bgH} fill="url(#bgTone)" />
-              {/* Ambient glow stays anchored to the canvas — it fades to zero
-                  well within its bounds, so it never draws a hard edge. */}
-              <Rect width={CANVAS_W} height={CANVAS_H} fill="url(#ambientGlow)" />
-
-              {/* Cluster region halos — only in semantic mode */}
-              {lensMode === 'semantic' && clusterLabels.map((cl) => {
-                const clusterR = Math.min(LAYOUT_W, LAYOUT_H) * 0.16;
-                const dimmed = focusedTopicId && cl.topicId !== focusedTopicId;
-                return (
-                  <Circle
-                    key={`cl-area-${cl.topicId}`}
-                    cx={cl.x} cy={cl.y} r={clusterR}
-                    fill={`url(#clGrad-${cl.topicId})`}
-                    fillOpacity={dimmed ? 0.2 : 1}
-                  />
-                );
-              })}
-
-              {/* Cluster labels (semantic mode only) — hierarchical: coarse
-                  domain labels own the zoomed-out view; the more specific
-                  topic labels fade in as the user zooms into their region. */}
-              {lensMode === 'semantic' && clusterLabels.map((cl) => {
-                const isDomain = cl.kind === 'domain';
-                const clFontSize = isDomain
-                  ? Math.max(9, Math.min(22, 14 / zoom))
-                  : Math.max(7, Math.min(14, 10 / zoom));
-                const clOpacity = isDomain
-                  ? (zoom <= 1.0
-                    ? 0.12 + (1 - zoom) * 0.10
-                    : Math.max(0, 0.12 * (1 - (zoom - 1.0) / 0.6)))
-                  : (zoom <= 1.1
-                    ? 0
-                    : Math.min(0.20, ((zoom - 1.1) / 0.5) * 0.20));
-                if (clOpacity <= 0.005) return null;
-                const dimmed = focusedTopicId && cl.topicId !== focusedTopicId;
-                return (
-                  <SvgText
-                    key={`cl-label-${cl.topicId}`}
-                    x={cl.x} y={cl.y}
-                    fontSize={clFontSize}
-                    fontFamily={FontFamily.mono}
-                    fill="rgba(236,236,236,1)"
-                    fillOpacity={dimmed ? Math.min(0.05, clOpacity) : Math.min(0.28, clOpacity)}
-                    textAnchor="middle"
-                    letterSpacing={3.5}
-                  >
-                    {cl.name.toUpperCase()}
-                  </SvgText>
-                );
-              })}
-
-              {/* Source kind labels */}
-              {kindLabels.map((kl) => {
-                const fontSize = Math.max(10, Math.min(20, 13 / zoom));
-                return (
-                  <SvgText
-                    key={`kl-${kl.kind}`}
-                    x={kl.x} y={kl.y}
-                    fontSize={fontSize}
-                    fontFamily={FontFamily.mono}
-                    fill="rgba(236,236,236,1)"
-                    fillOpacity={0.18}
-                    textAnchor="middle"
-                    letterSpacing={3}
-                  >
-                    {kl.label.toUpperCase()}
-                  </SvgText>
-                );
-              })}
-
-              {/* Temporal axis label */}
-              {lensMode === 'temporal' && nodes.length > 0 && (() => {
-                const fontSize = Math.max(8, Math.min(14, 10 / zoom));
-                return (
-                  <>
-                    <SvgText
-                      x={MAP_PAD + 20} y={MAP_PAD + LAYOUT_H * 0.85}
-                      fontSize={fontSize} fontFamily={FontFamily.mono}
-                      fill="rgba(236,236,236,1)" fillOpacity={0.15}
-                      letterSpacing={2}
-                    >
-                      OLDER
-                    </SvgText>
-                    <SvgText
-                      x={MAP_PAD + LAYOUT_W - 20} y={MAP_PAD + LAYOUT_H * 0.85}
-                      fontSize={fontSize} fontFamily={FontFamily.mono}
-                      fill="rgba(236,236,236,1)" fillOpacity={0.15}
-                      textAnchor="end" letterSpacing={2}
-                    >
-                      RECENT
-                    </SvgText>
-                  </>
-                );
-              })()}
-
-              {/* Edges */}
-              {edges.map((e, i) => {
-                const a = pos[e.fromItemId];
-                const b = pos[e.toItemId];
-                if (!a || !b) return null;
-
-                const isSelectedEdge = discoveryEdgeKeys.includes(edgeKey(e.fromItemId, e.toItemId));
-
-                const baseOpacity = 0.14 + e.weight * 0.26;
-                let edgeOpacity = baseOpacity;
-                if (focusedTopicId) {
-                  const fromNode = nodeById.get(e.fromItemId);
-                  const toNode = nodeById.get(e.toItemId);
-                  const fromInFocus = fromNode?.topics.some((t) => t.topicId === focusedTopicId);
-                  const toInFocus = toNode?.topics.some((t) => t.topicId === focusedTopicId);
-                  if (!fromInFocus && !toInFocus) edgeOpacity *= 0.08;
-                }
-
-                return (
-                  <Line
-                    key={`e${i}`}
-                    x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                    stroke={isSelectedEdge ? DISCOVERY_ACCENT : MAP_LINE}
-                    strokeWidth={isSelectedEdge ? 2.4 : 1.1}
-                    strokeOpacity={isSelectedEdge ? 0.95 : edgeOpacity}
-                  />
-                );
-              })}
-
-              {/* Nodes */}
-              {nodes.map((node) => {
-                const p = pos[node.id];
-                if (!p) return null;
-                const { r: baseR, baseOpacity } = nodeMetrics.get(node.id) ?? { r: 4, baseOpacity: 0.8 };
-                const color = nodeColor(node);
-                const recent = isRecentNode(node);
-
-                const isHighlighted = hasSearch && highlightedIds.has(node.id);
-                const isDiscoverySelected = discoveryNodeIds.includes(node.id);
-
-                // Nodes stay visible at every zoom level — never fade to zero.
-                // Only a gentle dimming as you pull back, floored so points (and
-                // their colour) remain clearly readable when fully zoomed out.
-                const zoomFade = Math.max(0.6, Math.min(1, (zoom - 0.15) / 0.75));
-                const finalOpacity = getNodeOpacity(node, baseOpacity, zoomFade);
-
-                const glowR = isHighlighted || isDiscoverySelected ? baseR * 9 : baseR * 5.5;
-                const glowOp = (isHighlighted || isDiscoverySelected) ? 0.12 : 0.03;
-                const innerGlowOp = (isHighlighted || isDiscoverySelected) ? 0.28 : 0.09;
-
-                return (
-                  <G key={node.id}>
-                    <Circle cx={p.x} cy={p.y} r={glowR} fill={color} fillOpacity={finalOpacity === 0 ? 0 : glowOp * zoomFade} />
-                    <Circle cx={p.x} cy={p.y} r={baseR * 2.8} fill={color} fillOpacity={finalOpacity === 0 ? 0 : innerGlowOp * zoomFade} />
-                    <Circle
-                      cx={p.x} cy={p.y}
-                      r={(isHighlighted || isDiscoverySelected) ? baseR * 1.7 : baseR}
-                      fill={(isHighlighted || isDiscoverySelected || recent) ? color : MAP_NODE}
-                      fillOpacity={finalOpacity}
-                    />
-                    {/* Subtle ring around discovery selected nodes */}
-                    {isDiscoverySelected && (
-                      <Circle
-                        cx={p.x} cy={p.y} r={baseR * 2.2}
-                        fill="none"
-                        stroke="#7EC8A0"
-                        strokeWidth={0.8}
-                        strokeOpacity={0.6 * zoomFade}
-                      />
-                    )}
-                    {/* Subtle pulse ring for recent nodes */}
-                    {recent && !isDiscoverySelected && (
-                      <Circle
-                        cx={p.x} cy={p.y} r={baseR * 1.6}
-                        fill="none"
-                        stroke={color}
-                        strokeWidth={0.5}
-                        strokeOpacity={0.3 * zoomFade}
-                      />
-                    )}
-                  </G>
-                );
-              })}
-
-              {/* Empty state ghost dots */}
-              {isEmpty && [
-                [0.28, 0.28], [0.58, 0.22], [0.72, 0.45], [0.62, 0.60],
-                [0.36, 0.58], [0.48, 0.38], [0.42, 0.50], [0.68, 0.33],
-                [0.30, 0.42], [0.55, 0.52], [0.44, 0.30], [0.65, 0.55],
-              ].map(([rx, ry], i) => (
-                <Circle
-                  key={`g${i}`}
-                  cx={MAP_PAD + LAYOUT_W * rx!}
-                  cy={MAP_PAD + LAYOUT_H * ry!}
-                  r={2.5} fill={MAP_NODE} fillOpacity={0.07}
-                />
-              ))}
-            </G>
-          </Svg>
-
-          {/* Node touch targets — always active; PanResponder steals drag gestures */}
-          <View
-            style={StyleSheet.absoluteFill}
-            pointerEvents="box-none"
-          >
-            {/* Connection touch targets (discover mode only) — several small hits
-                spread along the middle of each line so you can tap the line
-                itself, not just its exact midpoint. The endpoints are left to
-                the node targets (rendered after, so a node always wins). */}
-            {toolMode === 'discover' && edges.flatMap((e, i) => {
-              const a = pos[e.fromItemId];
-              const b = pos[e.toItemId];
-              if (!a || !b) return [];
-              const EHIT = 16;
-              return [0.3, 0.45, 0.6, 0.75].map((t) => {
-                const screenX = (a.x + (b.x - a.x) * t - vbPos.x) * zoom;
-                const screenY = (a.y + (b.y - a.y) * t - vbPos.y) * zoom;
-                if (screenX < -EHIT || screenX > SW + EHIT || screenY < -EHIT || screenY > SH + EHIT) return null;
-                return (
-                  <Pressable
-                    key={`etap-${i}-${t}`}
-                    style={{ position: 'absolute', width: EHIT * 2, height: EHIT * 2, left: screenX - EHIT, top: screenY - EHIT, borderRadius: EHIT }}
-                    onPress={() => toggleDiscoveryEdge(e.fromItemId, e.toItemId)}
-                    accessibilityLabel="Toggle connection"
-                    accessibilityRole="button"
-                  />
-                );
-              });
-            })}
-            {nodes.map((node) => {
-              const p = pos[node.id];
-              if (!p) return null;
-              const screenX = (p.x - vbPos.x) * zoom;
-              const screenY = (p.y - vbPos.y) * zoom;
-              const HIT = 38;
-              if (screenX < -HIT || screenX > SW + HIT || screenY < -HIT || screenY > SH + HIT) return null;
-              // The walkthrough's node-management step points at the demo
-              // node specifically, so its rect is only reported while that's
-              // both the active target and the node being rendered.
-              const isTutorialNode = nodeTarget.isActive && node.id === newNodeId;
-              return (
-                <Pressable
-                  key={node.id}
-                  ref={isTutorialNode ? nodeTarget.ref : undefined}
-                  onLayout={isTutorialNode ? nodeTarget.onLayout : undefined}
-                  style={{ position: 'absolute', width: HIT * 2, height: HIT * 2, left: screenX - HIT, top: screenY - HIT, borderRadius: HIT }}
-                  onPress={() => {
-                    if (toolMode === 'discover') {
-                      toggleDiscoveryNode(node.id);
-                    } else {
-                      if (selectedNode?.id === node.id) {
-                        closeDrawer();
-                      } else {
-                        setSelectedNode(node);
-                        setDrawerCluster(null);
-                        openDrawer(null);
-                      }
-                      if (isTutorialNode) nodeTarget.press();
-                    }
-                  }}
-                  accessibilityLabel={node.label}
-                  accessibilityRole="button"
-                />
-              );
-            })}
-            {/* Cluster label touch targets (semantic mode only) */}
-            {lensMode === 'semantic' && clusterLabels.map((cl) => {
-              const screenX = (cl.x - vbPos.x) * zoom;
-              const screenY = (cl.y - vbPos.y) * zoom;
-              if (screenX < -60 || screenX > SW + 60 || screenY < -30 || screenY > SH + 30) return null;
-              return (
-                <Pressable
-                  key={`cl-tap-${cl.topicId}`}
-                  style={{ position: 'absolute', left: screenX - 52, top: screenY - 18, width: 104, height: 36 }}
-                  onPress={() => handleClusterTap(cl)}
-                  accessibilityLabel={`${cl.name} cluster`}
-                  accessibilityRole="button"
-                />
-              );
-            })}
-          </View>
-
+            {mapWorld}
+            {/* Node touch targets — always active; PanResponder steals drag gestures */}
+            {touchLayer}
+            {/* New node landing animation */}
+            {landingRing}
+          </RNAnimated.View>
         </View>
-
-        {/* New node landing animation */}
-        {landingRing}
-
       </View>
 
       {/* Timeline scrubber (temporal lens) — centered in the real gap between

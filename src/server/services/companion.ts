@@ -1,15 +1,49 @@
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/api";
 import type { DbClient } from "@/server/db";
-import { generateCompanionResponse } from "@/server/cognition/llm";
+import { embedText, generateCompanionResponse } from "@/server/cognition/llm";
+import { cosineSim } from "@/server/cognition/layout";
 
-const CAPTURE_LIMIT = 100;
+// How many captures to consider at all (newest-first DB scan) vs. how many
+// actually enter the prompt. Below CONTEXT_CAP everything goes in verbatim;
+// above it, the prompt gets the most recent ones plus the ones most relevant
+// to the current message (by embedding similarity) — so prompt size stays
+// bounded no matter how large the map grows.
+const CAPTURE_SCAN_LIMIT = 150;
+const CONTEXT_CAP = 40;
+const RECENT_LIMIT = 12;
+const RELEVANT_LIMIT = 24;
+const EDGE_LIMIT = 60;
 
 const DEFAULT_OPENING =
   "Your knowledge map is ready. Ask me anything about your captures, topics, or the connections between them.";
 
-async function buildCompanionContext(userId: string, db: DbClient): Promise<string> {
-  const [userTopics, positions, captures, edges] = await Promise.all([
+type ContextCapture = {
+  id: string;
+  rawText: string | null;
+  caption: string | null;
+  keyIdea: string | null;
+  summary: string | null;
+  userContext: string | null;
+  embedding: number[];
+  contentItem: { title: string } | null;
+};
+
+/** One short line of substance per capture — link captures have rawText = null,
+ * so without the summary/userContext fallback the companion only saw titles. */
+function captureGist(c: ContextCapture): string {
+  const gist = [c.keyIdea, c.userContext, c.summary, c.rawText, c.caption]
+    .find((part) => part && part.trim().length > 0) ?? "";
+  const cleaned = gist.replace(/\s+/g, " ").trim();
+  return cleaned.length > 140 ? `${cleaned.slice(0, 137).trimEnd()}…` : cleaned;
+}
+
+async function buildCompanionContext(
+  userId: string,
+  db: DbClient,
+  userMessage: string,
+): Promise<string> {
+  const [userTopics, positions, captures] = await Promise.all([
     db.userTopic.findMany({
       where: { userId },
       orderBy: { weight: "desc" },
@@ -27,22 +61,55 @@ async function buildCompanionContext(userId: string, db: DbClient): Promise<stri
     db.capturedItem.findMany({
       where: { userId },
       orderBy: { capturedAt: "desc" },
-      take: CAPTURE_LIMIT,
+      take: CAPTURE_SCAN_LIMIT,
       select: {
         id: true,
         rawText: true,
         caption: true,
         keyIdea: true,
+        summary: true,
+        userContext: true,
+        embedding: true,
         contentItem: { select: { title: true } },
       },
     }),
-    db.memoryEdge.findMany({
-      where: { userId },
-      select: { fromItemId: true, toItemId: true, type: true },
-    }),
   ]);
 
+  // Stable newest-first numbering over the scanned set, so "Capture #4" means
+  // the same thing whether or not #4 made it into this turn's context.
   const captureIndex = new Map(captures.map((c, i) => [c.id, i + 1]));
+
+  let included: ContextCapture[] = captures;
+  if (captures.length > CONTEXT_CAP) {
+    const chosen = new Set(captures.slice(0, RECENT_LIMIT).map((c) => c.id));
+    const queryEmbedding = await embedText(userMessage);
+
+    if (queryEmbedding) {
+      const ranked = captures
+        .filter((c) => !chosen.has(c.id) && c.embedding.length > 0)
+        .map((c) => ({ c, score: cosineSim(queryEmbedding, c.embedding) }))
+        .sort((a, b) => b.score - a.score);
+      for (const { c } of ranked.slice(0, RELEVANT_LIMIT)) chosen.add(c.id);
+    } else {
+      // Embedding unavailable: degrade to plain recency.
+      for (const c of captures.slice(0, CONTEXT_CAP)) chosen.add(c.id);
+    }
+
+    included = captures.filter((c) => chosen.has(c.id));
+  }
+
+  const includedIds = new Set(included.map((c) => c.id));
+  const edges = includedIds.size > 0
+    ? await db.memoryEdge.findMany({
+        where: {
+          userId,
+          fromItemId: { in: Array.from(includedIds) },
+          toItemId: { in: Array.from(includedIds) },
+        },
+        select: { fromItemId: true, toItemId: true, type: true },
+        take: EDGE_LIMIT,
+      })
+    : [];
 
   const topicsLine = userTopics
     .map((ut) => {
@@ -56,20 +123,24 @@ async function buildCompanionContext(userId: string, db: DbClient): Promise<stri
       ? positions.map((p) => `- ${p.topic.name}: "${p.statement}"`).join("\n")
       : "None yet.";
 
-  const capturesBlock = captures
-    .map((c, i) => {
+  const capturesBlock = included
+    .map((c) => {
       const title = c.contentItem?.title ?? c.rawText?.slice(0, 80) ?? c.caption?.slice(0, 80) ?? "Untitled";
-      const idea = c.keyIdea ? ` — ${c.keyIdea}` : "";
-      return `${i + 1}. "${title}"${idea}`;
+      const gist = captureGist(c);
+      const idea = gist && gist !== title ? ` — ${gist}` : "";
+      return `${captureIndex.get(c.id)}. "${title}"${idea}`;
     })
     .join("\n");
+
+  const capturesHeading =
+    included.length === captures.length
+      ? `Captures (newest-first, ${captures.length} shown):`
+      : `Captures (numbered newest-first; showing the ${included.length} most recent/relevant of ${captures.length}):`;
 
   const edgesBlock =
     edges.length > 0
       ? edges
-          .filter((e) => captureIndex.has(e.fromItemId) && captureIndex.has(e.toItemId))
           .map((e) => `- #${captureIndex.get(e.fromItemId)} ${e.type} #${captureIndex.get(e.toItemId)}`)
-          .slice(0, 80)
           .join("\n")
       : "No connections yet.";
 
@@ -80,7 +151,7 @@ async function buildCompanionContext(userId: string, db: DbClient): Promise<stri
     "Positions:",
     positionsBlock,
     "",
-    `Captures (newest-first, ${captures.length} shown):`,
+    capturesHeading,
     capturesBlock,
     "",
     "Connections:",
@@ -96,13 +167,24 @@ async function buildFocusBlock(
 ): Promise<string | undefined> {
   const items = await db.capturedItem.findMany({
     where: { id: { in: itemIds }, userId },
-    select: { rawText: true, keyIdea: true, contentItem: { select: { title: true } } },
+    select: {
+      rawText: true,
+      keyIdea: true,
+      summary: true,
+      userContext: true,
+      contentItem: { select: { title: true, description: true } },
+    },
   });
   if (items.length === 0) return undefined;
 
   const lines = items.map((it, i) => {
     const title = it.contentItem?.title ?? it.rawText?.slice(0, 80) ?? "Untitled";
-    const idea = it.keyIdea ? ` — ${it.keyIdea}` : "";
+    const gist = [it.keyIdea, it.userContext, it.summary, it.contentItem?.description, it.rawText]
+      .find((part) => part && part.trim().length > 0)
+      ?.replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 240);
+    const idea = gist && gist !== title ? ` — ${gist}` : "";
     return `${i + 1}. "${title}"${idea}`;
   });
 
@@ -155,7 +237,7 @@ export async function addCompanionReply(args: {
   }
 
   const [contextBlock, focusBlock] = await Promise.all([
-    buildCompanionContext(args.userId, db),
+    buildCompanionContext(args.userId, db, args.content.trim()),
     args.contextItemIds && args.contextItemIds.length > 0
       ? buildFocusBlock(args.userId, args.contextItemIds, db)
       : Promise.resolve(undefined),
@@ -165,7 +247,9 @@ export async function addCompanionReply(args: {
     (await generateCompanionResponse({
       contextBlock,
       focusBlock,
-      conversationHistory: thread.messages.map((m) => ({
+      // Only the recent turns: the knowledge-map context block carries the
+      // durable state, so an ever-growing history just burns tokens.
+      conversationHistory: thread.messages.slice(-16).map((m) => ({
         role: m.role,
         content: m.content,
       })),
