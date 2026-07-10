@@ -92,6 +92,10 @@ const EDGE_WEIGHT_GAMMA = 2;
 // exists to show. Past that, each further rank costs ~45%.
 const EDGE_FULL_RANK = 2;
 const EDGE_RANK_FALLOFF = 0.55;
+// Fading distant ranks isn't enough at a hub — a node with 20 edges still
+// paints 20 faint overlapping lines, and those stack into visual clutter.
+// Hard-cut past a node's few strongest connections instead of just dimming.
+const EDGE_MAX_RANK = 4;
 // Every edge stays readable — a weak connection is faint but never invisible —
 // while the strongest land as a thin, subdued line, never a bold one. MAP_LINE
 // is near-white, so these opacities are effectively the on-screen alpha.
@@ -1714,10 +1718,14 @@ export default function MapScreen() {
       });
     }
 
+    // Edges beyond EDGE_MAX_RANK for both endpoints are left out of the map
+    // entirely — undefined at render time means "don't draw", vs. a low
+    // number which still means "draw, faintly."
     const salience = new Map<string, number>();
     for (const e of edges) {
       const key = edgeKey(e.fromItemId, e.toItemId);
-      salience.set(key, edgeSalience(e.weight, bestRank.get(key) ?? 0));
+      const rank = bestRank.get(key) ?? 0;
+      if (rank < EDGE_MAX_RANK) salience.set(key, edgeSalience(e.weight, rank));
     }
     return salience;
   }, [edges]);
@@ -2556,9 +2564,10 @@ export default function MapScreen() {
             const isDomain = cl.kind === 'domain';
             const clFontSize = isDomain ? domainFontSize : topicFontSize;
             // Domain labels own the zoomed-out view and fade as you zoom in.
-            // Sub-topic labels are always visible and tinted their region's
-            // color — unless they would collide with a domain label, in which
-            // case they fade in only once zoomed in enough to clear it.
+            // Sub-topic labels are always visible, faded to the same
+            // plateau as domain labels — unless they would collide with a
+            // domain label, in which case they fade in only once zoomed in
+            // enough to clear it.
             let clOpacity: number;
             let cap: number;
             if (isDomain) {
@@ -2567,11 +2576,11 @@ export default function MapScreen() {
                 : Math.max(0, 0.12 * (1 - (zoom - 1.0) / 0.6));
               cap = 0.28;
             } else if (overlapsDomain(cl)) {
-              clOpacity = zoom <= 1.1 ? 0 : Math.min(0.55, ((zoom - 1.1) / 0.5) * 0.55);
-              cap = 0.55;
+              clOpacity = zoom <= 1.1 ? 0 : Math.min(0.28, ((zoom - 1.1) / 0.5) * 0.28);
+              cap = 0.28;
             } else {
-              clOpacity = 0.55;
-              cap = 0.55;
+              clOpacity = 0.28;
+              cap = 0.28;
             }
             if (clOpacity <= 0.005) return null;
             const dimmed = focusedTopicId && cl.topicId !== focusedTopicId;
@@ -2654,9 +2663,12 @@ export default function MapScreen() {
 
             // Salience maps the strong-few / weak-many split onto both opacity
             // and width: strong connections stay crisp, the long tail recedes.
-            const salience = edgeSalienceByKey.get(key) ?? 0;
-            let edgeOpacity = EDGE_MIN_OPACITY + salience * (EDGE_MAX_OPACITY - EDGE_MIN_OPACITY);
-            const edgeWidth = EDGE_MIN_WIDTH + salience * (EDGE_MAX_WIDTH - EDGE_MIN_WIDTH);
+            // Undefined means past EDGE_MAX_RANK for both endpoints — skip it,
+            // unless the user explicitly selected it in discovery mode.
+            const salience = edgeSalienceByKey.get(key);
+            if (salience === undefined && !isSelectedEdge) return null;
+            let edgeOpacity = EDGE_MIN_OPACITY + (salience ?? 0) * (EDGE_MAX_OPACITY - EDGE_MIN_OPACITY);
+            const edgeWidth = EDGE_MIN_WIDTH + (salience ?? 0) * (EDGE_MAX_WIDTH - EDGE_MIN_WIDTH);
             if (focusedTopicId) {
               const fromNode = nodeById.get(e.fromItemId);
               const toNode = nodeById.get(e.toItemId);
