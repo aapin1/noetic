@@ -66,7 +66,7 @@ const SOCRATIC_FAB_SIZE = 50;
 // Always-dark map colors (map is always dark regardless of theme)
 const MAP_BG = '#060606';
 const MAP_NODE = 'rgba(236,236,236,0.9)';
-const MAP_LINE = 'rgba(255,255,255,0.5)';
+const MAP_LINE = 'rgba(255,255,255,0.92)';
 // Green accent shared by every discovery/multi-select affordance.
 const DISCOVERY_ACCENT = '#7EC8A0';
 // Stable identity for an edge, independent of its array index.
@@ -92,12 +92,13 @@ const EDGE_WEIGHT_GAMMA = 2;
 // exists to show. Past that, each further rank costs ~45%.
 const EDGE_FULL_RANK = 2;
 const EDGE_RANK_FALLOFF = 0.55;
-// Salience 0 is still faintly drawn: a weak connection should be hard to see,
-// not absent. Strongest edges land at roughly today's appearance.
-const EDGE_MIN_OPACITY = 0.04;
-const EDGE_MAX_OPACITY = 0.42;
-const EDGE_MIN_WIDTH = 0.4;
-const EDGE_MAX_WIDTH = 1.5;
+// Every edge stays readable — a weak connection is faint but never invisible —
+// while the strongest land as bold, near-opaque lines. MAP_LINE is near-white,
+// so these opacities are effectively the on-screen alpha.
+const EDGE_MIN_OPACITY = 0.18;
+const EDGE_MAX_OPACITY = 0.72;
+const EDGE_MIN_WIDTH = 0.7;
+const EDGE_MAX_WIDTH = 2.6;
 
 const edgeSalience = (weight: number, rank: number) => {
   const t = Math.max(0, Math.min(1, (weight - EDGE_WEIGHT_FLOOR) / (EDGE_WEIGHT_CEIL - EDGE_WEIGHT_FLOOR)));
@@ -2522,6 +2523,30 @@ export default function MapScreen() {
       { kind: 'IMAGE' as CaptureKind, label: 'images', x: MAP_PAD + LAYOUT_W * 0.8, y: MAP_PAD + LAYOUT_H * 0.15 },
     ] : [];
 
+    // Sub-topic labels are shown at every zoom, except where one would sit on
+    // top of a coarse domain label — there it stays zoom-gated so the two don't
+    // pile up while zoomed out. Approximate each label's world-space box (mono
+    // uppercase, so char advance ≈ 0.6·fontSize + letterSpacing) at the current
+    // zoom and test axis-aligned overlap. Boxes shrink as the user zooms in, so
+    // a colliding pair naturally separates and the sub-topic label appears.
+    const domainFontSize = Math.max(9, Math.min(22, 14 / zoom));
+    const topicFontSize = Math.max(7, Math.min(14, 10 / zoom));
+    const labelHalfBox = (name: string, fontSize: number, letterSpacing: number) => ({
+      hw: (name.length * (fontSize * 0.6 + letterSpacing)) / 2,
+      hh: fontSize / 2,
+    });
+    const domainBoxes = lensMode === 'semantic'
+      ? clusterLabels
+        .filter((cl) => cl.kind === 'domain')
+        .map((cl) => ({ x: cl.x, y: cl.y, ...labelHalfBox(cl.name, domainFontSize, 3.5) }))
+      : [];
+    const overlapsDomain = (cl: { x: number; y: number; name: string }) => {
+      const b = labelHalfBox(cl.name, topicFontSize, 3);
+      return domainBoxes.some(
+        (d) => Math.abs(cl.x - d.x) < b.hw + d.hw && Math.abs(cl.y - d.y) < b.hh + d.hh,
+      );
+    };
+
     return (
       <>
           {/* Cluster labels (semantic mode only) — hierarchical: coarse
@@ -2529,28 +2554,38 @@ export default function MapScreen() {
               topic labels fade in as the user zooms into their region. */}
           {lensMode === 'semantic' && clusterLabels.map((cl) => {
             const isDomain = cl.kind === 'domain';
-            const clFontSize = isDomain
-              ? Math.max(9, Math.min(22, 14 / zoom))
-              : Math.max(7, Math.min(14, 10 / zoom));
-            const clOpacity = isDomain
-              ? (zoom <= 1.0
+            const clFontSize = isDomain ? domainFontSize : topicFontSize;
+            // Domain labels own the zoomed-out view and fade as you zoom in.
+            // Sub-topic labels are always visible and tinted their region's
+            // color — unless they would collide with a domain label, in which
+            // case they fade in only once zoomed in enough to clear it.
+            let clOpacity: number;
+            let cap: number;
+            if (isDomain) {
+              clOpacity = zoom <= 1.0
                 ? 0.12 + (1 - zoom) * 0.10
-                : Math.max(0, 0.12 * (1 - (zoom - 1.0) / 0.6)))
-              : (zoom <= 1.1
-                ? 0
-                : Math.min(0.20, ((zoom - 1.1) / 0.5) * 0.20));
+                : Math.max(0, 0.12 * (1 - (zoom - 1.0) / 0.6));
+              cap = 0.28;
+            } else if (overlapsDomain(cl)) {
+              clOpacity = zoom <= 1.1 ? 0 : Math.min(0.55, ((zoom - 1.1) / 0.5) * 0.55);
+              cap = 0.55;
+            } else {
+              clOpacity = 0.55;
+              cap = 0.55;
+            }
             if (clOpacity <= 0.005) return null;
             const dimmed = focusedTopicId && cl.topicId !== focusedTopicId;
+            const fill = isDomain ? 'rgba(236,236,236,1)' : (clusterColorMap.get(cl.topicId) ?? 'rgba(236,236,236,1)');
             return (
               <SvgText
                 key={`cl-label-${cl.topicId}`}
                 x={cl.x} y={cl.y}
                 fontSize={clFontSize}
                 fontFamily={FontFamily.mono}
-                fill="rgba(236,236,236,1)"
-                fillOpacity={dimmed ? Math.min(0.05, clOpacity) : Math.min(0.28, clOpacity)}
+                fill={fill}
+                fillOpacity={dimmed ? Math.min(0.08, clOpacity) : Math.min(cap, clOpacity)}
                 textAnchor="middle"
-                letterSpacing={3.5}
+                letterSpacing={isDomain ? 3.5 : 3}
               >
                 {cl.name.toUpperCase()}
               </SvgText>
@@ -2602,7 +2637,7 @@ export default function MapScreen() {
           })()}
       </>
     );
-  }, [zoom, lensMode, lensTransitioning, clusterLabels, focusedTopicId, nodes.length]);
+  }, [zoom, lensMode, lensTransitioning, clusterLabels, clusterColorMap, focusedTopicId, nodes.length]);
 
   // Edges + nodes: the bulk of the SVG tree. Keyed on zoomFade, not zoom, so a
   // zoom commit outside the fade band keeps this element identity and React
