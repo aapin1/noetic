@@ -16,7 +16,6 @@ import Animated, {
   useFrameCallback,
   useSharedValue,
   withDelay,
-  withRepeat,
   withSpring,
   withTiming,
   type SharedValue,
@@ -46,7 +45,6 @@ import {
   noFollowLine,
   quietWeekLine,
   rhythmLine,
-  sinceLine,
   timelineTitle,
   topicsKicker,
 } from './copy';
@@ -405,9 +403,10 @@ function Spectrum({ items }: { items: { name: string; count: number }[] }) {
 
 /* ---------------------------------------------------------------- topics --- */
 
-const BUBBLE_BOX_H = 210;
+const BUBBLE_BOX_H = 224;
 const MAX_BUBBLES = 4;
-const MIN_BUBBLE_R = 28;
+const MIN_BUBBLE_R = 24;
+const MAX_BUBBLE_R = 48;
 
 interface Body {
   x: number;
@@ -509,39 +508,46 @@ function TopicBubbles({
   const bh = useSharedValue(BUBBLE_BOX_H);
   const bodies = useSharedValue<Body[]>([]);
 
-  // Radius scales with frequency; the top topic is biggest and wears the accent.
+  // Rank-based radius: items arrive sorted by prominence (`top: i === 0` already
+  // assumes that), so size steps down clearly and monotonically by rank —
+  // biggest, then visibly smaller, smaller again, smallest — rather than by
+  // raw frequency, which could leave close counts looking near-identical.
   const layout = useMemo(() => {
-    const counts = data.map((d) => d.count);
-    const max = Math.max(...counts, 1);
-    const min = Math.min(...counts, 0);
-    const span = Math.max(1, max - min);
-    const maxR = Math.max(MIN_BUBBLE_R + 8, Math.min(46, (w || 320) / 4.2));
+    const maxR = clamp((w || 320) / 4.4, MIN_BUBBLE_R + 14, MAX_BUBBLE_R);
+    const steps = Math.max(1, data.length - 1);
     return data.map((d, i) => {
-      const weight = (d.count - min) / span;
-      const r = Math.max(MIN_BUBBLE_R, 26 + weight * (maxR - 26));
+      const r = data.length === 1 ? maxR : maxR - (i / steps) * (maxR - MIN_BUBBLE_R);
       return { r, fontSize: clamp(r * 0.3, 8.5, 13), name: d.name, top: i === 0 };
     });
   }, [data, w]);
 
-  // Seed positions and gentle velocities once the box is measured.
+  // Seed positions and gentle velocities once the box is measured. Bubbles
+  // are placed one per quadrant (2x2 for up to 4) so they never start
+  // overlapping — an overlapping start was the actual cause of the
+  // "shockwave": the solver spent its first several frames violently
+  // separating bubbles that were dropped on top of each other at random.
   useEffect(() => {
     if (w === 0 || layout.length === 0) return;
     bw.value = w;
     bh.value = BUBBLE_BOX_H;
     const rng = makeRng(seed + data.length * 97);
-    bodies.value = layout.map((L) => {
+    const cols = layout.length > 1 ? 2 : 1;
+    const rows = Math.ceil(layout.length / cols);
+    const qw = w / cols;
+    const qh = BUBBLE_BOX_H / rows;
+    bodies.value = layout.map((L, i) => {
       const r = L.r;
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const cx = col * qw + qw / 2;
+      const cy = row * qh + qh / 2;
+      const jitterX = Math.max(0, qw / 2 - r - 4);
+      const jitterY = Math.max(0, qh / 2 - r - 4);
+      const x = clamp(cx + (rng() * 2 - 1) * jitterX, r, Math.max(r, w - r));
+      const y = clamp(cy + (rng() * 2 - 1) * jitterY, r, Math.max(r, BUBBLE_BOX_H - r));
       const ang = rng() * Math.PI * 2;
-      const sp = 0.4 + rng() * 0.5;
-      return {
-        x: r + rng() * Math.max(1, w - 2 * r),
-        y: r + rng() * Math.max(1, BUBBLE_BOX_H - 2 * r),
-        vx: Math.cos(ang) * sp,
-        vy: Math.sin(ang) * sp,
-        r,
-        sx: 1,
-        sy: 1,
-      };
+      const sp = 0.3 + rng() * 0.3;
+      return { x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r, sx: 1, sy: 1 };
     });
   }, [w, layout, seed, data.length, bodies, bw, bh]);
 
@@ -555,37 +561,40 @@ function TopicBubbles({
     const dt = Math.min(40, info.timeSincePreviousFrame ?? 16) / 16;
     // Soft, jelly-like impacts rather than a rigid-body bounce: a low
     // restitution so velocity doesn't reverse sharply, a partial (not full)
-    // positional correction so overlapping bubbles ease apart over a couple
-    // frames instead of teleporting, and squish scaled by how hard the hit
-    // was so light grazes barely wobble and only real hits deform visibly.
-    const REST = 0.5;
-    const CORRECTION = 0.45;
+    // positional correction so overlapping bubbles ease apart over several
+    // frames instead of teleporting, a slow drift speed so collisions are
+    // infrequent and gentle, and squish scaled by how hard the hit was so
+    // light grazes barely wobble and only real hits deform visibly.
+    const REST = 0.35;
+    const CORRECTION = 0.3;
+    const IMPACT_MIN = 0.03;
+    const IMPACT_MAX = 0.11;
 
     for (let i = 0; i < n; i += 1) {
       const b = bs[i];
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       if (b.x - b.r < 0) {
-        const impact = clampWorklet(Math.abs(b.vx) / 2.4, 0.05, 0.16);
+        const impact = clampWorklet(Math.abs(b.vx) / 2.6, IMPACT_MIN, IMPACT_MAX);
         b.x = b.r;
         b.vx = Math.abs(b.vx) * REST;
         b.sx = 1 - impact;
         b.sy = 1 + impact;
       } else if (b.x + b.r > W) {
-        const impact = clampWorklet(Math.abs(b.vx) / 2.4, 0.05, 0.16);
+        const impact = clampWorklet(Math.abs(b.vx) / 2.6, IMPACT_MIN, IMPACT_MAX);
         b.x = W - b.r;
         b.vx = -Math.abs(b.vx) * REST;
         b.sx = 1 - impact;
         b.sy = 1 + impact;
       }
       if (b.y - b.r < 0) {
-        const impact = clampWorklet(Math.abs(b.vy) / 2.4, 0.05, 0.16);
+        const impact = clampWorklet(Math.abs(b.vy) / 2.6, IMPACT_MIN, IMPACT_MAX);
         b.y = b.r;
         b.vy = Math.abs(b.vy) * REST;
         b.sy = 1 - impact;
         b.sx = 1 + impact;
       } else if (b.y + b.r > H) {
-        const impact = clampWorklet(Math.abs(b.vy) / 2.4, 0.05, 0.16);
+        const impact = clampWorklet(Math.abs(b.vy) / 2.6, IMPACT_MIN, IMPACT_MAX);
         b.y = H - b.r;
         b.vy = -Math.abs(b.vy) * REST;
         b.sy = 1 - impact;
@@ -616,7 +625,7 @@ function TopicBubbles({
           a.vy += diff * ny;
           b.vx -= diff * nx;
           b.vy -= diff * ny;
-          const impact = clampWorklet(Math.abs(avn - bvn) / 2.4, 0.05, 0.16);
+          const impact = clampWorklet(Math.abs(avn - bvn) / 2.6, IMPACT_MIN, IMPACT_MAX);
           const alongX = Math.abs(nx) > Math.abs(ny);
           a.sx = alongX ? 1 - impact : 1 + impact;
           a.sy = alongX ? 1 + impact : 1 - impact;
@@ -628,19 +637,19 @@ function TopicBubbles({
 
     for (let i = 0; i < n; i += 1) {
       const b = bs[i];
-      b.sx += (1 - b.sx) * 0.14;
-      b.sy += (1 - b.sy) * 0.14;
+      b.sx += (1 - b.sx) * 0.12;
+      b.sy += (1 - b.sy) * 0.12;
       const sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
-      if (sp < 0.25) {
+      if (sp < 0.16) {
         if (sp < 0.0001) {
-          b.vx = 0.25;
+          b.vx = 0.16;
         } else {
-          const k = 0.25 / sp;
+          const k = 0.16 / sp;
           b.vx *= k;
           b.vy *= k;
         }
-      } else if (sp > 1.6) {
-        const k = 1.6 / sp;
+      } else if (sp > 1.0) {
+        const k = 1.0 / sp;
         b.vx *= k;
         b.vy *= k;
       }
@@ -678,23 +687,34 @@ function TopicBubbles({
 
 /* ------------------------------------------------------------ new topics --- */
 
-/** A gently pulsing chevron that prompts the user to scroll the rail sideways. */
-function ScrollRightHint({ accent }: { accent: string }) {
+/**
+ * A chevron that stays fully visible until the user starts scrolling the
+ * rail, then fades out in step with scroll progress and is gone once they
+ * reach the end. Tapping it scrolls straight to the end.
+ */
+function ScrollRightHint({
+  accent,
+  progress,
+  onPress,
+}: {
+  accent: string;
+  progress: SharedValue<number>;
+  onPress: () => void;
+}) {
   const c = useThemeColors();
-  const pulse = useSharedValue(0.35);
-
-  useEffect(() => {
-    pulse.value = withRepeat(withTiming(0.9, { duration: 700 }), -1, true);
-  }, [pulse]);
-
-  const anim = useAnimatedStyle(() => ({ opacity: pulse.value }));
+  const anim = useAnimatedStyle(() => ({ opacity: 1 - progress.value }));
 
   return (
-    <Animated.View
-      pointerEvents="none"
-      style={[styles.tlHint, { backgroundColor: c.surface, borderColor: accent }, anim]}
-    >
-      <ChevronRight size={12} color={accent} strokeWidth={2.5} />
+    <Animated.View style={[styles.tlHint, { backgroundColor: c.surface, borderColor: accent }, anim]}>
+      <Pressable
+        onPress={onPress}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel="Scroll to see more topics"
+        style={styles.tlHintPress}
+      >
+        <ChevronRight size={12} color={accent} strokeWidth={2.5} />
+      </Pressable>
     </Animated.View>
   );
 }
@@ -702,36 +722,52 @@ function ScrollRightHint({ accent }: { accent: string }) {
 /**
  * New topics as a horizontal timeline, left to right in the order you first
  * wandered into them. The last node — the most recent — is filled; the rail
- * scrolls sideways if there are more than fit, and a pulsing arrow prompts
- * that there's more to see until the user scrolls to the end.
+ * scrolls sideways if there are more than fit, and an arrow — tappable to
+ * jump to the end — fades out as the user scrolls toward it.
  */
 function DiscoveryTimeline({ items, accent }: { items: string[]; accent: string }) {
   const c = useThemeColors();
+  const scrollRef = useRef<ScrollView>(null);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const containerW = useRef(0);
   const contentW = useRef(0);
+  const progress = useSharedValue(0);
 
-  const evaluate = () => setCanScrollRight(contentW.current - containerW.current > 4);
+  const updateProgress = (offsetX: number) => {
+    const overflow = contentW.current - containerW.current;
+    if (overflow <= 4) {
+      setCanScrollRight(false);
+      return;
+    }
+    const p = clamp(offsetX / overflow, 0, 1);
+    progress.value = p;
+    setCanScrollRight(p < 0.98);
+  };
+
+  const scrollToEnd = () => {
+    scrollRef.current?.scrollTo({
+      x: Math.max(0, contentW.current - containerW.current),
+      animated: true,
+    });
+  };
 
   return (
     <View style={styles.tlWrap}>
       <ScrollView
+        ref={scrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.tlTrack}
-        scrollEventThrottle={32}
+        scrollEventThrottle={16}
         onLayout={(e) => {
           containerW.current = e.nativeEvent.layout.width;
-          evaluate();
+          updateProgress(0);
         }}
         onContentSizeChange={(w) => {
           contentW.current = w;
-          evaluate();
+          updateProgress(0);
         }}
-        onScroll={(e) => {
-          const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
-          setCanScrollRight(contentOffset.x + layoutMeasurement.width < contentSize.width - 4);
-        }}
+        onScroll={(e) => updateProgress(e.nativeEvent.contentOffset.x)}
       >
         {items.map((name, i) => {
           const newest = i === items.length - 1;
@@ -758,7 +794,9 @@ function DiscoveryTimeline({ items, accent }: { items: string[]; accent: string 
           );
         })}
       </ScrollView>
-      {canScrollRight ? <ScrollRightHint accent={accent} /> : null}
+      {canScrollRight ? (
+        <ScrollRightHint accent={accent} progress={progress} onPress={scrollToEnd} />
+      ) : null}
     </View>
   );
 }
@@ -769,7 +807,7 @@ const DIAL = 168;
 const DIAL_R = 42;
 const DIAL_MAX_SPOKE = 26;
 /** Reserved margin around the dial so tick labels sit clear of the longest spoke. */
-const DIAL_TICK_PAD = 16;
+const DIAL_TICK_PAD = 12;
 const WEEKDAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 /**
@@ -1038,8 +1076,8 @@ function Timeline({
 
       {weekdays && weekdays.length === 7 && weekdays.some((n) => n > 0) ? (
         <View style={[styles.weekBlock, { borderTopColor: c.borderSubtle }]}>
-          <Text variant="monoSmall" color="faint" style={styles.weekLabel}>
-            by weekday
+          <Text variant="serif" style={[styles.cardTitle, styles.weekLabel]}>
+            By weekday
           </Text>
           <WeekdayBars weekdays={weekdays} accent={accent} />
         </View>
@@ -1284,11 +1322,6 @@ export function WrappedSection({
             accent={accent}
             weekdays={hasRhythm ? w.weekdayHistogram : undefined}
           />
-          {w.firstCaptureAt ? (
-            <Text variant="monoSmall" color="faint" style={styles.sinceLine}>
-              {sinceLine(w.firstCaptureAt, w.totalCaptures)}
-            </Text>
-          ) : null}
         </RevealCard>
       ) : null}
 
@@ -1421,6 +1454,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  tlHintPress: { flex: 1, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
 
   rhythmHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing[4] },
   rhythmHeadLine: { flex: 1, lineHeight: 24 },
@@ -1500,7 +1534,6 @@ const styles = StyleSheet.create({
   peakDot: { width: 3, height: 3, borderRadius: Radius.full, marginBottom: 4 },
   axisRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing[2] },
   axisLabel: { fontSize: 9 },
-  sinceLine: { marginTop: Spacing[4] },
 
   statRow: { flexDirection: 'row', alignItems: 'center' },
   statPair: { flex: 1, alignItems: 'center', gap: 2 },
