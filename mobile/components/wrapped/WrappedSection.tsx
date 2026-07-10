@@ -16,6 +16,7 @@ import Animated, {
   useFrameCallback,
   useSharedValue,
   withDelay,
+  withRepeat,
   withSpring,
   withTiming,
   type SharedValue,
@@ -23,7 +24,7 @@ import Animated, {
 import Svg, { Circle, Line } from 'react-native-svg';
 import { useIsFocused } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
-import { Image as ImageIcon, Link2, PenLine } from 'lucide-react-native';
+import { ChevronRight, Image as ImageIcon, Link2, PenLine } from 'lucide-react-native';
 import { AccentList, Radius, Spacing, accentFor, hourAccent } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
@@ -405,7 +406,7 @@ function Spectrum({ items }: { items: { name: string; count: number }[] }) {
 /* ---------------------------------------------------------------- topics --- */
 
 const BUBBLE_BOX_H = 210;
-const MAX_BUBBLES = 6;
+const MAX_BUBBLES = 4;
 const MIN_BUBBLE_R = 28;
 
 interface Body {
@@ -634,7 +635,11 @@ function TopicBubbles({
       }
     }
 
-    bodies.value = bs;
+    // Reassign to a new array reference — Reanimated's setter no-ops when the
+    // incoming value is === the current one, and `bs` here still IS
+    // `bodies.value` (mutated in place above), so without the copy every
+    // Bubble's useAnimatedStyle would silently stop re-running.
+    bodies.value = bs.slice();
   }, false);
 
   useEffect(() => {
@@ -662,44 +667,88 @@ function TopicBubbles({
 
 /* ------------------------------------------------------------ new topics --- */
 
+/** A gently pulsing chevron that prompts the user to scroll the rail sideways. */
+function ScrollRightHint({ accent }: { accent: string }) {
+  const c = useThemeColors();
+  const pulse = useSharedValue(0.35);
+
+  useEffect(() => {
+    pulse.value = withRepeat(withTiming(0.9, { duration: 700 }), -1, true);
+  }, [pulse]);
+
+  const anim = useAnimatedStyle(() => ({ opacity: pulse.value }));
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.tlHint, { backgroundColor: c.surface, borderColor: accent }, anim]}
+    >
+      <ChevronRight size={12} color={accent} strokeWidth={2.5} />
+    </Animated.View>
+  );
+}
+
 /**
  * New topics as a horizontal timeline, left to right in the order you first
  * wandered into them. The last node — the most recent — is filled; the rail
- * scrolls sideways if there are more than fit.
+ * scrolls sideways if there are more than fit, and a pulsing arrow prompts
+ * that there's more to see until the user scrolls to the end.
  */
 function DiscoveryTimeline({ items, accent }: { items: string[]; accent: string }) {
   const c = useThemeColors();
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const containerW = useRef(0);
+  const contentW = useRef(0);
+
+  const evaluate = () => setCanScrollRight(contentW.current - containerW.current > 4);
+
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.tlTrack}
-    >
-      {items.map((name, i) => {
-        const newest = i === items.length - 1;
-        return (
-          <View key={name} style={styles.tlNode}>
-            <View style={styles.tlLineRow}>
-              <View style={[styles.tlLine, { backgroundColor: accent, opacity: i === 0 ? 0 : 0.3 }]} />
-              <View
-                style={[
-                  styles.tlDot,
-                  newest
-                    ? { backgroundColor: accent }
-                    : { backgroundColor: c.surface, borderWidth: 1.5, borderColor: accent },
-                ]}
-              />
-              <View
-                style={[styles.tlLine, { backgroundColor: accent, opacity: newest ? 0 : 0.3 }]}
-              />
+    <View style={styles.tlWrap}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tlTrack}
+        scrollEventThrottle={32}
+        onLayout={(e) => {
+          containerW.current = e.nativeEvent.layout.width;
+          evaluate();
+        }}
+        onContentSizeChange={(w) => {
+          contentW.current = w;
+          evaluate();
+        }}
+        onScroll={(e) => {
+          const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+          setCanScrollRight(contentOffset.x + layoutMeasurement.width < contentSize.width - 4);
+        }}
+      >
+        {items.map((name, i) => {
+          const newest = i === items.length - 1;
+          return (
+            <View key={name} style={styles.tlNode}>
+              <View style={styles.tlLineRow}>
+                <View style={[styles.tlLine, { backgroundColor: accent, opacity: i === 0 ? 0 : 0.3 }]} />
+                <View
+                  style={[
+                    styles.tlDot,
+                    newest
+                      ? { backgroundColor: accent }
+                      : { backgroundColor: c.surface, borderWidth: 1.5, borderColor: accent },
+                  ]}
+                />
+                <View
+                  style={[styles.tlLine, { backgroundColor: accent, opacity: newest ? 0 : 0.3 }]}
+                />
+              </View>
+              <Text variant="serif" numberOfLines={2} style={styles.tlLabel}>
+                {name}
+              </Text>
             </View>
-            <Text variant="serif" numberOfLines={2} style={styles.tlLabel}>
-              {name}
-            </Text>
-          </View>
-        );
-      })}
-    </ScrollView>
+          );
+        })}
+      </ScrollView>
+      {canScrollRight ? <ScrollRightHint accent={accent} /> : null}
+    </View>
   );
 }
 
@@ -708,6 +757,8 @@ function DiscoveryTimeline({ items, accent }: { items: string[]; accent: string 
 const DIAL = 168;
 const DIAL_R = 42;
 const DIAL_MAX_SPOKE = 26;
+/** Reserved margin around the dial so tick labels sit clear of the longest spoke. */
+const DIAL_TICK_PAD = 22;
 const WEEKDAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 /**
@@ -1132,7 +1183,7 @@ export function WrappedSection({
 
       {w.topTopics.length > 0 ? (
         <RevealCard {...cardProps} onReveal={() => setTopicsActive(true)}>
-          <Text variant="monoSmall" color="faint" style={styles.overline}>
+          <Text variant="serif" style={[styles.cardTitle, styles.overline]}>
             {topicsKicker(seed)}
           </Text>
           <TopicBubbles items={w.topTopics} accent={accent} seed={seed} active={topicsActive} />
@@ -1192,6 +1243,9 @@ export function WrappedSection({
 
       {archetype ? (
         <RevealCard {...cardProps}>
+          <Text variant="serif" style={styles.cardTitle}>
+            your type
+          </Text>
           <View style={styles.archetypeRow}>
             <View style={[styles.glyph, { borderColor: accent }]}>
               {React.createElement(ARCHETYPE_ICONS[archetype.format], {
@@ -1201,9 +1255,6 @@ export function WrappedSection({
               })}
             </View>
             <View style={styles.archetypeText}>
-              <Text variant="monoSmall" color="faint">
-                your type
-              </Text>
               <Text variant="h3">{archetype.name}</Text>
               <Text variant="serif" color="secondary" style={styles.archetypeLine}>
                 {archetype.line}
@@ -1338,30 +1389,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
 
+  tlWrap: { position: 'relative' },
   tlTrack: { marginTop: Spacing[5], paddingBottom: Spacing[1] },
   tlNode: { width: 96, alignItems: 'center' },
   tlLineRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
   tlLine: { flex: 1, height: 1.5 },
   tlDot: { width: 9, height: 9, borderRadius: Radius.full },
   tlLabel: { marginTop: Spacing[3], textAlign: 'center', fontSize: 13, lineHeight: 17 },
+  tlHint: {
+    position: 'absolute',
+    right: -4,
+    top: Spacing[5],
+    width: 20,
+    height: 20,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   rhythmHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing[4] },
   rhythmHeadLine: { flex: 1, lineHeight: 24 },
   dialWrap: {
-    width: DIAL,
-    height: DIAL,
+    width: DIAL + DIAL_TICK_PAD * 2,
+    height: DIAL + DIAL_TICK_PAD * 2,
     alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: Spacing[5],
   },
-  // Pulled in from the container edges to sit just outside the spokes, so the
-  // labels read as part of the dial rather than floating in the corners.
+  // Pinned to the outer edge of the padded wrap — entirely outside the SVG's
+  // bounding box — so a label can never overlap a spoke no matter how long it is.
   dialTick: { position: 'absolute', fontSize: 9 },
-  tickTop: { top: 26, left: 0, right: 0, textAlign: 'center' },
-  tickBottom: { bottom: 26, left: 0, right: 0, textAlign: 'center' },
-  tickLeft: { left: 22, top: DIAL / 2 - 6 },
-  tickRight: { right: 22, top: DIAL / 2 - 6 },
+  tickTop: { top: 0, left: 0, right: 0, textAlign: 'center' },
+  tickBottom: { bottom: 0, left: 0, right: 0, textAlign: 'center' },
+  tickLeft: { left: 0, top: (DIAL + DIAL_TICK_PAD * 2) / 2 - 6 },
+  tickRight: { right: 0, top: (DIAL + DIAL_TICK_PAD * 2) / 2 - 6 },
   weekBlock: { marginTop: Spacing[5], paddingTop: Spacing[4], borderTopWidth: 1 },
   weekLabel: { marginBottom: Spacing[3] },
   weekRow: {
@@ -1387,7 +1450,7 @@ const styles = StyleSheet.create({
   },
   currentStreak: { marginTop: Spacing[3] },
 
-  archetypeRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[5] },
+  archetypeRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[5], marginTop: Spacing[4] },
   glyph: {
     width: 52,
     height: 52,
