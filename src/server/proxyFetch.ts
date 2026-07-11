@@ -22,7 +22,7 @@ export type ProxySession = {
   close: () => Promise<void>;
 };
 
-const DEFAULT_TIMEOUT_MS = 15000;
+const DEFAULT_TIMEOUT_MS = 12000;
 
 export function createProxySession(): ProxySession {
   const template = process.env.RESIDENTIAL_PROXY_URL?.trim();

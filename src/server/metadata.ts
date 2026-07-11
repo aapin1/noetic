@@ -418,7 +418,7 @@ async function fetchRedditMetadata(normalized: string, originalUrl: string): Pro
     type RedditPayload = { data?: { children?: { kind?: string; data?: RedditPost }[] } }[];
 
     let payload: RedditPayload | undefined;
-    const direct = await fetchWithTimeout(jsonUrl, { headers: YT_HEADERS, redirect: "follow" }, 10000).catch(
+    const direct = await fetchWithTimeout(jsonUrl, { headers: YT_HEADERS, redirect: "follow" }, 8000).catch(
       () => undefined,
     );
     if (direct?.ok) {
@@ -429,7 +429,7 @@ async function fetchRedditMetadata(normalized: string, originalUrl: string): Pro
       const session = createProxySession();
       try {
         if (!session.viaProxy) return undefined;
-        const retry = await session.fetch(jsonUrl, { headers: YT_HEADERS, redirect: "follow" }, 10000);
+        const retry = await session.fetch(jsonUrl, { headers: YT_HEADERS, redirect: "follow" }, 8000);
         if (!retry.ok) return undefined;
         payload = (await retry.json()) as RedditPayload;
       } finally {
@@ -494,8 +494,12 @@ async function fetchSupadataTranscript(url: string, mode: "native" | "auto"): Pr
   if (!apiKey) return undefined;
 
   try {
+    // `native` (existing captions) responds quickly, so cap it tightly — it's
+    // a rare fallback and the user is waiting on the capture sheet. `auto`
+    // legitimately needs time when it falls back to AI transcription.
+    const timeoutMs = mode === "native" ? 12000 : 20000;
     const endpoint = `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(url)}&text=true&mode=${mode}`;
-    const res = await fetchWithTimeout(endpoint, { headers: { "x-api-key": apiKey } }, 25000);
+    const res = await fetchWithTimeout(endpoint, { headers: { "x-api-key": apiKey } }, timeoutMs);
     if (!res.ok) return undefined;
 
     const payload = (await res.json()) as { content?: unknown };
@@ -610,9 +614,18 @@ export async function fetchMetadata(url: string): Promise<{ metadata?: Extracted
   }
 
   if (parsed.hostname.includes("youtube.com") || parsed.hostname === "youtu.be") {
-    const oembedResponse = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(normalized)}&format=json`);
+    // oEmbed (title/thumbnail) and the InnerTube caption fetch are
+    // independent — run them concurrently to keep capture latency down.
+    const [oembedResponse, scraped] = await Promise.all([
+      fetchWithTimeout(
+        `https://www.youtube.com/oembed?url=${encodeURIComponent(normalized)}&format=json`,
+        {},
+        8000,
+      ).catch(() => undefined),
+      fetchYouTubeBodyText(normalized),
+    ]);
 
-    if (oembedResponse.ok) {
+    if (oembedResponse?.ok) {
       const payload = (await oembedResponse.json()) as {
         title?: string;
         author_name?: string;
@@ -620,13 +633,11 @@ export async function fetchMetadata(url: string): Promise<{ metadata?: Extracted
         provider_name?: string;
       };
 
-      // In-house caption scrape first (through the residential proxy in
-      // production — direct datacenter requests get a captionless
-      // interstitial); Supadata is only the paid fallback. Native captions
-      // only — nearly every YouTube video has them, and it keeps the cost at
-      // 1 credit per video.
+      // In-house InnerTube caption fetch first; Supadata is only the paid
+      // fallback. Native captions only — nearly every YouTube video has
+      // them, and it keeps the cost at 1 credit per video.
       let body: { text: string; source: BodySource; viaProxy?: boolean; viaSupadata?: boolean } | undefined =
-        await fetchYouTubeBodyText(normalized);
+        scraped;
       if (!body || body.source !== "transcript") {
         const transcript = await fetchSupadataTranscript(normalized, "native");
         if (transcript) body = { text: transcript, source: "transcript", viaSupadata: true };
@@ -670,7 +681,7 @@ export async function fetchMetadata(url: string): Promise<{ metadata?: Extracted
         "user-agent": "MNEME/1.0 (+https://mneme.app)",
         accept: "text/html,application/xhtml+xml",
       },
-    }, 12000);
+    }, 8000);
   } catch {
     response = undefined;
   }
@@ -683,7 +694,7 @@ export async function fetchMetadata(url: string): Promise<{ metadata?: Extracted
     try {
       const retry = await fetchWithTimeout(normalized, {
         headers: { ...YT_HEADERS, accept: "text/html,application/xhtml+xml" },
-      }, 12000);
+      }, 8000);
       if (retry.ok) {
         const retried = parseMetadataFromHtml(await retry.text(), normalized);
         const better =
@@ -707,7 +718,7 @@ export async function fetchMetadata(url: string): Promise<{ metadata?: Extracted
         const res = await session.fetch(
           normalized,
           { headers: { ...YT_HEADERS, accept: "text/html,application/xhtml+xml" } },
-          15000,
+          12000,
         );
         if (res.ok) {
           const retried = parseMetadataFromHtml(await res.text(), normalized);

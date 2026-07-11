@@ -17,6 +17,8 @@ import { fetchMetadata, scoreContentConfidence } from "@/server/metadata";
 const DEFAULT_BATTERY: { label: string; url: string; minChars: number }[] = [
   { label: "youtube talk (captions)", url: "https://www.youtube.com/watch?v=arj7oStGLkU", minChars: 800 },
   { label: "youtube music video", url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", minChars: 150 },
+  { label: "youtu.be short link", url: "https://youtu.be/arj7oStGLkU", minChars: 800 },
+  { label: "wikipedia", url: "https://en.wikipedia.org/wiki/Spaced_repetition", minChars: 800 },
   { label: "substack essay", url: "https://www.experimental-history.com/p/28-slightly-rude-notes-on-writing", minChars: 800 },
   { label: "personal blog (pg)", url: "https://www.paulgraham.com/greatwork.html", minChars: 800 },
   { label: "news article", url: "https://www.bbc.co.uk/news/articles/c2dy6e8klw0o", minChars: 800 },

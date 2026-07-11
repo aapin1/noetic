@@ -82,7 +82,7 @@ describe("metadata helpers", () => {
 
     const result = await fetchMetadata("https://www.youtube.com/watch?v=abc123&feature=share");
 
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(fetchMock.mock.calls.map((call) => call[0])).toContain(
       "https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Dabc123&format=json",
     );
     expect(result.requiresManualInput).toBe(false);
@@ -110,7 +110,7 @@ describe("metadata helpers", () => {
 
     const result = await fetchMetadata("https://youtu.be/abc123?si=foo");
 
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(fetchMock.mock.calls.map((call) => call[0])).toContain(
       "https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Dabc123&format=json",
     );
     expect(result.requiresManualInput).toBe(false);
@@ -133,7 +133,7 @@ describe("metadata helpers", () => {
 
     const result = await fetchMetadata("https://www.youtube.com/shorts/abc123?feature=share");
 
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(fetchMock.mock.calls.map((call) => call[0])).toContain(
       "https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Dabc123&format=json",
     );
     expect(result.requiresManualInput).toBe(false);
