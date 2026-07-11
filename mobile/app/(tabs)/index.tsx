@@ -31,7 +31,7 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
-import { ChevronDown, ChevronUp, Crosshair, Moon, Search, Sun, Trash2Icon } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Crosshair, Moon, Search, Sun, Trash2Icon, type LucideIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
@@ -41,6 +41,7 @@ import { InfoModal } from '@/components/ui/InfoModal';
 import { useTutorial, useTutorialTarget } from '@/contexts/TutorialContext';
 import { TUTORIAL_EXAMPLE_LINK, TUTORIAL_TARGET } from '@/constants/tutorialSteps';
 import { LoadingDots } from '@/components/ui/LoadingDots';
+import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
 import type { AppThemeColors } from '@/constants/theme';
 import type {
@@ -764,7 +765,7 @@ function Toolbar({
   c: AppThemeColors;
 }) {
   const iconColor = (active: boolean) => (active ? c.text : c.muted);
-  const tools: { id: Exclude<ToolMode, 'default'>; label: string; Icon: React.ComponentType<{ size: number; color: string; strokeWidth: number }> }[] = [
+  const tools: { id: Exclude<ToolMode, 'default'>; label: string; Icon: LucideIcon }[] = [
     { id: 'discover', label: 'Discover connections', Icon: Crosshair },
     { id: 'search', label: 'Find on map', Icon: Search },
   ];
@@ -3192,10 +3193,11 @@ export default function MapScreen() {
         {/* First-load state: map is still fetching, show a clear signal */}
         {graphLoading && nodes.length === 0 && (
           <View style={styles.emptyHint} pointerEvents="none">
-            <LoadingDots size={6} color="rgba(236,236,236,0.4)" />
-            <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.28)', textAlign: 'center', marginTop: Spacing[5], letterSpacing: 1 }}>
-              drawing your map
-            </Text>
+            <AsciiLoader
+              size={110}
+              color="rgba(236,236,236,0.55)"
+              message={['drawing your map…', 'plotting your ideas…', 'charting the territory…']}
+            />
           </View>
         )}
 
@@ -3403,7 +3405,18 @@ export default function MapScreen() {
                       c={c}
                     />
                   )}
-                  {step === 2 && (
+                  {step === 2 && busy && (
+                    <AsciiLoader
+                      size={120}
+                      message={[
+                        'reading it closely…',
+                        'placing it on your map…',
+                        'connecting it to what you know…',
+                        'writing your insight…',
+                      ]}
+                    />
+                  )}
+                  {step === 2 && !busy && (
                     <StepTwo
                       reaction={reaction} setReaction={setReaction}
                       error={captureError} busy={busy}

@@ -12,7 +12,7 @@ import { Text } from '@/components/ui/Text';
 import { Badge } from '@/components/ui/Badge';
 import { InsightLine } from '@/components/InsightLine';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { SkeletonCard } from '@/components/ui/Skeleton';
+import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
 
@@ -61,7 +61,7 @@ export default function InsightDetailScreen() {
             <ChevronLeftIcon size={22} color={c.text} />
           </Pressable>
         </View>
-        <SkeletonCard />
+        <AsciiLoader fill size={96} message={['pulling it from memory…', 'unfolding the insight…']} />
       </SafeAreaView>
     );
   }

@@ -20,14 +20,20 @@ export async function POST(request: Request) {
       userContext: input.userContext,
       topicHints: input.topicHints,
     });
-    const positionChallenge = await checkCaptureAgainstPositions({
+    // Position tension runs in the background: the challenge row it persists
+    // is surfaced by the positions screens, and no client reads it from this
+    // response — so blocking the commit on an extra LLM round-trip only added
+    // user-visible seconds.
+    void checkCaptureAgainstPositions({
       userId,
       capturedItemId: capture.id,
       topicIds: capture.topics.map((t) => t.topicId),
       captureTitle: capture.title,
       captureText: capture.rawText ?? capture.summary ?? "",
+    }).catch((err) => {
+      console.error("checkCaptureAgainstPositions (background) failed", err);
     });
-    return { ...capture, positionChallenge };
+    return { ...capture, positionChallenge: null };
   }, 201);
 }
 

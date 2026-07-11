@@ -11,7 +11,7 @@ import {
   UsersIcon,
   ZapIcon,
 } from 'lucide-react-native';
-import { FontFamily, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { SocraticProvider, useSocratic } from '@/contexts/SocraticContext';
@@ -20,7 +20,7 @@ import { TUTORIAL_TARGET } from '@/constants/tutorialSteps';
 import { api } from '@/lib/api';
 
 function TabBarIcon({ color, icon: Icon }: { color: string; icon: React.ElementType }) {
-  return <Icon size={18} color={color} strokeWidth={1.2} />;
+  return <Icon size={22} color={color} strokeWidth={1.4} />;
 }
 
 function SocraticFab() {
@@ -86,19 +86,15 @@ function TabsWithFab() {
           headerShown: false,
           tabBarActiveTintColor: c.text,
           tabBarInactiveTintColor: c.faint,
-          tabBarLabelStyle: {
-            fontFamily: FontFamily.mono,
-            fontSize: 9,
-            letterSpacing: 2,
-            marginBottom: Platform.OS === 'ios' ? 0 : 4,
-            textTransform: 'uppercase',
-          },
+          // Icons only — the labels crowded the bar; the title still names the
+          // tab for screen readers via accessibility.
+          tabBarShowLabel: false,
           tabBarStyle: {
             backgroundColor: c.tabBar,
             borderTopWidth: 1,
             borderTopColor: c.tabBarBorder,
             height: Platform.OS === 'ios' ? 86 : 68,
-            paddingTop: 10,
+            paddingTop: 14,
           },
           tabBarItemStyle: {
             paddingVertical: 4,

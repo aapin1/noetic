@@ -15,6 +15,7 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { EditableAvatar } from '@/components/profile/EditableAvatar';
+import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { WrappedSection } from '@/components/wrapped/WrappedSection';
 import type { OwnerProfile } from '@/types/api';
 
@@ -25,11 +26,16 @@ export default function YouScreen() {
   const scrollY = useSharedValue(0);
   const scroller = useRef<Animated.ScrollView>(null);
 
-  const { data: profile, loading, refetch } = useApiQuery(
+  const { data: profile, refetch } = useApiQuery(
     () => api.profile.me().then((r) => r.profile),
     [],
   );
-  const { data: wrapped, refetch: refetchWrapped } = useApiQuery(() => api.profile.wrapped(), []);
+  const { data: wrapped, loading: wrappedLoading, refetch: refetchWrapped } = useApiQuery(() => api.profile.wrapped(), []);
+
+  // Pull-to-refresh only. Focus revalidation happens silently in the
+  // background — tying the spinner to `loading` made every visit to this tab
+  // open with a loading state even though cached data was already on screen.
+  const [refreshing, setRefreshing] = useState(false);
 
   // Optimistic override so a freshly-changed avatar shows immediately.
   const [override, setOverride] = useState<OwnerProfile | null>(null);
@@ -47,8 +53,13 @@ export default function YouScreen() {
   );
 
   const handleRefresh = useCallback(async () => {
-    await Promise.all([refetch(), refetchWrapped()]);
-    await refreshProfile();
+    setRefreshing(true);
+    try {
+      await Promise.all([refetch(), refetchWrapped()]);
+      await refreshProfile();
+    } finally {
+      setRefreshing(false);
+    }
   }, [refetch, refetchWrapped, refreshProfile]);
 
   const handleAvatarChanged = useCallback(
@@ -78,7 +89,7 @@ export default function YouScreen() {
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={() => void handleRefresh()} tintColor={c.text} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => void handleRefresh()} tintColor={c.text} />
         }
         showsVerticalScrollIndicator={false}
       >
@@ -97,7 +108,15 @@ export default function YouScreen() {
           ) : null}
         </View>
 
-        <WrappedSection scrollY={scrollY} stats={wrapped} />
+        {!wrapped && wrappedLoading ? (
+          <AsciiLoader
+            variant="cat"
+            size={72}
+            message={['counting your captures…', 'dusting the shelves…', 'adding it all up…']}
+          />
+        ) : (
+          <WrappedSection scrollY={scrollY} stats={wrapped} />
+        )}
 
         <View style={styles.editButtonWrap}>
           <Button

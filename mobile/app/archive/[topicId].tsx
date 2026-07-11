@@ -1,14 +1,15 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeftIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { Spacing, Radius } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { FolderGrid } from '@/components/archive/FolderGrid';
 import { FileList } from '@/components/archive/FileList';
 
@@ -19,6 +20,17 @@ export default function ArchiveFolderScreen() {
 
   const { data, loading, error, refetch } = useApiQuery(() => api.archive.get(topicId), [topicId]);
 
+  // Pull-to-refresh only — background revalidation never shows the spinner.
+  const [refreshing, setRefreshing] = useState(false);
+  const onPullRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
+
   if (loading && !data) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
@@ -27,13 +39,7 @@ export default function ArchiveFolderScreen() {
             <ChevronLeftIcon size={22} color={c.text} />
           </Pressable>
         </View>
-        <View style={styles.skeletonGrid}>
-          {[0, 1, 2].map((i) => (
-            <View key={i} style={styles.skeletonTile}>
-              <View style={[styles.skeletonIcon, { backgroundColor: c.elevated }]} />
-            </View>
-          ))}
-        </View>
+        <AsciiLoader fill variant="cat" size={80} message="pulling the folder…" />
       </SafeAreaView>
     );
   }
@@ -62,7 +68,7 @@ export default function ArchiveFolderScreen() {
 
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void refetch()} tintColor={c.text} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onPullRefresh()} tintColor={c.text} />}
         showsVerticalScrollIndicator={false}
       >
         {isEmpty && (
@@ -108,16 +114,4 @@ const styles = StyleSheet.create({
     paddingTop: Spacing[20],
     alignItems: 'center',
   },
-  skeletonGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: Spacing[4],
-    paddingTop: Spacing[4],
-  },
-  skeletonTile: {
-    width: '33.33%',
-    alignItems: 'center',
-    paddingVertical: Spacing[4],
-  },
-  skeletonIcon: { width: 56, height: 46, borderRadius: Radius.sm },
 });

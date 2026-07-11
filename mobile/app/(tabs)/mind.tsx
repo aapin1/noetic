@@ -27,7 +27,7 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { ScreenIntro } from '@/components/ui/ScreenIntro';
-import { SkeletonCard } from '@/components/ui/Skeleton';
+import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import type {
   ContradictionCard,
   ConvergenceSignal,
@@ -486,7 +486,11 @@ export default function MindScreen() {
         <View style={[styles.headerFlat, { borderBottomColor: c.border }]}>
           <Text variant="wordmark">mind</Text>
         </View>
-        <SkeletonCard />
+        <AsciiLoader
+          fill
+          size={96}
+          message={['sifting your mind…', 'weighing tensions…', 'connecting the dots…']}
+        />
       </SafeAreaView>
     );
   }

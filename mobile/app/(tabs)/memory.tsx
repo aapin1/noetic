@@ -9,6 +9,7 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { ScreenIntro } from '@/components/ui/ScreenIntro';
+import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { FolderGrid } from '@/components/archive/FolderGrid';
 import type { ArchiveFolderSummary } from '@/types/api';
 
@@ -45,7 +46,17 @@ export default function ArchiveScreen() {
   const { data, loading, refetch } = useApiQuery(() => api.archive.list(), []);
   const folders = data?.folders ?? null;
 
-  const onRefresh = useCallback(() => void refetch(), [refetch]);
+  // Pull-to-refresh only — focus revalidation stays silent so switching to
+  // this tab doesn't flash a spinner over data that's already on screen.
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
 
   // Refresh when the tab regains focus so the archive never shows stale entries.
   useFocusEffect(useCallback(() => { void refetch(); }, [refetch]));
@@ -101,19 +112,16 @@ export default function ArchiveScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={onRefresh} tintColor={c.text} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={c.text} />
         }
         showsVerticalScrollIndicator={false}
       >
         {loading && !folders && (
-          <View style={styles.skeletonGrid}>
-            {[0, 1, 2, 3, 4, 5].map((i) => (
-              <View key={i} style={styles.skeletonTile}>
-                <View style={[styles.skeletonIcon, { backgroundColor: c.elevated }]} />
-                <View style={[styles.skeletonLine, { backgroundColor: c.elevated }]} />
-              </View>
-            ))}
-          </View>
+          <AsciiLoader
+            variant="cat"
+            size={80}
+            message={['opening the stacks…', 'sorting your folders…', 'shooing dust bunnies…']}
+          />
         )}
 
         {isEmpty && (
@@ -156,16 +164,4 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   content: { paddingHorizontal: Spacing[4], paddingBottom: Spacing[16] },
-  skeletonGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingTop: Spacing[4],
-  },
-  skeletonTile: {
-    width: '33.33%',
-    alignItems: 'center',
-    paddingVertical: Spacing[4],
-  },
-  skeletonIcon: { width: 56, height: 46, borderRadius: Radius.sm },
-  skeletonLine: { width: '70%', height: 10, borderRadius: Radius.xs, marginTop: Spacing[2] },
 });

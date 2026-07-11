@@ -17,7 +17,7 @@ import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Avatar } from '@/components/ui/Avatar';
-import { SkeletonCard } from '@/components/ui/Skeleton';
+import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { ScreenIntro } from '@/components/ui/ScreenIntro';
 import { MiniMap } from '@/components/MiniMap';
@@ -172,6 +172,18 @@ export default function PulseScreen() {
 
   useFocusEffect(useCallback(() => { void refetch(); }, [refetch]));
 
+  // Pull-to-refresh only — focus revalidation stays silent so switching to
+  // this tab doesn't flash a spinner over data that's already on screen.
+  const [refreshing, setRefreshing] = useState(false);
+  const onPullRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
+
   useEffect(() => {
     if (data) setFriends(data.friends);
   }, [data]);
@@ -229,7 +241,11 @@ export default function PulseScreen() {
       />
 
       {loading && !data ? (
-        <SkeletonCard />
+        <AsciiLoader
+          fill
+          size={88}
+          message={['taking the pulse…', 'ringing your friends…', 'listening in…']}
+        />
       ) : error ? (
         <View style={styles.centered}>
           <Text variant="monoSmall" style={{ color: c.muted }}>pulse unavailable</Text>
@@ -240,7 +256,7 @@ export default function PulseScreen() {
       ) : (
         <ScrollView
           contentContainerStyle={styles.content}
-          refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void refetch()} tintColor={c.text} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onPullRefresh()} tintColor={c.text} />}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >

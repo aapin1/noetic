@@ -14,6 +14,8 @@ interface Props {
   density?: number;
   intensity?: number;
   showLines?: boolean;
+  /** Overrides the theme text color — e.g. to stay light on the always-dark map. */
+  color?: string;
 }
 
 const BRAIN_ART = [
@@ -41,7 +43,7 @@ const BRAIN_ART = [
 // regardless of the font actually used.
 const MEASURE_FONT = 10;
 
-export function Brain({ size = 220 }: Props) {
+export function Brain({ size = 220, color }: Props) {
   const c = useThemeColors();
   const [fontSize, setFontSize] = useState<number | null>(null);
 
@@ -71,7 +73,7 @@ export function Brain({ size = 220 }: Props) {
             // Braille rows read as one continuous image only when the lines sit
             // tight against each other, so pin line height to the glyph size.
             lineHeight: fontSize,
-            color: c.text,
+            color: color ?? c.text,
             opacity: 0.45,
             textAlign: 'left',
           }}
