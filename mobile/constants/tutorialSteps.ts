@@ -24,16 +24,13 @@ export interface TutorialStep {
   title: string;
   body: string;
   target: TutorialTarget;
-  // Which side of the screen the card is pinned to. Defaults to top when
-  // there's a hole to stay clear of (bottom otherwise) — override when the
-  // hole sits inside a full-screen surface that already has its own text
-  // above it (the capture form), where a top-pinned card would cover it.
-  cardSide?: 'top' | 'bottom';
   // Registered/tab steps normally only advance when the user touches the
-  // real control. Set this when the target might never resolve (e.g. it
-  // depends on something from an earlier step that could have failed) so the
-  // card's own button is always there as a way to move on.
+  // real control. Set this when the step is a "look at this" spotlight (or
+  // the target might never resolve) so the card's own button is always there
+  // as a way to move on.
   dismissible?: boolean;
+  // An illustration rendered inside the card, above the body text.
+  visual?: 'share';
 }
 
 // Registered-target ids, shared between the steps, the context, and the
@@ -44,13 +41,25 @@ export const TUTORIAL_TARGET = {
   captureCommit: 'capture-commit',
   nodeTap: 'node-tap',
   nodeDelete: 'node-delete',
+  atlasLenses: 'atlas-lenses',
+  atlasRecenter: 'atlas-recenter',
+  atlasDiscover: 'atlas-discover',
   companionFab: 'companion-fab',
 } as const;
 
-// A stable, richly-scrapeable article used for the guided first capture. If the
-// site is unreachable the capture still succeeds (the flow just falls back to
-// the "what was it about?" prompt), so the tutorial never hard-fails on it.
+// The link shown pre-filled in the guided first capture. Display-only: the
+// walkthrough's capture is fully simulated on-device (no scrape, no AI, no
+// server write), so the flow is identical every time and can never fail.
 export const TUTORIAL_EXAMPLE_LINK = 'https://www.paulgraham.com/greatwork.html';
+
+// The local-only node the simulated capture drops on the map. It mirrors what
+// a real capture of the example link would produce, lives purely in component
+// state, and is removed by the delete step (or when the walkthrough ends).
+export const TUTORIAL_DEMO_NODE = {
+  id: 'tutorial-demo-node',
+  label: 'How to Do Great Work',
+  keyIdea: 'pick work that matches your curiosity, aim at the frontier, and notice the gaps others overlook.',
+} as const;
 
 // Tab steps come in prompt/info pairs: the prompt only ever asks the user to
 // open the real tab (advances on navigation), and the matching info card only
@@ -59,125 +68,132 @@ export const TUTORIAL_EXAMPLE_LINK = 'https://www.paulgraham.com/greatwork.html'
 export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'welcome',
-    title: 'welcome',
-    body: "a real walkthrough — you'll save one actual entry as you go. mneme turns what you read, watch, and think about into a connected map of your mind, built entirely from what you commit.",
+    title: 'welcome to mneme',
+    body: 'mneme turns what you read, watch, and think into a living map of your mind. this walkthrough saves one practice entry — it takes about a minute.',
     target: { kind: 'card' },
   },
   {
     id: 'capture',
     title: 'capture',
-    body: 'tap + whenever you want to save something — a link, a note, a quote, or a photo. we\'ve queued up a real example link so you can see the whole flow.',
+    body: "the + takes anything: articles, blog posts, youtube videos, tweets, stray thoughts, photos. we've loaded an example link for you — tap the +.",
     target: { kind: 'registered', id: TUTORIAL_TARGET.captureFab },
   },
   {
     id: 'capture-next',
     title: 'the source',
-    body: "that's the link, ready to go. tap next and mneme fetches the actual page — title, text, everything — so it understands what's in it before asking your take.",
+    body: 'your link is queued. mneme reads the page itself, so you never have to summarize what you save. tap next.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.captureNext },
-    cardSide: 'bottom',
   },
   {
     id: 'capture-commit',
-    title: 'react',
-    body: "committing saves this to your map — mneme reads it, places it near related ideas, and builds the connections behind your insights over time. a reaction is optional; commit whenever you're ready.",
+    title: 'make it yours',
+    body: "add a one-line reaction if something struck you — optional, just for you. then hit commit to place it on your map.",
     target: { kind: 'registered', id: TUTORIAL_TARGET.captureCommit },
-    cardSide: 'bottom',
   },
   {
     id: 'atlas',
-    title: 'atlas',
-    body: "that's your first node, placed by what it's about — this is the map. as you save more, lines will form between ideas that relate. next, a quick look at what you can do with a node.",
+    title: 'your first node',
+    body: 'there it lands. every node is placed by meaning, so related ideas sit close — and as you save more, lines form between them.',
     target: { kind: 'card' },
   },
   {
     id: 'node-manage-prompt',
-    title: 'manage nodes',
-    body: "every node opens the same way. tap your new node to see it again.",
+    title: 'open a node',
+    body: "tap your new node to see what's inside.",
     target: { kind: 'registered', id: TUTORIAL_TARGET.nodeTap },
-    dismissible: true,
   },
   {
     id: 'node-manage-info',
     title: 'node detail',
-    body: "this is what opens for any node: its title, your reaction, and a link to its full insight — the AI-built writeup of how it connects to everything else.",
+    body: "each node keeps its source, your reaction, and its topics. real captures also get an insight — mneme's short take on how the idea fits your thinking.",
     target: { kind: 'card' },
   },
   {
     id: 'node-delete',
-    title: 'delete',
-    body: "you can remove anything you've saved. tap delete below, then confirm — this was just a demo entry, so clearing it keeps your real map accurate.",
+    title: "you're in control",
+    body: 'anything can be removed. this node was just practice — tap delete, then confirm.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.nodeDelete },
+  },
+  {
+    id: 'lenses',
+    title: 'three lenses',
+    body: 'one map, three views: semantic groups ideas by meaning, time replays your thinking as it happened, source splits links, thoughts, and images.',
+    target: { kind: 'registered', id: TUTORIAL_TARGET.atlasLenses },
     dismissible: true,
-    // The delete button sits inside the right-side drawer, which has its own
-    // text above it — a top-pinned card would cover that, same issue as the
-    // capture form.
-    cardSide: 'bottom',
+  },
+  {
+    id: 'recenter',
+    title: 'recenter',
+    body: 'lost in the map? this snaps everything back into view.',
+    target: { kind: 'registered', id: TUTORIAL_TARGET.atlasRecenter },
+    dismissible: true,
+  },
+  {
+    id: 'multi-select',
+    title: 'multi-select',
+    body: 'the crosshair selects a few nodes — or the lines between them — so you can open them in companion and explore what connects them. the magnifier beside it searches the map.',
+    target: { kind: 'registered', id: TUTORIAL_TARGET.atlasDiscover },
+    dismissible: true,
   },
   {
     id: 'share',
-    title: 'share to mneme',
-    body: "you don't need to open mneme to save something. from any app, hit share and pick mneme — it saves instantly, and you can peek at the insight right after.",
+    title: 'the fast way in',
+    body: "you'll mostly capture without opening mneme: from your browser, youtube, substack — anywhere — hit share and pick mneme. it's saved and mapped before you're back to reading.",
     target: { kind: 'card' },
+    visual: 'share',
   },
   {
     id: 'archive-prompt',
     title: 'archive',
-    body: "archive holds everything you've ever saved. tap archive to open it.",
+    body: 'the map is for seeing; archive is for finding. tap archive below.',
     target: { kind: 'tab', index: 1, seg: 'memory' },
   },
   {
     id: 'archive-info',
     title: 'archive',
-    body: "everything you've committed, filed into folders by topic — and a search box that reaches across all of it. nothing here disappears.",
+    body: "everything you've saved, filed into topic folders — with search that digs through all of it. nothing is ever lost.",
     target: { kind: 'card' },
   },
   {
     id: 'pulse-prompt',
     title: 'pulse',
-    body: 'pulse is where you follow other people and see their maps. tap pulse to open it.',
+    body: "pulse is other people's maps. tap pulse.",
     target: { kind: 'tab', index: 2, seg: 'pulse' },
   },
   {
     id: 'pulse-info',
     title: 'pulse',
-    body: "follow anyone by their handle and see what they're saving and how their map connects — a window into someone else's mind, built the same way as yours.",
+    body: "follow friends by handle to see what they're saving and how their ideas connect — and where their map overlaps yours.",
     target: { kind: 'card' },
   },
   {
     id: 'mind-prompt',
     title: 'mind',
-    body: "mind surfaces patterns across everything you've saved. tap mind to open it.",
+    body: 'mind is where patterns surface. tap mind.',
     target: { kind: 'tab', index: 3, seg: 'mind' },
   },
   {
     id: 'mind-info',
     title: 'mind',
-    body: "this is where mneme connects the dots — recurring themes, tensions between ideas, and insights it noticed across everything on your map.",
+    body: 'recurring themes, tensions between your ideas, threads forming over weeks — mneme watches the whole map and reports what it notices.',
     target: { kind: 'card' },
   },
   {
     id: 'you-prompt',
     title: 'you',
-    body: 'you is your profile and account settings. tap you to open it.',
+    body: 'last stop — your profile, stats, and settings live under you. tap it.',
     target: { kind: 'tab', index: 4, seg: 'profile' },
-  },
-  {
-    id: 'you-info',
-    title: 'you',
-    body: 'your profile, account, and preferences live here. want to see this walkthrough again? the ⓣ icon on the atlas screen starts it over any time.',
-    target: { kind: 'card' },
   },
   {
     id: 'companion',
     title: 'companion',
-    body: "one more thing: the floating chat icon is mneme's companion. tap it any time to talk through what you've saved — ask it questions, or let it ask you some.",
+    body: "one more thing — the chat bubble is your companion. tap it to say hello; you can talk through anything you've saved, any time.",
     target: { kind: 'registered', id: TUTORIAL_TARGET.companionFab },
-    dismissible: true,
   },
   {
     id: 'done',
-    title: "you're set",
-    body: "that's the map. go save something real — mneme gets more useful the more it has to work with.",
+    title: "that's mneme",
+    body: 'save one real thing today — the map gets smarter with every node. replay this tour any time from the ⓣ on atlas.',
     target: { kind: 'card' },
   },
 ];

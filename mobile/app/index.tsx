@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { Brain } from '@/components/Brain';
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const BRAIN_SIZE = Math.min(SCREEN_W * 0.72, 300);
+const BRAIN_SIZE = Math.min(SCREEN_W * 0.8, 340);
 
 const TAGLINE = '> save. connect. remember.';
 const TYPE_MS = 55;
@@ -70,14 +70,14 @@ export default function LandingScreen() {
   useEffect(() => {
     const breathe = Animated.loop(
       Animated.sequence([
-        Animated.timing(breath, { toValue: 1, duration: 2600, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(breath, { toValue: 0, duration: 2600, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(breath, { toValue: 1, duration: 1900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(breath, { toValue: 0, duration: 1900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
       ]),
     );
     const swing = Animated.loop(
       Animated.sequence([
-        Animated.timing(sway, { toValue: 1, duration: 3800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(sway, { toValue: 0, duration: 3800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(sway, { toValue: 1, duration: 2800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(sway, { toValue: 0, duration: 2800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       ]),
     );
     const entrance = Animated.stagger(160, [
@@ -119,7 +119,7 @@ export default function LandingScreen() {
         </Animated.View>
         <Animated.View style={rise(enterCopy)}>
           <Text variant="h1" style={styles.line}>
-            Save what catches your eye.
+            Turn what catches your eye into a map of your mind.
           </Text>
         </Animated.View>
         <Animated.View style={rise(enterCta)}>

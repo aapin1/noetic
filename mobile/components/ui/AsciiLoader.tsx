@@ -39,6 +39,11 @@ const CAT_FRAMES = [
 const MESSAGE_INTERVAL_MS = 2000;
 const CAT_FRAME_MS = 420;
 const SPIN_MS = 6500;
+// Enough revolutions to outlast any real loading state. One long timing
+// instead of Animated.loop: the loop restarts each iteration through a JS
+// round-trip, which could hitch and visibly jump the rotation at the end of
+// every cycle.
+const SPIN_TURNS = 10000;
 
 /**
  * The app's quirky "working on it" screen: a slowly rotating ASCII brain (or a
@@ -54,17 +59,16 @@ export function AsciiLoader({ size = 96, message, variant = 'brain', color, fill
   const spin = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (variant !== 'brain' || idle) return;
-    const loop = Animated.loop(
-      Animated.timing(spin, {
-        toValue: 1,
-        duration: SPIN_MS,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
+    const anim = Animated.timing(spin, {
+      toValue: SPIN_TURNS,
+      duration: SPIN_MS * SPIN_TURNS,
+      easing: Easing.linear,
+      useNativeDriver: true,
+    });
+    anim.start();
+    return () => anim.stop();
   }, [spin, variant, idle]);
+  // Extrapolates past [0,1], so one turn per SPIN_MS with no loop boundary.
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   // A gentle breathing pulse layered on the spin so it reads as alive.

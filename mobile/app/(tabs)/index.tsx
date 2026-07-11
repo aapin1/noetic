@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
@@ -39,7 +40,7 @@ import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { useTutorial, useTutorialTarget } from '@/contexts/TutorialContext';
-import { TUTORIAL_EXAMPLE_LINK, TUTORIAL_TARGET } from '@/constants/tutorialSteps';
+import { TUTORIAL_DEMO_NODE, TUTORIAL_EXAMPLE_LINK, TUTORIAL_TARGET } from '@/constants/tutorialSteps';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
@@ -191,6 +192,10 @@ const CLUSTER_PALETTE = [
 
 // Recent threshold: 14 days
 const RECENT_MS = 14 * 24 * 60 * 60 * 1000;
+
+// One-time flag: the first time a source can't be read, a popup explains why
+// and what the "what was it about?" box is for. Never shown again after that.
+const UNREADABLE_EXPLAINED_KEY = 'mneme_unreadable_source_explained';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -495,7 +500,7 @@ function StepOne({
   mode: CaptureMode; setMode: (m: CaptureMode) => void;
   payload: string; setPayload: (s: string) => void;
   imageUri: string | null; uploading: boolean; onPickImage: (source: 'camera' | 'library') => void;
-  error: string; onNext: () => void; onClose: () => void; onPaste: () => void;
+  error: string; onNext: () => boolean; onClose: () => void; onPaste: () => void;
   c: AppThemeColors;
   firstCapture?: boolean;
 }) {
@@ -578,11 +583,16 @@ function StepOne({
         )}
         <Divider c={c} />
         <View style={sh.actions}>
-          <Pressable onPress={onClose} style={sh.secondaryBtn}>
+          {/* Locked while this step is guided: closing here would leave the
+              walkthrough pointing at a form that no longer exists. The card's
+              own exit remains the way out. */}
+          <Pressable onPress={onClose} disabled={nextTarget.isActive} style={[sh.secondaryBtn, { opacity: nextTarget.isActive ? 0.35 : 1 }]}>
             <Text variant="monoSmall" style={{ color: c.muted }}>close ✕</Text>
           </Pressable>
           <Pressable
-            onPress={() => { onNext(); nextTarget.press(); }}
+            // Advance the walkthrough only when the form actually advanced —
+            // a validation error must keep the tutorial on this step too.
+            onPress={() => { if (onNext()) nextTarget.press(); }}
             style={[sh.primaryBtn, { backgroundColor: c.text }]}
           >
             <Text variant="monoSmall" style={{ color: c.background }}>next →</Text>
@@ -655,24 +665,6 @@ function StepTwo({
   // own account afterwards. Waiting here was pure friction.
   const commitDisabled = busy;
   const commitTarget = useTutorialTarget(TUTORIAL_TARGET.captureCommit);
-  const { setStepNote } = useTutorial();
-
-  // The moment the "couldn't fully read this" state actually happens during
-  // the walkthrough, swap in a card that explains it — rather than assuming
-  // upfront that it will, or leaving the red text unexplained.
-  useEffect(() => {
-    if (!commitTarget.isActive) return;
-    setStepNote(
-      needsContext
-        ? "mneme scans and tries to understand whatever you save — this time it could only partly read the source. you can optionally add a few words to help, typed or spoken, but there's no rush. commit whenever you're ready."
-        : null,
-    );
-    // The fallback box is inert during the walkthrough (see below) — make
-    // sure any keyboard already up from the reaction field doesn't linger
-    // and obscure it once it appears.
-    if (needsContext) Keyboard.dismiss();
-    return () => setStepNote(null);
-  }, [commitTarget.isActive, needsContext, setStepNote]);
 
   return (
     <View>
@@ -701,15 +693,10 @@ function StepTwo({
               <Text variant="monoSmall" style={[sh.inputLabel, { color: contextThin ? c.danger : c.muted }]}>
                 WHAT WAS IT ABOUT?_
               </Text>
-              {/* Inert during the walkthrough: this box is only being shown
-                  off, not something the demo needs filled in, and letting it
-                  grab the keyboard or open the mic mid-tutorial derails both. */}
-              <View pointerEvents={commitTarget.isActive ? 'none' : 'auto'}>
-                <VoiceNoteButton
-                  onText={(t) => setUserContext(userContext ? `${userContext.trim()} ${t}` : t)}
-                  onError={onVoiceError}
-                />
-              </View>
+              <VoiceNoteButton
+                onText={(t) => setUserContext(userContext ? `${userContext.trim()} ${t}` : t)}
+                onError={onVoiceError}
+              />
             </View>
             <TextInput
               style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
@@ -718,7 +705,6 @@ function StepTwo({
               placeholder="a few sentences in your own words. speak or type."
               placeholderTextColor={c.faint}
               multiline
-              editable={!commitTarget.isActive}
             />
             <Text variant="monoSmall" style={{ color: c.faint, marginTop: Spacing[2] }}>
               {contextThin
@@ -732,7 +718,9 @@ function StepTwo({
         )}
         <Divider c={c} />
         <View style={sh.actions}>
-          <Pressable onPress={onBack} style={sh.secondaryBtn}>
+          {/* Locked while guided, same as StepOne's close — the walkthrough
+              expects commit next, not a return to the form. */}
+          <Pressable onPress={onBack} disabled={commitTarget.isActive} style={[sh.secondaryBtn, { opacity: commitTarget.isActive ? 0.35 : 1 }]}>
             <Text variant="monoSmall" style={{ color: c.muted }}>← back</Text>
           </Pressable>
           <Pressable
@@ -784,6 +772,10 @@ function Toolbar({
     { id: 'search', label: 'Find on map', Icon: Search },
   ];
 
+  // Walkthrough spotlights for the individual buttons, not the whole pill.
+  const recenterTarget = useTutorialTarget(TUTORIAL_TARGET.atlasRecenter);
+  const discoverTarget = useTutorialTarget(TUTORIAL_TARGET.atlasDiscover);
+
   const recenterVisible = !!onRecenter && showRecenter !== false;
 
   return (
@@ -791,6 +783,8 @@ function Toolbar({
       {recenterVisible && (
         <>
           <Pressable
+            ref={recenterTarget.ref}
+            onLayout={recenterTarget.onLayout}
             onPress={onRecenter}
             style={tb.btn}
             accessibilityLabel="Fit all points in view"
@@ -808,10 +802,13 @@ function Toolbar({
       )}
       {tools.map((tool, i) => {
         const active = toolMode === tool.id;
+        const isDiscover = tool.id === 'discover';
         return (
           <React.Fragment key={tool.id}>
             {i > 0 && <View style={[tb.sep, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />}
             <Pressable
+              ref={isDiscover ? discoverTarget.ref : undefined}
+              onLayout={isDiscover ? discoverTarget.onLayout : undefined}
               onPress={() => setToolMode(active ? 'default' : tool.id)}
               style={[tb.btn, active && { backgroundColor: 'rgba(255,255,255,0.08)' }]}
               accessibilityLabel={tool.label}
@@ -1251,6 +1248,9 @@ export default function MapScreen() {
   // control specifically, not any node — reused below by id match.
   const nodeTarget = useTutorialTarget(TUTORIAL_TARGET.nodeTap);
   const deleteTarget = useTutorialTarget(TUTORIAL_TARGET.nodeDelete);
+  // "Look at this" spotlight step on the lens picker. (The toolbar buttons
+  // register their own targets inside Toolbar.)
+  const lensTarget = useTutorialTarget(TUTORIAL_TARGET.atlasLenses);
   const [infoVisible, setInfoVisible] = useState(false);
   // Measured header height, so the timeline rail can center itself in the
   // actual gap below the header instead of guessing. Falls back to a sane
@@ -1292,7 +1292,22 @@ export default function MapScreen() {
 
   useFocusEffect(refetchMapData);
 
-  const nodes = graphData?.nodes ?? [];
+  // The walkthrough's practice capture. Local-only — it is never sent to the
+  // server, so the guided flow makes no API/AI calls and behaves identically
+  // every time. Injected into the rendered node list; removed by the delete
+  // step, and purged below whenever the walkthrough ends.
+  const [demoNode, setDemoNode] = useState<GraphNode | null>(null);
+  // Also catches a simulated save that lands after an early exit — the node
+  // arriving re-runs this effect, so it can never outlive the walkthrough.
+  useEffect(() => {
+    if (!tutorialActive && demoNode) setDemoNode(null);
+  }, [tutorialActive, demoNode]);
+
+  const serverNodes = graphData?.nodes;
+  const nodes = useMemo<GraphNode[]>(() => {
+    const base = serverNodes ?? [];
+    return demoNode ? [...base, demoNode] : base;
+  }, [serverNodes, demoNode]);
   const edges = graphData?.edges ?? [];
   const clusters = graphData?.clusters ?? [];
 
@@ -2153,6 +2168,14 @@ export default function MapScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            // The walkthrough's practice node only exists locally — clearing
+            // the state is the whole delete, no server round-trip.
+            if (node.id === TUTORIAL_DEMO_NODE.id) {
+              setDemoNode(null);
+              closeDrawer();
+              if (tutorialActive) notifyTargetPressed(TUTORIAL_TARGET.nodeDelete);
+              return;
+            }
             setDeletingNode(true);
             try {
               await api.captures.delete(node.id);
@@ -2191,20 +2214,48 @@ export default function MapScreen() {
   const [userContext, setUserContext] = useState('');
   const preflightSeq = useRef(0);
 
+  // First time ever that a source comes back unreadable, explain what
+  // happened and what to do about it — after that the inline red line and
+  // the context box speak for themselves.
+  const [unreadableInfoVisible, setUnreadableInfoVisible] = useState(false);
+  useEffect(() => {
+    if (mode !== 'link' || preflight?.confidence !== 'thin') return;
+    void AsyncStorage.getItem(UNREADABLE_EXPLAINED_KEY).then((seen) => {
+      if (seen) return;
+      void AsyncStorage.setItem(UNREADABLE_EXPLAINED_KEY, '1');
+      // The reaction field may be focused — drop the keyboard so the popup
+      // (and the context box under it) is fully visible.
+      Keyboard.dismiss();
+      setUnreadableInfoVisible(true);
+    });
+  }, [preflight, mode]);
+
   const runPreflight = useCallback((url: string) => {
     const seq = ++preflightSeq.current;
     setPreflight(null);
     setPreflightLoading(true);
+    const apply = (res: CapturePreflight) => {
+      if (preflightSeq.current !== seq) return;
+      setPreflight(res);
+      setPreflightLoading(false);
+    };
+    // During the walkthrough the capture is simulated: no scrape, just a
+    // beat of "reading…" then a hard-coded rich read, so the demo can never
+    // hit a slow or unreadable source.
+    if (tutorialActive) {
+      setTimeout(() => apply({
+        confidence: 'rich',
+        title: TUTORIAL_DEMO_NODE.label,
+        bodySource: 'article',
+      }), 900);
+      return;
+    }
     api.captures
       .preflight(url)
       // A failed preflight means the scrape failed — treat it as unreadable.
       .catch((): CapturePreflight => ({ confidence: 'thin' }))
-      .then((res) => {
-        if (preflightSeq.current !== seq) return;
-        setPreflight(res);
-        setPreflightLoading(false);
-      });
-  }, []);
+      .then(apply);
+  }, [tutorialActive]);
   const [newNodeId, setNewNodeId] = useState<string | null>(null);
   const landingAnim = useRef(new RNAnimated.Value(0)).current;
   const animatingRef = useRef(false);
@@ -2256,12 +2307,14 @@ export default function MapScreen() {
     });
   }, [slideY]);
 
-  const goNext = useCallback(() => {
+  // Returns whether the form actually advanced, so the walkthrough can key
+  // its own progress off real success rather than the button press.
+  const goNext = useCallback((): boolean => {
     if (mode === 'image') {
-      if (uploading) { setCaptureError('Still reading the image…'); return; }
-      if (!mediaUrl) { setCaptureError('Add an image first.'); return; }
+      if (uploading) { setCaptureError('Still reading the image…'); return false; }
+      if (!mediaUrl) { setCaptureError('Add an image first.'); return false; }
     } else if (!payload.trim()) {
-      setCaptureError('Enter a URL or thought first.'); return;
+      setCaptureError('Enter a URL or thought first.'); return false;
     }
     // Drop the keyboard as we advance to the reaction step so it doesn't cover
     // the preflight status or the reaction field on the way in.
@@ -2270,6 +2323,7 @@ export default function MapScreen() {
       runPreflight(normalizeLinkInput(payload));
     }
     setCaptureError(''); setStep(2);
+    return true;
   }, [mode, payload, mediaUrl, uploading, runPreflight]);
 
   const shareParams = useLocalSearchParams<{
@@ -2351,6 +2405,30 @@ export default function MapScreen() {
     // saving state or the map while the insight is generated.
     Keyboard.dismiss();
     setBusy(true); setCaptureError('');
+    // Walkthrough commit is simulated end-to-end: a beat of the saving loader,
+    // then a local demo node dropped at the centre of the current viewport —
+    // no server write, no AI, nothing that can vary or fail. The landing ring
+    // and ease-in animations are the same ones a real capture triggers.
+    if (tutorialActive) {
+      await new Promise((r) => setTimeout(r, 1600));
+      const worldX = savedVB.current.x + (SW / 2) / savedZoom.current;
+      const worldY = savedVB.current.y + (SH / 2) / savedZoom.current;
+      setDemoNode({
+        id: TUTORIAL_DEMO_NODE.id,
+        label: TUTORIAL_DEMO_NODE.label,
+        kind: 'LINK',
+        topics: [],
+        capturedAt: new Date().toISOString(),
+        reaction: reaction.trim() || null,
+        keyIdea: TUTORIAL_DEMO_NODE.keyIdea,
+        x: Math.min(0.92, Math.max(0.08, (worldX - MAP_PAD) / LAYOUT_W)),
+        y: Math.min(0.92, Math.max(0.08, (worldY - MAP_PAD) / LAYOUT_H)),
+      });
+      setNewNodeId(TUTORIAL_DEMO_NODE.id);
+      setBusy(false);
+      closeCapture();
+      return;
+    }
     try {
       let kind: CaptureKind = 'TEXT';
       let url: string | undefined;
@@ -2369,14 +2447,7 @@ export default function MapScreen() {
       setNewNodeId(res.id);
       refetchMapData();
       closeCapture();
-      // During the walkthrough, stay on the map so the user sees their first
-      // node land instead of being whisked to the insight screen. The
-      // walkthrough itself already advanced when the commit button was
-      // pressed, independent of this request's outcome, so it never stalls
-      // on a slow or failed save.
-      if (!tutorialActive) {
-        router.push(`/insight/${res.id}` as never);
-      }
+      router.push(`/insight/${res.id}` as never);
     } catch (e) {
       setCaptureError(e instanceof Error ? e.message : 'Capture failed.');
     } finally {
@@ -2865,10 +2936,10 @@ export default function MapScreen() {
         const screenY = (p.y - settledCam.y) * settledCam.zoom;
         const HIT = 38;
         if (screenX < -HIT || screenX > SW + HIT || screenY < -HIT || screenY > SH + HIT) return null;
-        // The walkthrough's node-management step points at the demo
-        // node specifically, so its rect is only reported while that's
-        // both the active target and the node being rendered.
-        const isTutorialNode = nodeTarget.isActive && node.id === newNodeId;
+        // The walkthrough's node-management step points at the demo node
+        // specifically (by its stable id — newNodeId is cleared as soon as
+        // the landing animation ends, well before this step activates).
+        const isTutorialNode = nodeTarget.isActive && node.id === TUTORIAL_DEMO_NODE.id;
         return (
           <Pressable
             key={node.id}
@@ -2911,7 +2982,7 @@ export default function MapScreen() {
       })}
     </View>
   ), [
-    toolMode, edges, pos, settledCam, nodes, nodeTarget, newNodeId,
+    toolMode, edges, pos, settledCam, nodes, nodeTarget,
     selectedNode, toggleDiscoveryEdge, toggleDiscoveryNode, closeDrawer,
     openDrawer, lensMode, clusterLabels, handleClusterTap,
   ]);
@@ -3042,8 +3113,15 @@ export default function MapScreen() {
                   <Text style={{ color: 'rgba(236,236,236,0.35)', fontSize: 16 }}>ⓣ</Text>
                 </Pressable>
               </View>
-              {/* Lens picker */}
-              <View style={styles.lensRow} pointerEvents="box-none">
+              {/* Lens picker — registered so the walkthrough can spotlight it.
+                  collapsable={false} keeps the View measurable on Android. */}
+              <View
+                ref={lensTarget.ref}
+                onLayout={lensTarget.onLayout}
+                collapsable={false}
+                style={styles.lensRow}
+                pointerEvents="box-none"
+              >
                 {(['semantic', 'temporal', 'source'] as LensMode[]).map((l, i) => {
                   const label = l === 'temporal' ? 'time' : l;
                   const active = lensMode === l;
@@ -3080,7 +3158,10 @@ export default function MapScreen() {
                 toolMode={toolMode}
                 setToolMode={setToolMode}
                 onRecenter={() => centerOnNodes()}
-                showRecenter={nodes.length > 0 && !showCapture}
+                // Kept visible through the walkthrough even if the map is
+                // empty (the demo node was just deleted), so its spotlight
+                // step always has a real button to frame.
+                showRecenter={(nodes.length > 0 || tutorialActive) && !showCapture}
                 c={c}
               />
             </View>
@@ -3103,6 +3184,13 @@ export default function MapScreen() {
           onClose={() => setInfoVisible(false)}
           title="atlas"
           body="Your knowledge map. Every node is something you saved. Lines appear when ideas share a topic, contradict each other, or grow out of one another. Switch lenses to sort the map by meaning, time, or source."
+        />
+
+        <InfoModal
+          visible={unreadableInfoVisible}
+          onClose={() => setUnreadableInfoVisible(false)}
+          title="couldn't read that source"
+          body="mneme tried to read the page but was blocked — some sites shut out automated readers. when that happens, just give it a few words about the piece, typed or spoken with the mic, and mneme builds the node and its connections from your summary instead."
         />
 
         {/* Info panel (top-right map summary) */}
@@ -3309,12 +3397,15 @@ export default function MapScreen() {
                         {selectedNode.topics.slice(0, 4).map((t) => t.name).join(' · ')}
                       </Text>
                     )}
-                    <Pressable
-                      onPress={() => { closeDrawer(); router.push(`/insight/${selectedNode.id}` as never); }}
-                      style={{ marginTop: Spacing[2] }}
-                    >
-                      <Text variant="monoSmall" color="muted">view insight →</Text>
-                    </Pressable>
+                    {/* The practice node has no server-side insight to open. */}
+                    {selectedNode.id !== TUTORIAL_DEMO_NODE.id && (
+                      <Pressable
+                        onPress={() => { closeDrawer(); router.push(`/insight/${selectedNode.id}` as never); }}
+                        style={{ marginTop: Spacing[2] }}
+                      >
+                        <Text variant="monoSmall" color="muted">view insight →</Text>
+                      </Pressable>
+                    )}
                     <Pressable
                       ref={deleteTarget.isActive ? deleteTarget.ref : undefined}
                       onLayout={deleteTarget.isActive ? deleteTarget.onLayout : undefined}
@@ -3419,19 +3510,28 @@ export default function MapScreen() {
                       ]}
                     />
                   )}
-                  {step === 2 && !busy && (
-                    <StepTwo
-                      reaction={reaction} setReaction={setReaction}
-                      error={captureError} busy={busy}
-                      onBack={() => { setStep(1); setCaptureError(''); }}
-                      onCommit={() => void commit()}
-                      c={c}
-                      isLink={mode === 'link'}
-                      preflight={preflight}
-                      preflightLoading={preflightLoading}
-                      userContext={userContext} setUserContext={setUserContext}
-                      onVoiceError={setCaptureError}
-                    />
+                  {/* Hidden rather than unmounted while saving: a remount
+                      after the save would re-fire the reaction field's
+                      autoFocus and flash the keyboard over the closing
+                      sheet / the map. */}
+                  {step === 2 && (
+                    <View
+                      style={busy ? styles.hidden : null}
+                      pointerEvents={busy ? 'none' : 'auto'}
+                    >
+                      <StepTwo
+                        reaction={reaction} setReaction={setReaction}
+                        error={captureError} busy={busy}
+                        onBack={() => { setStep(1); setCaptureError(''); }}
+                        onCommit={() => void commit()}
+                        c={c}
+                        isLink={mode === 'link'}
+                        preflight={preflight}
+                        preflightLoading={preflightLoading}
+                        userContext={userContext} setUserContext={setUserContext}
+                        onVoiceError={setCaptureError}
+                      />
+                    </View>
                   )}
                 </View>
               </ScrollView>
@@ -3447,6 +3547,7 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, overflow: 'hidden' },
   flex: { flex: 1 },
+  hidden: { display: 'none' },
   header: {
     position: 'absolute',
     top: 0, left: 0, right: 0,

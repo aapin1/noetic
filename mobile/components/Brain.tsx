@@ -43,7 +43,7 @@ const BRAIN_ART = [
 // regardless of the font actually used.
 const MEASURE_FONT = 10;
 
-export function Brain({ size = 220, color }: Props) {
+export function Brain({ size = 220, color, intensity = 0.45 }: Props) {
   const c = useThemeColors();
   const [fontSize, setFontSize] = useState<number | null>(null);
 
@@ -74,7 +74,7 @@ export function Brain({ size = 220, color }: Props) {
             // tight against each other, so pin line height to the glyph size.
             lineHeight: fontSize,
             color: color ?? c.text,
-            opacity: 0.45,
+            opacity: intensity,
             textAlign: 'left',
           }}
         >
