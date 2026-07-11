@@ -9,6 +9,7 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { TutorialProvider } from '@/contexts/TutorialContext';
 import { TutorialOverlay } from '@/components/ui/TutorialOverlay';
+import { KeyboardDismissButton } from '@/components/ui/KeyboardDismissButton';
 import { hydrateQueryCache } from '@/hooks/useApiQuery';
 import { warmBackend } from '@/lib/api';
 
@@ -55,6 +56,8 @@ export default function RootLayout() {
                 <Stack.Screen name="+not-found" />
               </Stack>
               <TutorialOverlay />
+              {/* After the overlay so it stays tappable mid-walkthrough. */}
+              <KeyboardDismissButton />
             </TutorialProvider>
           </AuthProvider>
         </ThemeProvider>

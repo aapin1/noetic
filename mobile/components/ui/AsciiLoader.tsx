@@ -39,11 +39,14 @@ const CAT_FRAMES = [
 const MESSAGE_INTERVAL_MS = 2000;
 const CAT_FRAME_MS = 420;
 const SPIN_MS = 6500;
-// Enough revolutions to outlast any real loading state. One long timing
-// instead of Animated.loop: the loop restarts each iteration through a JS
-// round-trip, which could hitch and visibly jump the rotation at the end of
-// every cycle.
-const SPIN_TURNS = 10000;
+// Revolutions per animation pass. A native-driver timing precomputes one
+// frame-table entry per 16.7ms of its duration, so the duration must stay
+// bounded — a huge turn count melts into millions of entries and crashes the
+// JS engine ("Property storage exceeds 196607 properties"). Five turns keeps
+// the table tiny while making the loop boundary rare, and the pass ends at
+// exactly 5×360° — the same angle it restarts from — so even a hitch at the
+// boundary can never read as the spin jumping ahead.
+const SPIN_TURNS = 5;
 
 /**
  * The app's quirky "working on it" screen: a slowly rotating ASCII brain (or a
@@ -59,16 +62,18 @@ export function AsciiLoader({ size = 96, message, variant = 'brain', color, fill
   const spin = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (variant !== 'brain' || idle) return;
-    const anim = Animated.timing(spin, {
-      toValue: SPIN_TURNS,
-      duration: SPIN_MS * SPIN_TURNS,
-      easing: Easing.linear,
-      useNativeDriver: true,
-    });
-    anim.start();
-    return () => anim.stop();
+    const loop = Animated.loop(
+      Animated.timing(spin, {
+        toValue: SPIN_TURNS,
+        duration: SPIN_MS * SPIN_TURNS,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
   }, [spin, variant, idle]);
-  // Extrapolates past [0,1], so one turn per SPIN_MS with no loop boundary.
+  // Extrapolates past [0,1], so one turn per SPIN_MS across the whole pass.
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   // A gentle breathing pulse layered on the spin so it reads as alive.
