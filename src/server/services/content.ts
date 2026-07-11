@@ -167,6 +167,20 @@ export async function ingestUrl(url: string, db: DbClient = prisma) {
   }
 
   const metadata = fetched.metadata;
+
+  // One structured line per extraction so proxy success rate and Supadata
+  // credit burn are visible in production (Render) logs.
+  console.log(
+    JSON.stringify({
+      event: "extraction",
+      domain: metadata.sourceDomain,
+      bodySource: metadata.bodySource ?? null,
+      confidence: scoreContentConfidence(metadata),
+      usedProxy: metadata.usedProxy ?? false,
+      usedSupadata: metadata.usedSupadata ?? false,
+    }),
+  );
+
   const canonicalUrl = metadata.canonicalUrl!;
   const source = await ensureContentSource(db, metadata.sourceName, metadata.sourceDomain);
   const contentType = await ensureContentType(db, metadata.contentType);

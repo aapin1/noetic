@@ -35,6 +35,13 @@ services:
       # content (optional; extraction degrades gracefully without it).
       - key: SUPADATA_API_KEY
         sync: false
+      # Rotating residential proxy (e.g. Webshare) for hosts that bot-wall
+      # datacenter IPs. URL template; an optional {session} placeholder pins a
+      # multi-request extraction to one exit IP, e.g.
+      # http://user-{session}:pass@p.webshare.io:80
+      # Optional: without it the in-house scrapers fetch directly.
+      - key: RESIDENTIAL_PROXY_URL
+        sync: false
       - key: OPENAI_VISION_MODEL
         value: gpt-4o
       # Cloudflare R2 object storage for capture images.

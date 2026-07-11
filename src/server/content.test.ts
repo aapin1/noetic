@@ -4,6 +4,7 @@ import { fetchMetadata } from "@/server/metadata";
 
 vi.mock("@/server/metadata", () => ({
   fetchMetadata: vi.fn().mockResolvedValue({ requiresManualInput: true }),
+  scoreContentConfidence: vi.fn().mockReturnValue("thin"),
   sourceSlug: (name: string) => name.toLowerCase().replace(/\s+/g, "-"),
 }));
 

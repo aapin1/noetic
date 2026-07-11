@@ -45,6 +45,51 @@ describe("JSON-LD extraction", () => {
   });
 });
 
+describe("Readability body extraction", () => {
+  it("extracts article text the heuristic misses (content in divs)", () => {
+    const sentence = "Writing is thinking made visible, and most advice about it is secretly advice about thinking. ";
+    const html = `
+      <html><head><title>Notes on writing</title><meta property="og:title" content="Notes on writing" /></head>
+      <body>
+        <nav><a href="/">Home</a><a href="/about">About</a></nav>
+        <div id="content">
+          <div>${sentence.repeat(4)}</div>
+          <div>${sentence.repeat(4)}</div>
+          <div>${sentence.repeat(4)}</div>
+        </div>
+        <footer>Subscribe to the newsletter</footer>
+      </body></html>
+    `;
+    const metadata = parseMetadataFromHtml(html, "https://example.com/writing");
+    expect(metadata.bodyText).toContain("thinking made visible");
+    expect(metadata.bodySource).toBe("body");
+  });
+
+  it("caps body text at 10,000 chars instead of the old 6,000", () => {
+    const paragraph = `<p>${"A long essay paragraph that keeps going with substantive content. ".repeat(3)}</p>`;
+    const html = `
+      <html><head><meta property="og:title" content="Long essay" /></head>
+      <body><article>${paragraph.repeat(120)}</article></body></html>
+    `;
+    const metadata = parseMetadataFromHtml(html, "https://example.com/long");
+    expect(metadata.bodyText!.length).toBeGreaterThan(6000);
+    expect(metadata.bodyText!.length).toBeLessThanOrEqual(10000);
+  });
+
+  it("still prefers JSON-LD articleBody when it is the longest extraction", () => {
+    const article = "The embedded article body carries the full argument in structured data. ".repeat(30);
+    const html = `
+      <html><head>
+        <meta property="og:title" content="News" />
+        <script type="application/ld+json">${JSON.stringify({ "@type": "NewsArticle", articleBody: article })}</script>
+      </head><body><article><p>Only a teaser paragraph is visible on the page itself.</p></article></body></html>
+    `;
+    const metadata = parseMetadataFromHtml(html, "https://example.com/news");
+    expect(metadata.bodySource).toBe("jsonld");
+    expect(metadata.bodyText).toContain("full argument");
+  });
+});
+
 describe("fetchMetadata source extractors", () => {
   afterEach(() => {
     vi.restoreAllMocks();

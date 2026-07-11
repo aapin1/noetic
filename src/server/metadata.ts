@@ -1,5 +1,8 @@
+import { Readability } from "@mozilla/readability";
 import { load } from "cheerio";
+import { parseHTML } from "linkedom";
 import slugify from "slugify";
+import { createProxySession, type ProxySession } from "@/server/proxyFetch";
 import { normalizeUrl } from "@/server/url";
 
 export type BodySource = "transcript" | "body" | "jsonld" | "reddit" | "description";
@@ -21,6 +24,10 @@ export type ExtractedMetadata = {
   /** Where bodyText came from — lets the insight layer know whether it is
    * reading the actual content (transcript/body) or only a summary. */
   bodySource?: BodySource;
+  /** True when the residential proxy produced the body (cost/success telemetry). */
+  usedProxy?: boolean;
+  /** True when a paid Supadata call produced the body (credit-burn telemetry). */
+  usedSupadata?: boolean;
 };
 
 export type ContentConfidence = "rich" | "partial" | "thin";
@@ -41,6 +48,10 @@ export function scoreContentConfidence(args: {
   if (body.length >= 150 || desc.length >= 150) return "partial";
   return "thin";
 }
+
+/** Article-body cap. Matches the transcript cap so long essays (Substack)
+ * aren't truncated mid-argument the way the old 6K cap did. */
+const BODY_TEXT_LIMIT = 10000;
 
 /** fetch with a hard timeout so a hung host can't stall the capture pipeline. */
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
@@ -92,12 +103,12 @@ function extractJsonLd($: ReturnType<typeof load>): { articleBody?: string; desc
   });
 
   return {
-    articleBody: articleBody?.slice(0, 6000),
+    articleBody: articleBody?.slice(0, BODY_TEXT_LIMIT),
     description: description?.slice(0, 6000),
   };
 }
 
-/** Pulls readable body text out of an article page (best-effort, no readability dep). */
+/** Pulls readable body text out of an article page (heuristic fallback). */
 function extractBodyText($: ReturnType<typeof load>): string | undefined {
   $("script, style, noscript, nav, header, footer, aside, form").remove();
   const root = $("article").first();
@@ -108,7 +119,29 @@ function extractBodyText($: ReturnType<typeof load>): string | undefined {
     if (text.length >= 40) paragraphs.push(text);
   });
   const joined = paragraphs.join("\n").trim();
-  return joined.length >= 40 ? joined.slice(0, 6000) : undefined;
+  return joined.length >= 40 ? joined.slice(0, BODY_TEXT_LIMIT) : undefined;
+}
+
+/**
+ * Mozilla Readability over a linkedom DOM — the accuracy path for articles,
+ * blogs, and Substack posts. The cheerio heuristic above keeps whole nav/footer
+ * text when a page lacks <article>/<main>; Readability scores content blocks
+ * instead. Best-effort: returns undefined when Readability rejects the page.
+ */
+function extractReadabilityText(html: string): string | undefined {
+  try {
+    const { document } = parseHTML(html);
+    const article = new Readability(document as unknown as Document, { charThreshold: 250 }).parse();
+    const text = (article?.textContent ?? "")
+      .split("\n")
+      .map((line) => line.replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    return text.length >= 200 ? text.slice(0, BODY_TEXT_LIMIT) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function absoluteUrl(href: string | undefined, baseUrl: string) {
@@ -181,10 +214,14 @@ export function parseMetadataFromHtml(html: string, originalUrl: string): Extrac
   const contentType = pickContentType(parsedUrl, ogType, title);
   // JSON-LD must be read before extractBodyText, which strips <script> tags.
   const jsonLd = extractJsonLd($);
-  const domBody = extractBodyText($);
-  // Prefer the longer of DOM body vs JSON-LD articleBody; fall back to a
-  // long-form JSON-LD description (podcast show notes) when the page has no
-  // readable body at all.
+  const readabilityBody = extractReadabilityText(html);
+  const heuristicBody = extractBodyText($);
+  // Longest substantive extraction wins: Readability on real articles, the
+  // heuristic on pages Readability rejects, JSON-LD articleBody when the DOM
+  // is thinner than the embedded article; fall back to a long-form JSON-LD
+  // description (podcast show notes) when the page has no readable body.
+  const domBody =
+    (readabilityBody?.length ?? 0) > (heuristicBody?.length ?? 0) ? readabilityBody : heuristicBody;
   let bodyText = domBody;
   let bodySource: BodySource | undefined = domBody ? "body" : undefined;
   if (jsonLd.articleBody && jsonLd.articleBody.length > (bodyText?.length ?? 0)) {
@@ -213,34 +250,8 @@ export function parseMetadataFromHtml(html: string, originalUrl: string): Extrac
   };
 }
 
-/** Returns the balanced JSON literal (array or object) starting at `start`. */
-function sliceBalancedJson(text: string, start: number): string | undefined {
-  const open = text[start];
-  const close = open === "[" ? "]" : "}";
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-    } else if (ch === '"') {
-      inString = true;
-    } else if (ch === open) {
-      depth++;
-    } else if (ch === close) {
-      depth--;
-      if (depth === 0) return text.slice(start, i + 1);
-    }
-  }
-  return undefined;
-}
-
-// A real browser UA + consent cookie. YouTube serves a stripped consent/bot
-// interstitial (no captionTracks) to non-browser agents, which is why the
-// transcript scrape was intermittently empty.
+// A real browser UA + consent cookie for sites that serve stripped pages to
+// non-browser agents (Reddit's JSON API, bot-guarded article sites).
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 const YT_HEADERS = {
@@ -251,56 +262,66 @@ const YT_HEADERS = {
 
 type CaptionTrack = { baseUrl?: string; languageCode?: string; kind?: string };
 
-/** Reads the caption track list embedded in the watch page HTML. */
-function parseCaptionTracks(html: string): CaptionTrack[] {
-  const marker = '"captionTracks":';
-  const at = html.indexOf(marker);
-  if (at === -1) return [];
-  const arr = sliceBalancedJson(html, at + marker.length);
-  if (!arr) return [];
+// YouTube gates caption downloads from its web surface behind a
+// proof-of-origin token — the timedtext URLs embedded in the watch page now
+// return an empty 200 even from residential IPs. The InnerTube player API
+// still serves working caption tracks to the ANDROID client (the same route
+// youtube-transcript-api and yt-dlp use), and its response also carries the
+// creator description, so one small POST replaces the old 1MB+ watch-page
+// scrape entirely.
+const INNERTUBE_UA = "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip";
+const INNERTUBE_CONTEXT = {
+  client: { clientName: "ANDROID", clientVersion: "20.10.38", androidSdkVersion: 30, hl: "en" },
+} as const;
+
+/** Extracts the video id from watch/youtu.be/shorts/embed/live URL forms. */
+function youTubeVideoId(url: string): string | undefined {
   try {
-    return JSON.parse(arr) as CaptionTrack[];
+    const parsed = new URL(url);
+    if (hostOf(parsed) === "youtu.be") return parsed.pathname.split("/").filter(Boolean)[0];
+    const v = parsed.searchParams.get("v");
+    if (v) return v;
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    if (segments.length >= 2 && ["shorts", "embed", "live"].includes(segments[0])) return segments[1];
+    return undefined;
   } catch {
-    return [];
+    return undefined;
   }
 }
 
-/** Fetches and flattens a timedtext caption track into plain transcript text. */
-async function fetchTranscriptText(baseUrl: string): Promise<string | undefined> {
-  const res = await fetch(`${baseUrl}&fmt=json3`, {
-    headers: YT_HEADERS,
+/** Calls the InnerTube player API for a video's caption tracks + description. */
+async function fetchYouTubePlayerData(
+  videoId: string,
+  session: ProxySession,
+): Promise<{ tracks: CaptionTrack[]; description?: string } | undefined> {
+  const res = await session.fetch("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", {
+    method: "POST",
+    headers: { "content-type": "application/json", "user-agent": INNERTUBE_UA },
+    body: JSON.stringify({ context: INNERTUBE_CONTEXT, videoId }),
   });
   if (!res.ok) return undefined;
-  const data = (await res.json()) as { events?: { segs?: { utf8?: string }[] }[] };
-  const text = (data.events ?? [])
-    .flatMap((ev) => ev.segs ?? [])
-    .map((seg) => seg.utf8 ?? "")
-    .join("")
-    .replace(/\s+/g, " ")
-    .trim();
-  return text.length >= 40 ? text.slice(0, 10000) : undefined;
+  const data = (await res.json()) as {
+    captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] } };
+    videoDetails?: { shortDescription?: string };
+  };
+  return {
+    tracks: data.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [],
+    description: data.videoDetails?.shortDescription,
+  };
 }
 
-/** Fetches the watch-page HTML, retrying once past YouTube's captionless interstitial. */
-async function fetchYouTubeWatchHtml(watchUrl: string): Promise<string | undefined> {
-  // Two attempts: YouTube occasionally serves a captionless interstitial on the
-  // first hit even with the consent cookie set.
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const res = await fetch(watchUrl, {
-        headers: { ...YT_HEADERS, accept: "text/html,application/xhtml+xml" },
-      });
-      if (res.ok) {
-        const html = await res.text();
-        if (html.includes('"captionTracks":') || html.includes('"shortDescription":')) {
-          return html;
-        }
-      }
-    } catch {
-      // retry
-    }
-  }
-  return undefined;
+/** Fetches and flattens a caption track (timedtext XML) into transcript text. */
+async function fetchCaptionText(baseUrl: string, session: ProxySession): Promise<string | undefined> {
+  const res = await session.fetch(baseUrl, { headers: { "user-agent": INNERTUBE_UA } });
+  if (!res.ok) return undefined;
+  const $ = load(await res.text(), { xmlMode: true });
+  const text = $("p, text")
+    .map((_, el) => $(el).text())
+    .get()
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length >= 40 ? text.slice(0, BODY_TEXT_LIMIT) : undefined;
 }
 
 /**
@@ -308,35 +329,44 @@ async function fetchYouTubeWatchHtml(watchUrl: string): Promise<string | undefin
  * body, so the transcript is the real content the insight and embedding work
  * from; the creator-written description is only a fallback since it's often
  * empty or link spam. Best-effort: returns undefined on any failure.
+ *
+ * Runs through one sticky residential-proxy session when configured: YouTube
+ * bot-walls datacenter IPs, and both requests should come from one exit IP.
  */
-async function fetchYouTubeBodyText(watchUrl: string): Promise<{ text: string; source: BodySource } | undefined> {
-  try {
-    const html = await fetchYouTubeWatchHtml(watchUrl);
-    if (!html) return undefined;
+async function fetchYouTubeBodyText(
+  watchUrl: string,
+): Promise<{ text: string; source: BodySource; viaProxy: boolean } | undefined> {
+  const videoId = youTubeVideoId(watchUrl);
+  if (!videoId) return undefined;
 
-    const tracks = parseCaptionTracks(html);
-    if (tracks.length > 0) {
+  const session = createProxySession();
+  try {
+    const player = await fetchYouTubePlayerData(videoId, session);
+    if (!player) return undefined;
+
+    if (player.tracks.length > 0) {
       // Prefer a human-authored English track; fall back to any English track,
       // then to whatever caption exists (usually auto-generated).
       const pick =
-        tracks.find((t) => t.languageCode?.startsWith("en") && t.kind !== "asr") ??
-        tracks.find((t) => t.languageCode?.startsWith("en")) ??
-        tracks[0];
+        player.tracks.find((t) => t.languageCode?.startsWith("en") && t.kind !== "asr") ??
+        player.tracks.find((t) => t.languageCode?.startsWith("en")) ??
+        player.tracks[0];
       if (pick?.baseUrl) {
-        const transcript = await fetchTranscriptText(pick.baseUrl);
-        if (transcript) return { text: transcript, source: "transcript" };
+        const transcript = await fetchCaptionText(pick.baseUrl, session);
+        if (transcript) return { text: transcript, source: "transcript", viaProxy: session.viaProxy };
       }
     }
 
-    // Fallback: the creator's description from the ytInitialPlayerResponse blob.
-    const match = html.match(/"shortDescription":"((?:\\.|[^"\\])*)"/);
-    if (match) {
-      const description = (JSON.parse(`"${match[1]}"`) as string).trim();
-      if (description.length >= 20) return { text: description.slice(0, 6000), source: "description" };
+    // Fallback: the creator's description.
+    const description = player.description?.trim();
+    if (description && description.length >= 20) {
+      return { text: description.slice(0, 6000), source: "description", viaProxy: session.viaProxy };
     }
     return undefined;
   } catch {
     return undefined;
+  } finally {
+    await session.close().catch(() => {});
   }
 }
 
@@ -385,12 +415,28 @@ type RedditPost = {
 async function fetchRedditMetadata(normalized: string, originalUrl: string): Promise<ExtractedMetadata | undefined> {
   try {
     const jsonUrl = `${normalized.replace(/\/$/, "").split("?")[0]}.json?limit=12&raw_json=1`;
-    const res = await fetchWithTimeout(jsonUrl, { headers: YT_HEADERS, redirect: "follow" }, 10000);
-    if (!res.ok) return undefined;
+    type RedditPayload = { data?: { children?: { kind?: string; data?: RedditPost }[] } }[];
 
-    const payload = (await res.json()) as {
-      data?: { children?: { kind?: string; data?: RedditPost }[] };
-    }[];
+    let payload: RedditPayload | undefined;
+    const direct = await fetchWithTimeout(jsonUrl, { headers: YT_HEADERS, redirect: "follow" }, 10000).catch(
+      () => undefined,
+    );
+    if (direct?.ok) {
+      payload = (await direct.json()) as RedditPayload;
+    } else {
+      // Reddit's public JSON API intermittently blocks datacenter IPs; one
+      // retry through the residential proxy before giving up.
+      const session = createProxySession();
+      try {
+        if (!session.viaProxy) return undefined;
+        const retry = await session.fetch(jsonUrl, { headers: YT_HEADERS, redirect: "follow" }, 10000);
+        if (!retry.ok) return undefined;
+        payload = (await retry.json()) as RedditPayload;
+      } finally {
+        await session.close().catch(() => {});
+      }
+    }
+    if (!payload) return undefined;
     const post = payload?.[0]?.data?.children?.[0]?.data;
     if (!post?.title) return undefined;
 
@@ -522,6 +568,7 @@ async function fetchTikTokMetadata(normalized: string, originalUrl: string): Pro
       description: transcript?.slice(0, 500) ?? title,
       bodyText: transcript ?? title,
       bodySource: transcript ? "transcript" : "description",
+      usedSupadata: transcript ? true : undefined,
       canonicalUrl: normalizeUrl(normalized),
       originalUrl,
       siteName: "TikTok",
@@ -573,14 +620,16 @@ export async function fetchMetadata(url: string): Promise<{ metadata?: Extracted
         provider_name?: string;
       };
 
-      // Our own caption scrape works from residential IPs; in production
-      // (datacenter IP) YouTube serves a captionless interstitial, so fall back
-      // to Supadata for the transcript. Native captions only — nearly every
-      // YouTube video has them, and it keeps the cost at 1 credit per video.
-      let body = await fetchYouTubeBodyText(normalized);
+      // In-house caption scrape first (through the residential proxy in
+      // production — direct datacenter requests get a captionless
+      // interstitial); Supadata is only the paid fallback. Native captions
+      // only — nearly every YouTube video has them, and it keeps the cost at
+      // 1 credit per video.
+      let body: { text: string; source: BodySource; viaProxy?: boolean; viaSupadata?: boolean } | undefined =
+        await fetchYouTubeBodyText(normalized);
       if (!body || body.source !== "transcript") {
         const transcript = await fetchSupadataTranscript(normalized, "native");
-        if (transcript) body = { text: transcript, source: "transcript" };
+        if (transcript) body = { text: transcript, source: "transcript", viaSupadata: true };
       }
 
       const metadata: ExtractedMetadata = {
@@ -596,6 +645,8 @@ export async function fetchMetadata(url: string): Promise<{ metadata?: Extracted
         description: body?.text,
         bodyText: body?.text,
         bodySource: body?.source,
+        usedProxy: body?.viaProxy || undefined,
+        usedSupadata: body?.viaSupadata || undefined,
       };
 
       return {
@@ -647,9 +698,38 @@ export async function fetchMetadata(url: string): Promise<{ metadata?: Extracted
     }
   }
 
+  // Final tier: bot-walled sites (Cloudflare 403s, "Just a moment…" shells)
+  // serve the real page to residential IPs. One proxied retry when configured.
+  if (!metadata?.title || !metadata.bodyText) {
+    const session = createProxySession();
+    try {
+      if (session.viaProxy) {
+        const res = await session.fetch(
+          normalized,
+          { headers: { ...YT_HEADERS, accept: "text/html,application/xhtml+xml" } },
+          15000,
+        );
+        if (res.ok) {
+          const retried = parseMetadataFromHtml(await res.text(), normalized);
+          const better =
+            !metadata?.title ||
+            (Boolean(retried.title) && (retried.bodyText?.length ?? 0) > (metadata.bodyText?.length ?? 0));
+          if (better && retried.title) {
+            metadata = { ...retried, usedProxy: true };
+          }
+        }
+      }
+    } catch {
+      // keep whatever the direct attempts produced
+    } finally {
+      await session.close().catch(() => {});
+    }
+  }
+
   if (instagramTranscript && metadata) {
     metadata.bodyText = instagramTranscript;
     metadata.bodySource = "transcript";
+    metadata.usedSupadata = true;
     metadata.description = metadata.description ?? instagramTranscript.slice(0, 500);
   } else if (instagramTranscript && !metadata) {
     metadata = {
@@ -657,6 +737,7 @@ export async function fetchMetadata(url: string): Promise<{ metadata?: Extracted
       description: instagramTranscript.slice(0, 500),
       bodyText: instagramTranscript,
       bodySource: "transcript",
+      usedSupadata: true,
       canonicalUrl: normalized,
       originalUrl: url,
       siteName: "Instagram",
