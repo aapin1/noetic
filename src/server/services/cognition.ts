@@ -1133,11 +1133,27 @@ export function withLeadInsight(item: CaptureWithRelations & { insights: { id: s
   };
 }
 
-export async function listCaptures(args: { userId: string; limit?: number; db?: DbClient }) {
+export async function listCaptures(args: { userId: string; limit?: number; query?: string; db?: DbClient }) {
   const db = args.db ?? prisma;
   const limit = Math.min(Math.max(args.limit ?? 20, 1), 80);
+  const query = args.query?.trim();
   const items = await db.capturedItem.findMany({
-    where: { userId: args.userId },
+    where: {
+      userId: args.userId,
+      ...(query
+        ? {
+          OR: [
+            { contentItem: { title: { contains: query, mode: "insensitive" } } },
+            { rawText: { contains: query, mode: "insensitive" } },
+            { summary: { contains: query, mode: "insensitive" } },
+            { caption: { contains: query, mode: "insensitive" } },
+            { userContext: { contains: query, mode: "insensitive" } },
+            { reaction: { contains: query, mode: "insensitive" } },
+            { topics: { some: { topic: { name: { contains: query, mode: "insensitive" } } } } },
+          ],
+        }
+        : {}),
+    },
     orderBy: { capturedAt: "desc" },
     take: limit,
     include: {

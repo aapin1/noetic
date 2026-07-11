@@ -490,19 +490,26 @@ function Divider({ c }: { c: AppThemeColors }) {
 }
 
 function StepOne({
-  mode, setMode, payload, setPayload, imageUri, uploading, onPickImage, error, onNext, onClose, onPaste, c,
+  mode, setMode, payload, setPayload, imageUri, uploading, onPickImage, error, onNext, onClose, onPaste, c, firstCapture,
 }: {
   mode: CaptureMode; setMode: (m: CaptureMode) => void;
   payload: string; setPayload: (s: string) => void;
   imageUri: string | null; uploading: boolean; onPickImage: (source: 'camera' | 'library') => void;
   error: string; onNext: () => void; onClose: () => void; onPaste: () => void;
   c: AppThemeColors;
+  firstCapture?: boolean;
 }) {
   const nextTarget = useTutorialTarget(TUTORIAL_TARGET.captureNext);
   return (
     <View>
-      <Text variant="serifLg" color="primary" style={sh.heading}>What are you saving?</Text>
-      <Text variant="monoSmall" color="muted" style={sh.sub}>A link, thought, or image.</Text>
+      <Text variant="serifLg" color="primary" style={sh.heading}>
+        {firstCapture ? 'Your first capture.' : 'What are you saving?'}
+      </Text>
+      <Text variant="monoSmall" color="muted" style={sh.sub}>
+        {firstCapture
+          ? 'start with the last link that made you think — or any thought in your head.'
+          : 'A link, thought, or image.'}
+      </Text>
       <Divider c={c} />
       <View style={sh.modeRow}>
         {(['link', 'text', 'image'] as CaptureMode[]).map((m) => {
@@ -642,11 +649,11 @@ function StepTwo({
   // user's own account becomes the ground truth the insight pipeline works from.
   const needsContext = isLink && !preflightLoading && !!preflight && preflight.confidence !== 'rich';
   const contextThin = preflight?.confidence === 'thin';
-  // Block Commit while a link is still being read — committing mid-scrape races
-  // the preflight (which creates/refreshes the ContentItem) and produces a
-  // messy, half-resolved capture.
-  const commitBlockedByPreflight = isLink && preflightLoading;
-  const commitDisabled = busy || commitBlockedByPreflight;
+  // Commit is never gated on the preflight: the server dedupes a racing
+  // scrape (createManualContentItem catches the unique-key collision), and if
+  // the source turns out unreadable the insight screen asks for the user's
+  // own account afterwards. Waiting here was pure friction.
+  const commitDisabled = busy;
   const commitTarget = useTutorialTarget(TUTORIAL_TARGET.captureCommit);
   const { setStepNote } = useTutorial();
 
@@ -734,7 +741,7 @@ function StepTwo({
             style={[sh.primaryBtn, { backgroundColor: c.text, opacity: commitDisabled ? 0.55 : 1 }]}
           >
             <Text variant="monoSmall" style={{ color: c.background }}>
-              {busy ? 'saving...' : commitBlockedByPreflight ? 'reading the source…' : 'commit →'}
+              {busy ? 'saving...' : 'commit →'}
             </Text>
           </Pressable>
         </View>
@@ -2265,43 +2272,32 @@ export default function MapScreen() {
     setCaptureError(''); setStep(2);
   }, [mode, payload, mediaUrl, uploading, runPreflight]);
 
-  // Content shared in from the OS share sheet arrives as route params. Rather
-  // than saving silently, seed the capture flow and drop the user on the
-  // reaction step so every capture goes through the same flow.
   const shareParams = useLocalSearchParams<{
-    shareKind?: string; shareUrl?: string; shareText?: string; shareMediaUrl?: string;
-    selectIds?: string;
+    selectIds?: string; firstCapture?: string;
   }>();
+
+  // Fresh from onboarding (self-guided path): open the capture sheet
+  // immediately with a first-capture prompt, so the first thing a new user
+  // does is save something — not stare at an empty map.
+  const [firstCapturePrompt, setFirstCapturePrompt] = useState(false);
   useEffect(() => {
-    const kind = shareParams.shareKind;
-    if (!kind) return;
-    closeDrawer();
-    setSelectedNode(null);
-    setCaptureError('');
-    setReaction('');
-    setPreflight(null); setPreflightLoading(false); setUserContext('');
-    if (kind === 'LINK') {
-      setMode('link'); setPayload(String(shareParams.shareUrl ?? ''));
-      setImageUri(null); setMediaUrl(null);
-      const sharedUrl = String(shareParams.shareUrl ?? '').trim();
-      if (sharedUrl) runPreflight(normalizeLinkInput(sharedUrl));
-    } else if (kind === 'IMAGE') {
-      setMode('image');
-      setMediaUrl(String(shareParams.shareMediaUrl ?? ''));
-      setImageUri(String(shareParams.shareMediaUrl ?? ''));
-      setPayload('');
-    } else {
-      setMode('text'); setPayload(String(shareParams.shareText ?? ''));
-      setImageUri(null); setMediaUrl(null);
-    }
-    setStep(2);
-    setShowCapture(true);
-    slideY.setValue(SH);
-    RNAnimated.spring(slideY, { toValue: 0, useNativeDriver: true, damping: 22, stiffness: 170 }).start();
-    // Clear params so returning to this tab doesn't reopen the sheet.
-    router.setParams({ shareKind: '', shareUrl: '', shareText: '', shareMediaUrl: '' });
+    if (shareParams.firstCapture !== '1') return;
+    router.setParams({ firstCapture: '' });
+    setFirstCapturePrompt(true);
+    openCapture();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shareParams.shareKind, shareParams.shareUrl, shareParams.shareText, shareParams.shareMediaUrl]);
+  }, [shareParams.firstCapture]);
+  // Clear the prompt only on a real open→close transition — on first mount
+  // this effect fires with the sheet still closed, and clearing there would
+  // race the effect above that just set the prompt.
+  const prevShowCaptureRef = useRef(false);
+  useEffect(() => {
+    if (prevShowCaptureRef.current && !showCapture) setFirstCapturePrompt(false);
+    prevShowCaptureRef.current = showCapture;
+  }, [showCapture]);
+  // (Shares from the OS share sheet used to arrive here as route params; they
+  // now save directly on the shareintent screen, so only selectIds and
+  // firstCapture flow through params.)
 
   // Arriving from Mind's "View in Atlas" — pre-select the thread's captures in
   // the multi-select (discover) tool and fly the camera to fit them.
@@ -3409,6 +3405,7 @@ export default function MapScreen() {
                       onClose={closeCapture}
                       onPaste={() => void pasteFromClipboard()}
                       c={c}
+                      firstCapture={firstCapturePrompt}
                     />
                   )}
                   {step === 2 && busy && (

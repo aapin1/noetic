@@ -174,6 +174,7 @@ export const captureSchema = z.object({
 
 export const captureListSchema = z.object({
   limit: z.coerce.number().int().min(1).max(80).default(20),
+  query: z.string().trim().min(1).max(120).optional(),
 });
 
 export const capturePreflightSchema = z.object({

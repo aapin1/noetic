@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Spacing, Radius } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { useTutorial, TutorialRect } from '@/contexts/TutorialContext';
+import { TAB_COUNT } from '@/constants/tutorialSteps';
 import { Text } from './Text';
 import { Button } from './Button';
 
@@ -54,7 +55,7 @@ export function TutorialOverlay() {
   if (step.target.kind === 'registered') {
     hole = targetRects[step.target.id] ?? null;
   } else if (step.target.kind === 'tab') {
-    const colW = SW / 6;
+    const colW = SW / TAB_COUNT;
     hole = { x: step.target.index * colW, y: SH - TAB_H, width: colW, height: TAB_HIT_H };
   }
 

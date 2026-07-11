@@ -41,6 +41,6 @@ export async function GET(request: Request) {
   return handleRoute(async () => {
     const userId = await requireRequestUserId(request);
     const input = await parseSearchParams(request, captureListSchema);
-    return listCaptures({ userId, limit: input.limit });
+    return listCaptures({ userId, limit: input.limit, query: input.query });
   });
 }

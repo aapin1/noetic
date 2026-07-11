@@ -14,8 +14,14 @@ export default function WalkthroughOfferScreen() {
   const { start: startTutorial } = useTutorial();
 
   const enter = (withWalkthrough: boolean) => {
-    router.replace('/(tabs)');
-    if (withWalkthrough) startTutorial();
+    if (withWalkthrough) {
+      router.replace('/(tabs)');
+      startTutorial();
+    } else {
+      // Self-guided users still get pointed at the one action that matters:
+      // the map opens with the capture sheet up, prompting a first save.
+      router.replace({ pathname: '/(tabs)', params: { firstCapture: '1' } } as never);
+    }
   };
 
   return (

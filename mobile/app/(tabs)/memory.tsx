@@ -1,17 +1,18 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { FontFamily, Radius, Spacing } from '@/constants/theme';
+import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { ScreenIntro } from '@/components/ui/ScreenIntro';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
+import { LoadingDots } from '@/components/ui/LoadingDots';
 import { FolderGrid } from '@/components/archive/FolderGrid';
-import type { ArchiveFolderSummary } from '@/types/api';
+import type { ArchiveFolderSummary, CaptureSummary } from '@/types/api';
 
 type SortKey = 'recent' | 'alphabetical' | 'largest' | 'smallest';
 
@@ -64,6 +65,33 @@ export default function ArchiveScreen() {
   const sortedFolders = useMemo(() => (folders ? sortFolders(folders, sort) : []), [folders, sort]);
   const isEmpty = !loading && (folders?.length ?? 0) === 0;
 
+  // Full-text search across everything ever saved — the folders are browsing,
+  // this is retrieval. Debounced against the captures list endpoint.
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<CaptureSummary[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSearchChange = useCallback((text: string) => {
+    setSearchQuery(text);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    const q = text.trim();
+    if (!q) { setSearchResults(null); setSearching(false); return; }
+    setSearching(true);
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const results = await api.captures.list({ query: q, limit: 40 });
+        setSearchResults(results);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+  }, []);
+  useEffect(() => () => { if (searchTimer.current) clearTimeout(searchTimer.current); }, []);
+
+  const searchActive = searchQuery.trim().length > 0;
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: c.border }]}>
@@ -86,7 +114,35 @@ export default function ArchiveScreen() {
         body="Everything you've saved, organized into folders by topic. Open a folder to browse its entries — and its sub-topics, if it has any."
       />
 
-      {folders && folders.length > 0 && (
+      {(folders?.length ?? 0) > 0 && (
+        <View style={styles.searchWrap}>
+          <View style={[styles.searchBox, { borderColor: c.border }]}>
+            <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: c.faint, marginRight: Spacing[2], letterSpacing: 1.5 }}>
+              FIND_
+            </Text>
+            <TextInput
+              style={{ flex: 1, fontFamily: FontFamily.mono, fontSize: FontSize.sm, color: c.text, paddingVertical: 0 }}
+              value={searchQuery}
+              onChangeText={handleSearchChange}
+              placeholder="search everything you've saved…"
+              placeholderTextColor={c.faint}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              accessibilityLabel="Search your captures"
+            />
+            {searching ? (
+              <LoadingDots size={4} />
+            ) : searchActive ? (
+              <Pressable onPress={() => handleSearchChange('')} hitSlop={10} accessibilityLabel="Clear search">
+                <Text style={{ color: c.faint, fontSize: 14 }}>✕</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      )}
+
+      {!searchActive && folders && folders.length > 0 && (
         <View style={styles.sortRow}>
           {SORT_OPTIONS.map((opt) => {
             const selected = sort === opt.key;
@@ -131,7 +187,37 @@ export default function ArchiveScreen() {
           />
         )}
 
-        <FolderGrid folders={sortedFolders} />
+        {searchActive ? (
+          <View style={styles.resultsWrap}>
+            {searchResults !== null && searchResults.length === 0 && !searching && (
+              <Text variant="monoSmall" color="muted" style={styles.noResults}>
+                nothing matches that.
+              </Text>
+            )}
+            {(searchResults ?? []).map((item) => (
+              <Pressable
+                key={item.id}
+                onPress={() => router.push(`/insight/${item.id}` as never)}
+                style={[styles.resultRow, { borderColor: c.border }]}
+                accessibilityRole="button"
+              >
+                <Text variant="bodyMedium" numberOfLines={2}>{item.title}</Text>
+                <View style={styles.resultMeta}>
+                  {item.topics[0] ? (
+                    <Text variant="monoSmall" color="muted" numberOfLines={1}>
+                      {item.topics[0].name}
+                    </Text>
+                  ) : <View />}
+                  <Text variant="monoSmall" color="muted">
+                    {new Date(item.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        ) : (
+          <FolderGrid folders={sortedFolders} />
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -164,4 +250,31 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   content: { paddingHorizontal: Spacing[4], paddingBottom: Spacing[16] },
+  searchWrap: {
+    paddingHorizontal: Spacing[6],
+    paddingTop: Spacing[3],
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: Radius.xs,
+    paddingHorizontal: Spacing[3],
+    paddingVertical: Spacing[3],
+  },
+  resultsWrap: { paddingHorizontal: Spacing[2], paddingTop: Spacing[3] },
+  noResults: { textAlign: 'center', paddingTop: Spacing[8] },
+  resultRow: {
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    padding: Spacing[4],
+    marginBottom: Spacing[3],
+  },
+  resultMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: Spacing[2],
+    gap: Spacing[3],
+  },
 });

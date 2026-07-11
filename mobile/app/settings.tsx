@@ -11,10 +11,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeftIcon, ChevronRightIcon, LogOutIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
+import { api } from '@/lib/api';
 import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Avatar } from '@/components/ui/Avatar';
+import { AsciiLoader } from '@/components/ui/AsciiLoader';
 
 type SettingRowProps = {
   label: string;
@@ -78,6 +80,47 @@ export default function SettingsScreen() {
     ]);
   };
 
+  // Two-step confirm for permanent account deletion (App Store requires the
+  // option; the double confirmation keeps a stray tap from ending a life's
+  // worth of captures).
+  const [deleting, setDeleting] = useState(false);
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete account',
+      'This permanently erases your account — every capture, insight, connection, and your profile. It cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert('Are you sure?', 'Your entire map will be gone forever.', [
+              { text: 'Keep my account', style: 'cancel' },
+              {
+                text: 'Delete everything',
+                style: 'destructive',
+                onPress: async () => {
+                  setDeleting(true);
+                  try {
+                    await api.account.delete();
+                    await signOut();
+                    router.replace('/');
+                  } catch (e) {
+                    setDeleting(false);
+                    Alert.alert(
+                      'Could not delete account',
+                      e instanceof Error ? e.message : 'Something went wrong. Try again.',
+                    );
+                  }
+                },
+              },
+            ]);
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
       <View style={[styles.navBar, { borderBottomColor: c.border }]}>
@@ -112,6 +155,12 @@ export default function SettingsScreen() {
         <SectionHeader title="Account" />
         <View style={[styles.section, { borderColor: c.border }]}>
           <SettingRow label="Profile & handle" onPress={() => router.push('/profile/edit' as never)} />
+          <SettingRow
+            label="Delete account"
+            description="Permanently erase your account and everything you've saved."
+            onPress={handleDeleteAccount}
+            destructive
+          />
         </View>
 
         <SectionHeader title="Capture & insights" />
@@ -174,6 +223,11 @@ export default function SettingsScreen() {
           </Pressable>
         </View>
       </ScrollView>
+      {deleting && (
+        <View style={[StyleSheet.absoluteFill, styles.deletingOverlay, { backgroundColor: c.background }]}>
+          <AsciiLoader fill size={100} message="deleting your account…" />
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -235,4 +289,5 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     borderWidth: 1,
   },
+  deletingOverlay: { zIndex: 10 },
 });

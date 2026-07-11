@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useColorScheme } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -9,6 +9,8 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { TutorialProvider } from '@/contexts/TutorialContext';
 import { TutorialOverlay } from '@/components/ui/TutorialOverlay';
+import { hydrateQueryCache } from '@/hooks/useApiQuery';
+import { warmBackend } from '@/lib/api';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -18,9 +20,20 @@ function ThemedStatusBar() {
 }
 
 export default function RootLayout() {
+  // Hold the splash until the previous session's cache is loaded, so the
+  // first screen renders populated instead of blank. Meanwhile, ping the
+  // backend so a cold Render instance starts booting before the user's first
+  // real request.
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
-    SplashScreen.hideAsync();
+    warmBackend();
+    void hydrateQueryCache().finally(() => {
+      setHydrated(true);
+      void SplashScreen.hideAsync();
+    });
   }, []);
+
+  if (!hydrated) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

@@ -245,3 +245,20 @@ export async function updateProfile(args: {
     });
   });
 }
+
+/**
+ * Permanently deletes a user account and, via the schema's cascade rules,
+ * every row that belongs to it: profile, captures, insights, edges, topics
+ * weights, positions, follows, tokens/sessions, device tokens, activity.
+ * Rows that reference the user optionally (notification actor, activity
+ * target) have their FK nulled instead. Irreversible.
+ */
+export async function deleteAccount(args: { userId: string; db?: RootDbClient }) {
+  const db = args.db ?? prisma;
+  const user = await db.user.findUnique({ where: { id: args.userId }, select: { id: true } });
+  if (!user) {
+    throw new AppError("USER_NOT_FOUND", "Account not found", 404);
+  }
+  await db.user.delete({ where: { id: args.userId } });
+  return { deleted: true as const };
+}

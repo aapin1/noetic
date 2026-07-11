@@ -84,7 +84,26 @@ function buildQuery(params: Record<string, string | number | undefined>): string
   return s ? `?${s}` : '';
 }
 
+/**
+ * Fire-and-forget wake-up call for the backend. Render spins the instance
+ * down when idle and the first real request then eats the cold start — pinging
+ * /api/health the moment the app opens lets the server boot while the user is
+ * still looking at cached screens.
+ */
+export function warmBackend(): void {
+  fetch(`${BASE_URL}/api/health`).catch(() => {
+    // Purely best-effort; real requests surface their own errors.
+  });
+}
+
 export const api = {
+  account: {
+    /** Permanently deletes the signed-in account and all of its data. */
+    delete() {
+      return request<{ deleted: true }>('/api/me/account', { method: 'DELETE' });
+    },
+  },
+
   auth: {
     register(body: { name: string; email: string; password: string }) {
       return request<{ user: { id: string; email: string; name: string | null }; token: string }>(
@@ -232,7 +251,7 @@ export const api = {
         method: 'DELETE',
       });
     },
-    list(params?: { limit?: number }) {
+    list(params?: { limit?: number; query?: string }) {
       return request<CaptureSummary[]>(`/api/captures${buildQuery(params ?? {})}`);
     },
     get(id: string) {

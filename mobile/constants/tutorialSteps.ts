@@ -1,7 +1,12 @@
 // Which bottom-tab a `tab` step points at. `index` matches the tab-bar column
 // order (atlas=0, archive=1, …) and `seg` matches the last route segment used
 // to detect the user actually landed on that tab.
-export type TutorialTabSeg = 'memory' | 'pulse' | 'trends' | 'mind' | 'profile';
+export type TutorialTabSeg = 'memory' | 'pulse' | 'mind' | 'profile';
+
+// Total tab-bar columns — the overlay divides the screen width by this to
+// spotlight a tab, so it MUST match the number of <Tabs.Screen> entries in
+// app/(tabs)/_layout.tsx (atlas, archive, pulse, mind, you).
+export const TAB_COUNT = 5;
 
 export type TutorialTarget =
   // A measured on-screen region (the + FAB, the capture form, a node). The
@@ -111,19 +116,19 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'share',
     title: 'share to mneme',
-    body: "you don't need to open mneme to save something. from any app, hit share and pick mneme — it drops straight into this same capture flow.",
+    body: "you don't need to open mneme to save something. from any app, hit share and pick mneme — it saves instantly, and you can peek at the insight right after.",
     target: { kind: 'card' },
   },
   {
     id: 'archive-prompt',
     title: 'archive',
-    body: "archive holds everything you've ever saved, in order. tap archive to open it.",
+    body: "archive holds everything you've ever saved. tap archive to open it.",
     target: { kind: 'tab', index: 1, seg: 'memory' },
   },
   {
     id: 'archive-info',
     title: 'archive',
-    body: "this is every entry you've committed, newest first. scroll back through anything you've saved, any time — nothing here disappears.",
+    body: "everything you've committed, filed into folders by topic — and a search box that reaches across all of it. nothing here disappears.",
     target: { kind: 'card' },
   },
   {
@@ -139,22 +144,10 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     target: { kind: 'card' },
   },
   {
-    id: 'drift-prompt',
-    title: 'drift',
-    body: 'drift shows how your attention has moved over time. tap drift to open it.',
-    target: { kind: 'tab', index: 3, seg: 'trends' },
-  },
-  {
-    id: 'drift-info',
-    title: 'drift',
-    body: "this tracks the topics you keep returning to, and the ones you've drifted away from — a timeline of where your focus has actually gone.",
-    target: { kind: 'card' },
-  },
-  {
     id: 'mind-prompt',
     title: 'mind',
     body: "mind surfaces patterns across everything you've saved. tap mind to open it.",
-    target: { kind: 'tab', index: 4, seg: 'mind' },
+    target: { kind: 'tab', index: 3, seg: 'mind' },
   },
   {
     id: 'mind-info',
@@ -166,7 +159,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: 'you-prompt',
     title: 'you',
     body: 'you is your profile and account settings. tap you to open it.',
-    target: { kind: 'tab', index: 5, seg: 'profile' },
+    target: { kind: 'tab', index: 4, seg: 'profile' },
   },
   {
     id: 'you-info',

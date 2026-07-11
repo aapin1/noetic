@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useShareIntentContext } from 'expo-share-intent';
 import * as FileSystem from 'expo-file-system';
@@ -7,17 +7,18 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
-import { Spacing } from '@/constants/theme';
+import { AsciiLoader } from '@/components/ui/AsciiLoader';
+import { Radius, Spacing } from '@/constants/theme';
 
-type Status = 'working' | 'error';
+type Status = 'working' | 'saved' | 'error';
 
 const URL_RE = /^https?:\/\/\S+$/i;
 
 /**
  * Entry point for items shared into Mneme from the iOS/Android share sheet.
- * Resolves the shared URL, text, or image into capture params and hands off to
- * the capture flow, dropping the user on the reaction step so nothing is saved
- * without a chance to react.
+ * Saves immediately — sharing IS the capture; no form stands between the
+ * share sheet and the map. The confirmation offers the insight as an optional
+ * next step rather than a required one.
  */
 export default function ShareIntentScreen() {
   const router = useRouter();
@@ -25,7 +26,9 @@ export default function ShareIntentScreen() {
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntentContext();
   const { isLoading, isAuthenticated } = useAuth();
   const [status, setStatus] = useState<Status>('working');
-  const [message, setMessage] = useState('Opening capture…');
+  const [message, setMessage] = useState('');
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [savedTitle, setSavedTitle] = useState<string>('');
   const handledRef = useRef(false);
 
   useEffect(() => {
@@ -44,13 +47,9 @@ export default function ShareIntentScreen() {
 
     (async () => {
       try {
-        // Resolve the shared payload into capture params, then hand off to the
-        // capture flow so the user always lands on the reaction step instead of
-        // the item being saved silently.
-        let params: Record<string, string>;
-
+        let res;
         if (shareIntent.webUrl) {
-          params = { shareKind: 'LINK', shareUrl: shareIntent.webUrl };
+          res = await api.captures.create({ kind: 'LINK', url: shareIntent.webUrl });
         } else if (shareIntent.files && shareIntent.files.length > 0) {
           const file = shareIntent.files[0];
           const uri = file.path.startsWith('file://') ? file.path : `file://${file.path}`;
@@ -58,36 +57,76 @@ export default function ShareIntentScreen() {
             encoding: FileSystem.EncodingType.Base64,
           });
           const { mediaUrl } = await api.captures.upload(base64, file.mimeType);
-          params = { shareKind: 'IMAGE', shareMediaUrl: mediaUrl };
+          res = await api.captures.create({ kind: 'IMAGE', mediaUrl });
         } else if (shareIntent.text) {
           const trimmed = shareIntent.text.trim();
-          params = URL_RE.test(trimmed)
-            ? { shareKind: 'LINK', shareUrl: trimmed }
-            : { shareKind: 'TEXT', shareText: trimmed };
+          res = URL_RE.test(trimmed)
+            ? await api.captures.create({ kind: 'LINK', url: trimmed })
+            : await api.captures.create({ kind: 'TEXT', text: trimmed });
         } else {
           throw new Error('Nothing to capture from that share.');
         }
 
         resetShareIntent();
-        router.replace({ pathname: '/(tabs)', params } as never);
+        setSavedId(res.id);
+        setSavedTitle(res.title);
+        setStatus('saved');
       } catch (e) {
         resetShareIntent();
         setStatus('error');
-        setMessage(e instanceof Error ? e.message : 'Could not open that.');
+        setMessage(e instanceof Error ? e.message : 'Could not save that.');
       }
     })();
   }, [isLoading, isAuthenticated, hasShareIntent, shareIntent, resetShareIntent, router]);
 
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
-      {status === 'working' && <ActivityIndicator color={c.text} />}
-      <Text variant="monoSmall" color="muted" style={styles.message}>
-        {message}
-      </Text>
+      {status === 'working' && (
+        <AsciiLoader
+          size={110}
+          message={['saving to your map…', 'reading it closely…', 'connecting the dots…']}
+        />
+      )}
+
+      {status === 'saved' && (
+        <View style={styles.savedWrap}>
+          <AsciiLoader idle variant="cat" size={72} />
+          <Text variant="serif" color="primary" style={styles.savedTitle}>
+            saved to your map ✓
+          </Text>
+          {!!savedTitle && (
+            <Text variant="monoSmall" color="muted" numberOfLines={2} style={styles.savedName}>
+              {savedTitle}
+            </Text>
+          )}
+          <Pressable
+            onPress={() => router.replace(`/insight/${savedId}` as never)}
+            style={[styles.primaryBtn, { backgroundColor: c.text }]}
+            accessibilityRole="button"
+            accessibilityLabel="Open the insight for this capture"
+          >
+            <Text variant="monoSmall" style={{ color: c.background }}>see the insight →</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.replace('/(tabs)' as never)}
+            style={styles.secondaryBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Done"
+          >
+            <Text variant="monoSmall" color="muted">done</Text>
+          </Pressable>
+        </View>
+      )}
+
       {status === 'error' && (
-        <Pressable onPress={() => router.replace('/(tabs)')} style={styles.back}>
-          <Text variant="monoSmall" style={{ color: c.text }}>← back to Mneme</Text>
-        </Pressable>
+        <>
+          <Text variant="monoSmall" color="danger" style={styles.message}>
+            {message}
+          </Text>
+          <Pressable onPress={() => router.replace('/(tabs)')} style={styles.back}>
+            <Text variant="monoSmall" style={{ color: c.text }}>← back to Mneme</Text>
+          </Pressable>
+        </>
       )}
     </View>
   );
@@ -97,4 +136,14 @@ const styles = StyleSheet.create({
   root: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing[6] },
   message: { marginTop: Spacing[4], textAlign: 'center' },
   back: { marginTop: Spacing[5] },
+  savedWrap: { alignItems: 'center' },
+  savedTitle: { marginTop: Spacing[2] },
+  savedName: { marginTop: Spacing[3], maxWidth: 280, textAlign: 'center' },
+  primaryBtn: {
+    marginTop: Spacing[8],
+    paddingVertical: Spacing[3],
+    paddingHorizontal: Spacing[6],
+    borderRadius: Radius.xs,
+  },
+  secondaryBtn: { marginTop: Spacing[5], padding: Spacing[2] },
 });
