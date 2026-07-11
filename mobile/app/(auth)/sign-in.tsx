@@ -7,6 +7,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeftIcon } from 'lucide-react-native';
@@ -70,8 +71,8 @@ export default function SignInScreen() {
             <Text variant="h1" style={styles.title}>
               Welcome back.
             </Text>
-            <Text variant="body" color="secondary" style={styles.subtitle}>
-              Sign back in and pick up where you left off.
+            <Text variant="monoSmall" color="muted" style={styles.subtitle}>
+              your brain missed you.
             </Text>
           </View>
 
@@ -140,6 +141,11 @@ export default function SignInScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      {loading && (
+        <View style={[StyleSheet.absoluteFill, styles.loadingOverlay, { backgroundColor: c.background }]}>
+          <AsciiLoader fill size={110} message={['waking your brain…', 'finding your map…']} />
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -180,6 +186,9 @@ const styles = StyleSheet.create({
   },
   submitBtn: {
     marginTop: Spacing[4],
+  },
+  loadingOverlay: {
+    zIndex: 10,
   },
   footer: {
     flexDirection: 'row',

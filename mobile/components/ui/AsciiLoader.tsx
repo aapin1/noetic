@@ -16,6 +16,11 @@ interface Props {
   color?: string;
   /** Fills the parent and centers itself. */
   fill?: boolean;
+  /**
+   * Decorative mode for empty states: same art, calmer cadence, and no
+   * "loading" semantics — the pet is just keeping the empty screen company.
+   */
+  idle?: boolean;
 }
 
 // The cat mostly sits there, occasionally blinks, and once in a while winks —
@@ -40,14 +45,15 @@ const SPIN_MS = 6500;
  * blinking ASCII cat) with an optional cycling caption. Use for any first-load
  * or long-running state instead of a bare spinner.
  */
-export function AsciiLoader({ size = 96, message, variant = 'brain', color, fill }: Props) {
+export function AsciiLoader({ size = 96, message, variant = 'brain', color, fill, idle }: Props) {
   const c = useThemeColors();
   const tint = color ?? c.muted;
 
-  // Continuous rotation — the brain turning "round and round".
+  // Continuous rotation — the brain turning "round and round". Idle brains
+  // don't spin (nothing is happening); they just breathe.
   const spin = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (variant !== 'brain') return;
+    if (variant !== 'brain' || idle) return;
     const loop = Animated.loop(
       Animated.timing(spin, {
         toValue: 1,
@@ -58,7 +64,7 @@ export function AsciiLoader({ size = 96, message, variant = 'brain', color, fill
     );
     loop.start();
     return () => loop.stop();
-  }, [spin, variant]);
+  }, [spin, variant, idle]);
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   // A gentle breathing pulse layered on the spin so it reads as alive.
@@ -75,13 +81,14 @@ export function AsciiLoader({ size = 96, message, variant = 'brain', color, fill
   }, [pulse]);
   const pulseScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1.04] });
 
-  // Cat blink frames.
+  // Cat blink frames — idle cats blink at a lazier pace.
   const [catFrame, setCatFrame] = useState(0);
   useEffect(() => {
     if (variant !== 'cat') return;
-    const t = setInterval(() => setCatFrame((f) => (f + 1) % CAT_FRAMES.length), CAT_FRAME_MS);
+    const interval = idle ? CAT_FRAME_MS * 2 : CAT_FRAME_MS;
+    const t = setInterval(() => setCatFrame((f) => (f + 1) % CAT_FRAMES.length), interval);
     return () => clearInterval(t);
-  }, [variant]);
+  }, [variant, idle]);
 
   // Cycling caption with a soft crossfade.
   const messages = useMemo(
@@ -104,8 +111,8 @@ export function AsciiLoader({ size = 96, message, variant = 'brain', color, fill
   return (
     <View
       style={[styles.wrap, fill && styles.fill]}
-      accessibilityLabel="Loading"
-      accessibilityRole="progressbar"
+      accessibilityLabel={idle ? undefined : 'Loading'}
+      accessibilityRole={idle ? undefined : 'progressbar'}
       pointerEvents="none"
     >
       {variant === 'brain' ? (

@@ -29,8 +29,13 @@ export default function YouScreen() {
   const { data: profile, refetch } = useApiQuery(
     () => api.profile.me().then((r) => r.profile),
     [],
+    { cacheKey: 'profile.me:profile' },
   );
-  const { data: wrapped, loading: wrappedLoading, refetch: refetchWrapped } = useApiQuery(() => api.profile.wrapped(), []);
+  const { data: wrapped, loading: wrappedLoading, refetch: refetchWrapped } = useApiQuery(
+    () => api.profile.wrapped(),
+    [],
+    { cacheKey: 'profile.wrapped' },
+  );
 
   // Pull-to-refresh only. Focus revalidation happens silently in the
   // background — tying the spinner to `loading` made every visit to this tab

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -21,7 +21,20 @@ export default function InsightDetailScreen() {
   const c = useThemeColors();
   const router = useRouter();
 
-  const { data, loading, error, refetch } = useApiQuery(() => api.captures.get(id), [id]);
+  const { data, loading, refetch } = useApiQuery(() => api.captures.get(id), [id], {
+    cacheKey: `capture:${id}`,
+  });
+
+  // A freshly committed capture arrives with draft insights; the server
+  // polishes them in the background within a few seconds. Quietly re-read so
+  // the sharpened text swaps in — old captures skip this entirely.
+  const capturedAtMs = data ? new Date(data.capturedAt).getTime() : null;
+  useEffect(() => {
+    if (!capturedAtMs || Date.now() - capturedAtMs > 2 * 60 * 1000) return;
+    const first = setTimeout(() => void refetch(), 4000);
+    const second = setTimeout(() => void refetch(), 10000);
+    return () => { clearTimeout(first); clearTimeout(second); };
+  }, [capturedAtMs, refetch]);
 
   // Editing the AI's understanding of the content. Saving reprocesses the
   // whole capture (embedding, topics, connections, insights), so the screen
@@ -66,7 +79,7 @@ export default function InsightDetailScreen() {
     );
   }
 
-  if (error || !data) {
+  if (!data) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
         <EmptyState title="Insight not found" ctaLabel="Back" onCta={() => router.back()} />

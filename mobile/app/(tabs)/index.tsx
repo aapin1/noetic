@@ -592,9 +592,16 @@ function PreflightStatus({ loading, preflight, c }: {
   preflight: CapturePreflight | null;
   c: AppThemeColors;
 }) {
-  // While the source is still being read, the greyed-out Commit button already
-  // signals "working" — so we show nothing here rather than a redundant line.
-  if (loading) return null;
+  // While the source is being read, show a live line so the wait is clearly
+  // the app working — the greyed-out Commit button alone read as "stuck".
+  if (loading) {
+    return (
+      <View style={sh.preflightRow}>
+        <LoadingDots size={4} />
+        <Text variant="monoSmall" style={{ color: c.muted }}>reading the source…</Text>
+      </View>
+    );
+  }
   if (!preflight) return null;
   if (preflight.confidence === 'rich') {
     const label = preflight.bodySource === 'transcript' ? 'got the full transcript ✓' : 'read the full content ✓';
@@ -1249,10 +1256,11 @@ export default function MapScreen() {
   const { data: graphData, loading: graphLoading, refetch: refetchGraph } = useApiQuery(
     () => api.memory.graph({ limit: 80 }),
     [],
+    { cacheKey: 'memory.graph' },
   );
 
   // Account creation date anchors the temporal timeline's start.
-  const { data: profileData } = useApiQuery(() => api.profile.me(), []);
+  const { data: profileData } = useApiQuery(() => api.profile.me(), [], { cacheKey: 'profile.me' });
   const accountCreatedMs = useMemo(() => {
     const created = profileData?.profile.createdAt;
     return created ? new Date(created).getTime() : null;
@@ -1260,9 +1268,9 @@ export default function MapScreen() {
 
   // Info panel: independent, non-blocking fetches — each line appears as
   // soon as its own data resolves, without gating on the others.
-  const { data: intelligenceData, refetch: refetchIntelligence } = useApiQuery(() => api.memory.intelligence(), []);
-  const { data: trendsData, refetch: refetchTrends } = useApiQuery(() => api.memory.trends({ window: 'week' }), []);
-  const { data: pulseData, refetch: refetchPulse } = useApiQuery(() => api.social.pulse(), []);
+  const { data: intelligenceData, refetch: refetchIntelligence } = useApiQuery(() => api.memory.intelligence(), [], { cacheKey: 'memory.intelligence' });
+  const { data: trendsData, refetch: refetchTrends } = useApiQuery(() => api.memory.trends({ window: 'week' }), [], { cacheKey: 'memory.trends:week' });
+  const { data: pulseData, refetch: refetchPulse } = useApiQuery(() => api.social.pulse(), [], { cacheKey: 'social.pulse' });
 
   // Revalidate every map surface at once. The info panel's counts (tensions,
   // rising themes, connections) derive from these side-fetches, so refetching
@@ -3204,14 +3212,12 @@ export default function MapScreen() {
         {/* Empty state */}
         {isEmpty && (
           <View style={styles.emptyHint} pointerEvents="none">
-            <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.2)', textAlign: 'center', letterSpacing: 4, marginBottom: Spacing[5] }}>
-              · · ·
+            <AsciiLoader idle size={100} color="rgba(236,236,236,0.45)" />
+            <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[3], color: 'rgba(236,236,236,0.4)' }}>
+              your map is waiting
             </Text>
-            <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[3], color: 'rgba(236,236,236,0.35)' }}>
-              nothing on the map yet
-            </Text>
-            <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.2)', textAlign: 'center', lineHeight: 20 }}>
-              {'Tap the + below to save your\nfirst thing and watch it appear.'}
+            <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.25)', textAlign: 'center', lineHeight: 20 }}>
+              {'tap + to chart your first thought.'}
             </Text>
           </View>
         )}

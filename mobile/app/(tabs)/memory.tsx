@@ -43,7 +43,7 @@ export default function ArchiveScreen() {
   const [infoVisible, setInfoVisible] = useState(false);
   const [sort, setSort] = useState<SortKey>('recent');
 
-  const { data, loading, refetch } = useApiQuery(() => api.archive.list(), []);
+  const { data, loading, refetch } = useApiQuery(() => api.archive.list(), [], { cacheKey: 'archive.list' });
   const folders = data?.folders ?? null;
 
   // Pull-to-refresh only — focus revalidation stays silent so switching to

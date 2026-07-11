@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { Spacing } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
+import { AsciiLoader } from '@/components/ui/AsciiLoader';
 
 interface Props {
   title: string;
@@ -15,7 +16,8 @@ interface Props {
 export function EmptyState({ title, body, ctaLabel, onCta, icon }: Props) {
   return (
     <View style={styles.container}>
-      {icon && <View style={styles.icon}>{icon}</View>}
+      {/* An idle cat keeps otherwise-blank screens company. */}
+      <View style={styles.icon}>{icon ?? <AsciiLoader idle variant="cat" size={64} />}</View>
       <Text variant="h3" style={styles.title}>
         {title}
       </Text>

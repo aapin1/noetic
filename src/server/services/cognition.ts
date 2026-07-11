@@ -432,6 +432,9 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   recommendations: Recommendation[];
 }> {
   const db = payload.db ?? prisma;
+  // Stage timings logged at the end — the capture path is latency-critical,
+  // so keep the evidence of where the time actually goes.
+  const startedAt = Date.now();
 
   if (payload.kind === CaptureKind.LINK && !payload.url) {
     throw new AppError("INVALID_CAPTURE", "URL is required for link captures", 422);
@@ -486,6 +489,8 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
       }
     }
   }
+
+  const contentDoneAt = Date.now();
 
   let { tokens, combinedText } = sourceTokens({
     rawText: payload.text,
@@ -549,6 +554,8 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     embedText(embeddingText || combinedText),
   ]);
 
+  const classifyDoneAt = Date.now();
+
   const topicIdSet = new Set(classified.map((topic) => topic.topicId));
   const neighborInfo = await computeNeighbors({
     db,
@@ -559,6 +566,8 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     itemPolarity,
     itemEmbedding: embedding,
   });
+
+  const neighborsDoneAt = Date.now();
 
   const isFirstCapture = neighborInfo.priorCount === 0;
   const topicMap = new Map<string, ClassifiedTopic>(
@@ -582,23 +591,11 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     contentThin,
   });
 
-  // Polish is the one LLM call the user actually waits on: the insight screen
-  // reads its output the moment the commit returns. Recommendations were
-  // generated here too, but nothing in the app displays or persists them, so
-  // that call was pure capture latency — dropped.
-  const polishedDrafts = await polishInsights({
-    style: insightStyle,
-    itemTitle,
-    contentText: combinedText,
-    contentGrounding,
-    userContext: payload.userContext,
-    topicNames: classified.map((topic) => topic.name),
-    neighborContext: neighborInfo.neighbors.map((n) => ({
-      title: n.title,
-      edgeType: n.edgeType,
-    })),
-    drafts,
-  });
+  // The insight rows are created from the local drafts immediately and
+  // LLM-polished in the background AFTER the response is sent (see below).
+  // Polishing inline was the last multi-second LLM call the user sat through;
+  // the draft text is already coherent, and the insight screen silently
+  // re-reads a few seconds later to pick up the sharpened version.
   const recommendations: Recommendation[] = [];
 
   const txResult = await prisma.$transaction(async (tx: DbClient) => {
@@ -640,8 +637,8 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
       });
     }
 
-    const insightRows = polishedDrafts.length > 0
-      ? await Promise.all(polishedDrafts.map((draft) =>
+    const insightRows = drafts.length > 0
+      ? await Promise.all(drafts.map((draft) =>
           tx.insight.create({
             data: {
               userId: payload.userId,
@@ -765,6 +762,50 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
       })),
     };
   });
+
+  const txDoneAt = Date.now();
+  console.log(
+    `[capture] timings content=${contentDoneAt - startedAt}ms classify+embed=${classifyDoneAt - contentDoneAt}ms ` +
+    `neighbors=${neighborsDoneAt - classifyDoneAt}ms tx=${txDoneAt - neighborsDoneAt}ms total=${txDoneAt - startedAt}ms`,
+  );
+
+  // Background: sharpen the draft insights with the LLM after the response is
+  // on its way. The rows already exist with readable draft text; this swaps in
+  // the polished headline/body when it lands. Failure leaves the drafts.
+  if (txResult.insights.length > 0) {
+    const insightIds = txResult.insights.map((row) => row.id);
+    void polishInsights({
+      style: insightStyle,
+      itemTitle,
+      contentText: combinedText,
+      contentGrounding,
+      userContext: payload.userContext,
+      topicNames: classified.map((topic) => topic.name),
+      neighborContext: neighborInfo.neighbors.map((n) => ({
+        title: n.title,
+        edgeType: n.edgeType,
+      })),
+      drafts,
+    })
+      .then(async (polished) => {
+        await Promise.all(
+          polished.map((draft, index) => {
+            const id = insightIds[index];
+            if (!id) return null;
+            return db.insight.update({
+              where: { id },
+              data: {
+                headline: draft.headline,
+                body: draft.body,
+                evidence: draft.evidence as Prisma.InputJsonValue,
+              },
+            });
+          }),
+        );
+        console.log(`[capture] background polish done in ${Date.now() - txDoneAt}ms`);
+      })
+      .catch((err) => console.error("[capture] background insight polish failed", err));
+  }
 
   return { ...txResult, threadContext, recommendations };
 }

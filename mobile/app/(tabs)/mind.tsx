@@ -299,7 +299,7 @@ export default function MindScreen() {
   const router = useRouter();
   const [infoVisible, setInfoVisible] = useState(false);
 
-  const { data, loading, error, refetch } = useApiQuery(() => api.memory.intelligence(), []);
+  const { data, loading, error, refetch } = useApiQuery(() => api.memory.intelligence(), [], { cacheKey: 'memory.intelligence' });
   useFocusEffect(useCallback(() => { void refetch(); }, [refetch]));
 
   const model = useMemo(() => buildModel(data ?? EMPTY_INTEL), [data]);
@@ -494,7 +494,7 @@ export default function MindScreen() {
       </SafeAreaView>
     );
   }
-  if (error) {
+  if (error && !data) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
         <View style={[styles.headerFlat, { borderBottomColor: c.border }]}>

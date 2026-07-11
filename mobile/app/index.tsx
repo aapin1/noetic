@@ -121,9 +121,6 @@ export default function LandingScreen() {
           <Text variant="h1" style={styles.line}>
             Save what catches your eye.
           </Text>
-          <Text variant="serif" color="secondary" style={styles.sub}>
-            Mneme connects what you save and shows you what you keep coming back to.
-          </Text>
         </Animated.View>
         <Animated.View style={rise(enterCta)}>
           <Button
@@ -164,7 +161,6 @@ const styles = StyleSheet.create({
     marginTop: Spacing[4],
   },
   line: { textAlign: 'center' },
-  sub: { textAlign: 'center', marginTop: Spacing[4], maxWidth: 340, alignSelf: 'center' },
   cta: { marginTop: Spacing[10] },
   secondary: { marginTop: Spacing[6], alignSelf: 'center', padding: Spacing[2] },
 });

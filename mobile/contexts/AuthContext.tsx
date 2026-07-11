@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { clearQueryCache } from '@/hooks/useApiQuery';
 import { clearAuth, getToken, storeToken, storeUserId } from '@/lib/storage';
 import type { OwnerProfile } from '@/types/api';
 import { DEV_FAKE_LOGIN } from '@/dev/fake-login';
@@ -176,6 +177,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadProfile]);
 
   const signOut = useCallback(async () => {
+    // Cached screen data belongs to this account — never show it to the next.
+    clearQueryCache();
     await clearAuth();
     setState({
       token: null,

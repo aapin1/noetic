@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { Tabs, useRouter } from 'expo-router';
 import { Redirect } from 'expo-router';
@@ -18,6 +18,7 @@ import { SocraticProvider, useSocratic } from '@/contexts/SocraticContext';
 import { useTutorialTarget } from '@/contexts/TutorialContext';
 import { TUTORIAL_TARGET } from '@/constants/tutorialSteps';
 import { api } from '@/lib/api';
+import { prefetchQuery } from '@/hooks/useApiQuery';
 
 function TabBarIcon({ color, icon: Icon }: { color: string; icon: React.ElementType }) {
   return <Icon size={22} color={color} strokeWidth={1.4} />;
@@ -74,6 +75,17 @@ function SocraticFab() {
 function TabsWithFab() {
   const c = useThemeColors();
   const { isAuthenticated, isLoading } = useAuth();
+
+  // Warm the caches of tabs the user hasn't visited yet, so first-visit
+  // screens render instantly instead of flashing a loader. The Atlas tab
+  // mounts immediately and fetches its own data (graph, intelligence, trends,
+  // pulse), so only the remaining tabs' endpoints are prefetched here.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void prefetchQuery('archive.list', () => api.archive.list());
+    void prefetchQuery('profile.wrapped', () => api.profile.wrapped());
+    void prefetchQuery('profile.me:profile', () => api.profile.me().then((r) => r.profile));
+  }, [isAuthenticated]);
 
   if (!isLoading && !isAuthenticated) {
     return <Redirect href="/" />;

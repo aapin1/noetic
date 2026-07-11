@@ -168,6 +168,7 @@ export default function PulseScreen() {
   const { data, loading, error, refetch } = useApiQuery(
     () => api.social.pulse(),
     [],
+    { cacheKey: 'social.pulse' },
   );
 
   useFocusEffect(useCallback(() => { void refetch(); }, [refetch]));
@@ -246,7 +247,7 @@ export default function PulseScreen() {
           size={88}
           message={['taking the pulse…', 'ringing your friends…', 'listening in…']}
         />
-      ) : error ? (
+      ) : error && !data ? (
         <View style={styles.centered}>
           <Text variant="monoSmall" style={{ color: c.muted }}>pulse unavailable</Text>
           <Pressable onPress={() => void refetch()} style={{ marginTop: Spacing[4] }}>

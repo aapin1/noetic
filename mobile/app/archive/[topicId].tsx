@@ -18,7 +18,9 @@ export default function ArchiveFolderScreen() {
   const c = useThemeColors();
   const router = useRouter();
 
-  const { data, loading, error, refetch } = useApiQuery(() => api.archive.get(topicId), [topicId]);
+  const { data, loading, refetch } = useApiQuery(() => api.archive.get(topicId), [topicId], {
+    cacheKey: `archive.get:${topicId}`,
+  });
 
   // Pull-to-refresh only — background revalidation never shows the spinner.
   const [refreshing, setRefreshing] = useState(false);
@@ -44,7 +46,7 @@ export default function ArchiveFolderScreen() {
     );
   }
 
-  if (error || !data) {
+  if (!data) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
         <EmptyState title="Folder not found" ctaLabel="Back" onCta={() => router.back()} />

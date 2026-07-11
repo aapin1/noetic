@@ -16,6 +16,7 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { AsciiLoader } from '@/components/ui/AsciiLoader';
 
 export default function SignUpScreen() {
   const c = useThemeColors();
@@ -84,8 +85,8 @@ export default function SignUpScreen() {
             <Text variant="h1" style={styles.title}>
               Create an account.
             </Text>
-            <Text variant="body" color="secondary" style={styles.subtitle}>
-              Takes about two minutes. Then you can start saving whatever catches your attention.
+            <Text variant="monoSmall" color="muted" style={styles.subtitle}>
+              two minutes, then it starts remembering.
             </Text>
           </View>
 
@@ -178,6 +179,15 @@ export default function SignUpScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      {loading && (
+        <View style={[StyleSheet.absoluteFill, styles.loadingOverlay, { backgroundColor: c.background }]}>
+          <AsciiLoader
+            fill
+            size={110}
+            message={['growing a brain…', 'carving out your corner…', 'almost there…']}
+          />
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -213,6 +223,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing[4],
   },
   submitBtn: { marginTop: Spacing[4] },
+  loadingOverlay: { zIndex: 10 },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',

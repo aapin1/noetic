@@ -101,9 +101,10 @@ export default function PositionDetailScreen() {
   const c = useThemeColors();
   const router = useRouter();
   const { topicId } = useLocalSearchParams<{ topicId: string }>();
-  const { data: position, loading, error, refetch } = useApiQuery(
+  const { data: position, loading, refetch } = useApiQuery(
     () => api.positions.getByTopic(topicId!),
     [topicId],
+    { cacheKey: `position:${topicId}` },
   );
 
   async function handleAcknowledge(challengeId: string, revision?: string) {
@@ -123,7 +124,7 @@ export default function PositionDetailScreen() {
     );
   }
 
-  if (error || !position) {
+  if (!position) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
         <View style={[styles.header, { borderBottomColor: c.border }]}>
