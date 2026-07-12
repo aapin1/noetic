@@ -103,6 +103,11 @@ enum PositionStatus {
   ABANDONED
 }
 
+enum UserPlan {
+  FREE
+  PLUS
+}
+
 enum SocraticRole {
   USER
   COMPANION
@@ -115,6 +120,7 @@ model User {
   name                String?
   image               String?
   passwordHash        String?
+  plan                UserPlan           @default(FREE)
   tasteProfileVersion Int                @default(0)
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -147,6 +153,7 @@ model User {
   socraticThreads     SocraticThread[]
   companionThread     CompanionThread?
   intelligenceCache   IntelligenceCache?
+  usageCounters       UsageCounter[]
 }
 
 model Profile {
@@ -719,6 +726,20 @@ model CompanionMessage {
 /// convergence). Keyed on the tasteProfileVersion it was computed at, so it
 /// regenerates only when the memory graph actually changes — not on every
 /// Mind open. Time-sensitive parts (dormant threads) are always recomputed.
+model UsageCounter {
+  id        String   @id @default(cuid())
+  userId    String
+  /// Metered action: social_video_transcript | image_describe | companion_message | whisper_seconds
+  kind      String
+  /// "2026-07" for monthly kinds, "2026-07-11" for daily kinds
+  period    String
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, period])
+}
+
 model IntelligenceCache {
   userId    String   @id
   version   Int

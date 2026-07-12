@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/Button';
 import { EditableAvatar } from '@/components/profile/EditableAvatar';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { WrappedSection } from '@/components/wrapped/WrappedSection';
+import { SponsoredCard } from '@/components/ui/SponsoredCard';
 import type { OwnerProfile } from '@/types/api';
 
 export default function YouScreen() {
@@ -122,6 +123,8 @@ export default function YouScreen() {
         ) : (
           <WrappedSection scrollY={scrollY} stats={wrapped} />
         )}
+
+        <SponsoredCard />
 
         <View style={styles.editButtonWrap}>
           <Button

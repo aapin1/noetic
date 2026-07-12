@@ -44,6 +44,10 @@ services:
         sync: false
       - key: OPENAI_VISION_MODEL
         value: gpt-4o
+      # RevenueCat webhook auth — the dashboard webhook must send this exact
+      # value in its Authorization header; keeps User.plan authoritative.
+      - key: REVENUECAT_WEBHOOK_SECRET
+        sync: false
       # Cloudflare R2 object storage for capture images.
       - key: R2_ACCOUNT_ID
         sync: false

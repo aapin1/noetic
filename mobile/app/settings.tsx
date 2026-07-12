@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { ChevronLeftIcon, ChevronRightIcon, LogOutIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
+import { presentCustomerCenter } from '@/lib/purchases';
 import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
@@ -155,6 +156,25 @@ export default function SettingsScreen() {
         <SectionHeader title="Account" />
         <View style={[styles.section, { borderColor: c.border }]}>
           <SettingRow label="Profile & handle" onPress={() => router.push('/profile/edit' as never)} />
+          <SettingRow
+            label="Mneme Plus"
+            description="Remove ads and lift every capture limit."
+            onPress={() => router.push('/plus' as never)}
+          />
+          <SettingRow
+            label="Manage subscription"
+            description="Change plan, restore, or cancel."
+            onPress={() => {
+              void presentCustomerCenter().then((shown) => {
+                if (!shown) {
+                  Alert.alert(
+                    'Not available',
+                    'Subscription management needs an updated app build. You can also manage subscriptions in iOS Settings.',
+                  );
+                }
+              });
+            }}
+          />
           <SettingRow
             label="Delete account"
             description="Permanently erase your account and everything you've saved."

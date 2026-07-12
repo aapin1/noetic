@@ -546,7 +546,11 @@ async function fetchTweetMetadata(normalized: string, originalUrl: string): Prom
 }
 
 /** TikTok caption + author via oEmbed, plus a Supadata transcript when available. */
-async function fetchTikTokMetadata(normalized: string, originalUrl: string): Promise<ExtractedMetadata | undefined> {
+async function fetchTikTokMetadata(
+  normalized: string,
+  originalUrl: string,
+  allowPaidTranscript: boolean,
+): Promise<ExtractedMetadata | undefined> {
   try {
     const [oembedRes, transcript] = await Promise.all([
       fetchWithTimeout(
@@ -556,7 +560,7 @@ async function fetchTikTokMetadata(normalized: string, originalUrl: string): Pro
       ).catch(() => undefined),
       // TikTok videos rarely have native captions, so allow AI transcription —
       // they are short, which keeps the per-video cost tiny.
-      fetchSupadataTranscript(normalized, "auto"),
+      allowPaidTranscript ? fetchSupadataTranscript(normalized, "auto") : Promise.resolve(undefined),
     ]);
 
     let oembed: { title?: string; author_name?: string; thumbnail_url?: string } | undefined;
@@ -587,7 +591,22 @@ async function fetchTikTokMetadata(normalized: string, originalUrl: string): Pro
   }
 }
 
-export async function fetchMetadata(url: string): Promise<{ metadata?: ExtractedMetadata; requiresManualInput: boolean }> {
+/** Hosts whose body text requires Supadata AI transcription (mode=auto,
+ * 2 credits/min) — the per-capture cost worth metering per user. */
+export function isPaidTranscriptHost(url: string): boolean {
+  try {
+    const parsed = new URL(normalizeUrl(url));
+    return isTikTokHost(parsed) || isInstagramHost(parsed);
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchMetadata(
+  url: string,
+  opts: { allowPaidTranscript?: boolean } = {},
+): Promise<{ metadata?: ExtractedMetadata; requiresManualInput: boolean }> {
+  const allowPaidTranscript = opts.allowPaidTranscript ?? true;
   const normalized = normalizeUrl(url);
   const parsed = new URL(normalized);
 
@@ -607,7 +626,7 @@ export async function fetchMetadata(url: string): Promise<{ metadata?: Extracted
   }
 
   if (isTikTokHost(parsed)) {
-    const metadata = await fetchTikTokMetadata(normalized, url);
+    const metadata = await fetchTikTokMetadata(normalized, url, allowPaidTranscript);
     if (metadata) {
       return { metadata, requiresManualInput: !metadata.title };
     }
@@ -670,7 +689,7 @@ export async function fetchMetadata(url: string): Promise<{ metadata?: Extracted
   // Instagram has no public oEmbed and blocks scrapers; a Supadata transcript
   // is the only real content route. The generic scrape below still runs for
   // og:title/description.
-  const instagramTranscript = isInstagramHost(parsed)
+  const instagramTranscript = isInstagramHost(parsed) && allowPaidTranscript
     ? await fetchSupadataTranscript(normalized, "auto")
     : undefined;
 

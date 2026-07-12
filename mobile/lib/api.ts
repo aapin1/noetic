@@ -97,6 +97,13 @@ export function warmBackend(): void {
 }
 
 export const api = {
+  plus: {
+    /** Plan + current-period usage — drives ad visibility and the paywall. */
+    entitlements() {
+      return request<import('@/types/api').Entitlements>('/api/me/entitlements');
+    },
+  },
+
   account: {
     /** Permanently deletes the signed-in account and all of its data. */
     delete() {

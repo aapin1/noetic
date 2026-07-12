@@ -11,6 +11,7 @@ import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import type { DbClient, RootDbClient } from "@/server/db";
 import { ingestOrStubUrl } from "@/server/services/content";
+import { tryConsumeUsage } from "@/server/services/usage";
 import {
   cosine,
   jaccard,
@@ -34,7 +35,7 @@ import {
 } from "@/server/cognition/insights";
 import { cosineSim } from "@/server/cognition/layout";
 import { describeImage, embedText, polishInsights, type Recommendation } from "@/server/cognition/llm";
-import { scoreContentConfidence } from "@/server/metadata";
+import { isPaidTranscriptHost, scoreContentConfidence } from "@/server/metadata";
 import { applyTopicWeights, incrementTasteProfileVersion } from "@/server/services/activity";
 
 const NEIGHBOR_LIMIT = 6;
@@ -457,7 +458,13 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   let captureSummary: string | null = null;
 
   if (payload.kind === CaptureKind.LINK && payload.url) {
-    const resolved = await ingestOrStubUrl(payload.url, db);
+    // TikTok/Instagram body text costs Supadata credits (AI transcription) —
+    // metered per user. Over the cap the capture still succeeds; it just
+    // falls back to oEmbed caption/og-tags like any thin scrape.
+    const allowPaidTranscript =
+      !isPaidTranscriptHost(payload.url) ||
+      (await tryConsumeUsage(payload.userId, "social_video_transcript", db));
+    const resolved = await ingestOrStubUrl(payload.url, db, { allowPaidTranscript });
     contentItemId = resolved.contentItemId;
     contentTitle = resolved.contentTitle;
     contentDescription = resolved.contentDescription;
@@ -475,7 +482,13 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   // description of the subject) so the capture is embedded and connected just
   // like a link's scraped article text. Failure degrades to the caption/reaction
   // fallback below.
-  if (payload.kind === CaptureKind.IMAGE && payload.mediaUrl) {
+  if (
+    payload.kind === CaptureKind.IMAGE &&
+    payload.mediaUrl &&
+    // gpt-4o vision is the priciest per-capture call — metered per user.
+    // Over the cap the capture still saves via the caption/reaction fallback.
+    (await tryConsumeUsage(payload.userId, "image_describe", db))
+  ) {
     const image = await loadImageForVision(payload.mediaUrl);
     if (image) {
       const described = await describeImage(image);

@@ -4,10 +4,12 @@ import { requireRequestUserId } from "@/lib/auth";
 import { captureListSchema, captureSchema } from "@/server/contracts";
 import { captureItem, listCaptures } from "@/server/services/cognition";
 import { checkCaptureAgainstPositions } from "@/server/services/positions";
+import { enforceRateLimit } from "@/server/services/usage";
 
 export async function POST(request: Request) {
   return handleRoute(async () => {
     const userId = await requireRequestUserId(request);
+    enforceRateLimit(userId, "capture", 30, 5 * 60_000);
     const input = await parseJson(request, captureSchema);
     const capture = await captureItem({
       userId,

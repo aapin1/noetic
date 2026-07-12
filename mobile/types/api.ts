@@ -452,3 +452,15 @@ export interface PersonalIntelligenceResponse {
   convergenceSignals: ConvergenceSignal[];
   dormantThreads: DormantThread[];
 }
+
+export interface UsageMeter {
+  kind: 'social_video_transcript' | 'image_describe' | 'companion_message' | 'voice_transcription';
+  used: number;
+  limit: number;
+  period: 'month' | 'day';
+}
+
+export interface Entitlements {
+  plan: 'FREE' | 'PLUS';
+  usage: UsageMeter[];
+}

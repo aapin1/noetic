@@ -83,7 +83,9 @@ export async function serializeContentItem(db: DbClient, id: string) {
   });
 }
 
-export async function ingestUrl(url: string, db: DbClient = prisma) {
+type IngestOpts = { allowPaidTranscript?: boolean };
+
+export async function ingestUrl(url: string, db: DbClient = prisma, opts: IngestOpts = {}) {
   const normalizedUrl = normalizeUrl(url);
   const existing = await db.contentItem.findUnique({
     where: { canonicalUrl: normalizedUrl },
@@ -107,7 +109,7 @@ export async function ingestUrl(url: string, db: DbClient = prisma) {
     const retryDue = Date.now() - existing.updatedAt.getTime() > RETRY_COOLDOWN_MS;
     if (!existing.bodyText && existing.canonicalUrl && retryDue) {
       try {
-        const refetched = await fetchMetadata(existing.canonicalUrl);
+        const refetched = await fetchMetadata(existing.canonicalUrl, opts);
         const body = refetched.metadata?.bodyText;
         if (body) {
           await db.contentItem.update({
@@ -148,7 +150,7 @@ export async function ingestUrl(url: string, db: DbClient = prisma) {
   let fetched: Awaited<ReturnType<typeof fetchMetadata>>;
 
   try {
-    fetched = await fetchMetadata(url);
+    fetched = await fetchMetadata(url, opts);
   } catch {
     return {
       status: "manual_required" as const,
@@ -252,7 +254,7 @@ export async function ingestUrl(url: string, db: DbClient = prisma) {
  * and ask them what it was about when it wasn't. Creates/refreshes the
  * ContentItem, which the subsequent capture reuses via canonicalUrl dedupe.
  */
-export async function preflightUrl(url: string, db: DbClient = prisma): Promise<{
+export async function preflightUrl(url: string, db: DbClient = prisma, opts: IngestOpts = {}): Promise<{
   confidence: ContentConfidence;
   title?: string;
   excerpt?: string;
@@ -260,7 +262,7 @@ export async function preflightUrl(url: string, db: DbClient = prisma): Promise<
 }> {
   let ingest: Awaited<ReturnType<typeof ingestUrl>>;
   try {
-    ingest = await ingestUrl(url, db);
+    ingest = await ingestUrl(url, db, opts);
   } catch {
     return { confidence: "thin" };
   }
@@ -288,8 +290,8 @@ export async function preflightUrl(url: string, db: DbClient = prisma): Promise<
  * Resolves a URL to a ContentItem when possible; if metadata fetch fails,
  * creates a minimal manual item so capture stays one-tap.
  */
-export async function ingestOrStubUrl(url: string, db: DbClient = prisma) {
-  const ingest = await ingestUrl(url, db);
+export async function ingestOrStubUrl(url: string, db: DbClient = prisma, opts: IngestOpts = {}) {
+  const ingest = await ingestUrl(url, db, opts);
 
   if ("contentItem" in ingest && ingest.contentItem && !ingest.requiresManualInput) {
     const row = ingest.contentItem;
