@@ -192,6 +192,7 @@ export const captureUpdateSchema = z.object({
 
 export const memoryGraphSchema = z.object({
   limit: z.coerce.number().int().min(10).max(200).default(80),
+  topicId: z.string().min(1).optional(),
 });
 
 export const memoryTrendsSchema = z.object({

@@ -276,7 +276,7 @@ export const api = {
   },
 
   memory: {
-    graph(params?: { limit?: number }) {
+    graph(params?: { limit?: number; topicId?: string }) {
       return request<MemoryGraphResponse>(`/api/memory/graph${buildQuery(params ?? {})}`);
     },
     trends(params?: { window?: 'week' | 'month' }) {

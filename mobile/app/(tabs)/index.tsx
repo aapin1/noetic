@@ -496,6 +496,7 @@ function Divider({ c }: { c: AppThemeColors }) {
 
 function StepOne({
   mode, setMode, payload, setPayload, imageUri, uploading, onPickImage, error, onNext, onClose, onPaste, c, firstCapture,
+  onQuickSave, busy, clipboardHasUrl,
 }: {
   mode: CaptureMode; setMode: (m: CaptureMode) => void;
   payload: string; setPayload: (s: string) => void;
@@ -503,8 +504,13 @@ function StepOne({
   error: string; onNext: () => boolean; onClose: () => void; onPaste: () => void;
   c: AppThemeColors;
   firstCapture?: boolean;
+  onQuickSave: () => void; busy: boolean; clipboardHasUrl: boolean;
 }) {
   const nextTarget = useTutorialTarget(TUTORIAL_TARGET.captureNext);
+  // The copied-link fast path: when the clipboard is known to hold a URL and
+  // nothing has been typed yet, the paste affordance is promoted from a muted
+  // hint to the obvious next tap.
+  const promotePaste = mode === 'link' && clipboardHasUrl && !payload.trim();
   return (
     <View>
       <Text variant="serifLg" color="primary" style={sh.heading}>
@@ -574,7 +580,13 @@ function StepOne({
               autoFocus={!nextTarget.isActive}
             />
             <Pressable onPress={onPaste} accessibilityLabel="Paste from clipboard">
-              <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>paste from clipboard ↑</Text>
+              {promotePaste ? (
+                <View style={[sh.clipChip, { borderColor: c.border, backgroundColor: c.elevated }]}>
+                  <Text variant="monoSmall" style={{ color: c.text }}>↳ use copied link</Text>
+                </View>
+              ) : (
+                <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>paste from clipboard ↑</Text>
+              )}
             </Pressable>
           </View>
         )}
@@ -589,14 +601,36 @@ function StepOne({
           <Pressable onPress={onClose} disabled={nextTarget.isActive} style={[sh.secondaryBtn, { opacity: nextTarget.isActive ? 0.35 : 1 }]}>
             <Text variant="monoSmall" style={{ color: c.muted }}>close ✕</Text>
           </Pressable>
-          <Pressable
-            // Advance the walkthrough only when the form actually advanced —
-            // a validation error must keep the tutorial on this step too.
-            onPress={() => { if (onNext()) nextTarget.press(); }}
-            style={[sh.primaryBtn, { backgroundColor: c.text }]}
-          >
-            <Text variant="monoSmall" style={{ color: c.background }}>next →</Text>
-          </Pressable>
+          {nextTarget.isActive ? (
+            /* Guided flow: the walkthrough teaches the full two-step capture,
+               so its step one keeps the original single "next" action. */
+            <Pressable
+              // Advance the walkthrough only when the form actually advanced —
+              // a validation error must keep the tutorial on this step too.
+              onPress={() => { if (onNext()) nextTarget.press(); }}
+              style={[sh.primaryBtn, { backgroundColor: c.text }]}
+            >
+              <Text variant="monoSmall" style={{ color: c.background }}>next →</Text>
+            </Pressable>
+          ) : (
+            /* Real captures are one step: save commits right here. The
+               reaction remains available as an optional detour, matching how
+               the share-sheet path treats the insight — an offer, not a toll. */
+            <View style={sh.actionsRight}>
+              <Pressable onPress={() => { onNext(); }} disabled={busy} style={sh.secondaryBtn}>
+                <Text variant="monoSmall" style={{ color: c.muted }}>+ reaction</Text>
+              </Pressable>
+              <Pressable
+                onPress={onQuickSave}
+                disabled={busy}
+                style={[sh.primaryBtn, { backgroundColor: c.text, opacity: busy ? 0.55 : 1 }]}
+              >
+                <Text variant="monoSmall" style={{ color: c.background }}>
+                  {busy ? 'saving...' : 'save →'}
+                </Text>
+              </Pressable>
+            </View>
+          )}
         </View>
       </View>
     </View>
@@ -751,8 +785,17 @@ const sh = StyleSheet.create({
   contextHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   inputField: { minHeight: 72, paddingVertical: Spacing[1] },
   actions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  actionsRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
   secondaryBtn: { paddingVertical: Spacing[3], paddingHorizontal: Spacing[2] },
   primaryBtn: { paddingVertical: Spacing[3], paddingHorizontal: Spacing[5], borderRadius: Radius.xs },
+  clipChip: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: Radius.xs,
+    paddingVertical: Spacing[2],
+    paddingHorizontal: Spacing[3],
+    marginTop: Spacing[3],
+  },
 });
 
 // ── Toolbar ────────────────────────────────────────────────────────
@@ -848,12 +891,14 @@ interface ExcitingLine {
 }
 
 function InfoPanel({
-  top, collapsed, onToggle, pointCount, fieldCount, connectionCount, tensionCount, exciting, onNavigate,
+  top, collapsed, onToggle, pointCount, totalPointCount, fieldCount, connectionCount, tensionCount, exciting, onNavigate,
 }: {
   top: number;
   collapsed: boolean;
   onToggle: () => void;
   pointCount: number;
+  /** Matching captures server-side; > pointCount means the map is truncated. */
+  totalPointCount: number;
   fieldCount: number;
   connectionCount: number;
   tensionCount: number;
@@ -865,7 +910,11 @@ function InfoPanel({
   // ordered longest-first so the right-aligned block tapers cleanly.
   const entries: { key: string; label: string; node: React.ReactNode }[] = [];
 
-  const pointsLabel = `${pointCount} ${pointCount === 1 ? 'point' : 'points'}`;
+  // Never pretend the visible window is everything: past the fetch limit the
+  // map shows the most recent captures, and this line says so.
+  const pointsLabel = totalPointCount > pointCount
+    ? `latest ${pointCount} of ${totalPointCount} points`
+    : `${pointCount} ${pointCount === 1 ? 'point' : 'points'}`;
   entries.push({
     key: 'points',
     label: pointsLabel,
@@ -1266,6 +1315,40 @@ export default function MapScreen() {
     { cacheKey: 'memory.graph' },
   );
 
+  // ── Focus mode / topic sub-maps ───────────────────────────────
+  // Focusing a topic opens that topic's COMPLETE map — every capture in it
+  // (up to the server cap), not just the ones that happen to fall inside the
+  // recent-80 overview fetch. Hand-rolled rather than useApiQuery: the fetch
+  // is keyed on a changing topicId, and the interim state must fall back to
+  // the dimmed overview, never to a previously focused topic's data.
+  const [focusedTopicId, setFocusedTopicId] = useState<string | null>(null);
+  const [focusedGraph, setFocusedGraph] = useState<{ topicId: string; data: MemoryGraphResponse } | null>(null);
+  const focusedSeq = useRef(0);
+  const fetchFocusedGraph = useCallback((topicId: string) => {
+    const seq = ++focusedSeq.current;
+    api.memory
+      .graph({ topicId, limit: 200 })
+      .then((data) => {
+        if (focusedSeq.current === seq) setFocusedGraph({ topicId, data });
+      })
+      .catch(() => {
+        // Leave the dimmed overview in place — still a usable focus view.
+      });
+  }, []);
+  useEffect(() => {
+    if (!focusedTopicId) {
+      focusedSeq.current += 1;
+      setFocusedGraph(null);
+      return;
+    }
+    fetchFocusedGraph(focusedTopicId);
+  }, [focusedTopicId, fetchFocusedGraph]);
+  const activeFocusGraph =
+    focusedTopicId && focusedGraph?.topicId === focusedTopicId ? focusedGraph.data : null;
+  // Drives the DIM treatment only: once the sub-map is live every visible
+  // node belongs to the topic, so nothing should be dimmed.
+  const focusDimTopicId = activeFocusGraph ? null : focusedTopicId;
+
   // Account creation date anchors the temporal timeline's start.
   const { data: profileData } = useApiQuery(() => api.profile.me(), [], { cacheKey: 'profile.me' });
   const accountCreatedMs = useMemo(() => {
@@ -1283,12 +1366,19 @@ export default function MapScreen() {
   // rising themes, connections) derive from these side-fetches, so refetching
   // only the graph after a capture/delete left the panel showing pre-mutation
   // numbers until a full app restart.
+  // Read through a ref so refetchMapData keeps a stable identity — it feeds
+  // useFocusEffect, and a focus toggle must not re-trigger the whole
+  // revalidation fan-out.
+  const focusedTopicIdRef = useRef<string | null>(null);
+  useEffect(() => { focusedTopicIdRef.current = focusedTopicId; }, [focusedTopicId]);
+
   const refetchMapData = useCallback(() => {
     void refetchGraph();
+    if (focusedTopicIdRef.current) fetchFocusedGraph(focusedTopicIdRef.current);
     void refetchIntelligence();
     void refetchTrends();
     void refetchPulse();
-  }, [refetchGraph, refetchIntelligence, refetchTrends, refetchPulse]);
+  }, [refetchGraph, fetchFocusedGraph, refetchIntelligence, refetchTrends, refetchPulse]);
 
   useFocusEffect(refetchMapData);
 
@@ -1303,13 +1393,16 @@ export default function MapScreen() {
     if (!tutorialActive && demoNode) setDemoNode(null);
   }, [tutorialActive, demoNode]);
 
-  const serverNodes = graphData?.nodes;
+  const serverNodes = activeFocusGraph?.nodes ?? graphData?.nodes;
   const nodes = useMemo<GraphNode[]>(() => {
     const base = serverNodes ?? [];
     return demoNode ? [...base, demoNode] : base;
   }, [serverNodes, demoNode]);
-  const edges = graphData?.edges ?? [];
-  const clusters = graphData?.clusters ?? [];
+  const edges = activeFocusGraph?.edges ?? graphData?.edges ?? [];
+  const clusters = activeFocusGraph?.clusters ?? graphData?.clusters ?? [];
+  // Total matching captures server-side (may exceed what's fetched/rendered).
+  // Falls back to the rendered count for cached pre-totalCount responses.
+  const totalCaptureCount = activeFocusGraph?.totalCount ?? graphData?.totalCount ?? 0;
 
   const fieldCount = useMemo(() => {
     const fieldIds = new Set<string>();
@@ -1920,10 +2013,6 @@ export default function MapScreen() {
     return timeRange.startMs + (timeRange.endMs - timeRange.startMs) * timelinePct;
   }, [nodes.length, timeRange, timelinePct]);
 
-  // ── Focus mode ────────────────────────────────────────────────
-  const [focusedTopicId, setFocusedTopicId] = useState<string | null>(null);
-
-
   const animCancelRef = useRef<(() => void) | null>(null);
 
   const animateCamera = useCallback((targetX: number, targetY: number, targetZoom: number, duration = 900) => {
@@ -1982,6 +2071,21 @@ export default function MapScreen() {
   useFocusEffect(useCallback(() => {
     if (nodes.length > 0) centerOnNodes();
   }, [nodes.length, centerOnNodes]));
+
+  // Fly the camera to fit whichever map is live: a topic's sub-map once it
+  // arrives, or the overview again when focus is cleared. While the sub-map
+  // is still loading ('pending') the camera stays where the cluster tap or
+  // drawer left it — the dimmed overview is the interim state.
+  const focusFitKey = activeFocusGraph ? focusedTopicId! : focusedTopicId ? 'pending' : 'overview';
+  const prevFocusFitKeyRef = useRef(focusFitKey);
+  useEffect(() => {
+    if (prevFocusFitKeyRef.current === focusFitKey) return;
+    prevFocusFitKeyRef.current = focusFitKey;
+    if (focusFitKey === 'pending' || nodes.length === 0) return;
+    // Fit against the lens's own layout for the NEW node set — `pos` may
+    // still hold the previous set mid-swap (renderPos settles a frame later).
+    centerOnNodes(lensMode === 'source' ? sourcePos : semanticPos, true);
+  }, [focusFitKey, nodes.length, centerOnNodes, lensMode, sourcePos, semanticPos]);
 
   // Lens-switch camera recentering happens frame-by-frame inside
   // handleLensChange's tick loop (derived from the same in-flight node
@@ -2278,6 +2382,10 @@ export default function MapScreen() {
     return () => loop.stop();
   }, [fabPulse]);
 
+  // Whether the clipboard currently holds a URL — checked (not read: no iOS
+  // paste banner) each time the sheet opens, to promote the paste affordance.
+  const [clipboardHasUrl, setClipboardHasUrl] = useState(false);
+
   const openCapture = useCallback(() => {
     closeDrawer();
     setSelectedNode(null);
@@ -2285,6 +2393,8 @@ export default function MapScreen() {
     setImageUri(null); setMediaUrl(null); setUploading(false);
     setCaptureError(''); setMode('link');
     setPreflight(null); setPreflightLoading(false); setUserContext('');
+    setClipboardHasUrl(false);
+    Clipboard.hasUrlAsync().then(setClipboardHasUrl).catch(() => {});
     setShowCapture(true);
     slideY.setValue(SH);
     RNAnimated.spring(slideY, { toValue: 0, useNativeDriver: true, damping: 22, stiffness: 170 }).start();
@@ -2307,15 +2417,21 @@ export default function MapScreen() {
     });
   }, [slideY]);
 
-  // Returns whether the form actually advanced, so the walkthrough can key
-  // its own progress off real success rather than the button press.
-  const goNext = useCallback((): boolean => {
+  // Shared by "next" (reaction step) and the one-tap quick save.
+  const validatePayload = useCallback((): boolean => {
     if (mode === 'image') {
       if (uploading) { setCaptureError('Still reading the image…'); return false; }
       if (!mediaUrl) { setCaptureError('Add an image first.'); return false; }
     } else if (!payload.trim()) {
       setCaptureError('Enter a URL or thought first.'); return false;
     }
+    return true;
+  }, [mode, payload, mediaUrl, uploading]);
+
+  // Returns whether the form actually advanced, so the walkthrough can key
+  // its own progress off real success rather than the button press.
+  const goNext = useCallback((): boolean => {
+    if (!validatePayload()) return false;
     // Drop the keyboard as we advance to the reaction step so it doesn't cover
     // the preflight status or the reaction field on the way in.
     Keyboard.dismiss();
@@ -2324,7 +2440,7 @@ export default function MapScreen() {
     }
     setCaptureError(''); setStep(2);
     return true;
-  }, [mode, payload, mediaUrl, uploading, runPreflight]);
+  }, [validatePayload, mode, payload, runPreflight]);
 
   const shareParams = useLocalSearchParams<{
     selectIds?: string; firstCapture?: string;
@@ -2400,7 +2516,20 @@ export default function MapScreen() {
     }
   }, []);
 
-  const commit = useCallback(async () => {
+  // Quick save (step-one "save →"): the capture lands on the map with the
+  // landing ring plus a transient pill offering the insight — the same
+  // "sharing IS the capture" contract as the share-sheet path. The full
+  // reaction flow keeps opening the insight screen directly.
+  const [savedPill, setSavedPill] = useState<{ id: string } | null>(null);
+  const savedPillTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showSavedPill = useCallback((id: string) => {
+    if (savedPillTimer.current) clearTimeout(savedPillTimer.current);
+    setSavedPill({ id });
+    savedPillTimer.current = setTimeout(() => setSavedPill(null), 6000);
+  }, []);
+  useEffect(() => () => { if (savedPillTimer.current) clearTimeout(savedPillTimer.current); }, []);
+
+  const commit = useCallback(async (opts?: { quick?: boolean }) => {
     // Drop the keyboard the moment they commit, so it doesn't linger over the
     // saving state or the map while the insight is generated.
     Keyboard.dismiss();
@@ -2447,13 +2576,24 @@ export default function MapScreen() {
       setNewNodeId(res.id);
       refetchMapData();
       closeCapture();
-      router.push(`/insight/${res.id}` as never);
+      if (opts?.quick) {
+        showSavedPill(res.id);
+      } else {
+        router.push(`/insight/${res.id}` as never);
+      }
     } catch (e) {
       setCaptureError(e instanceof Error ? e.message : 'Capture failed.');
     } finally {
       setBusy(false);
     }
-  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, router, tutorialActive]);
+  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, router, tutorialActive, showSavedPill]);
+
+  const quickSave = useCallback(() => {
+    if (!validatePayload()) return;
+    Keyboard.dismiss();
+    setCaptureError('');
+    void commit({ quick: true });
+  }, [validatePayload, commit]);
 
   const pasteFromClipboard = useCallback(async () => {
     const t = (await Clipboard.getStringAsync()).trim();
@@ -2531,12 +2671,12 @@ export default function MapScreen() {
         return baseOpacity * 0.08 * zoomFade;
       }
     }
-    // Focus dimming
-    if (focusedTopicId && !node.topics.some((t) => t.topicId === focusedTopicId)) {
+    // Focus dimming (interim only — a live sub-map has no non-members)
+    if (focusDimTopicId && !node.topics.some((t) => t.topicId === focusDimTopicId)) {
       return baseOpacity * 0.06 * zoomFade;
     }
     return baseOpacity * zoomFade;
-  }, [hasSearch, highlightedIds, lensMode, nodeTimestamps, timelineCutoffMs, focusedTopicId]);
+  }, [hasSearch, highlightedIds, lensMode, nodeTimestamps, timelineCutoffMs, focusDimTopicId]);
 
   // ── Map world body — everything drawn in world coordinates ─────
   // Deliberately independent of vbPos: panning only slides the viewBox, so
@@ -2581,7 +2721,7 @@ export default function MapScreen() {
           {/* Cluster region halos — only in semantic mode */}
           {lensMode === 'semantic' && clusterLabels.map((cl) => {
             const clusterR = Math.min(LAYOUT_W, LAYOUT_H) * 0.16;
-            const dimmed = focusedTopicId && cl.topicId !== focusedTopicId;
+            const dimmed = focusDimTopicId && cl.topicId !== focusDimTopicId;
             return (
               <Circle
                 key={`cl-area-${cl.topicId}`}
@@ -2592,7 +2732,7 @@ export default function MapScreen() {
             );
           })}
     </>
-  ), [lensMode, clusterLabels, focusedTopicId]);
+  ), [lensMode, clusterLabels, focusDimTopicId]);
 
   // The only genuinely zoom-dependent art: text counter-scaled to stay a
   // constant size on screen. A dozen elements, so rebuilding it per zoom
@@ -2659,7 +2799,7 @@ export default function MapScreen() {
               cap = 0.28;
             }
             if (clOpacity <= 0.005) return null;
-            const dimmed = focusedTopicId && cl.topicId !== focusedTopicId;
+            const dimmed = focusDimTopicId && cl.topicId !== focusDimTopicId;
             return (
               <SvgText
                 key={`cl-label-${cl.topicId}`}
@@ -2721,7 +2861,7 @@ export default function MapScreen() {
           })()}
       </>
     );
-  }, [zoom, lensMode, lensTransitioning, clusterLabels, focusedTopicId, nodes.length]);
+  }, [zoom, lensMode, lensTransitioning, clusterLabels, focusDimTopicId, nodes.length]);
 
   // Edges + nodes: the bulk of the SVG tree. Keyed on zoomFade, not zoom, so a
   // zoom commit outside the fade band keeps this element identity and React
@@ -2745,11 +2885,11 @@ export default function MapScreen() {
             if (salience === undefined && !isSelectedEdge) return null;
             let edgeOpacity = EDGE_MIN_OPACITY + (salience ?? 0) * (EDGE_MAX_OPACITY - EDGE_MIN_OPACITY);
             const edgeWidth = EDGE_MIN_WIDTH + (salience ?? 0) * (EDGE_MAX_WIDTH - EDGE_MIN_WIDTH);
-            if (focusedTopicId) {
+            if (focusDimTopicId) {
               const fromNode = nodeById.get(e.fromItemId);
               const toNode = nodeById.get(e.toItemId);
-              const fromInFocus = fromNode?.topics.some((t) => t.topicId === focusedTopicId);
-              const toInFocus = toNode?.topics.some((t) => t.topicId === focusedTopicId);
+              const fromInFocus = fromNode?.topics.some((t) => t.topicId === focusDimTopicId);
+              const toInFocus = toNode?.topics.some((t) => t.topicId === focusDimTopicId);
               if (!fromInFocus && !toInFocus) edgeOpacity *= 0.08;
             }
 
@@ -2832,7 +2972,7 @@ export default function MapScreen() {
   ), [
     edges, nodes, pos, nodeById, discoveryEdgeKeys, discoveryNodeIds,
     nodeMetrics, nodeColor, isRecentNode, hasSearch, highlightedIds,
-    getNodeOpacity, isEmpty, focusedTopicId, zoomFade, edgeSalienceByKey,
+    getNodeOpacity, isEmpty, focusDimTopicId, zoomFade, edgeSalienceByKey,
   ]);
 
   const worldBody = useMemo(() => (
@@ -3201,6 +3341,7 @@ export default function MapScreen() {
             collapsed={infoCollapsed}
             onToggle={() => setInfoCollapsed((v) => !v)}
             pointCount={nodes.length}
+            totalPointCount={totalCaptureCount}
             fieldCount={fieldCount}
             connectionCount={edges.length}
             tensionCount={tensionCount}
@@ -3214,6 +3355,11 @@ export default function MapScreen() {
           <View style={[styles.focusBadge, { top: insets.top + 80, backgroundColor: 'rgba(10,10,10,0.85)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
             <Text style={[styles.focusBadgeText, { color: 'rgba(236,236,236,0.5)' }]}>
               {clusters.find((cl) => cl.topicId === focusedTopicId)?.name ?? ''}
+              {activeFocusGraph
+                ? ` · ${activeFocusGraph.totalCount > activeFocusGraph.nodes.length
+                  ? `${activeFocusGraph.nodes.length} of ${activeFocusGraph.totalCount}`
+                  : activeFocusGraph.totalCount}`
+                : ' · opening…'}
             </Text>
             <Pressable onPress={() => setFocusedTopicId(null)} hitSlop={8} style={{ marginLeft: Spacing[2] }}>
               <Text style={[styles.focusBadgeText, { color: 'rgba(236,236,236,0.35)' }]}>×</Text>
@@ -3276,6 +3422,28 @@ export default function MapScreen() {
                 </Pressable>
               )}
               <Pressable onPress={() => { clearDiscovery(); setToolMode('default'); }} hitSlop={10} style={styles.discoveryClose}>
+                <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.35)' }]}>✕</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {/* Quick-save confirmation: the capture is on the map; the insight is
+            an offered next step, not a forced screen. Auto-dismisses. */}
+        {savedPill && !showCapture && !drawerVisible && (
+          <View style={[styles.discoveryBar, { bottom: TAB_H + Spacing[5] + FAB_SIZE + Spacing[3] }]} pointerEvents="box-none">
+            <View style={[styles.discoveryPill, { backgroundColor: 'rgba(10,10,10,0.9)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
+              <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.6)' }]}>saved ✓</Text>
+              <Pressable
+                onPress={() => { const id = savedPill.id; setSavedPill(null); router.push(`/insight/${id}` as never); }}
+                hitSlop={8}
+                style={[styles.discoveryActionBtn, { backgroundColor: 'rgba(126,200,160,0.15)', borderColor: 'rgba(126,200,160,0.32)' }]}
+                accessibilityRole="button"
+                accessibilityLabel="Open the insight for this capture"
+              >
+                <Text style={[styles.discoveryAction, { color: DISCOVERY_ACCENT }]}>see the insight →</Text>
+              </Pressable>
+              <Pressable onPress={() => setSavedPill(null)} hitSlop={10} style={styles.discoveryClose}>
                 <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.35)' }]}>✕</Text>
               </Pressable>
             </View>
@@ -3346,7 +3514,7 @@ export default function MapScreen() {
                         hitSlop={8}
                       >
                         <Text variant="monoSmall" style={{ color: focusedTopicId === drawerCluster.topicId ? c.text : c.faint }}>
-                          {focusedTopicId === drawerCluster.topicId ? 'focused' : 'focus'}
+                          {focusedTopicId === drawerCluster.topicId ? 'exit map' : 'open map'}
                         </Text>
                       </Pressable>
                     </View>
@@ -3486,20 +3654,30 @@ export default function MapScreen() {
                 </Text>
                 <View style={styles.modalBody}>
                   {step === 1 && (
-                    <StepOne
-                      mode={mode} setMode={setMode}
-                      payload={payload} setPayload={setPayload}
-                      imageUri={imageUri} uploading={uploading}
-                      onPickImage={(source) => void pickImage(source)}
-                      error={captureError}
-                      onNext={goNext}
-                      onClose={closeCapture}
-                      onPaste={() => void pasteFromClipboard()}
-                      c={c}
-                      firstCapture={firstCapturePrompt}
-                    />
+                    /* Hidden rather than unmounted while a quick save runs,
+                       for the same keyboard reasons as step two below. */
+                    <View
+                      style={busy ? styles.hidden : null}
+                      pointerEvents={busy ? 'none' : 'auto'}
+                    >
+                      <StepOne
+                        mode={mode} setMode={setMode}
+                        payload={payload} setPayload={setPayload}
+                        imageUri={imageUri} uploading={uploading}
+                        onPickImage={(source) => void pickImage(source)}
+                        error={captureError}
+                        onNext={goNext}
+                        onClose={closeCapture}
+                        onPaste={() => void pasteFromClipboard()}
+                        c={c}
+                        firstCapture={firstCapturePrompt}
+                        onQuickSave={quickSave}
+                        busy={busy}
+                        clipboardHasUrl={clipboardHasUrl}
+                      />
+                    </View>
                   )}
-                  {step === 2 && busy && (
+                  {busy && (
                     <AsciiLoader
                       size={120}
                       message={[

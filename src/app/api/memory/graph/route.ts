@@ -7,6 +7,6 @@ export async function GET(request: Request) {
   return handleRoute(async () => {
     const userId = await requireRequestUserId(request);
     const input = await parseSearchParams(request, memoryGraphSchema);
-    return getMemoryGraph({ userId, limit: input.limit });
+    return getMemoryGraph({ userId, limit: input.limit, topicId: input.topicId });
   });
 }

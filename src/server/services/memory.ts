@@ -196,20 +196,29 @@ async function resolveSemanticCoords(
 export async function getMemoryGraph(args: {
   userId: string;
   limit?: number;
+  /** When set, the graph is that topic's complete sub-map (up to the limit). */
+  topicId?: string;
   db?: DbClient;
 }): Promise<{
   nodes: GraphNode[];
   edges: GraphEdge[];
   clusters: GraphCluster[];
   positions: { topicId: string; statement: string; status: 'ACTIVE' | 'REVISED' | 'ABANDONED' }[];
+  /** Captures matching the filter BEFORE the limit — lets the client say "showing N of M". */
+  totalCount: number;
 }> {
   const db = args.db ?? prisma;
   const limit = Math.min(Math.max(args.limit ?? GRAPH_LIMIT_DEFAULT, 10), 200);
 
+  const where = {
+    userId: args.userId,
+    ...(args.topicId ? { topics: { some: { topicId: args.topicId } } } : {}),
+  };
+
   // Narrow select: embeddings (~12KB/node) are deliberately excluded — the
   // layout resolver fetches them lazily, only when a re-layout is needed.
   const captures = await db.capturedItem.findMany({
-    where: { userId: args.userId },
+    where,
     orderBy: { capturedAt: "desc" },
     take: limit,
     select: {
@@ -229,7 +238,13 @@ export async function getMemoryGraph(args: {
     },
   });
 
-  const coords = await resolveSemanticCoords(db, captures);
+  const [coords, totalCount] = await Promise.all([
+    resolveSemanticCoords(db, captures),
+    // Cheap fast path: an un-truncated page IS the full count.
+    captures.length < limit
+      ? Promise.resolve(captures.length)
+      : db.capturedItem.count({ where }),
+  ]);
 
   const nodes: GraphNode[] = captures.map((item) => ({
     id: item.id,
@@ -302,6 +317,7 @@ export async function getMemoryGraph(args: {
     })),
     clusters: Array.from(clusterMap.values()).sort((a, b) => b.count - a.count),
     positions,
+    totalCount,
   };
 }
 

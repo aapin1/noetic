@@ -158,6 +158,8 @@ export interface MemoryGraphResponse {
     statement: string;
     status: 'ACTIVE' | 'REVISED' | 'ABANDONED';
   }[];
+  /** Captures matching the request BEFORE the limit — "showing N of M". */
+  totalCount: number;
 }
 
 export interface MemoryTrendsResponse {
