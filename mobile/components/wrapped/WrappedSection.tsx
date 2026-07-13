@@ -406,7 +406,25 @@ function Spectrum({ items }: { items: { name: string; count: number }[] }) {
 const BUBBLE_BOX_H = 224;
 const MAX_BUBBLES = 4;
 const MIN_BUBBLE_R = 24;
-const MAX_BUBBLE_R = 48;
+const MAX_BUBBLE_R = 54;
+/** A label too long for its rank-assigned bubble grows the bubble up to here. */
+const HARD_MAX_BUBBLE_R = 58;
+
+/** Horizontal padding inside a bubble — must match `styles.bubble`. */
+const BUBBLE_PAD_H = 5;
+/**
+ * Mean glyph advance of the serif (Times) as a fraction of font size. Rounded
+ * generously upward: over-measuring only shrinks the font, whereas
+ * under-measuring lets a line overflow and get wrapped or ellipsized by RN,
+ * which is the failure we are ruling out.
+ */
+const GLYPH_W = 0.58;
+const BUBBLE_LINE_H = 1.15;
+const BUBBLE_FS_MAX = 14;
+const BUBBLE_FS_MIN = 8;
+const BUBBLE_MAX_LINES = 3;
+/** Keep the corners of the text block this far inside the circle. */
+const TEXT_INSET = 6;
 
 interface Body {
   x: number;
@@ -414,9 +432,84 @@ interface Body {
   vx: number;
   vy: number;
   r: number;
-  /** Squish factors; spring back to 1 after an impact. */
+  /**
+   * Squish factors, driven as a damped spring toward 1. An impact kicks the
+   * spring's velocity rather than setting the scale outright, so the bubble
+   * wobbles past its rest shape and settles — setting the scale directly is
+   * what made the old impacts read as a rigid shockwave.
+   */
   sx: number;
   sy: number;
+  sxv: number;
+  syv: number;
+}
+
+/**
+ * Break `words` across at most BUBBLE_MAX_LINES lines — never splitting a word —
+ * and return the split whose text block fits in the smallest circle. Labels are
+ * a handful of words, so every contiguous split is cheap to just enumerate.
+ */
+function layoutLabelAt(words: string[], fs: number): { lines: string[]; requiredR: number } {
+  const n = words.length;
+  const lineW = (s: string) => s.length * GLYPH_W * fs;
+
+  const cutSets: number[][] = [[]];
+  for (let a = 1; a < n; a += 1) {
+    cutSets.push([a]);
+    for (let b = a + 1; b < n; b += 1) cutSets.push([a, b]);
+  }
+
+  let best: { lines: string[]; requiredR: number } | null = null;
+  for (const cuts of cutSets) {
+    if (cuts.length + 1 > BUBBLE_MAX_LINES) continue;
+    const bounds = [0, ...cuts, n];
+    const lines: string[] = [];
+    for (let i = 0; i < bounds.length - 1; i += 1) {
+      lines.push(words.slice(bounds[i], bounds[i + 1]).join(' '));
+    }
+    const blockW = Math.max(...lines.map(lineW));
+    const blockH = lines.length * fs * BUBBLE_LINE_H;
+    // The text block is a rectangle centred in the circle, so it fits exactly
+    // when its corners do — hence the half-diagonal, not the half-width.
+    const requiredR = Math.hypot(blockW / 2, blockH / 2) + TEXT_INSET;
+    if (!best || requiredR < best.requiredR) best = { lines, requiredR };
+  }
+  return best ?? { lines: [words.join(' ')], requiredR: MIN_BUBBLE_R };
+}
+
+/**
+ * Fit a topic name inside its bubble. Picks the largest font at which the label
+ * wraps cleanly on word boundaries and still sits inside the circle; if the
+ * label cannot be read at any usable size in its rank-assigned bubble, the
+ * bubble grows rather than the word being clipped or split.
+ */
+function fitLabel(label: string, rankR: number): { r: number; fontSize: number; lines: string[] } {
+  const words = label.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return { r: rankR, fontSize: BUBBLE_FS_MIN, lines: [label] };
+
+  let r = rankR;
+  let fontSize = BUBBLE_FS_MIN;
+  let lines = [label];
+
+  let fitted = false;
+  for (let fs = BUBBLE_FS_MAX; fs >= BUBBLE_FS_MIN; fs -= 0.5) {
+    const fit = layoutLabelAt(words, fs);
+    lines = fit.lines;
+    fontSize = fs;
+    if (fit.requiredR <= rankR) {
+      fitted = true;
+      break;
+    }
+  }
+  if (!fitted) r = Math.min(layoutLabelAt(words, BUBBLE_FS_MIN).requiredR, HARD_MAX_BUBBLE_R);
+
+  // Hard guarantee against a mid-word break: the longest word must fit on one
+  // line of the bubble's inner width, whatever the geometry above concluded.
+  const longest = Math.max(...words.map((word) => word.length));
+  const inner = 2 * r - 2 * BUBBLE_PAD_H;
+  fontSize = Math.min(fontSize, inner / (longest * GLYPH_W));
+
+  return { r, fontSize, lines };
 }
 
 /** Small deterministic PRNG so a bubble field lays out the same for the same stats. */
@@ -435,7 +528,7 @@ function Bubble({
   index,
   bodies,
   radius,
-  label,
+  lines,
   fill,
   border,
   textColor,
@@ -444,7 +537,7 @@ function Bubble({
   index: number;
   bodies: SharedValue<Body[]>;
   radius: number;
-  label: string;
+  lines: string[];
   fill: string;
   border: string;
   textColor: string;
@@ -464,6 +557,13 @@ function Bubble({
     };
   });
 
+  // Undo the bubble's squish on the label. The skin deforms; the word does not.
+  const textAnim = useAnimatedStyle(() => {
+    const b = bodies.value[index];
+    if (!b) return {};
+    return { transform: [{ scaleX: 1 / b.sx }, { scaleY: 1 / b.sy }] };
+  });
+
   return (
     <Animated.View
       style={[
@@ -472,13 +572,20 @@ function Bubble({
         anim,
       ]}
     >
-      <Text
-        variant="serif"
-        numberOfLines={2}
-        style={{ color: textColor, fontSize, lineHeight: fontSize * 1.12, textAlign: 'center' }}
-      >
-        {label}
-      </Text>
+      <Animated.View style={textAnim}>
+        <Text
+          variant="serif"
+          numberOfLines={lines.length}
+          style={{
+            color: textColor,
+            fontSize,
+            lineHeight: fontSize * BUBBLE_LINE_H,
+            textAlign: 'center',
+          }}
+        >
+          {lines.join('\n')}
+        </Text>
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -516,8 +623,11 @@ function TopicBubbles({
     const maxR = clamp((w || 320) / 4.4, MIN_BUBBLE_R + 14, MAX_BUBBLE_R);
     const steps = Math.max(1, data.length - 1);
     return data.map((d, i) => {
-      const r = data.length === 1 ? maxR : maxR - (i / steps) * (maxR - MIN_BUBBLE_R);
-      return { r, fontSize: clamp(r * 0.3, 8.5, 13), name: d.name, top: i === 0 };
+      const rankR = data.length === 1 ? maxR : maxR - (i / steps) * (maxR - MIN_BUBBLE_R);
+      // Rank proposes the size; the label can veto it. Legibility outranks the
+      // size hierarchy, and the top bubble still reads as top via its fill.
+      const fit = fitLabel(d.name, rankR);
+      return { ...fit, top: i === 0 };
     });
   }, [data, w]);
 
@@ -546,8 +656,8 @@ function TopicBubbles({
       const x = clamp(cx + (rng() * 2 - 1) * jitterX, r, Math.max(r, w - r));
       const y = clamp(cy + (rng() * 2 - 1) * jitterY, r, Math.max(r, BUBBLE_BOX_H - r));
       const ang = rng() * Math.PI * 2;
-      const sp = 0.3 + rng() * 0.3;
-      return { x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r, sx: 1, sy: 1 };
+      const sp = 0.35 + rng() * 0.35;
+      return { x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r, sx: 1, sy: 1, sxv: 0, syv: 0 };
     });
   }, [w, layout, seed, data.length, bodies, bw, bh]);
 
@@ -559,46 +669,53 @@ function TopicBubbles({
     const W = bw.value;
     const H = bh.value;
     const dt = Math.min(40, info.timeSincePreviousFrame ?? 16) / 16;
-    // Soft, jelly-like impacts rather than a rigid-body bounce: a low
-    // restitution so velocity doesn't reverse sharply, a partial (not full)
-    // positional correction so overlapping bubbles ease apart over several
-    // frames instead of teleporting, a slow drift speed so collisions are
-    // infrequent and gentle, and squish scaled by how hard the hit was so
-    // light grazes barely wobble and only real hits deform visibly.
-    const REST = 0.35;
-    const CORRECTION = 0.3;
-    const IMPACT_MIN = 0.03;
-    const IMPACT_MAX = 0.11;
+    // A bubble should bounce, not rub. Restitution is high so a hit actually
+    // reverses the bubbles apart, and the overlap is corrected in essentially
+    // one frame so they never interpenetrate and grind along each other's
+    // edge — that grinding, plus a near-total loss of speed on contact, was
+    // what made the old field feel like it was made of rubber bricks.
+    const REST = 0.88;
+    const CORRECTION = 0.9;
+    // An impact kicks the squish spring's *velocity*; the spring (stiffness K,
+    // damping D < 1) then carries the shape past its rest state and wobbles it
+    // back. The old code assigned the scale directly and eased it back
+    // linearly, which is a step function — the "rigid shockwave".
+    const SQUISH_K = 0.16;
+    const SQUISH_D = 0.88;
+    const IMPACT = 0.05;
+    const IMPACT_MAX = 0.09;
+    const SQUISH_MIN = 0.78;
+    const SQUISH_MAX = 1.22;
+    const MIN_SPEED = 0.22;
+    const MAX_SPEED = 1.5;
 
     for (let i = 0; i < n; i += 1) {
       const b = bs[i];
       b.x += b.vx * dt;
       b.y += b.vy * dt;
-      if (b.x - b.r < 0) {
-        const impact = clampWorklet(Math.abs(b.vx) / 2.6, IMPACT_MIN, IMPACT_MAX);
-        b.x = b.r;
-        b.vx = Math.abs(b.vx) * REST;
-        b.sx = 1 - impact;
-        b.sy = 1 + impact;
-      } else if (b.x + b.r > W) {
-        const impact = clampWorklet(Math.abs(b.vx) / 2.6, IMPACT_MIN, IMPACT_MAX);
-        b.x = W - b.r;
-        b.vx = -Math.abs(b.vx) * REST;
-        b.sx = 1 - impact;
-        b.sy = 1 + impact;
+      if (b.x - b.r < 0 || b.x + b.r > W) {
+        const kick = clampWorklet(Math.abs(b.vx) * IMPACT, 0, IMPACT_MAX);
+        if (b.x - b.r < 0) {
+          b.x = b.r;
+          b.vx = Math.abs(b.vx) * REST;
+        } else {
+          b.x = W - b.r;
+          b.vx = -Math.abs(b.vx) * REST;
+        }
+        b.sxv -= kick;
+        b.syv += kick;
       }
-      if (b.y - b.r < 0) {
-        const impact = clampWorklet(Math.abs(b.vy) / 2.6, IMPACT_MIN, IMPACT_MAX);
-        b.y = b.r;
-        b.vy = Math.abs(b.vy) * REST;
-        b.sy = 1 - impact;
-        b.sx = 1 + impact;
-      } else if (b.y + b.r > H) {
-        const impact = clampWorklet(Math.abs(b.vy) / 2.6, IMPACT_MIN, IMPACT_MAX);
-        b.y = H - b.r;
-        b.vy = -Math.abs(b.vy) * REST;
-        b.sy = 1 - impact;
-        b.sx = 1 + impact;
+      if (b.y - b.r < 0 || b.y + b.r > H) {
+        const kick = clampWorklet(Math.abs(b.vy) * IMPACT, 0, IMPACT_MAX);
+        if (b.y - b.r < 0) {
+          b.y = b.r;
+          b.vy = Math.abs(b.vy) * REST;
+        } else {
+          b.y = H - b.r;
+          b.vy = -Math.abs(b.vy) * REST;
+        }
+        b.syv -= kick;
+        b.sxv += kick;
       }
     }
 
@@ -618,38 +735,49 @@ function TopicBubbles({
           a.y -= ny * overlap;
           b.x += nx * overlap;
           b.y += ny * overlap;
+
           const avn = a.vx * nx + a.vy * ny;
           const bvn = b.vx * nx + b.vy * ny;
-          const diff = (bvn - avn) * REST;
-          a.vx += diff * nx;
-          a.vy += diff * ny;
-          b.vx -= diff * nx;
-          b.vy -= diff * ny;
-          const impact = clampWorklet(Math.abs(avn - bvn) / 2.6, IMPACT_MIN, IMPACT_MAX);
-          const alongX = Math.abs(nx) > Math.abs(ny);
-          a.sx = alongX ? 1 - impact : 1 + impact;
-          a.sy = alongX ? 1 + impact : 1 - impact;
-          b.sx = a.sx;
-          b.sy = a.sy;
+          // Only respond while they are closing. Without this the pair keeps
+          // re-colliding on the frames it takes to separate and sticks.
+          const closing = bvn - avn;
+          if (closing < 0) {
+            // Equal masses: swap the normal components, scaled by restitution.
+            const jimp = ((1 + REST) * closing) / 2;
+            a.vx += jimp * nx;
+            a.vy += jimp * ny;
+            b.vx -= jimp * nx;
+            b.vy -= jimp * ny;
+
+            const kick = clampWorklet(-closing * IMPACT, 0, IMPACT_MAX);
+            const alongX = Math.abs(nx) > Math.abs(ny);
+            a.sxv += alongX ? -kick : kick;
+            a.syv += alongX ? kick : -kick;
+            b.sxv += alongX ? -kick : kick;
+            b.syv += alongX ? kick : -kick;
+          }
         }
       }
     }
 
     for (let i = 0; i < n; i += 1) {
       const b = bs[i];
-      b.sx += (1 - b.sx) * 0.12;
-      b.sy += (1 - b.sy) * 0.12;
+      b.sxv = (b.sxv + (1 - b.sx) * SQUISH_K) * SQUISH_D;
+      b.syv = (b.syv + (1 - b.sy) * SQUISH_K) * SQUISH_D;
+      b.sx = clampWorklet(b.sx + b.sxv * dt, SQUISH_MIN, SQUISH_MAX);
+      b.sy = clampWorklet(b.sy + b.syv * dt, SQUISH_MIN, SQUISH_MAX);
+
       const sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
-      if (sp < 0.16) {
+      if (sp < MIN_SPEED) {
         if (sp < 0.0001) {
-          b.vx = 0.16;
+          b.vx = MIN_SPEED;
         } else {
-          const k = 0.16 / sp;
+          const k = MIN_SPEED / sp;
           b.vx *= k;
           b.vy *= k;
         }
-      } else if (sp > 1.0) {
-        const k = 1.0 / sp;
+      } else if (sp > MAX_SPEED) {
+        const k = MAX_SPEED / sp;
         b.vx *= k;
         b.vy *= k;
       }
@@ -674,7 +802,7 @@ function TopicBubbles({
           index={i}
           bodies={bodies}
           radius={L.r}
-          label={L.name}
+          lines={L.lines}
           fill={L.top ? accent : c.elevated}
           border={L.top ? accent : c.border}
           textColor={L.top ? '#fff' : c.text}

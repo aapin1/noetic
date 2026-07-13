@@ -256,7 +256,7 @@ export default function InsightDetailScreen() {
         {showReaction ? (
           <View style={styles.section}>
             <Text variant="h3">Your reaction</Text>
-            <Text variant="serif" color="secondary" style={{ marginTop: Spacing[4] }}>
+            <Text variant="body" color="secondary" style={{ marginTop: Spacing[4] }}>
               {data.reaction}
             </Text>
           </View>
