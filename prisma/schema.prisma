@@ -1,11 +1,13 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [pg_trgm]
 }
 
 enum Visibility {
@@ -171,6 +173,11 @@ model Profile {
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([handle])
+  // Trigram indexes back the substring/fuzzy branch of user search. Postgres
+  // cannot use a plain btree for `ILIKE '%q%'`, so without these every
+  // keystroke sequentially scans every profile.
+  @@index([handle(ops: raw("gin_trgm_ops"))], map: "Profile_handle_trgm_idx", type: Gin)
+  @@index([displayName(ops: raw("gin_trgm_ops"))], map: "Profile_displayName_trgm_idx", type: Gin)
 }
 
 model Topic {

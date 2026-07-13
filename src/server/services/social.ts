@@ -283,6 +283,94 @@ export async function getFeed(args: {
 // How much of each followed person's world the pulse shows at a glance: enough
 // nodes to read the shape of their map, a handful of their most recent logs.
 const PULSE_MAP_NODES = 60;
+const USER_SEARCH_LIMIT = 20;
+
+/** Shortest query a trigram index can serve; below this Postgres ignores it. */
+const TRIGRAM_MIN_LENGTH = 3;
+
+type ProfileSearchRow = {
+  userId: string;
+  handle: string;
+  displayName: string;
+  avatarUrl: string | null;
+};
+
+/** `%`, `_` and `\` are LIKE wildcards — a raw `%` would otherwise match everyone. */
+function escapeLike(value: string) {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+/**
+ * Find people by handle or display name.
+ *
+ * Two paths, because a trigram index cannot serve a query shorter than three
+ * characters:
+ *
+ * - 1-2 chars: handle prefix only, in handle order. Handles are stored
+ *   lowercase, so the btree on `handle` supplies the ordering and Postgres
+ *   stops as soon as it has filled the limit instead of reading the table.
+ * - 3+ chars: substring and fuzzy matching over handle and display name,
+ *   served by the trigram indexes, then ranked so the closest match is first.
+ *
+ * Either way the database returns at most USER_SEARCH_LIMIT already-ranked
+ * rows, so the cost is flat as the user table grows.
+ */
+export async function searchProfiles(args: { userId: string; query: string; db?: DbClient }) {
+  const db = args.db ?? prisma;
+  const query = args.query.trim().toLowerCase();
+
+  if (!query) return { users: [] };
+
+  const prefix = `${escapeLike(query)}%`;
+
+  const rows =
+    query.length < TRIGRAM_MIN_LENGTH
+      ? await db.$queryRaw<ProfileSearchRow[]>`
+          SELECT p."userId", p."handle", p."displayName", p."avatarUrl"
+          FROM "Profile" p
+          WHERE p."userId" <> ${args.userId}
+            AND p."handle" LIKE ${prefix}
+          ORDER BY p."handle" ASC
+          LIMIT ${USER_SEARCH_LIMIT}
+        `
+      : await db.$queryRaw<ProfileSearchRow[]>`
+          SELECT p."userId", p."handle", p."displayName", p."avatarUrl"
+          FROM "Profile" p
+          WHERE p."userId" <> ${args.userId}
+            AND (
+              p."handle" ILIKE ${`%${escapeLike(query)}%`}
+              OR p."displayName" ILIKE ${`%${escapeLike(query)}%`}
+              OR p."handle" % ${query}
+              OR p."displayName" % ${query}
+            )
+          ORDER BY
+            CASE
+              WHEN p."handle" = ${query} THEN 0
+              WHEN p."handle" LIKE ${prefix} THEN 1
+              WHEN lower(p."displayName") LIKE ${prefix} THEN 2
+              WHEN p."handle" ILIKE ${`%${escapeLike(query)}%`} THEN 3
+              WHEN p."displayName" ILIKE ${`%${escapeLike(query)}%`} THEN 4
+              ELSE 5
+            END ASC,
+            GREATEST(
+              similarity(p."handle", ${query}),
+              similarity(p."displayName", ${query})
+            ) DESC,
+            length(p."handle") ASC,
+            p."handle" ASC
+          LIMIT ${USER_SEARCH_LIMIT}
+        `;
+
+  return {
+    users: rows.map((row) => ({
+      id: row.userId,
+      handle: row.handle,
+      displayName: row.displayName,
+      avatarUrl: row.avatarUrl,
+    })),
+  };
+}
+
 const PULSE_LATEST_COUNT = 4;
 
 /**

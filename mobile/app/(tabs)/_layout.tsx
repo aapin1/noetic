@@ -120,6 +120,13 @@ function TabsWithFab() {
           }}
         />
         <Tabs.Screen
+          name="mind"
+          options={{
+            title: 'mind',
+            tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={ZapIcon} />,
+          }}
+        />
+        <Tabs.Screen
           name="memory"
           options={{
             title: 'archive',
@@ -131,13 +138,6 @@ function TabsWithFab() {
           options={{
             title: 'pulse',
             tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={UsersIcon} />,
-          }}
-        />
-        <Tabs.Screen
-          name="mind"
-          options={{
-            title: 'mind',
-            tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={ZapIcon} />,
           }}
         />
         <Tabs.Screen

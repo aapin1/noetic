@@ -111,11 +111,15 @@ function FriendCard({
   );
 }
 
+type SearchUser = { id: string; handle: string; displayName: string; avatarUrl: string | null };
+
+const SEARCH_DEBOUNCE_MS = 180;
+
 function UserResult({
   user,
   onFollow,
 }: {
-  user: { id: string; handle: string; displayName: string; avatarUrl: string | null };
+  user: SearchUser;
   onFollow: (id: string) => void;
 }) {
   const c = useThemeColors();
@@ -159,11 +163,18 @@ export default function PulseScreen() {
   const c = useThemeColors();
   const [infoVisible, setInfoVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<{ id: string; handle: string; displayName: string; avatarUrl: string | null }[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
+  // The query the results on screen actually belong to — lets us tell "found
+  // nothing" apart from "haven't asked yet", so no result flashes prematurely.
+  const [searchedFor, setSearchedFor] = useState('');
   const [searching, setSearching] = useState(false);
   const [friends, setFriends] = useState<PulseFriend[]>([]);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<TextInput>(null);
+  // Monotonic counter: only the newest request may write to state, so a slow
+  // reply for "a" can't land on top of the results for "aaron".
+  const searchSeq = useRef(0);
+  const searchCache = useRef(new Map<string, SearchUser[]>());
 
   const { data, loading, error, refetch } = useApiQuery(
     () => api.social.pulse(),
@@ -189,28 +200,63 @@ export default function PulseScreen() {
     if (data) setFriends(data.friends);
   }, [data]);
 
+  useEffect(() => () => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+  }, []);
+
+  const runSearch = useCallback(async (raw: string) => {
+    const q = raw.trim();
+    if (!q) return;
+
+    // Backspacing back onto a query we already ran should be instant.
+    const cached = searchCache.current.get(q.toLowerCase());
+    if (cached) {
+      searchSeq.current += 1;
+      setSearchResults(cached);
+      setSearchedFor(q);
+      setSearching(false);
+      return;
+    }
+
+    const seq = (searchSeq.current += 1);
+    setSearching(true);
+    try {
+      const res = await api.social.searchUsers(q);
+      if (seq !== searchSeq.current) return;
+      searchCache.current.set(q.toLowerCase(), res.users);
+      setSearchResults(res.users);
+    } catch {
+      if (seq !== searchSeq.current) return;
+      setSearchResults([]);
+    } finally {
+      if (seq === searchSeq.current) {
+        setSearchedFor(q);
+        setSearching(false);
+      }
+    }
+  }, []);
+
   const handleSearchChange = useCallback((text: string) => {
     setSearchQuery(text);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (!text.trim()) { setSearchResults([]); return; }
-    searchTimeout.current = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const res = await api.social.searchUsers(text.trim());
-        setSearchResults(res.users);
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearching(false);
-      }
-    }, 400);
-  }, []);
+    if (!text.trim()) {
+      searchSeq.current += 1; // discard anything still in flight
+      setSearchResults([]);
+      setSearchedFor('');
+      setSearching(false);
+      return;
+    }
+    searchTimeout.current = setTimeout(() => { void runSearch(text); }, SEARCH_DEBOUNCE_MS);
+  }, [runSearch]);
 
   const handleFollowed = useCallback(() => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchSeq.current += 1;
     searchInputRef.current?.blur();
     setSearchQuery('');
     setSearchResults([]);
+    setSearchedFor('');
+    setSearching(false);
     void refetch();
   }, [refetch]);
 
@@ -281,7 +327,7 @@ export default function PulseScreen() {
 
           {searchQuery.trim().length > 0 ? (
             <View>
-              {searchResults.length === 0 && !searching && (
+              {searchResults.length === 0 && !searching && searchedFor === searchQuery.trim() && (
                 <Text variant="monoSmall" style={{ color: c.faint, paddingHorizontal: Spacing[6], paddingTop: Spacing[4] }}>no results</Text>
               )}
               {searchResults.map((u) => (
