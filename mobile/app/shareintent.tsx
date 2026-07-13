@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useShareIntentContext } from 'expo-share-intent';
 import * as FileSystem from 'expo-file-system';
 import { api } from '@/lib/api';
+import { clearSharedCapture, rememberSharedCapture } from '@/lib/lastShared';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
@@ -68,6 +69,9 @@ export default function ShareIntentScreen() {
         }
 
         resetShareIntent();
+        // If they leave without opening the insight (the common share-sheet
+        // exit), the map offers it again on the next app open.
+        void rememberSharedCapture(res.id);
         setSavedId(res.id);
         setSavedTitle(res.title);
         setStatus('saved');
@@ -100,7 +104,10 @@ export default function ShareIntentScreen() {
             </Text>
           )}
           <Pressable
-            onPress={() => router.replace(`/insight/${savedId}` as never)}
+            onPress={() => {
+              void clearSharedCapture();
+              router.replace(`/insight/${savedId}` as never);
+            }}
             style={[styles.primaryBtn, { backgroundColor: c.text }]}
             accessibilityRole="button"
             accessibilityLabel="Open the insight for this capture"

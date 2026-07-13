@@ -83,7 +83,17 @@ export async function serializeContentItem(db: DbClient, id: string) {
   });
 }
 
-type IngestOpts = { allowPaidTranscript?: boolean };
+type IngestOpts = {
+  allowPaidTranscript?: boolean;
+  /** Capture path: don't block on the LLM metadata clean. The ContentItem is
+   * created with raw scraped values immediately and `cleaned` resolves once
+   * the clean lands (having updated the row), so the caller can overlap it
+   * with its own LLM work instead of paying for it serially. */
+  deferClean?: boolean;
+};
+
+/** Final (post-clean) display metadata, mirroring what the row was updated to. */
+export type CleanedContentFields = { title: string; description: string | null };
 
 export async function ingestUrl(url: string, db: DbClient = prisma, opts: IngestOpts = {}) {
   const normalizedUrl = normalizeUrl(url);
@@ -187,33 +197,19 @@ export async function ingestUrl(url: string, db: DbClient = prisma, opts: Ingest
   const source = await ensureContentSource(db, metadata.sourceName, metadata.sourceDomain);
   const contentType = await ensureContentType(db, metadata.contentType);
 
-  // Clean scraped metadata: separate author from title, drop boilerplate, and
-  // produce a meaningful excerpt. Falls back to raw values on any failure.
-  const cleaned = await cleanContentMetadata({
-    rawTitle: metadata.title!,
-    rawDescription: metadata.description,
-    rawAuthor: metadata.authorName,
-    siteName: metadata.siteName,
-    bodyText: metadata.bodyText,
-  });
-
-  const title = cleaned?.title ?? metadata.title!;
-  const description = cleaned?.excerpt ?? metadata.description;
-  const authorName = cleaned?.author ?? metadata.authorName;
-
   let created;
   try {
     created = await db.contentItem.create({
       data: {
-        title,
-        description,
+        title: metadata.title!,
+        description: metadata.description,
         bodyText: metadata.bodyText,
         bodySource: metadata.bodySource,
         canonicalUrl,
         originalUrl: metadata.originalUrl,
         siteName: metadata.siteName,
         imageUrl: metadata.imageUrl,
-        authorName,
+        authorName: metadata.authorName,
         publishedAt: metadata.publishedAt,
         metadataStatus: MetadataStatus.COMPLETE,
         sourceId: source?.id,
@@ -240,11 +236,47 @@ export async function ingestUrl(url: string, db: DbClient = prisma, opts: Ingest
     throw err;
   }
 
+  // Clean scraped metadata: separate author from title, drop boilerplate, and
+  // produce a meaningful excerpt. Falls back to raw values on any failure. The
+  // row is created with raw values above and updated when the clean lands, so
+  // a deferClean caller can overlap this LLM call with its own instead of
+  // paying for it serially — the capture path's biggest single saving.
+  const cleaned: Promise<CleanedContentFields | null> = cleanContentMetadata({
+    rawTitle: metadata.title!,
+    rawDescription: metadata.description,
+    rawAuthor: metadata.authorName,
+    siteName: metadata.siteName,
+    bodyText: metadata.bodyText,
+  })
+    .then(async (clean) => {
+      if (!clean) return null;
+      const title = clean.title ?? metadata.title!;
+      const description = clean.excerpt ?? metadata.description ?? null;
+      const authorName = clean.author ?? metadata.authorName;
+      await db.contentItem.update({
+        where: { id: created.id },
+        data: { title, description, authorName },
+      });
+      return { title, description };
+    })
+    .catch(() => null);
+
+  if (!opts.deferClean) {
+    await cleaned;
+    return {
+      status: "created" as const,
+      requiresManualInput: false,
+      contentItem: await serializeContentItem(db, created.id),
+      bodyText: metadata.bodyText,
+    };
+  }
+
   return {
     status: "created" as const,
     requiresManualInput: false,
     contentItem: await serializeContentItem(db, created.id),
     bodyText: metadata.bodyText,
+    cleaned,
   };
 }
 
@@ -300,6 +332,9 @@ export async function ingestOrStubUrl(url: string, db: DbClient = prisma, opts: 
       contentTitle: row.title,
       contentDescription: row.description ?? undefined,
       bodyText: row.bodyText ?? undefined,
+      // Present only when this call created the row with deferClean: resolves
+      // with the post-clean title/excerpt once the row has been updated.
+      cleaned: "cleaned" in ingest ? ingest.cleaned : undefined,
     };
   }
 

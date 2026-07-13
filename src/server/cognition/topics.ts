@@ -63,7 +63,7 @@ const LABELS_PER_GENERAL = 8;
  * is used, so the prompt's fixed budget is spent on the buckets most likely to
  * be the right home.
  */
-async function loadExistingTopicsByGeneral(
+export async function loadExistingTopicsByGeneral(
   db: DbClient,
   userId: string,
 ): Promise<Record<string, string[]>> {
@@ -132,6 +132,10 @@ export async function classifyTopics(args: {
   description?: string;
   /** Full combined text passed to tokenizer — used for LLM extraction */
   combinedText?: string;
+  /** Preloaded result of loadExistingTopicsByGeneral — lets the capture path
+   * run that scan concurrently with content extraction instead of serially
+   * before the classify LLM call. */
+  existingTopicsByGeneral?: Record<string, string[]>;
 }): Promise<ClassifiedTopic[]> {
   const hintNames = (args.hints ?? []).map((h) => h.trim()).filter(Boolean);
 
@@ -147,7 +151,8 @@ export async function classifyTopics(args: {
     // wording variant ("stoic philosophy" next to "stoicism") — but attributed
     // to their fields, so the classifier can only reuse a label from the field
     // it actually picked.
-    const existingTopicsByGeneral = await loadExistingTopicsByGeneral(args.db, args.userId);
+    const existingTopicsByGeneral =
+      args.existingTopicsByGeneral ?? (await loadExistingTopicsByGeneral(args.db, args.userId));
 
     const { classifications } = await extractSemanticTopics({
       title: args.title,

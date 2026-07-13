@@ -5,6 +5,11 @@ import { GENERAL_TOPICS, normalizeGeneral } from "@/server/cognition/generalTopi
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings";
 const TIMEOUT_MS = 12000;
+// Calls the user actively waits on during capture get a tighter budget: a
+// typical run is 1-3s, so a hung request should degrade (raw metadata /
+// keyword fallback) rather than pin the capture sheet for 12s.
+const CAPTURE_TIMEOUT_MS = 8000;
+const EMBED_TIMEOUT_MS = 6000;
 const EMBED_MODEL = "text-embedding-3-small";
 
 /**
@@ -20,7 +25,7 @@ export async function embedText(text: string): Promise<number[] | null> {
   if (input.length < 3) return null;
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), EMBED_TIMEOUT_MS);
 
   try {
     const response = await fetch(OPENAI_EMBEDDINGS_URL, {
@@ -119,7 +124,7 @@ export async function cleanContentMetadata(args: {
   if (!apiKey) return null;
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), CAPTURE_TIMEOUT_MS);
 
   const systemPrompt = [
     "You clean scraped article metadata for a personal knowledge library. Work only from the data given.",
@@ -407,7 +412,7 @@ export async function extractSemanticTopics(args: {
 
   const attempt = async (): Promise<SemanticTopics | null> => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), CAPTURE_TIMEOUT_MS);
     try {
       const response = await fetch(OPENAI_URL, {
         method: "POST",

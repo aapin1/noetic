@@ -34,6 +34,7 @@ import Svg, {
 } from 'react-native-svg';
 import { ChevronDown, ChevronUp, Crosshair, Moon, Search, Sun, Trash2Icon, type LucideIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
+import { takeRecentSharedCapture } from '@/lib/lastShared';
 import { prefetchQuery, useApiQuery } from '@/hooks/useApiQuery';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
@@ -2474,6 +2475,17 @@ export default function MapScreen() {
     savedPillTimer.current = setTimeout(() => setSavedPill(null), 6000);
   }, []);
   useEffect(() => () => { if (savedPillTimer.current) clearTimeout(savedPillTimer.current); }, []);
+
+  // A capture shared in from the OS share sheet whose insight was never
+  // opened: offer it again on the next visit to the map — including a cold
+  // start hours later. Read-and-clear, so the pill shows exactly once.
+  useFocusEffect(useCallback(() => {
+    void takeRecentSharedCapture().then((id) => {
+      if (!id) return;
+      void prefetchQuery(`capture:${id}`, () => api.captures.get(id));
+      showSavedPill(id);
+    });
+  }, [showSavedPill]));
 
   const commit = useCallback(async (opts?: { quick?: boolean }) => {
     // Drop the keyboard the moment they commit, so it doesn't linger over the

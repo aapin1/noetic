@@ -21,7 +21,12 @@ import {
   topTerms,
   type TermVector,
 } from "@/server/cognition/terms";
-import { classifyTopics, type ClassifiedTopic, type TopicKind } from "@/server/cognition/topics";
+import {
+  classifyTopics,
+  loadExistingTopicsByGeneral,
+  type ClassifiedTopic,
+  type TopicKind,
+} from "@/server/cognition/topics";
 import { isGeneralTopic } from "@/server/cognition/generalTopics";
 import {
   classifyEdge,
@@ -199,6 +204,10 @@ async function loadPriorCaptures(args: {
   excludeId?: string;
   limit: number;
 }) {
+  // Narrow select: neighbor scoring reads title/description/rawText/caption/
+  // reaction/embedding/topics only. Pulling full rows dragged each prior's
+  // 10KB bodyText plus the source join across the wire — dead weight at 80
+  // rows on the latency-critical capture path.
   return args.db.capturedItem.findMany({
     where: {
       userId: args.userId,
@@ -206,10 +215,14 @@ async function loadPriorCaptures(args: {
     },
     orderBy: { capturedAt: "desc" },
     take: args.limit,
-    include: {
-      contentItem: {
-        include: { source: true },
-      },
+    select: {
+      id: true,
+      capturedAt: true,
+      rawText: true,
+      caption: true,
+      reaction: true,
+      embedding: true,
+      contentItem: { select: { title: true, description: true } },
       topics: { select: { topicId: true } },
     },
   });
@@ -289,18 +302,21 @@ async function computeNeighbors(args: {
   itemPolarity: { negation: number; affirmation: number };
   itemEmbedding?: number[] | null;
   excludeCaptureId?: string;
+  /** Preloaded priors — the capture path fetches them concurrently with
+   * content extraction instead of serially here. */
+  priors?: Awaited<ReturnType<typeof loadPriorCaptures>>;
 }): Promise<{
   neighbors: Neighbor[];
   topicCounts: { topicId: string; count: number }[];
   priorCount: number;
   rawPriors: Awaited<ReturnType<typeof loadPriorCaptures>>;
 }> {
-  const priors = await loadPriorCaptures({
+  const priors = args.priors ?? (await loadPriorCaptures({
     db: args.db,
     userId: args.userId,
     excludeId: args.excludeCaptureId,
     limit: NEIGHBOR_SCAN,
-  });
+  }));
 
   const neighbors: Neighbor[] = [];
   const itemEmbedding = args.itemEmbedding ?? null;
@@ -449,10 +465,26 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     throw new AppError("INVALID_CAPTURE", "Image captures need a media URL or a caption", 422);
   }
 
+  // User-scoped reads that don't depend on the content — kicked off now so
+  // they run concurrently with content extraction instead of serially after.
+  const existingTopicsPromise = loadExistingTopicsByGeneral(db, payload.userId);
+  const insightStylePromise = ensureUserPreference(db, payload.userId);
+  const priorsPromise = loadPriorCaptures({ db, userId: payload.userId, limit: NEIGHBOR_SCAN });
+  // If the capture aborts before these are awaited (extraction can throw), a
+  // late rejection must not crash the process. Awaiting them below still
+  // rethrows — this only marks the rejection as handled.
+  for (const p of [existingTopicsPromise, insightStylePromise, priorsPromise]) {
+    void p.catch(() => {});
+  }
+
   let contentItemId: string | undefined;
   let contentTitle: string | undefined;
   let contentDescription: string | undefined;
   let contentBodyText: string | undefined;
+  // Resolves with the post-clean title/excerpt when this capture created the
+  // ContentItem (deferClean) — awaited alongside classify/embed below so the
+  // metadata-clean LLM call overlaps them instead of running serially first.
+  let cleanedPromise: Promise<{ title: string; description: string | null } | null> | undefined;
   // A clean, short "what this is about" line for display — never the full
   // scraped body/transcript. Shown on the insight screen as the AI summary.
   let captureSummary: string | null = null;
@@ -464,18 +496,12 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     const allowPaidTranscript =
       !isPaidTranscriptHost(payload.url) ||
       (await tryConsumeUsage(payload.userId, "social_video_transcript", db));
-    const resolved = await ingestOrStubUrl(payload.url, db, { allowPaidTranscript });
+    const resolved = await ingestOrStubUrl(payload.url, db, { allowPaidTranscript, deferClean: true });
     contentItemId = resolved.contentItemId;
     contentTitle = resolved.contentTitle;
     contentDescription = resolved.contentDescription;
     contentBodyText = resolved.bodyText;
-    // The cleaned excerpt is a 1-2 sentence gist; a bare URL (metadata scrape
-    // failed → stub) is not a summary, so skip it and let the user's own
-    // account fill in instead.
-    captureSummary =
-      resolved.contentDescription && !/^https?:\/\//i.test(resolved.contentDescription)
-        ? resolved.contentDescription
-        : null;
+    cleanedPromise = resolved.cleaned;
   }
 
   // For images, let a vision model extract the meaning (transcribed text or a
@@ -515,23 +541,6 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     contentBodyText,
   });
 
-  // "Thin" = we have essentially only a title (e.g. a YouTube video whose
-  // transcript/description scrape failed). With no real content, the drafting
-  // layer falls back to boilerplate that describes the app itself ("the memory
-  // graph starts here…") instead of the capture — so we suppress that fallback
-  // rather than emit a self-referential insight.
-  const contentThin = !(
-    contentDescription || contentBodyText || payload.text || payload.caption || payload.userContext
-  );
-
-  // How much actual substance grounds this capture — drives the anti-
-  // confabulation directive in insight polishing. The user's own account and
-  // notes count as grounding; the title alone does not.
-  const contentGrounding = scoreContentConfidence({
-    bodyText: [contentBodyText, payload.userContext, payload.text].filter(Boolean).join("\n"),
-    description: contentDescription ?? payload.caption,
-  });
-
   if (tokens.length === 0 && payload.kind === CaptureKind.IMAGE && (payload.mediaUrl || payload.caption || payload.reaction)) {
     const fallback = [payload.caption, payload.reaction, "Visual capture"].filter(Boolean).join("\n");
     const retokenized = sourceTokens({ rawText: fallback });
@@ -553,19 +562,61 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     .filter(Boolean)
     .join("\n\n");
 
-  const [classified, insightStyle, embedding] = await Promise.all([
-    classifyTopics({
-      db,
-      userId: payload.userId,
-      tokens,
-      hints: payload.topicHints,
-      title: contentTitle,
-      description: contentDescription,
-      combinedText,
-    }),
-    ensureUserPreference(db, payload.userId),
+  // The three LLM-bound steps overlap here: topic classification, embedding,
+  // and the metadata clean the ingest deferred. Together with the preloaded
+  // user reads, this stage costs one LLM round-trip instead of two-plus.
+  const [classified, insightStyle, embedding, cleaned] = await Promise.all([
+    existingTopicsPromise.then((existingTopicsByGeneral) =>
+      classifyTopics({
+        db,
+        userId: payload.userId,
+        tokens,
+        hints: payload.topicHints,
+        title: contentTitle,
+        description: contentDescription,
+        combinedText,
+        existingTopicsByGeneral,
+      }),
+    ),
+    insightStylePromise,
     embedText(embeddingText || combinedText),
+    cleanedPromise ?? Promise.resolve(null),
   ]);
+
+  // Adopt the cleaned title/excerpt for everything downstream (drafts, polish,
+  // response) — the ContentItem row itself was already updated by the clean.
+  if (cleaned) {
+    contentTitle = cleaned.title;
+    contentDescription = cleaned.description ?? contentDescription;
+  }
+
+  if (payload.kind === CaptureKind.LINK) {
+    // The cleaned excerpt is a 1-2 sentence gist; a bare URL (metadata scrape
+    // failed → stub) is not a summary, and neither is a long raw description
+    // (a transcript when the clean failed), so skip those and let the user's
+    // own account fill in instead.
+    captureSummary =
+      contentDescription && !/^https?:\/\//i.test(contentDescription) && contentDescription.length <= 400
+        ? contentDescription
+        : null;
+  }
+
+  // "Thin" = we have essentially only a title (e.g. a YouTube video whose
+  // transcript/description scrape failed). With no real content, the drafting
+  // layer falls back to boilerplate that describes the app itself ("the memory
+  // graph starts here…") instead of the capture — so we suppress that fallback
+  // rather than emit a self-referential insight.
+  const contentThin = !(
+    contentDescription || contentBodyText || payload.text || payload.caption || payload.userContext
+  );
+
+  // How much actual substance grounds this capture — drives the anti-
+  // confabulation directive in insight polishing. The user's own account and
+  // notes count as grounding; the title alone does not.
+  const contentGrounding = scoreContentConfidence({
+    bodyText: [contentBodyText, payload.userContext, payload.text].filter(Boolean).join("\n"),
+    description: contentDescription ?? payload.caption,
+  });
 
   const classifyDoneAt = Date.now();
 
@@ -578,6 +629,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     itemTopicIds: topicIdSet,
     itemPolarity,
     itemEmbedding: embedding,
+    priors: await priorsPromise,
   });
 
   const neighborsDoneAt = Date.now();
@@ -778,7 +830,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
 
   const txDoneAt = Date.now();
   console.log(
-    `[capture] timings content=${contentDoneAt - startedAt}ms classify+embed=${classifyDoneAt - contentDoneAt}ms ` +
+    `[capture] timings content=${contentDoneAt - startedAt}ms classify+embed+clean=${classifyDoneAt - contentDoneAt}ms ` +
     `neighbors=${neighborsDoneAt - classifyDoneAt}ms tx=${txDoneAt - neighborsDoneAt}ms total=${txDoneAt - startedAt}ms`,
   );
 

@@ -294,11 +294,18 @@ async function fetchYouTubePlayerData(
   videoId: string,
   session: ProxySession,
 ): Promise<{ tracks: CaptionTrack[]; description?: string } | undefined> {
-  const res = await session.fetch("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", {
-    method: "POST",
-    headers: { "content-type": "application/json", "user-agent": INNERTUBE_UA },
-    body: JSON.stringify({ context: INNERTUBE_CONTEXT, videoId }),
-  });
+  // Tighter than the 12s session default: a healthy InnerTube round-trip is
+  // well under 2s even through the proxy, and on timeout the Supadata native
+  // fallback still runs — the user is waiting on the capture sheet.
+  const res = await session.fetch(
+    "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", "user-agent": INNERTUBE_UA },
+      body: JSON.stringify({ context: INNERTUBE_CONTEXT, videoId }),
+    },
+    6000,
+  );
   if (!res.ok) return undefined;
   const data = (await res.json()) as {
     captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] } };
@@ -312,7 +319,7 @@ async function fetchYouTubePlayerData(
 
 /** Fetches and flattens a caption track (timedtext XML) into transcript text. */
 async function fetchCaptionText(baseUrl: string, session: ProxySession): Promise<string | undefined> {
-  const res = await session.fetch(baseUrl, { headers: { "user-agent": INNERTUBE_UA } });
+  const res = await session.fetch(baseUrl, { headers: { "user-agent": INNERTUBE_UA } }, 6000);
   if (!res.ok) return undefined;
   const $ = load(await res.text(), { xmlMode: true });
   const text = $("p, text")
@@ -497,7 +504,7 @@ async function fetchSupadataTranscript(url: string, mode: "native" | "auto"): Pr
     // `native` (existing captions) responds quickly, so cap it tightly — it's
     // a rare fallback and the user is waiting on the capture sheet. `auto`
     // legitimately needs time when it falls back to AI transcription.
-    const timeoutMs = mode === "native" ? 12000 : 20000;
+    const timeoutMs = mode === "native" ? 8000 : 20000;
     const endpoint = `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(url)}&text=true&mode=${mode}`;
     const res = await fetchWithTimeout(endpoint, { headers: { "x-api-key": apiKey } }, timeoutMs);
     if (!res.ok) return undefined;
