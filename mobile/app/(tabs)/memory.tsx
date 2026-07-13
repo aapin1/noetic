@@ -12,8 +12,10 @@ import { ScreenIntro } from '@/components/ui/ScreenIntro';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { FolderGrid } from '@/components/archive/FolderGrid';
+import { DiaryList } from '@/components/archive/DiaryList';
 import type { ArchiveFolderSummary, CaptureSummary } from '@/types/api';
 
+type ViewKey = 'folders' | 'diary';
 type SortKey = 'recent' | 'alphabetical' | 'largest' | 'smallest';
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
@@ -42,7 +44,10 @@ export default function ArchiveScreen() {
   const c = useThemeColors();
   const router = useRouter();
   const [infoVisible, setInfoVisible] = useState(false);
+  const [view, setView] = useState<ViewKey>('folders');
   const [sort, setSort] = useState<SortKey>('recent');
+  // Bumped on pull-to-refresh so the diary re-reads its first page too.
+  const [diaryRefreshToken, setDiaryRefreshToken] = useState(0);
 
   const { data, loading, refetch } = useApiQuery(() => api.archive.list(), [], { cacheKey: 'archive.list' });
   const folders = data?.folders ?? null;
@@ -52,6 +57,7 @@ export default function ArchiveScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    setDiaryRefreshToken((t) => t + 1);
     try {
       await refetch();
     } finally {
@@ -111,7 +117,7 @@ export default function ArchiveScreen() {
         visible={infoVisible}
         onClose={() => setInfoVisible(false)}
         title="archive"
-        body="Everything you've saved, organized into folders by topic. Open a folder to browse its entries — and its sub-topics, if it has any."
+        body="Everything you've saved. Folders organize it by topic; the diary lists it day by day, newest first. Open anything to revisit its insight."
       />
 
       {(folders?.length ?? 0) > 0 && (
@@ -144,24 +150,50 @@ export default function ArchiveScreen() {
 
       {!searchActive && folders && folders.length > 0 && (
         <View style={styles.sortRow}>
-          {SORT_OPTIONS.map((opt) => {
-            const selected = sort === opt.key;
+          {/* View toggle: topical folders vs the chronological diary. */}
+          {(['folders', 'diary'] as ViewKey[]).map((v) => {
+            const selected = view === v;
             return (
               <Pressable
-                key={opt.key}
-                onPress={() => setSort(opt.key)}
+                key={v}
+                onPress={() => setView(v)}
                 style={[
                   styles.sortPill,
                   { borderColor: selected ? c.inverse : c.border },
                   selected && { backgroundColor: c.inverse },
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel={v === 'diary' ? 'Show diary view' : 'Show folder view'}
               >
                 <Text variant="monoSmall" color={selected ? 'inverse' : 'secondary'}>
-                  {opt.label}
+                  {v}
                 </Text>
               </Pressable>
             );
           })}
+          {view === 'folders' && (
+            <>
+              <View style={[styles.sortDivider, { backgroundColor: c.border }]} />
+              {SORT_OPTIONS.map((opt) => {
+                const selected = sort === opt.key;
+                return (
+                  <Pressable
+                    key={opt.key}
+                    onPress={() => setSort(opt.key)}
+                    style={[
+                      styles.sortPill,
+                      { borderColor: selected ? c.inverse : c.border },
+                      selected && { backgroundColor: c.inverse },
+                    ]}
+                  >
+                    <Text variant="monoSmall" color={selected ? 'inverse' : 'secondary'}>
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </>
+          )}
         </View>
       )}
 
@@ -215,6 +247,8 @@ export default function ArchiveScreen() {
               </Pressable>
             ))}
           </View>
+        ) : view === 'diary' ? (
+          <DiaryList refreshToken={diaryRefreshToken} />
         ) : (
           <FolderGrid folders={sortedFolders} />
         )}
@@ -239,9 +273,16 @@ const styles = StyleSheet.create({
   },
   sortRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: Spacing[2],
     paddingHorizontal: Spacing[6],
     paddingVertical: Spacing[3],
+  },
+  sortDivider: {
+    width: 1,
+    height: 16,
+    marginHorizontal: Spacing[1],
   },
   sortPill: {
     borderWidth: 1,

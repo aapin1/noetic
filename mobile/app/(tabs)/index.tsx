@@ -34,7 +34,7 @@ import Svg, {
 } from 'react-native-svg';
 import { ChevronDown, ChevronUp, Crosshair, Moon, Search, Sun, Trash2Icon, type LucideIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
-import { useApiQuery } from '@/hooks/useApiQuery';
+import { prefetchQuery, useApiQuery } from '@/hooks/useApiQuery';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
@@ -199,7 +199,7 @@ const UNREADABLE_EXPLAINED_KEY = 'mneme_unreadable_source_explained';
 
 // ── Types ─────────────────────────────────────────────────────────
 
-type LensMode = 'semantic' | 'temporal' | 'source';
+type LensMode = 'semantic' | 'temporal';
 type ToolMode = 'default' | 'discover' | 'search';
 type PositionMap = Record<string, { x: number; y: number }>;
 
@@ -384,49 +384,6 @@ function layoutSemanticFromServer(nodes: GraphNode[], w: number, h: number): Pos
 }
 
 // Source (grouped by capture kind)
-function layoutSource(nodes: GraphNode[], w: number, h: number): PositionMap {
-  const pos: PositionMap = {};
-  if (nodes.length === 0) return pos;
-
-  const kinds: CaptureKind[] = ['LINK', 'TEXT', 'IMAGE'];
-  const byKind: Record<string, GraphNode[]> = { LINK: [], TEXT: [], IMAGE: [] };
-  for (const node of nodes) {
-    // Legacy QUOTE captures were folded into text, so they group with thoughts.
-    const bucketKey = node.kind === 'QUOTE' ? 'TEXT' : node.kind;
-    const bucket = byKind[bucketKey] ?? byKind.TEXT;
-    bucket.push(node);
-  }
-
-  const regions = [
-    { cx: w * 0.2, cy: h * 0.5 },
-    { cx: w * 0.5, cy: h * 0.5 },
-    { cx: w * 0.8, cy: h * 0.5 },
-  ];
-  const pad = 30;
-
-  kinds.forEach((kind, ki) => {
-    const group = byKind[kind] ?? [];
-    const { cx, cy } = regions[ki]!;
-    const maxR = Math.min(w * 0.14, h * 0.28, 90);
-
-    group.forEach((node, i) => {
-      const rng = seededRng(hashId(node.id));
-      if (group.length === 1) {
-        pos[node.id] = { x: cx, y: cy };
-        return;
-      }
-      const angle = (i / group.length) * Math.PI * 2;
-      const r = 24 + rng() * maxR;
-      pos[node.id] = {
-        x: Math.max(pad, Math.min(w - pad, cx + r * Math.cos(angle))),
-        y: Math.max(pad, Math.min(h - pad, cy + r * Math.sin(angle))),
-      };
-    });
-  });
-
-  return pos;
-}
-
 function applyLayoutOffset(raw: PositionMap): PositionMap {
   const result: PositionMap = {};
   for (const [id, p] of Object.entries(raw)) {
@@ -1036,12 +993,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 type TimelineTick = { pct: number; label: string; labelled: boolean };
 
-// Incremental date marks along the rail. The unit widens with elapsed time:
-// days for a short history, then weeks, then months.
-function buildTimelineTicks(startMs: number, endMs: number): {
-  ticks: TimelineTick[];
-  unit: 'day' | 'week' | 'month';
-} {
+// Evenly spaced round-date marks along the rail. Picks the smallest round
+// step (1/2/3/7/14 days, then 1/2/3/6/12 calendar months) that fits within
+// MAX_TICKS marks, anchored to midnight / the 1st of the month — so ticks are
+// uniformly spaced AND land on dates a person would actually say.
+const TIMELINE_MAX_TICKS = 7;
+
+function buildTimelineTicks(startMs: number, endMs: number): { ticks: TimelineTick[] } {
   const span = Math.max(endMs - startMs, 1);
   const pctOf = (ts: number) => (ts - startMs) / span;
   const fmtDay = (ts: number) =>
@@ -1050,46 +1008,35 @@ function buildTimelineTicks(startMs: number, endMs: number): {
     new Date(ts).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 
   const ticks: TimelineTick[] = [];
-  let unit: 'day' | 'week' | 'month';
 
-  if (span <= 21 * DAY_MS) {
-    unit = 'day';
+  const stepDays = [1, 2, 3, 7, 14].find((d) => span / (d * DAY_MS) <= TIMELINE_MAX_TICKS);
+  if (stepDays) {
+    // First midnight at or after the start, then a fixed day stride.
     const d = new Date(startMs); d.setHours(0, 0, 0, 0);
-    for (let t = d.getTime(); t <= endMs; t += DAY_MS) {
-      if (t >= startMs) ticks.push({ pct: pctOf(t), label: fmtDay(t), labelled: false });
-    }
-  } else if (span <= 120 * DAY_MS) {
-    unit = 'week';
-    for (let t = startMs; t <= endMs; t += 7 * DAY_MS) {
-      ticks.push({ pct: pctOf(t), label: fmtDay(t), labelled: false });
+    if (d.getTime() < startMs) d.setDate(d.getDate() + 1);
+    for (let t = d.getTime(); t <= endMs; t += stepDays * DAY_MS) {
+      ticks.push({ pct: pctOf(t), label: fmtDay(t), labelled: true });
     }
   } else {
-    unit = 'month';
+    const stepMonths = [1, 2, 3, 6, 12].find((m) => span / (m * 30.44 * DAY_MS) <= TIMELINE_MAX_TICKS) ?? 12;
+    // First 1st-of-month at or after the start, then a fixed month stride.
     const d = new Date(startMs); d.setDate(1); d.setHours(0, 0, 0, 0);
     while (d.getTime() < startMs) d.setMonth(d.getMonth() + 1);
-    for (; d.getTime() <= endMs; d.setMonth(d.getMonth() + 1)) {
-      ticks.push({ pct: pctOf(d.getTime()), label: fmtMonth(d.getTime()), labelled: false });
+    for (; d.getTime() <= endMs; d.setMonth(d.getMonth() + stepMonths)) {
+      ticks.push({ pct: pctOf(d.getTime()), label: fmtMonth(d.getTime()), labelled: true });
     }
   }
 
-  // The last generated mark always lands on (or a sliver before) today, which
-  // duplicates the fixed "current date" endpoint below — drop it so "now"
-  // only ever appears once, anchored at the end of the rail.
-  if (ticks.length > 0) ticks.pop();
+  // The endpoints carry their own fixed labels (account created / today) —
+  // unlabel marks that would crowd them.
+  for (const tk of ticks) {
+    if (tk.pct < 0.05 || tk.pct > 0.95) tk.labelled = false;
+  }
 
-  // Label a subset (≈4 interior marks) so the narrow rail doesn't crowd. The
-  // endpoints get their own explicit labels, so skip marks near the ends.
-  const stride = Math.max(1, Math.ceil(ticks.length / 5));
-  ticks.forEach((tk, i) => {
-    tk.labelled = i % stride === 0 && tk.pct > 0.06 && tk.pct < 0.94;
-  });
-
-  return { ticks, unit };
+  return { ticks };
 }
 
 function TimelineScrubber({ startMs, endMs, pct, onChange, top, railH }: TimelineScrubberProps) {
-  const pctRef = useRef(pct);
-  pctRef.current = pct;
   // The pan responder closure is created once (via useRef below), so it must
   // read the rail height through a ref rather than the closed-over prop —
   // otherwise a post-mount header measurement would leave drag math stale.
@@ -1108,6 +1055,11 @@ function TimelineScrubber({ startMs, endMs, pct, onChange, top, railH }: Timelin
   });
   const nowLabel = new Date(endMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
+  // The drag is anchored to the pct captured at touch-down. Deriving each
+  // move from the CURRENT pct plus the gesture's cumulative dy double-counted
+  // every previous move — the thumb accelerated away from the finger, which
+  // was the scrubber's characteristic glitch.
+  const grantPctRef = useRef(0);
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -1116,14 +1068,12 @@ function TimelineScrubber({ startMs, endMs, pct, onChange, top, railH }: Timelin
       onPanResponderGrant: (evt) => {
         const y = evt.nativeEvent.locationY;
         const newPct = Math.max(0, Math.min(1, y / railHRef.current));
-        pctRef.current = newPct;
+        grantPctRef.current = newPct;
         onChange(newPct);
       },
-      // Scrub: the thumb follows the finger.
+      // Scrub: the thumb follows the finger from where the touch began.
       onPanResponderMove: (evt, gs) => {
-        const startY = pctRef.current * railHRef.current;
-        const newY = startY + gs.dy;
-        const newPct = Math.max(0, Math.min(1, newY / railHRef.current));
+        const newPct = Math.max(0, Math.min(1, grantPctRef.current + gs.dy / railHRef.current));
         onChange(newPct);
       },
     }),
@@ -1616,10 +1566,6 @@ export default function MapScreen() {
   // (see getNodeOpacity), not by spatial position — so switching semantic
   // ↔ time never moves a single node or the camera.
   const temporalPos = semanticPos;
-  const sourcePos = useMemo(
-    () => applyLayoutOffset(layoutSource(nodes, LAYOUT_W, LAYOUT_H)),
-    [nodes],
-  );
 
   // Rendered positions (animated between lenses)
   const renderPosRef = useRef<PositionMap>({});
@@ -1646,9 +1592,7 @@ export default function MapScreen() {
       return;
     }
 
-    const targetPos = lensMode === 'semantic' ? semanticPos
-      : lensMode === 'temporal' ? temporalPos
-      : sourcePos;
+    const targetPos = lensMode === 'semantic' ? semanticPos : temporalPos;
 
     const prev = renderPosRef.current;
     const prevIds = Object.keys(prev);
@@ -1717,9 +1661,7 @@ export default function MapScreen() {
       lensAnimCancelRef.current = null;
     }
 
-    const targetPos = newLens === 'semantic' ? semanticPos
-      : newLens === 'temporal' ? temporalPos
-      : sourcePos;
+    const targetPos = newLens === 'semantic' ? semanticPos : temporalPos;
 
     setLensMode(newLens);
 
@@ -1770,7 +1712,7 @@ export default function MapScreen() {
 
     requestAnimationFrame(tick);
     lensAnimCancelRef.current = () => { cancelled = true; setLensTransitioning(false); };
-  }, [lensMode, semanticPos, temporalPos, sourcePos, nodes, setCamera]);
+  }, [lensMode, semanticPos, temporalPos, nodes, setCamera]);
 
   // Use renderPos for display, fall back to semanticPos on first render
   const pos = Object.keys(renderPos).length > 0 ? renderPos : semanticPos;
@@ -2009,8 +1951,12 @@ export default function MapScreen() {
   }, [nodeTimestamps, accountCreatedMs]);
 
   const timelineCutoffMs = useMemo(() => {
-    if (nodes.length === 0) return Infinity;
-    return timeRange.startMs + (timeRange.endMs - timeRange.startMs) * timelinePct;
+    if (nodes.length === 0 || timelinePct >= 1) return Infinity;
+    const raw = timeRange.startMs + (timeRange.endMs - timeRange.startMs) * timelinePct;
+    // Quantize to the next day boundary: node dimming (and with it the heavy
+    // graph-layer rebuild) changes at most once per day crossed, while the
+    // thumb and date readout still track the finger every frame.
+    return Math.ceil(raw / DAY_MS) * DAY_MS;
   }, [nodes.length, timeRange, timelinePct]);
 
   const animCancelRef = useRef<(() => void) | null>(null);
@@ -2082,10 +2028,10 @@ export default function MapScreen() {
     if (prevFocusFitKeyRef.current === focusFitKey) return;
     prevFocusFitKeyRef.current = focusFitKey;
     if (focusFitKey === 'pending' || nodes.length === 0) return;
-    // Fit against the lens's own layout for the NEW node set — `pos` may
+    // Fit against the fresh semantic layout for the NEW node set — `pos` may
     // still hold the previous set mid-swap (renderPos settles a frame later).
-    centerOnNodes(lensMode === 'source' ? sourcePos : semanticPos, true);
-  }, [focusFitKey, nodes.length, centerOnNodes, lensMode, sourcePos, semanticPos]);
+    centerOnNodes(semanticPos, true);
+  }, [focusFitKey, nodes.length, centerOnNodes, semanticPos]);
 
   // Lens-switch camera recentering happens frame-by-frame inside
   // handleLensChange's tick loop (derived from the same in-flight node
@@ -2577,6 +2523,10 @@ export default function MapScreen() {
       refetchMapData();
       closeCapture();
       if (opts?.quick) {
+        // Warm the insight screen while the pill is on screen — the server is
+        // polishing the drafts in the background, and by the time the user
+        // taps "see the insight" the screen opens instantly from cache.
+        void prefetchQuery(`capture:${res.id}`, () => api.captures.get(res.id));
         showSavedPill(res.id);
       } else {
         router.push(`/insight/${res.id}` as never);
@@ -2619,12 +2569,20 @@ export default function MapScreen() {
   useEffect(() => {
     if (!newNodeId || !pos[newNodeId] || animatingRef.current) return;
     animatingRef.current = true;
+    // Route the user to their new capture: fly the camera to where it landed
+    // so "saved" visibly means "it's on your map, right here". The walkthrough
+    // manages its own framing, so the demo node never moves the camera.
+    if (!tutorialActive) {
+      const p = pos[newNodeId]!;
+      const targetZoom = Math.max(savedZoom.current, 1.5);
+      animateCamera(p.x - (SW / targetZoom) / 2, p.y - (SH / targetZoom) / 2, targetZoom, 700);
+    }
     landingAnim.setValue(0);
     RNAnimated.sequence([
       RNAnimated.timing(landingAnim, { toValue: 1, duration: 450, useNativeDriver: true }),
       RNAnimated.timing(landingAnim, { toValue: 0, duration: 750, useNativeDriver: true }),
     ]).start(() => { animatingRef.current = false; setNewNodeId(null); });
-  }, [newNodeId, pos, landingAnim]);
+  }, [newNodeId, pos, landingAnim, tutorialActive, animateCamera]);
 
   const nodeColor = useCallback((node: GraphNode): string => {
     const clusterColor = node.topics.reduce<string | undefined>(
@@ -2738,15 +2696,6 @@ export default function MapScreen() {
   // constant size on screen. A dozen elements, so rebuilding it per zoom
   // commit is cheap — which is the whole reason it is split from the graph.
   const labelLayer = useMemo(() => {
-    // Source kind labels for source lens mode. Held back until the lens
-    // transition settles so "links / thoughts / quotes" don't flash over nodes
-    // that are still sliding into their groups.
-    const kindLabels = lensMode === 'source' && !lensTransitioning ? [
-      { kind: 'LINK' as CaptureKind, label: 'links', x: MAP_PAD + LAYOUT_W * 0.2, y: MAP_PAD + LAYOUT_H * 0.15 },
-      { kind: 'TEXT' as CaptureKind, label: 'thoughts', x: MAP_PAD + LAYOUT_W * 0.5, y: MAP_PAD + LAYOUT_H * 0.15 },
-      { kind: 'IMAGE' as CaptureKind, label: 'images', x: MAP_PAD + LAYOUT_W * 0.8, y: MAP_PAD + LAYOUT_H * 0.15 },
-    ] : [];
-
     // Sub-topic labels are shown at every zoom, except where one would sit on
     // top of a coarse domain label — there it stays zoom-gated so the two don't
     // pile up while zoomed out. Approximate each label's world-space box (mono
@@ -2816,24 +2765,6 @@ export default function MapScreen() {
             );
           })}
 
-          {/* Source kind labels */}
-          {kindLabels.map((kl) => {
-            const fontSize = Math.max(10, Math.min(20, 13 / zoom));
-            return (
-              <SvgText
-                key={`kl-${kl.kind}`}
-                x={kl.x} y={kl.y}
-                fontSize={fontSize}
-                fontFamily={FontFamily.mono}
-                fill="rgba(236,236,236,1)"
-                fillOpacity={0.18}
-                textAnchor="middle"
-                letterSpacing={3}
-              >
-                {kl.label.toUpperCase()}
-              </SvgText>
-            );
-          })}
 
           {/* Temporal axis label */}
           {lensMode === 'temporal' && nodes.length > 0 && (() => {
@@ -3262,7 +3193,7 @@ export default function MapScreen() {
                 style={styles.lensRow}
                 pointerEvents="box-none"
               >
-                {(['semantic', 'temporal', 'source'] as LensMode[]).map((l, i) => {
+                {(['semantic', 'temporal'] as LensMode[]).map((l, i) => {
                   const label = l === 'temporal' ? 'time' : l;
                   const active = lensMode === l;
                   return (
@@ -3323,7 +3254,7 @@ export default function MapScreen() {
           visible={infoVisible}
           onClose={() => setInfoVisible(false)}
           title="atlas"
-          body="Your knowledge map. Every node is something you saved. Lines appear when ideas share a topic, contradict each other, or grow out of one another. Switch lenses to sort the map by meaning, time, or source."
+          body="Your knowledge map. Every node is something you saved. Lines appear when ideas share a topic, contradict each other, or grow out of one another. Switch lenses to sort the map by meaning or time."
         />
 
         <InfoModal

@@ -116,8 +116,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
   {
     id: 'lenses',
-    title: 'three lenses',
-    body: 'one map, three views: semantic groups ideas by meaning, time replays your thinking as it happened, source splits links, thoughts, and images.',
+    title: 'two lenses',
+    body: 'one map, two views: semantic groups ideas by meaning, time replays your thinking as it happened.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.atlasLenses },
     dismissible: true,
   },

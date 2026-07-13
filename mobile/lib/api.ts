@@ -258,7 +258,7 @@ export const api = {
         method: 'DELETE',
       });
     },
-    list(params?: { limit?: number; query?: string }) {
+    list(params?: { limit?: number; query?: string; cursor?: string }) {
       return request<CaptureSummary[]>(`/api/captures${buildQuery(params ?? {})}`);
     },
     get(id: string) {

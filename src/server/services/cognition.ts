@@ -1146,11 +1146,14 @@ export function withLeadInsight(item: CaptureWithRelations & { insights: { id: s
   };
 }
 
-export async function listCaptures(args: { userId: string; limit?: number; query?: string; db?: DbClient }) {
+export async function listCaptures(args: { userId: string; limit?: number; query?: string; cursor?: string; db?: DbClient }) {
   const db = args.db ?? prisma;
   const limit = Math.min(Math.max(args.limit ?? 20, 1), 80);
   const query = args.query?.trim();
   const items = await db.capturedItem.findMany({
+    // Keyset pagination for the diary: pages continue after the given row.
+    // The id tiebreak keeps the order stable when captures share a timestamp.
+    ...(args.cursor ? { cursor: { id: args.cursor }, skip: 1 } : {}),
     where: {
       userId: args.userId,
       ...(query
@@ -1167,7 +1170,7 @@ export async function listCaptures(args: { userId: string; limit?: number; query
         }
         : {}),
     },
-    orderBy: { capturedAt: "desc" },
+    orderBy: [{ capturedAt: "desc" }, { id: "desc" }],
     take: limit,
     include: {
       contentItem: { include: { source: true, contentType: true } },
