@@ -6,7 +6,7 @@ import { SIGNAL_WEIGHTS, TOP_FOLLOW_TOPICS } from "@/server/weights";
 import { createNotification } from "@/server/services/notifications";
 import { applyTopicWeights, getPublicTopicIdsForUser, incrementTasteProfileVersion, recordActivityEvent } from "@/server/services/activity";
 import { recomputeProfileSummary } from "@/server/services/profile";
-import { getMemoryGraph } from "@/server/services/memory";
+import { getMemoryGraph, pickRisingTopic } from "@/server/services/memory";
 
 export async function followUser(userId: string, targetUserId: string, db: DbClient = prisma) {
   if (userId === targetUserId) {
@@ -416,6 +416,17 @@ export async function getPulse(args: { userId: string; db?: DbClient }) {
         topics: node.topics,
       }));
 
+      // What this person is getting into lately — the same signal the viewer's
+      // own info panel shows for themselves, so the two can't disagree. Derived
+      // from the nodes already fetched above, so it costs no extra query. Those
+      // nodes are capped at PULSE_MAP_NODES, so for a very prolific person the
+      // prior window can be clipped and the lift reads a little eager; that's
+      // an acceptable trade against doubling the query count of the pulse.
+      const rising = pickRisingTopic(
+        graph.nodes.map((node) => ({ capturedAt: node.capturedAt, topics: node.topics })),
+        { recentDays: 7, priorDays: 30 },
+      );
+
       return {
         user: {
           id: user.id,
@@ -424,7 +435,11 @@ export async function getPulse(args: { userId: string; db?: DbClient }) {
           avatarUrl: user.profile?.avatarUrl ?? null,
           identitySummary: user.profile?.identitySummary ?? null,
         },
-        captureCount: graph.nodes.length,
+        // Their true capture total, not `nodes.length` — the node list is capped
+        // at PULSE_MAP_NODES, so counting it would quietly under-report a
+        // prolific person's map as exactly 60 points forever.
+        captureCount: graph.totalCount,
+        rising,
         map: {
           nodes: graph.nodes.map((node) => ({
             id: node.id,

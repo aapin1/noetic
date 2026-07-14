@@ -57,13 +57,22 @@ function FriendCard({
   onUnfollow: (id: string) => void;
 }) {
   const c = useThemeColors();
-  const { user, map, latest } = friend;
+  const { user, map, latest, captureCount, rising } = friend;
   const topRegions = [...map.clusters]
     .filter((cl) => cl.count >= 2)
     .sort((a, b) => b.count - a.count)
     .slice(0, 3)
     .map((cl) => cl.name)
     .join(' · ');
+
+  // The same shape of summary the reader gets for their own map on Atlas, so a
+  // friend's card is legible at a glance. Segments drop out when they'd be zero.
+  const fieldCount = map.clusters.length;
+  const stats = [
+    `${captureCount} ${captureCount === 1 ? 'point' : 'points'}`,
+    fieldCount > 0 ? `${fieldCount} ${fieldCount === 1 ? 'field' : 'fields'}` : null,
+    rising ? `${rising.name} rising` : null,
+  ].filter(Boolean).join(' · ');
 
   return (
     <View style={[styles.card, { borderColor: c.border }]}>
@@ -78,11 +87,9 @@ function FriendCard({
         </Pressable>
       </View>
 
-      {!!user.identitySummary && (
-        <Text variant="monoSmall" color="muted" numberOfLines={2} style={styles.identity}>
-          {user.identitySummary}
-        </Text>
-      )}
+      <Text variant="monoSmall" color="muted" numberOfLines={1} style={styles.identity}>
+        {stats}
+      </Text>
 
       {map.nodes.length > 0 ? (
         <View style={styles.mapWrap}>

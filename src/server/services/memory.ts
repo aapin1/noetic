@@ -14,6 +14,98 @@ const GRAPH_LIMIT_DEFAULT = 80;
 const TRENDS_RECENT_DAYS = 7;
 const TRENDS_PRIOR_DAYS = 30;
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A topic needs this many recent captures before it can be called "rising". */
+const MOMENTUM_MIN_RECENT = 2;
+
+export type TopicMomentum = {
+  topicId: string;
+  name: string;
+  recent: number;
+  prior: number;
+  lift: number;
+  lastCapturedAt: Date;
+};
+
+type MomentumItem = {
+  capturedAt: Date;
+  topics: { topicId: string; name: string }[];
+};
+
+/**
+ * Rank topics by how much faster they're being captured *now* than they used to
+ * be — a per-day rate comparison, not a raw count difference.
+ *
+ * Raw `recent - prior` is not a momentum signal: the two windows are different
+ * lengths (7 days vs 23), so the counts aren't comparable, and the topic with
+ * the most captures overall tends to win regardless of whether it's actually
+ * accelerating. Comparing rates puts a small topic that just woke up ahead of a
+ * large one ticking along at its usual pace, which is what "rising" means.
+ *
+ * `MOMENTUM_MIN_RECENT` keeps a single stray capture in a brand-new topic from
+ * taking the crown; the smoothing term keeps a topic with no history from
+ * dividing by zero.
+ */
+export function rankTopicMomentum(
+  items: MomentumItem[],
+  opts: { recentDays: number; priorDays: number; now?: number },
+): TopicMomentum[] {
+  const now = opts.now ?? Date.now();
+  const priorWindowDays = Math.max(1, opts.priorDays - opts.recentDays);
+  const recentCutoff = now - opts.recentDays * DAY_MS;
+  const priorCutoff = now - opts.priorDays * DAY_MS;
+  // One capture spread across the whole prior window — the rate at which a
+  // topic is indistinguishable from noise. Both sides get it, so a topic with
+  // no history gets a large but finite lift instead of Infinity.
+  const smoothing = 1 / opts.priorDays;
+
+  const byTopic = new Map<string, { topicId: string; name: string; recent: number; prior: number; lastCapturedAt: Date }>();
+
+  for (const item of items) {
+    const ts = item.capturedAt.getTime();
+    if (ts < priorCutoff) continue;
+    const isRecent = ts >= recentCutoff;
+
+    for (const topic of item.topics) {
+      const entry = byTopic.get(topic.topicId) ?? {
+        topicId: topic.topicId,
+        name: topic.name,
+        recent: 0,
+        prior: 0,
+        lastCapturedAt: item.capturedAt,
+      };
+
+      if (isRecent) entry.recent += 1;
+      else entry.prior += 1;
+      if (item.capturedAt > entry.lastCapturedAt) entry.lastCapturedAt = item.capturedAt;
+
+      byTopic.set(topic.topicId, entry);
+    }
+  }
+
+  return [...byTopic.values()]
+    .filter((entry) => entry.recent >= MOMENTUM_MIN_RECENT)
+    .map((entry) => {
+      const recentRate = entry.recent / opts.recentDays;
+      const priorRate = entry.prior / priorWindowDays;
+      return { ...entry, lift: (recentRate + smoothing) / (priorRate + smoothing) };
+    })
+    // Ties break toward whichever topic was touched most recently — never
+    // toward the biggest, which is the bias this whole function exists to undo.
+    .sort((a, b) => b.lift - a.lift || b.lastCapturedAt.getTime() - a.lastCapturedAt.getTime());
+}
+
+/** The single topic to call "rising", or null when nothing is accelerating. */
+export function pickRisingTopic(
+  items: MomentumItem[],
+  opts: { recentDays: number; priorDays: number; now?: number },
+): { topicId: string; name: string } | null {
+  const top = rankTopicMomentum(items, opts)[0];
+  if (!top || top.lift <= 1) return null;
+  return { topicId: top.topicId, name: top.name };
+}
+
 type GraphNode = {
   id: string;
   label: string;
@@ -420,6 +512,17 @@ export async function getMemoryTrends(args: {
     }
   }
 
+  // Which topic is actually accelerating. `shifts` is ranked by raw count delta,
+  // which is dominated by whichever topic is already the largest — so it can't
+  // answer this. See rankTopicMomentum.
+  const rising = pickRisingTopic(
+    captures.map((item) => ({
+      capturedAt: item.capturedAt,
+      topics: item.topics.map((row) => ({ topicId: row.topicId, name: row.topic.name })),
+    })),
+    { recentDays, priorDays, now },
+  );
+
   return {
     window: windowKey,
     captureCount: captures.length,
@@ -427,6 +530,7 @@ export async function getMemoryTrends(args: {
     themes: themes.slice(0, 10),
     shifts,
     recurring,
+    rising,
     events: events.map((event) => ({
       id: event.id,
       type: event.type,

@@ -22,6 +22,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Circle, Line } from 'react-native-svg';
 import { useIsFocused } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { ChevronRight, Image as ImageIcon, Link2, PenLine } from 'lucide-react-native';
 import { AccentList, Radius, Spacing, accentFor, hourAccent } from '@/constants/theme';
@@ -1227,8 +1228,16 @@ function StatPair({ value, label }: { value: number; label: string }) {
   );
 }
 
+/** "Mar 2026" — enough to place a follow in time without the false precision of a day. */
+function followedSince(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
+
 function Social({ w, seed, accent }: { w: WrappedStats; seed: number; accent: string }) {
   const c = useThemeColors();
+  const router = useRouter();
 
   if (w.followingCount === 0 && w.followerCount === 0) {
     return (
@@ -1250,31 +1259,64 @@ function Social({ w, seed, accent }: { w: WrappedStats; seed: number; accent: st
         <View style={[styles.firstFollow, { borderTopColor: c.borderSubtle }]}>
           <Avatar uri={w.firstFollow.avatarUrl} displayName={w.firstFollow.displayName} size="sm" />
           <View style={styles.firstFollowText}>
+            <Text variant="monoSmall" style={{ color: accent, fontSize: 10 }}>
+              {firstFollowCaption(w.firstFollow.handle)}
+            </Text>
             <Text variant="serif" numberOfLines={1}>
               {w.firstFollow.displayName}
             </Text>
-            <Text variant="monoSmall" style={{ color: accent, fontSize: 10 }}>
-              {firstFollowCaption(w.firstFollow.handle)}
+            {/* The handle and the date are the point — without them this row was
+                a face with no explanation of why it was being shown. */}
+            <Text variant="monoSmall" color="faint" numberOfLines={1}>
+              @{w.firstFollow.handle} · following since {followedSince(w.firstFollow.followedAt)}
             </Text>
           </View>
         </View>
       ) : null}
 
       {w.followingCount > 0 ? (
-        <View style={[styles.friendRow, { borderTopColor: c.borderSubtle }]}>
+        <View style={[styles.friendBlock, { borderTopColor: c.borderSubtle }]}>
           {w.friendActivity.length === 0 ? (
             <Text variant="monoSmall" color="faint">
               {quietWeekLine(seed)}
             </Text>
           ) : (
-            w.friendActivity.map((f) => (
-              <View key={f.handle} style={styles.friend}>
-                <Avatar uri={f.avatarUrl} displayName={f.displayName} size="sm" />
-                <Text variant="monoSmall" style={{ color: accent, fontSize: 9 }}>
-                  +{f.count}
-                </Text>
-              </View>
-            ))
+            <>
+              {/* A bare "+3" under a face never said +3 of what, or over what
+                  span. Spell out both, and give the row somewhere to go. */}
+              <Text variant="label" color="muted" style={styles.friendHeading}>
+                busy this week
+              </Text>
+              {w.friendActivity.map((f) => (
+                <Pressable
+                  key={f.handle}
+                  onPress={() => router.push('/(tabs)/pulse' as never)}
+                  style={({ pressed }) => [styles.friendRow, pressed && { opacity: 0.6 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${f.displayName} captured ${f.count} ${f.count === 1 ? 'thing' : 'things'} this week. Open pulse.`}
+                >
+                  <Avatar uri={f.avatarUrl} displayName={f.displayName} size="sm" />
+                  <View style={styles.friendText}>
+                    <Text variant="serif" numberOfLines={1}>
+                      {f.displayName}
+                    </Text>
+                    <Text variant="monoSmall" color="faint" numberOfLines={1}>
+                      @{f.handle}
+                    </Text>
+                  </View>
+                  <Text variant="monoSmall" style={{ color: accent }}>
+                    {f.count} {f.count === 1 ? 'capture' : 'captures'}
+                  </Text>
+                </Pressable>
+              ))}
+              <Pressable
+                onPress={() => router.push('/(tabs)/pulse' as never)}
+                style={({ pressed }) => [styles.friendCta, pressed && { opacity: 0.6 }]}
+                accessibilityRole="button"
+              >
+                <Text variant="monoSmall" color="muted">see them on pulse →</Text>
+              </Pressable>
+            </>
           )}
         </View>
       ) : null}
@@ -1674,14 +1716,19 @@ const styles = StyleSheet.create({
     paddingTop: Spacing[4],
     borderTopWidth: 1,
   },
-  firstFollowText: { flex: 1 },
-  friendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing[4],
+  firstFollowText: { flex: 1, gap: 2 },
+  friendBlock: {
     marginTop: Spacing[4],
     paddingTop: Spacing[4],
     borderTopWidth: 1,
   },
-  friend: { alignItems: 'center', gap: 3 },
+  friendHeading: { marginBottom: Spacing[3] },
+  friendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[3],
+    paddingVertical: Spacing[2],
+  },
+  friendText: { flex: 1, gap: 2 },
+  friendCta: { marginTop: Spacing[2], alignSelf: 'flex-end' },
 });
