@@ -293,7 +293,7 @@ function youTubeVideoId(url: string): string | undefined {
 async function fetchYouTubePlayerData(
   videoId: string,
   session: ProxySession,
-): Promise<{ tracks: CaptionTrack[]; description?: string } | undefined> {
+): Promise<{ tracks: CaptionTrack[]; description?: string; playability?: string } | undefined> {
   // Tighter than the 12s session default: a healthy InnerTube round-trip is
   // well under 2s even through the proxy, and on timeout the Supadata native
   // fallback still runs — the user is waiting on the capture sheet.
@@ -310,10 +310,12 @@ async function fetchYouTubePlayerData(
   const data = (await res.json()) as {
     captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] } };
     videoDetails?: { shortDescription?: string };
+    playabilityStatus?: { status?: string };
   };
   return {
     tracks: data.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [],
     description: data.videoDetails?.shortDescription,
+    playability: data.playabilityStatus?.status,
   };
 }
 
@@ -340,41 +342,84 @@ async function fetchCaptionText(baseUrl: string, session: ProxySession): Promise
  * Runs through one sticky residential-proxy session when configured: YouTube
  * bot-walls datacenter IPs, and both requests should come from one exit IP.
  */
+async function attemptYouTubeBodyText(videoId: string): Promise<{
+  text?: string;
+  source?: BodySource;
+  viaProxy: boolean;
+  /** Why the transcript path came up empty — drives the retry decision and
+   * the diagnostic log so prod tells us when Supadata is burning credits. */
+  failure?: "player_unavailable" | "no_tracks" | "captions_empty" | string;
+  description?: string;
+}> {
+  const session = createProxySession();
+  try {
+    const player = await fetchYouTubePlayerData(videoId, session);
+    if (!player) return { viaProxy: session.viaProxy, failure: "player_unavailable" };
+    // A non-OK playability (LOGIN_REQUIRED = "confirm you're not a bot") means
+    // this exit IP is flagged; the response carries no caption tracks.
+    if (player.playability && player.playability !== "OK") {
+      return { viaProxy: session.viaProxy, failure: `playability_${player.playability}` };
+    }
+
+    if (player.tracks.length > 0) {
+      // Prefer a human-authored English track; fall back to any English track,
+      // then to whatever caption exists (usually auto-generated). Try up to
+      // two distinct tracks — a single track occasionally serves an empty 200
+      // while its sibling works.
+      const ranked = [
+        player.tracks.find((t) => t.languageCode?.startsWith("en") && t.kind !== "asr"),
+        player.tracks.find((t) => t.languageCode?.startsWith("en")),
+        player.tracks[0],
+      ].filter((t): t is CaptionTrack => Boolean(t?.baseUrl));
+      const distinct = ranked.filter((t, i) => ranked.findIndex((o) => o.baseUrl === t.baseUrl) === i).slice(0, 2);
+      for (const track of distinct) {
+        const transcript = await fetchCaptionText(track.baseUrl!, session);
+        if (transcript) return { text: transcript, source: "transcript", viaProxy: session.viaProxy };
+      }
+      return { viaProxy: session.viaProxy, failure: "captions_empty", description: player.description };
+    }
+
+    return { viaProxy: session.viaProxy, failure: "no_tracks", description: player.description };
+  } catch {
+    return { viaProxy: session.viaProxy, failure: "player_unavailable" };
+  } finally {
+    await session.close().catch(() => {});
+  }
+}
+
 async function fetchYouTubeBodyText(
   watchUrl: string,
 ): Promise<{ text: string; source: BodySource; viaProxy: boolean } | undefined> {
   const videoId = youTubeVideoId(watchUrl);
   if (!videoId) return undefined;
 
-  const session = createProxySession();
-  try {
-    const player = await fetchYouTubePlayerData(videoId, session);
-    if (!player) return undefined;
+  let attempt = await attemptYouTubeBodyText(videoId);
 
-    if (player.tracks.length > 0) {
-      // Prefer a human-authored English track; fall back to any English track,
-      // then to whatever caption exists (usually auto-generated).
-      const pick =
-        player.tracks.find((t) => t.languageCode?.startsWith("en") && t.kind !== "asr") ??
-        player.tracks.find((t) => t.languageCode?.startsWith("en")) ??
-        player.tracks[0];
-      if (pick?.baseUrl) {
-        const transcript = await fetchCaptionText(pick.baseUrl, session);
-        if (transcript) return { text: transcript, source: "transcript", viaProxy: session.viaProxy };
-      }
-    }
-
-    // Fallback: the creator's description.
-    const description = player.description?.trim();
-    if (description && description.length >= 20) {
-      return { text: description.slice(0, 6000), source: "description", viaProxy: session.viaProxy };
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  } finally {
-    await session.close().catch(() => {});
+  // Empty player data, a bot-walled exit IP, or empty caption bodies are all
+  // per-IP failures when running through the rotating residential proxy — one
+  // retry on a fresh session (new exit IP) usually succeeds and costs nothing,
+  // unlike the Supadata credit the fallback would burn.
+  if (!attempt.text && attempt.viaProxy && attempt.failure !== "no_tracks") {
+    const retry = await attemptYouTubeBodyText(videoId);
+    if (retry.text || (retry.description && !attempt.description)) attempt = retry;
   }
+
+  if (attempt.text && attempt.source) {
+    return { text: attempt.text, source: attempt.source, viaProxy: attempt.viaProxy };
+  }
+
+  // One structured line per miss so Render logs show exactly why the paid
+  // Supadata fallback is being reached for YouTube.
+  console.log(
+    JSON.stringify({ event: "yt_transcript_miss", videoId, failure: attempt.failure ?? "unknown", viaProxy: attempt.viaProxy }),
+  );
+
+  // Fallback: the creator's description.
+  const description = attempt.description?.trim();
+  if (description && description.length >= 20) {
+    return { text: description.slice(0, 6000), source: "description", viaProxy: attempt.viaProxy };
+  }
+  return undefined;
 }
 
 // ── Source-specific extractors ──────────────────────────────────────────────
@@ -700,38 +745,41 @@ export async function fetchMetadata(
     ? await fetchSupadataTranscript(normalized, "auto")
     : undefined;
 
-  let response: Response | undefined;
-  try {
-    response = await fetchWithTimeout(normalized, {
+  // Many sites serve bots a stripped page (or a 403), so a browser-UA attempt
+  // is usually needed anyway — run it concurrently with the polite MNEME-UA
+  // fetch instead of serially after it. The polite result still wins unless
+  // the browser one is genuinely richer, so behavior matches the old ladder
+  // at up to 8s less latency for articles/blogs/Substack.
+  const [plainResponse, browserResponse] = await Promise.all([
+    fetchWithTimeout(normalized, {
       headers: {
         "user-agent": "MNEME/1.0 (+https://mneme.app)",
         accept: "text/html,application/xhtml+xml",
       },
-    }, 8000);
+    }, 8000).catch(() => undefined),
+    fetchWithTimeout(normalized, {
+      headers: { ...YT_HEADERS, accept: "text/html,application/xhtml+xml" },
+    }, 8000).catch(() => undefined),
+  ]);
+
+  let metadata: ExtractedMetadata | undefined;
+  try {
+    metadata = plainResponse?.ok ? parseMetadataFromHtml(await plainResponse.text(), normalized) : undefined;
   } catch {
-    response = undefined;
+    metadata = undefined;
   }
 
-  let metadata = response?.ok ? parseMetadataFromHtml(await response.text(), normalized) : undefined;
-
-  // Many sites serve bots a stripped page (or a 403). Retry once as a real
-  // browser before giving up or settling for title-only metadata.
-  if (!metadata?.title || !metadata.bodyText) {
+  if (browserResponse?.ok && (!metadata?.title || !metadata.bodyText)) {
     try {
-      const retry = await fetchWithTimeout(normalized, {
-        headers: { ...YT_HEADERS, accept: "text/html,application/xhtml+xml" },
-      }, 8000);
-      if (retry.ok) {
-        const retried = parseMetadataFromHtml(await retry.text(), normalized);
-        const better =
-          !metadata?.title ||
-          (Boolean(retried.title) && (retried.bodyText?.length ?? 0) > (metadata.bodyText?.length ?? 0));
-        if (better && retried.title) {
-          metadata = retried;
-        }
+      const retried = parseMetadataFromHtml(await browserResponse.text(), normalized);
+      const better =
+        !metadata?.title ||
+        (Boolean(retried.title) && (retried.bodyText?.length ?? 0) > (metadata.bodyText?.length ?? 0));
+      if (better && retried.title) {
+        metadata = retried;
       }
     } catch {
-      // keep whatever the first attempt produced
+      // keep whatever the plain attempt produced
     }
   }
 
