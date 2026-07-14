@@ -3,6 +3,7 @@ import { load } from "cheerio";
 import { parseHTML } from "linkedom";
 import slugify from "slugify";
 import { createProxySession, type ProxySession } from "@/server/proxyFetch";
+import { groqConfigured, transcribeAudioUrl } from "@/server/transcribe";
 import { normalizeUrl } from "@/server/url";
 
 export type BodySource = "transcript" | "body" | "jsonld" | "reddit" | "description";
@@ -49,9 +50,50 @@ export function scoreContentConfidence(args: {
   return "thin";
 }
 
-/** Article-body cap. Matches the transcript cap so long essays (Substack)
- * aren't truncated mid-argument the way the old 6K cap did. */
-const BODY_TEXT_LIMIT = 10000;
+/** Article/transcript body budget. Long content is fitted via
+ * condenseToBudget rather than truncated at this many chars. */
+const BODY_TEXT_LIMIT = 12000;
+
+/**
+ * Fits long text into the body budget by sampling head, middle, and tail
+ * instead of blind truncation. A 2-hour transcript cut at the old cap kept
+ * only the first ~8 minutes, so embeddings, topics, and insights never saw
+ * the argument's development or conclusion. Segment edges land on word
+ * boundaries, and elisions are marked so the LLM knows material was skipped.
+ */
+function condenseToBudget(text: string, limit = BODY_TEXT_LIMIT): string {
+  if (text.length <= limit) return text;
+  const sep = "\n[…]\n";
+  const budget = limit - 2 * sep.length;
+  const headLen = Math.floor(budget * 0.45);
+  const midLen = Math.floor(budget * 0.3);
+  const tailLen = budget - headLen - midLen;
+  const head = text.slice(0, headLen).replace(/\S+$/, "").trimEnd();
+  const midStart = Math.floor(text.length / 2 - midLen / 2);
+  const middle = text
+    .slice(midStart, midStart + midLen)
+    .replace(/^\S+/, "")
+    .replace(/\S+$/, "")
+    .trim();
+  const tail = text
+    .slice(text.length - tailLen)
+    .replace(/^\S+/, "")
+    .trimStart();
+  return [head, middle, tail].join(sep);
+}
+
+/** Share of alphabetic characters that are Latin — the wrong-language guard.
+ * Digits/punctuation are ignored so code-heavy or numeric text isn't punished. */
+function latinShare(text: string): number {
+  let latin = 0;
+  let other = 0;
+  for (const ch of text) {
+    const c = ch.codePointAt(0)!;
+    if ((c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a)) latin++;
+    else if (c > 0x2ff) other++;
+  }
+  return latin + other === 0 ? 0 : latin / (latin + other);
+}
 
 /** fetch with a hard timeout so a hung host can't stall the capture pipeline. */
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
@@ -102,8 +144,9 @@ function extractJsonLd($: ReturnType<typeof load>): { articleBody?: string; desc
     }
   });
 
+  // Full articleBody — the caller condenses the winning extraction to budget.
   return {
-    articleBody: articleBody?.slice(0, BODY_TEXT_LIMIT),
+    articleBody,
     description: description?.slice(0, 6000),
   };
 }
@@ -119,7 +162,7 @@ function extractBodyText($: ReturnType<typeof load>): string | undefined {
     if (text.length >= 40) paragraphs.push(text);
   });
   const joined = paragraphs.join("\n").trim();
-  return joined.length >= 40 ? joined.slice(0, BODY_TEXT_LIMIT) : undefined;
+  return joined.length >= 40 ? joined : undefined;
 }
 
 /**
@@ -138,7 +181,7 @@ function extractReadabilityText(html: string): string | undefined {
       .filter(Boolean)
       .join("\n")
       .trim();
-    return text.length >= 200 ? text.slice(0, BODY_TEXT_LIMIT) : undefined;
+    return text.length >= 200 ? text : undefined;
   } catch {
     return undefined;
   }
@@ -232,6 +275,7 @@ export function parseMetadataFromHtml(html: string, originalUrl: string): Extrac
     bodyText = jsonLd.description;
     bodySource = "jsonld";
   }
+  if (bodyText) bodyText = condenseToBudget(bodyText);
 
   return {
     title,
@@ -261,18 +305,41 @@ const YT_HEADERS = {
 } as const;
 
 type CaptionTrack = { baseUrl?: string; languageCode?: string; kind?: string };
+type AudioFormat = { url?: string; mimeType?: string; bitrate?: number; contentLength?: string };
+
+type YouTubePlayerData = {
+  tracks: CaptionTrack[];
+  description?: string;
+  playability?: string;
+  /** Video length — bounds what the ASR tier is willing to transcribe. */
+  lengthSeconds?: number;
+  /** Direct audio-only stream URLs, lowest bitrate first (ASR needs no fidelity). */
+  audioFormats: AudioFormat[];
+};
 
 // YouTube gates caption downloads from its web surface behind a
 // proof-of-origin token — the timedtext URLs embedded in the watch page now
 // return an empty 200 even from residential IPs. The InnerTube player API
-// still serves working caption tracks to the ANDROID client (the same route
+// still serves working caption tracks to mobile clients (the same route
 // youtube-transcript-api and yt-dlp use), and its response also carries the
 // creator description, so one small POST replaces the old 1MB+ watch-page
 // scrape entirely.
-const INNERTUBE_UA = "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip";
-const INNERTUBE_CONTEXT = {
-  client: { clientName: "ANDROID", clientVersion: "20.10.38", androidSdkVersion: 30, hl: "en" },
-} as const;
+//
+// Two clients, tried in order: IOS benchmarked marginally faster with slightly
+// fuller tracks (2026-07); ANDROID is the long-serving fallback. Retrying on a
+// *different* client hedges against YouTube blocking one client family, which
+// is how the old watch-page scrape died.
+type InnertubeClient = { ua: string; context: Record<string, unknown> };
+const INNERTUBE_CLIENTS: InnertubeClient[] = [
+  {
+    ua: "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+    context: { client: { clientName: "IOS", clientVersion: "20.10.4", deviceModel: "iPhone16,2", hl: "en" } },
+  },
+  {
+    ua: "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip",
+    context: { client: { clientName: "ANDROID", clientVersion: "20.10.38", androidSdkVersion: 30, hl: "en" } },
+  },
+];
 
 /** Extracts the video id from watch/youtu.be/shorts/embed/live URL forms. */
 function youTubeVideoId(url: string): string | undefined {
@@ -293,7 +360,8 @@ function youTubeVideoId(url: string): string | undefined {
 async function fetchYouTubePlayerData(
   videoId: string,
   session: ProxySession,
-): Promise<{ tracks: CaptionTrack[]; description?: string; playability?: string } | undefined> {
+  client: InnertubeClient,
+): Promise<YouTubePlayerData | undefined> {
   // Tighter than the 12s session default: a healthy InnerTube round-trip is
   // well under 2s even through the proxy, and on timeout the Supadata native
   // fallback still runs — the user is waiting on the capture sheet.
@@ -301,36 +369,80 @@ async function fetchYouTubePlayerData(
     "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
     {
       method: "POST",
-      headers: { "content-type": "application/json", "user-agent": INNERTUBE_UA },
-      body: JSON.stringify({ context: INNERTUBE_CONTEXT, videoId }),
+      headers: { "content-type": "application/json", "user-agent": client.ua },
+      body: JSON.stringify({ context: client.context, videoId }),
     },
     6000,
   );
   if (!res.ok) return undefined;
   const data = (await res.json()) as {
     captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] } };
-    videoDetails?: { shortDescription?: string };
+    videoDetails?: { shortDescription?: string; lengthSeconds?: string };
     playabilityStatus?: { status?: string };
+    streamingData?: { adaptiveFormats?: AudioFormat[] };
   };
+  const lengthSeconds = Number(data.videoDetails?.lengthSeconds);
   return {
     tracks: data.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [],
     description: data.videoDetails?.shortDescription,
     playability: data.playabilityStatus?.status,
+    lengthSeconds: Number.isFinite(lengthSeconds) && lengthSeconds > 0 ? lengthSeconds : undefined,
+    audioFormats: (data.streamingData?.adaptiveFormats ?? [])
+      .filter((f) => f.url && f.mimeType?.startsWith("audio/"))
+      .sort((a, b) => (a.bitrate ?? Infinity) - (b.bitrate ?? Infinity)),
   };
 }
 
 /** Fetches and flattens a caption track (timedtext XML) into transcript text. */
-async function fetchCaptionText(baseUrl: string, session: ProxySession): Promise<string | undefined> {
-  const res = await session.fetch(baseUrl, { headers: { "user-agent": INNERTUBE_UA } }, 6000);
+async function fetchCaptionText(
+  baseUrl: string,
+  session: ProxySession,
+  client: InnertubeClient,
+): Promise<string | undefined> {
+  const res = await session.fetch(baseUrl, { headers: { "user-agent": client.ua } }, 6000);
   if (!res.ok) return undefined;
   const $ = load(await res.text(), { xmlMode: true });
   const text = $("p, text")
     .map((_, el) => $(el).text())
     .get()
     .join(" ")
+    // Caption XML double-encodes entities ("I&amp;#39;m"); one decode pass
+    // remains after parsing, so transcripts read "I&#39;m" without this.
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ")
     .trim();
-  return text.length >= 40 ? text.slice(0, BODY_TEXT_LIMIT) : undefined;
+  // Full transcript — the caller condenses to budget so long videos keep
+  // their middle and conclusion instead of just the first minutes.
+  return text.length >= 40 ? text : undefined;
+}
+
+/** Max video length the ASR tier will pay to transcribe: 20 min ≈ $0.013 of
+ * Groq time and ≈10MB of audio through the proxy — beyond that, latency and
+ * bandwidth stop being worth it for a fallback path. */
+const ASR_MAX_SECONDS = 1200;
+
+/**
+ * AI-transcribes a video's lowest-bitrate audio stream via Groq when captions
+ * are missing/unusable — the path Supadata billed 2 credits/min for. Must run
+ * inside the same proxy session that fetched the player data: streaming URLs
+ * are IP-bound. English-only, matching caption selection: a wrong-language
+ * transcript poisons embeddings worse than the description fallback.
+ */
+async function attemptYouTubeAsr(
+  videoId: string,
+  player: YouTubePlayerData,
+  session: ProxySession,
+): Promise<string | undefined> {
+  if (!groqConfigured()) return undefined;
+  if (!player.lengthSeconds || player.lengthSeconds > ASR_MAX_SECONDS) return undefined;
+  const format = player.audioFormats[0];
+  if (!format?.url) return undefined;
+  const filename = format.mimeType?.includes("webm") ? "audio.webm" : "audio.m4a";
+  const text = await transcribeAudioUrl({ url: format.url, session, filename });
+  if (!text || latinShare(text) < 0.7) return undefined;
+  console.log(JSON.stringify({ event: "yt_asr", videoId, seconds: player.lengthSeconds }));
+  return text;
 }
 
 /**
@@ -342,18 +454,21 @@ async function fetchCaptionText(baseUrl: string, session: ProxySession): Promise
  * Runs through one sticky residential-proxy session when configured: YouTube
  * bot-walls datacenter IPs, and both requests should come from one exit IP.
  */
-async function attemptYouTubeBodyText(videoId: string): Promise<{
+async function attemptYouTubeBodyText(
+  videoId: string,
+  client: InnertubeClient,
+): Promise<{
   text?: string;
   source?: BodySource;
   viaProxy: boolean;
   /** Why the transcript path came up empty — drives the retry decision and
    * the diagnostic log so prod tells us when Supadata is burning credits. */
-  failure?: "player_unavailable" | "no_tracks" | "captions_empty" | string;
+  failure?: "player_unavailable" | "no_tracks" | "no_english_tracks" | "captions_empty" | string;
   description?: string;
 }> {
   const session = createProxySession();
   try {
-    const player = await fetchYouTubePlayerData(videoId, session);
+    const player = await fetchYouTubePlayerData(videoId, session, client);
     if (!player) return { viaProxy: session.viaProxy, failure: "player_unavailable" };
     // A non-OK playability (LOGIN_REQUIRED = "confirm you're not a bot") means
     // this exit IP is flagged; the response carries no caption tracks.
@@ -361,25 +476,38 @@ async function attemptYouTubeBodyText(videoId: string): Promise<{
       return { viaProxy: session.viaProxy, failure: `playability_${player.playability}` };
     }
 
+    // English tracks only: human-authored first, then auto-generated. Never
+    // grab an arbitrary track — a "whatever exists" fallback once fed the
+    // embedding pipeline an Arabic transcript of an English video, and a
+    // wrong-language transcript is worse than the description fallback.
+    // Try up to two distinct tracks — a single track occasionally serves an
+    // empty 200 while its sibling works.
+    let failure: string;
     if (player.tracks.length > 0) {
-      // Prefer a human-authored English track; fall back to any English track,
-      // then to whatever caption exists (usually auto-generated). Try up to
-      // two distinct tracks — a single track occasionally serves an empty 200
-      // while its sibling works.
       const ranked = [
         player.tracks.find((t) => t.languageCode?.startsWith("en") && t.kind !== "asr"),
         player.tracks.find((t) => t.languageCode?.startsWith("en")),
-        player.tracks[0],
       ].filter((t): t is CaptionTrack => Boolean(t?.baseUrl));
-      const distinct = ranked.filter((t, i) => ranked.findIndex((o) => o.baseUrl === t.baseUrl) === i).slice(0, 2);
-      for (const track of distinct) {
-        const transcript = await fetchCaptionText(track.baseUrl!, session);
-        if (transcript) return { text: transcript, source: "transcript", viaProxy: session.viaProxy };
+      if (ranked.length > 0) {
+        const distinct = ranked.filter((t, i) => ranked.findIndex((o) => o.baseUrl === t.baseUrl) === i).slice(0, 2);
+        for (const track of distinct) {
+          const transcript = await fetchCaptionText(track.baseUrl!, session, client);
+          if (transcript) return { text: transcript, source: "transcript", viaProxy: session.viaProxy };
+        }
+        failure = "captions_empty";
+      } else {
+        failure = "no_english_tracks";
       }
-      return { viaProxy: session.viaProxy, failure: "captions_empty", description: player.description };
+    } else {
+      failure = "no_tracks";
     }
 
-    return { viaProxy: session.viaProxy, failure: "no_tracks", description: player.description };
+    // Captions missed — AI-transcribe the audio before giving up. Runs inside
+    // this session because YouTube streaming URLs are bound to its exit IP.
+    const asr = await attemptYouTubeAsr(videoId, player, session);
+    if (asr) return { text: asr, source: "transcript", viaProxy: session.viaProxy };
+
+    return { viaProxy: session.viaProxy, failure, description: player.description };
   } catch {
     return { viaProxy: session.viaProxy, failure: "player_unavailable" };
   } finally {
@@ -393,19 +521,21 @@ async function fetchYouTubeBodyText(
   const videoId = youTubeVideoId(watchUrl);
   if (!videoId) return undefined;
 
-  let attempt = await attemptYouTubeBodyText(videoId);
+  let attempt = await attemptYouTubeBodyText(videoId, INNERTUBE_CLIENTS[0]);
 
-  // Empty player data, a bot-walled exit IP, or empty caption bodies are all
-  // per-IP failures when running through the rotating residential proxy — one
-  // retry on a fresh session (new exit IP) usually succeeds and costs nothing,
-  // unlike the Supadata credit the fallback would burn.
-  if (!attempt.text && attempt.viaProxy && attempt.failure !== "no_tracks") {
-    const retry = await attemptYouTubeBodyText(videoId);
+  // Empty player data, a bot-walled exit IP, or empty caption bodies are
+  // per-IP or per-client flakes — one retry on a fresh session (new exit IP
+  // when proxied) with the OTHER InnerTube client usually succeeds and costs
+  // nothing, unlike the Supadata credit the fallback would burn. "no_tracks" /
+  // "no_english_tracks" are facts about the video, not flakes: skip the retry.
+  const factual = attempt.failure === "no_tracks" || attempt.failure === "no_english_tracks";
+  if (!attempt.text && !factual) {
+    const retry = await attemptYouTubeBodyText(videoId, INNERTUBE_CLIENTS[1]);
     if (retry.text || (retry.description && !attempt.description)) attempt = retry;
   }
 
   if (attempt.text && attempt.source) {
-    return { text: attempt.text, source: attempt.source, viaProxy: attempt.viaProxy };
+    return { text: condenseToBudget(attempt.text), source: attempt.source, viaProxy: attempt.viaProxy };
   }
 
   // One structured line per miss so Render logs show exactly why the paid
@@ -549,15 +679,18 @@ async function fetchSupadataTranscript(url: string, mode: "native" | "auto"): Pr
     // `native` (existing captions) responds quickly, so cap it tightly — it's
     // a rare fallback and the user is waiting on the capture sheet. `auto`
     // legitimately needs time when it falls back to AI transcription.
+    // `lang=en`: without it Supadata picks an arbitrary caption track — it
+    // returned Arabic transcripts for English videos (benchmarked 2026-07-13),
+    // and that text flows straight into embeddings and topic classification.
     const timeoutMs = mode === "native" ? 8000 : 20000;
-    const endpoint = `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(url)}&text=true&mode=${mode}`;
+    const endpoint = `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(url)}&text=true&mode=${mode}&lang=en`;
     const res = await fetchWithTimeout(endpoint, { headers: { "x-api-key": apiKey } }, timeoutMs);
     if (!res.ok) return undefined;
 
     const payload = (await res.json()) as { content?: unknown };
     if (typeof payload.content !== "string") return undefined;
     const text = payload.content.replace(/\s+/g, " ").trim();
-    return text.length >= 40 ? text.slice(0, 10000) : undefined;
+    return text.length >= 40 ? condenseToBudget(text) : undefined;
   } catch {
     return undefined;
   }
@@ -597,7 +730,53 @@ async function fetchTweetMetadata(normalized: string, originalUrl: string): Prom
   }
 }
 
-/** TikTok caption + author via oEmbed, plus a Supadata transcript when available. */
+/**
+ * Best-effort TikTok media URL from the page's rehydration JSON. TikTok
+ * bot-walls datacenter (and many residential) IPs outright, so this runs
+ * through the proxy session and is expected to miss often — the Supadata
+ * fallback still covers those cases.
+ */
+async function fetchTikTokMediaUrl(url: string, session: ProxySession): Promise<string | undefined> {
+  try {
+    const res = await session.fetch(url, { headers: { ...YT_HEADERS, accept: "text/html" }, redirect: "follow" }, 8000);
+    if (!res.ok) return undefined;
+    const html = await res.text();
+    const match = html.match(/"playAddr":"([^"]+)"/) ?? html.match(/"downloadAddr":"([^"]+)"/);
+    if (!match) return undefined;
+    // The URL sits inside a JSON string ("/" escapes etc.) — unescape it.
+    const mediaUrl = JSON.parse(`"${match[1]}"`) as string;
+    return mediaUrl.startsWith("http") ? mediaUrl : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * TikTok transcript, cheapest source first: Groq ASR over the scraped media
+ * URL (~$0.0007/min) when configured, then Supadata mode=auto (2 credits/min).
+ * The media download must reuse the scrape's proxy session — TikTok CDN URLs
+ * are tied to the requesting IP.
+ */
+async function fetchTikTokTranscript(
+  normalized: string,
+): Promise<{ text: string; viaSupadata: boolean } | undefined> {
+  if (groqConfigured()) {
+    const session = createProxySession();
+    try {
+      const mediaUrl = await fetchTikTokMediaUrl(normalized, session);
+      if (mediaUrl) {
+        const text = await transcribeAudioUrl({ url: mediaUrl, session, filename: "video.mp4" });
+        if (text) return { text: condenseToBudget(text), viaSupadata: false };
+      }
+    } finally {
+      await session.close().catch(() => {});
+    }
+  }
+  const supadata = await fetchSupadataTranscript(normalized, "auto");
+  return supadata ? { text: supadata, viaSupadata: true } : undefined;
+}
+
+/** TikTok caption + author via oEmbed, plus a transcript when available. */
 async function fetchTikTokMetadata(
   normalized: string,
   originalUrl: string,
@@ -612,7 +791,7 @@ async function fetchTikTokMetadata(
       ).catch(() => undefined),
       // TikTok videos rarely have native captions, so allow AI transcription —
       // they are short, which keeps the per-video cost tiny.
-      allowPaidTranscript ? fetchSupadataTranscript(normalized, "auto") : Promise.resolve(undefined),
+      allowPaidTranscript ? fetchTikTokTranscript(normalized) : Promise.resolve(undefined),
     ]);
 
     let oembed: { title?: string; author_name?: string; thumbnail_url?: string } | undefined;
@@ -623,12 +802,13 @@ async function fetchTikTokMetadata(
     const title = clean(oembed?.title);
     if (!title && !transcript) return undefined;
 
+    const text = transcript?.text;
     return {
-      title: title ?? (transcript!.length > 90 ? `${transcript!.slice(0, 87).trimEnd()}…` : transcript!),
-      description: transcript?.slice(0, 500) ?? title,
-      bodyText: transcript ?? title,
-      bodySource: transcript ? "transcript" : "description",
-      usedSupadata: transcript ? true : undefined,
+      title: title ?? (text!.length > 90 ? `${text!.slice(0, 87).trimEnd()}…` : text!),
+      description: text?.slice(0, 500) ?? title,
+      bodyText: text ?? title,
+      bodySource: text ? "transcript" : "description",
+      usedSupadata: transcript?.viaSupadata ? true : undefined,
       canonicalUrl: normalizeUrl(normalized),
       originalUrl,
       siteName: "TikTok",
