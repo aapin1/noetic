@@ -3646,12 +3646,27 @@ export default function MapScreen() {
                   {busy && (
                     <AsciiLoader
                       size={120}
-                      message={[
-                        'reading it closely…',
-                        'placing it on your map…',
-                        'connecting it to what you know…',
-                        'writing your insight…',
-                      ]}
+                      // Staged to mirror the real pipeline (extract → classify/
+                      // embed → insight) and hold at the end — no wrap-around
+                      // claiming to "read" a source that's already placed.
+                      // Timings are estimates from measured capture logs; the
+                      // last message explains the slow path (video transcription
+                      // and bot-walled articles run 15–25s).
+                      message={
+                        mode === 'link'
+                          ? [
+                              'reading the source…',
+                              'placing it on your map…',
+                              'writing your insight…',
+                              'big source — this can take a moment…',
+                            ]
+                          : [
+                              'placing it on your map…',
+                              'writing your insight…',
+                              'still working…',
+                            ]
+                      }
+                      schedule={mode === 'link' ? [6000, 5000, 6000] : [6000, 7000]}
                     />
                   )}
                   {/* Hidden rather than unmounted while saving: a remount

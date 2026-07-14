@@ -417,32 +417,39 @@ async function fetchCaptionText(
   return text.length >= 40 ? text : undefined;
 }
 
-/** Max video length the ASR tier will pay to transcribe: 20 min ≈ $0.013 of
- * Groq time and ≈10MB of audio through the proxy — beyond that, latency and
- * bandwidth stop being worth it for a fallback path. */
-const ASR_MAX_SECONDS = 1200;
-
 /**
  * AI-transcribes a video's lowest-bitrate audio stream via Groq when captions
  * are missing/unusable — the path Supadata billed 2 credits/min for. Must run
  * inside the same proxy session that fetched the player data: streaming URLs
  * are IP-bound. English-only, matching caption selection: a wrong-language
- * transcript poisons embeddings worse than the description fallback.
+ * transcript poisons embeddings worse than the description fallback. Cost and
+ * latency are bounded by the download cap in transcribe.ts — for videos longer
+ * than the cap the transcript covers the opening and is marked as elided.
  */
 async function attemptYouTubeAsr(
   videoId: string,
   player: YouTubePlayerData,
   session: ProxySession,
+  client: InnertubeClient,
 ): Promise<string | undefined> {
   if (!groqConfigured()) return undefined;
-  if (!player.lengthSeconds || player.lengthSeconds > ASR_MAX_SECONDS) return undefined;
   const format = player.audioFormats[0];
   if (!format?.url) return undefined;
   const filename = format.mimeType?.includes("webm") ? "audio.webm" : "audio.m4a";
-  const text = await transcribeAudioUrl({ url: format.url, session, filename });
-  if (!text || latinShare(text) < 0.7) return undefined;
-  console.log(JSON.stringify({ event: "yt_asr", videoId, seconds: player.lengthSeconds }));
-  return text;
+  const result = await transcribeAudioUrl({
+    url: format.url,
+    session,
+    headers: { "user-agent": client.ua },
+    filename,
+    // The capped read is ~256KB; a healthy exit serves it in ~2s. A stalled
+    // proxy exit should fail fast so the fresh-exit retry can run instead.
+    downloadTimeoutMs: 10000,
+  });
+  if (!result || latinShare(result.text) < 0.7) return undefined;
+  console.log(
+    JSON.stringify({ event: "yt_asr", videoId, seconds: player.lengthSeconds ?? null, partial: result.partial }),
+  );
+  return result.partial ? `${result.text}\n[…]` : result.text;
 }
 
 /**
@@ -464,6 +471,9 @@ async function attemptYouTubeBodyText(
   /** Why the transcript path came up empty — drives the retry decision and
    * the diagnostic log so prod tells us when Supadata is burning credits. */
   failure?: "player_unavailable" | "no_tracks" | "no_english_tracks" | "captions_empty" | string;
+  /** True when the ASR tier had an audio stream to work with but still missed
+   * — flake-shaped, so the caller should retry on a fresh session. */
+  asrFlake?: boolean;
   description?: string;
 }> {
   const session = createProxySession();
@@ -504,10 +514,13 @@ async function attemptYouTubeBodyText(
 
     // Captions missed — AI-transcribe the audio before giving up. Runs inside
     // this session because YouTube streaming URLs are bound to its exit IP.
-    const asr = await attemptYouTubeAsr(videoId, player, session);
+    const asr = await attemptYouTubeAsr(videoId, player, session, client);
     if (asr) return { text: asr, source: "transcript", viaProxy: session.viaProxy };
 
-    return { viaProxy: session.viaProxy, failure, description: player.description };
+    // An ASR miss despite an available audio stream is usually a stalled or
+    // flagged exit, not a fact about the video — let the caller retry fresh.
+    const asrFlake = groqConfigured() && Boolean(player.audioFormats[0]?.url);
+    return { viaProxy: session.viaProxy, failure, asrFlake, description: player.description };
   } catch {
     return { viaProxy: session.viaProxy, failure: "player_unavailable" };
   } finally {
@@ -527,8 +540,11 @@ async function fetchYouTubeBodyText(
   // per-IP or per-client flakes — one retry on a fresh session (new exit IP
   // when proxied) with the OTHER InnerTube client usually succeeds and costs
   // nothing, unlike the Supadata credit the fallback would burn. "no_tracks" /
-  // "no_english_tracks" are facts about the video, not flakes: skip the retry.
-  const factual = attempt.failure === "no_tracks" || attempt.failure === "no_english_tracks";
+  // "no_english_tracks" are facts about the video, not flakes: skip the retry
+  // — unless the ASR tier missed with an audio stream available (asrFlake),
+  // which is exit trouble, not video trouble.
+  const factual =
+    (attempt.failure === "no_tracks" || attempt.failure === "no_english_tracks") && !attempt.asrFlake;
   if (!attempt.text && !factual) {
     const retry = await attemptYouTubeBodyText(videoId, INNERTUBE_CLIENTS[1]);
     if (retry.text || (retry.description && !attempt.description)) attempt = retry;
@@ -765,8 +781,13 @@ async function fetchTikTokTranscript(
     try {
       const mediaUrl = await fetchTikTokMediaUrl(normalized, session);
       if (mediaUrl) {
-        const text = await transcribeAudioUrl({ url: mediaUrl, session, filename: "video.mp4" });
-        if (text) return { text: condenseToBudget(text), viaSupadata: false };
+        const result = await transcribeAudioUrl({
+          url: mediaUrl,
+          session,
+          headers: { "user-agent": BROWSER_UA },
+          filename: "video.mp4",
+        });
+        if (result) return { text: condenseToBudget(result.text), viaSupadata: false };
       }
     } finally {
       await session.close().catch(() => {});

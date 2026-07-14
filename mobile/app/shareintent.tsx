@@ -88,7 +88,16 @@ export default function ShareIntentScreen() {
       {status === 'working' && (
         <AsciiLoader
           size={110}
-          message={['saving to your map…', 'reading it closely…', 'connecting the dots…']}
+          // Staged to mirror the real pipeline and hold at the end; the last
+          // message explains the slow path (video transcription, bot-walled
+          // articles) instead of looping back to an earlier stage.
+          message={[
+            'reading the source…',
+            'placing it on your map…',
+            'writing your insight…',
+            'big source — this can take a moment…',
+          ]}
+          schedule={[6000, 5000, 6000]}
         />
       )}
 
