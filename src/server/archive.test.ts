@@ -80,22 +80,44 @@ describe("listArchiveFolders", () => {
     ]);
   });
 
-  it("multi-homes an item tagged with two general topics", async () => {
+  it("files an item tagged with several general topics under its primary field only", async () => {
     const db = fakeDb({
       listSelectResult: [
         {
           id: "c1",
           capturedAt: new Date("2026-01-01"),
-          topics: [topicRow(PHILOSOPHY), topicRow(PSYCHOLOGY)],
+          // The classifier's primary field leads at 1.0; extra fields trail it.
+          topics: [topicRow(PSYCHOLOGY, 0.92), topicRow(PHILOSOPHY, 1)],
         },
       ],
     });
 
     const folders = await listArchiveFolders({ userId: "u1", db });
-    const topicIds = folders.map((f) => f.topicId).sort();
 
-    expect(topicIds).toEqual([PHILOSOPHY.id, PSYCHOLOGY.id].sort());
-    expect(folders.every((f) => f.count === 1)).toBe(true);
+    expect(folders).toHaveLength(1);
+    expect(folders[0].topicId).toBe(PHILOSOPHY.id);
+    expect(folders[0].count).toBe(1);
+  });
+
+  it("counts every capture exactly once across all folders", async () => {
+    const db = fakeDb({
+      listSelectResult: [
+        // Interdisciplinary: three fields, one home (philosophy, at 1.0).
+        {
+          id: "c1",
+          capturedAt: new Date("2026-01-01"),
+          topics: [topicRow(PHILOSOPHY, 1), topicRow(PSYCHOLOGY, 0.92), topicRow(STOICISM, 0.75)],
+        },
+        { id: "c2", capturedAt: new Date("2026-01-02"), topics: [topicRow(PSYCHOLOGY, 1)] },
+        { id: "c3", capturedAt: new Date("2026-01-03"), topics: [topicRow(STOICISM, 1)] },
+        { id: "c4", capturedAt: new Date("2026-01-04"), topics: [] },
+      ],
+    });
+
+    const folders = await listArchiveFolders({ userId: "u1", db });
+    const total = folders.reduce((sum, f) => sum + f.count, 0);
+
+    expect(total).toBe(4);
   });
 
   it("does not create a specific-topic folder for an item that also has a general topic", async () => {
@@ -220,19 +242,19 @@ describe("getArchiveFolder", () => {
         captureFixture({
           id: "c1",
           capturedAt: new Date("2026-01-01"),
-          topics: [topicRow(PHILOSOPHY), topicRow(STOICISM)],
+          topics: [topicRow(PHILOSOPHY, 1), topicRow(STOICISM, 0.75)],
         }),
         // General only, no specific topic → sits directly in the folder.
         captureFixture({
           id: "c2",
           capturedAt: new Date("2026-01-02"),
-          topics: [topicRow(PHILOSOPHY)],
+          topics: [topicRow(PHILOSOPHY, 1)],
         }),
-        // Two specific topics → multi-homed across both sub-folders.
+        // Two specific topics → filed under the leading one, not both.
         captureFixture({
           id: "c3",
           capturedAt: new Date("2026-01-03"),
-          topics: [topicRow(PHILOSOPHY), topicRow(STOICISM), topicRow(HABIT_FORMATION)],
+          topics: [topicRow(PHILOSOPHY, 1), topicRow(STOICISM, 0.75), topicRow(HABIT_FORMATION, 0.7)],
         }),
       ],
     });
@@ -243,8 +265,55 @@ describe("getArchiveFolder", () => {
     expect(folder.entries.map((e) => e.id)).toEqual(["c2"]);
 
     const stoicism = folder.subfolders.find((f) => f.topicId === STOICISM.id);
-    const habits = folder.subfolders.find((f) => f.topicId === HABIT_FORMATION.id);
     expect(stoicism?.count).toBe(2); // c1 and c3
-    expect(habits?.count).toBe(1); // c3 only
+    expect(folder.subfolders.find((f) => f.topicId === HABIT_FORMATION.id)).toBeUndefined();
+
+    // The folder's own tile count (3) is exactly its sub-folders plus its direct entries.
+    const filed = folder.subfolders.reduce((sum, f) => sum + f.count, 0) + folder.entries.length;
+    expect(filed).toBe(3);
+  });
+
+  it("excludes an item whose primary field is a different general topic", async () => {
+    const db = fakeDb({
+      topicFindUniqueResult: PHILOSOPHY,
+      detailFindManyResult: [
+        // Tagged philosophy, but psychology leads → it lives in the psychology folder.
+        captureFixture({
+          id: "c1",
+          capturedAt: new Date("2026-01-01"),
+          topics: [topicRow(PSYCHOLOGY, 1), topicRow(PHILOSOPHY, 0.92)],
+        }),
+      ],
+    });
+
+    const folder = await getArchiveFolder({ userId: "u1", topicId: PHILOSOPHY.id, db });
+
+    expect(folder.entries).toEqual([]);
+    expect(folder.subfolders).toEqual([]);
+  });
+
+  it("shows a specific folder the items it leads, not every item that mentions it", async () => {
+    const db = fakeDb({
+      topicFindUniqueResult: HABIT_FORMATION,
+      detailFindManyResult: [
+        // Habit Formation leads its specifics → filed here.
+        captureFixture({
+          id: "c1",
+          capturedAt: new Date("2026-01-01"),
+          topics: [topicRow(PSYCHOLOGY, 1), topicRow(HABIT_FORMATION, 0.75)],
+        }),
+        // Stoicism leads → filed under Stoicism, not here.
+        captureFixture({
+          id: "c2",
+          capturedAt: new Date("2026-01-02"),
+          topics: [topicRow(PHILOSOPHY, 1), topicRow(STOICISM, 0.75), topicRow(HABIT_FORMATION, 0.7)],
+        }),
+      ],
+    });
+
+    const folder = await getArchiveFolder({ userId: "u1", topicId: HABIT_FORMATION.id, db });
+
+    expect(folder.kind).toBe("specific");
+    expect(folder.entries.map((e) => e.id)).toEqual(["c1"]);
   });
 });

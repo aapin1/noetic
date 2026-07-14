@@ -40,6 +40,43 @@ const CAPTURE_DETAIL_INCLUDE = {
   insights: { orderBy: { strength: "desc" as const }, take: 1 },
 };
 
+type TopicRow = { weight: number; topic: { id: string; name: string; slug: string } };
+
+/** The heaviest topic of a kind — for a general, the field the classifier led
+ * with at 1.0, which is also the anchor the map clusters the node on. Ties break
+ * on id so the filing is stable across requests. */
+function primaryTopic(topics: TopicRow[], kind: "general" | "specific"): TopicRow | null {
+  const wanted = kind === "general";
+  return (
+    topics
+      .filter((row) => isGeneralTopic(row.topic.name) === wanted)
+      .sort((a, b) => b.weight - a.weight || a.topic.id.localeCompare(b.topic.id))[0] ?? null
+  );
+}
+
+/**
+ * The single top-level folder a capture belongs in — its leading field, or its
+ * leading sub-topic when the classifier found no field at all (null =
+ * uncategorized). The archive is a filing cabinet, so a capture is filed in
+ * exactly ONE place and folder counts sum to the total the map and the "you" tab
+ * report. Interdisciplinary content is tagged with up to three fields; filing it
+ * under all of them made one capture show up as three, and no count anywhere
+ * could be reconciled by adding folders up.
+ */
+function homeFolder(
+  topics: TopicRow[],
+): { topicId: string; name: string; slug: string; kind: ArchiveFolderKind } | null {
+  const general = primaryTopic(topics, "general");
+  const row = general ?? primaryTopic(topics, "specific");
+  if (!row) return null;
+  return {
+    topicId: row.topic.id,
+    name: row.topic.name,
+    slug: row.topic.slug,
+    kind: general ? "general" : "specific",
+  };
+}
+
 function touchFolder(
   folders: Map<string, FolderAgg>,
   key: { topicId: string; name: string; slug: string; kind: ArchiveFolderKind },
@@ -73,9 +110,10 @@ function toSummary(folder: FolderAgg): ArchiveFolderSummary {
   };
 }
 
-/** Top-level folders: one per general topic the user has any entries under, plus
+/** Top-level folders: one per general topic the user has entries filed under, plus
  * a fallback folder per specific topic for entries with no general topic at all,
- * plus a single "Uncategorized" bucket for entries with no topics whatsoever. */
+ * plus a single "Uncategorized" bucket for entries with no topics whatsoever.
+ * Each capture lands in exactly one of them (see `homeFolder`). */
 export async function listArchiveFolders(args: { userId: string; db?: DbClient }): Promise<ArchiveFolderSummary[]> {
   const db = args.db ?? prisma;
   const items = await db.capturedItem.findMany({
@@ -83,7 +121,7 @@ export async function listArchiveFolders(args: { userId: string; db?: DbClient }
     select: {
       id: true,
       capturedAt: true,
-      topics: { select: { topic: { select: { id: true, name: true, slug: true } } } },
+      topics: { select: { weight: true, topic: { select: { id: true, name: true, slug: true } } } },
     },
   });
 
@@ -92,27 +130,10 @@ export async function listArchiveFolders(args: { userId: string; db?: DbClient }
   let uncategorizedLatest: Date | null = null;
 
   for (const item of items) {
-    const generalRows = item.topics.filter((row) => isGeneralTopic(row.topic.name));
-    const specificRows = item.topics.filter((row) => !isGeneralTopic(row.topic.name));
+    const home = homeFolder(item.topics);
 
-    if (generalRows.length > 0) {
-      for (const row of generalRows) {
-        touchFolder(
-          folders,
-          { topicId: row.topic.id, name: row.topic.name, slug: row.topic.slug, kind: "general" },
-          item.id,
-          item.capturedAt,
-        );
-      }
-    } else if (specificRows.length > 0) {
-      for (const row of specificRows) {
-        touchFolder(
-          folders,
-          { topicId: row.topic.id, name: row.topic.name, slug: row.topic.slug, kind: "specific" },
-          item.id,
-          item.capturedAt,
-        );
-      }
+    if (home) {
+      touchFolder(folders, home, item.id, item.capturedAt);
     } else {
       uncategorizedCount += 1;
       if (!uncategorizedLatest || item.capturedAt > uncategorizedLatest) uncategorizedLatest = item.capturedAt;
@@ -135,9 +156,10 @@ export async function listArchiveFolders(args: { userId: string; db?: DbClient }
   return result;
 }
 
-/** A single folder's contents. For a general topic this includes sub-folders
- * (its co-occurring specific topics) and direct entries (general-tagged items
- * with no specific topic). For a specific topic or the uncategorized bucket,
+/** A single folder's contents — exactly the captures its tile counted, and no
+ * others. For a general topic that means the items this field leads, split into
+ * sub-folders (by the sub-topic each one leads with) and direct entries (items
+ * with no sub-topic at all). For a specific topic or the uncategorized bucket,
  * it's a leaf: no sub-folders, just entries. */
 export async function getArchiveFolder(args: {
   userId: string;
@@ -171,6 +193,8 @@ export async function getArchiveFolder(args: {
 
   const kind: ArchiveFolderKind = isGeneralTopic(topic.name) ? "general" : "specific";
 
+  // Tagged with this topic is the superset; which of those it actually files
+  // here is decided per item below, the same way the folder's count was.
   const items = await db.capturedItem.findMany({
     where: { userId: args.userId, topics: { some: { topicId: topic.id } } },
     orderBy: { capturedAt: "desc" },
@@ -178,12 +202,15 @@ export async function getArchiveFolder(args: {
   });
 
   if (kind === "specific") {
+    // The items this sub-topic leads — whether they sit under a field (as one of
+    // its sub-folders) or, lacking a field entirely, top-level under this topic.
+    const led = items.filter((item) => primaryTopic(item.topics, "specific")?.topic.id === topic.id);
     return {
       topicId: topic.id,
       name: topic.name,
       kind,
       subfolders: [],
-      entries: items.map(withLeadInsight),
+      entries: led.map(withLeadInsight),
     };
   }
 
@@ -191,19 +218,20 @@ export async function getArchiveFolder(args: {
   const directEntries: (typeof items)[number][] = [];
 
   for (const item of items) {
-    const specificRows = item.topics.filter((row) => !isGeneralTopic(row.topic.name));
-    if (specificRows.length === 0) {
+    // Tagged with this field, but another field leads it → it lives there, not here.
+    if (homeFolder(item.topics)?.topicId !== topic.id) continue;
+
+    const lead = primaryTopic(item.topics, "specific");
+    if (!lead) {
       directEntries.push(item);
       continue;
     }
-    for (const row of specificRows) {
-      touchFolder(
-        subfolders,
-        { topicId: row.topic.id, name: row.topic.name, slug: row.topic.slug, kind: "specific" },
-        item.id,
-        item.capturedAt,
-      );
-    }
+    touchFolder(
+      subfolders,
+      { topicId: lead.topic.id, name: lead.topic.name, slug: lead.topic.slug, kind: "specific" },
+      item.id,
+      item.capturedAt,
+    );
   }
 
   return {

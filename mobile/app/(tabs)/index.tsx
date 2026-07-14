@@ -2014,10 +2014,21 @@ export default function MapScreen() {
     centerOnNodes(semanticPos);
   }, [nodes.length, semanticPos, centerOnNodes]);
 
-  // Auto-recenter when the Atlas tab gains focus
+  // Auto-recenter when the Atlas tab gains focus — and ONLY then. This callback
+  // MUST keep a stable identity: useFocusEffect re-invokes it on every identity
+  // change while the screen is focused, and centerOnNodes is rebuilt each frame
+  // of a node ease-in (it closes over the tweened positions). Depending on it
+  // directly snapped the camera to the in-flight layout's bounding box ~60x a
+  // second, fighting the fly-to-the-new-node animation — the map shook for the
+  // length of the ease, then "fixed itself" when the tween stopped.
+  const centerOnNodesRef = useRef(centerOnNodes);
+  useEffect(() => { centerOnNodesRef.current = centerOnNodes; }, [centerOnNodes]);
+  const nodeCountRef = useRef(0);
+  useEffect(() => { nodeCountRef.current = nodes.length; }, [nodes.length]);
+
   useFocusEffect(useCallback(() => {
-    if (nodes.length > 0) centerOnNodes();
-  }, [nodes.length, centerOnNodes]));
+    if (nodeCountRef.current > 0) centerOnNodesRef.current();
+  }, []));
 
   // Fly the camera to fit whichever map is live: a topic's sub-map once it
   // arrives, or the overview again when focus is cleared. While the sub-map
@@ -2568,13 +2579,17 @@ export default function MapScreen() {
   }, [toolMode, clearDiscovery]);
 
   useEffect(() => {
-    if (!newNodeId || !pos[newNodeId] || animatingRef.current) return;
+    if (!newNodeId || !semanticPos[newNodeId] || animatingRef.current) return;
     animatingRef.current = true;
-    // Route the user to their new capture: fly the camera to where it landed
-    // so "saved" visibly means "it's on your map, right here". The walkthrough
-    // manages its own framing, so the demo node never moves the camera.
+    // Route the user to their new capture: fly the camera to where it SETTLES
+    // so "saved" visibly means "it's on your map, right here". Aim at the
+    // semantic target, not the live (tweened) position: the node is seeded at
+    // its nearest neighbour and eases home over the next 600ms, so flying to
+    // where it starts leaves it drifting off-centre as it slides.
+    // The walkthrough manages its own framing, so the demo node never moves
+    // the camera.
     if (!tutorialActive) {
-      const p = pos[newNodeId]!;
+      const p = semanticPos[newNodeId]!;
       const targetZoom = Math.max(savedZoom.current, 1.5);
       animateCamera(p.x - (SW / targetZoom) / 2, p.y - (SH / targetZoom) / 2, targetZoom, 700);
     }
@@ -2583,7 +2598,7 @@ export default function MapScreen() {
       RNAnimated.timing(landingAnim, { toValue: 1, duration: 450, useNativeDriver: true }),
       RNAnimated.timing(landingAnim, { toValue: 0, duration: 750, useNativeDriver: true }),
     ]).start(() => { animatingRef.current = false; setNewNodeId(null); });
-  }, [newNodeId, pos, landingAnim, tutorialActive, animateCamera]);
+  }, [newNodeId, semanticPos, landingAnim, tutorialActive, animateCamera]);
 
   const nodeColor = useCallback((node: GraphNode): string => {
     const clusterColor = node.topics.reduce<string | undefined>(
