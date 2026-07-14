@@ -1374,9 +1374,10 @@ export default function MapScreen() {
     if (friendWithRecent) {
       return { text: `${friendWithRecent.user.displayName} added something →`, route: '/(tabs)/pulse' };
     }
-    const risingTheme = trendsData?.shifts
-      .filter((s) => s.delta > 0)
-      .sort((a, b) => b.delta - a.delta)[0];
+    // The server ranks this by per-day rate, so a topic that just woke up beats
+    // the one that's merely biggest. Ranking `shifts` here instead re-introduced
+    // that bias — the largest topic stayed "rising" no matter what was captured.
+    const risingTheme = trendsData?.rising;
     if (risingTheme) {
       // Route to the topic's archive (a real screen) — there is no trends tab.
       return { text: `${risingTheme.name} rising →`, route: `/archive/${risingTheme.topicId}` };
@@ -3454,7 +3455,14 @@ export default function MapScreen() {
                     </Text>
                     <View style={[styles.drawerHairline, { backgroundColor: c.border }]} />
                     <Pressable
-                      onPress={() => router.push(`/position/${drawerCluster.topicId}` as never)}
+                      onPress={() => router.push({
+                        pathname: '/position/create',
+                        params: {
+                          topicId: drawerCluster.topicId,
+                          topicName: drawerCluster.name,
+                          captureCount: drawerCluster.count,
+                        },
+                      } as never)}
                       style={{ marginTop: Spacing[5] }}
                     >
                       <Text variant="monoSmall" color="muted">take a position →</Text>

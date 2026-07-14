@@ -197,6 +197,12 @@ export interface MemoryTrendsResponse {
     occurredAt: string;
     capturedItemId: string | null;
   }[];
+  /**
+   * The topic actually accelerating, by per-day capture rate. Not the same as
+   * `shifts[0]` — that's ranked by raw count delta, which the largest topic wins
+   * by default. Null when nothing is picking up.
+   */
+  rising: { topicId: string; name: string } | null;
 }
 
 export interface UserPreference {
@@ -440,6 +446,8 @@ export interface PulseFriend {
     identitySummary: string | null;
   };
   captureCount: number;
+  /** What they're getting into lately, or null when nothing is picking up. */
+  rising: { topicId: string; name: string } | null;
   map: { nodes: PulseMapNode[]; clusters: PulseMapCluster[] };
   latest: PulseLatestItem[];
 }
