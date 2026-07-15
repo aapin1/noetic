@@ -7,10 +7,6 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "mneme",
-    "splash": {
-      "backgroundColor": "#F6F2E9",
-      "resizeMode": "contain"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.mneme.mobile",
@@ -35,6 +31,19 @@
       "expo-router",
       "expo-secure-store",
       "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F6F2E9",
+          "resizeMode": "contain"
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Mneme uses your microphone so you can describe a capture in your own words."
+        }
+      ],
       [
         "expo-image-picker",
         {

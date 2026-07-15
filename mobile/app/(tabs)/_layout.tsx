@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, View, type ColorValue } from 'react-native';
 import { Tabs, useRouter } from 'expo-router';
 import { Redirect } from 'expo-router';
 import {
@@ -19,8 +19,8 @@ import { TUTORIAL_TARGET } from '@/constants/tutorialSteps';
 import { api } from '@/lib/api';
 import { prefetchQuery } from '@/hooks/useApiQuery';
 
-function TabBarIcon({ color, icon: Icon }: { color: string; icon: React.ElementType }) {
-  return <Icon size={22} color={color} strokeWidth={1.4} />;
+function TabBarIcon({ color, icon: Icon }: { color: ColorValue; icon: React.ElementType }) {
+  return <Icon size={22} color={color as string} strokeWidth={1.4} />;
 }
 
 function SocraticFab() {

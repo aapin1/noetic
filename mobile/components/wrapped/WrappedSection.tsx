@@ -21,8 +21,9 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import Svg, { Circle, Line } from 'react-native-svg';
-import { useIsFocused } from '@react-navigation/native';
-import { useRouter } from 'expo-router';
+// expo-router v57 dropped @react-navigation/* (now standard-navigation) and
+// re-exports the navigation hooks directly.
+import { useRouter, useIsFocused } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { ChevronRight, Image as ImageIcon, Link2, PenLine } from 'lucide-react-native';
 import { AccentList, Radius, Spacing, accentFor, hourAccent } from '@/constants/theme';
@@ -1516,7 +1517,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing[3],
   },
   confettiLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 50,
     elevation: 50,
   },

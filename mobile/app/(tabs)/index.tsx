@@ -3437,7 +3437,7 @@ export default function MapScreen() {
         {drawerVisible && !showCapture && (
           <>
             <Pressable
-              style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.4)' }]}
+              style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.4)' }]}
               onPress={closeDrawer}
               accessibilityLabel="Close detail panel"
             />
@@ -3795,7 +3795,7 @@ const styles = StyleSheet.create({
   },
   discoveryClose: { paddingHorizontal: Spacing[2] },
   emptyHint: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
   },

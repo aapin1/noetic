@@ -6,6 +6,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { AccentList } from '@/constants/theme';
 
@@ -100,7 +101,7 @@ function ConfettiPiece({
   progress,
 }: {
   piece: Piece;
-  progress: Animated.SharedValue<number>;
+  progress: SharedValue<number>;
 }) {
   const style = useAnimatedStyle(() => {
     const raw = (progress.value - piece.startFrac) / (1 - piece.startFrac);

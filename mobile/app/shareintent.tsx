@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useShareIntentContext } from 'expo-share-intent';
-import * as FileSystem from 'expo-file-system';
+// SDK 54+ moved the classic readAsStringAsync/EncodingType API to /legacy;
+// the new File API stays opt-in. This keeps the base64 read unchanged.
+import * as FileSystem from 'expo-file-system/legacy';
 import { api } from '@/lib/api';
 import { clearSharedCapture, rememberSharedCapture } from '@/lib/lastShared';
 import { useAuth } from '@/contexts/AuthContext';

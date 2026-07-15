@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
-import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
+import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
 import { MicIcon, SquareIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { useThemeColors } from '@/contexts/ThemeContext';
@@ -22,42 +22,40 @@ interface Props {
 export function VoiceNoteButton({ onText, onError }: Props) {
   const c = useThemeColors();
   const [state, setState] = useState<'idle' | 'recording' | 'transcribing'>('idle');
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   useEffect(() => () => {
     // Unmount during a recording: release the mic without transcribing.
-    recordingRef.current?.stopAndUnloadAsync().catch(() => {});
-  }, []);
+    if (recorder.isRecording) recorder.stop().catch(() => {});
+  }, [recorder]);
 
   const start = useCallback(async () => {
     try {
-      const perm = await Audio.requestPermissionsAsync();
+      const perm = await AudioModule.requestRecordingPermissionsAsync();
       if (!perm.granted) {
         onError?.('Microphone permission is needed to record.');
         return;
       }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      recordingRef.current = recording;
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
       setState('recording');
     } catch {
       onError?.('Could not start recording.');
       setState('idle');
     }
-  }, [onError]);
+  }, [onError, recorder]);
 
   const stop = useCallback(async () => {
-    const recording = recordingRef.current;
-    recordingRef.current = null;
-    if (!recording) {
+    if (!recorder.isRecording) {
       setState('idle');
       return;
     }
     setState('transcribing');
     try {
-      await recording.stopAndUnloadAsync();
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
-      const uri = recording.getURI();
+      await recorder.stop();
+      await setAudioModeAsync({ allowsRecording: false });
+      const uri = recorder.uri;
       if (!uri) throw new Error('no recording');
       const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
       const { text } = await api.captures.transcribe(base64, 'audio/m4a');
@@ -67,7 +65,7 @@ export function VoiceNoteButton({ onText, onError }: Props) {
     } finally {
       setState('idle');
     }
-  }, [onText, onError]);
+  }, [onText, onError, recorder]);
 
   if (state === 'transcribing') {
     return (
