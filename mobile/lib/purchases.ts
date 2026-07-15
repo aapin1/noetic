@@ -20,8 +20,9 @@ try {
   purchasesUiModule = null;
 }
 
-/** Must match the entitlement identifier in the RevenueCat dashboard. */
-export const ENTITLEMENT_ID = 'Mneme Pro';
+/** Must match the entitlement identifier in the RevenueCat dashboard exactly
+ * (case-sensitive) — create it as "plus" there, not "Plus" or "Mneme Plus". */
+export const ENTITLEMENT_ID = 'plus';
 
 // Public SDK key (not a secret). The test-store key lets the whole purchase
 // flow run before App Store Connect products exist; set the env var to the

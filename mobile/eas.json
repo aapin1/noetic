@@ -16,10 +16,16 @@
       }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_ADMOB_NATIVE_UNIT_ID": "ca-app-pub-3892528257283491/6139860918"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_ADMOB_NATIVE_UNIT_ID": "ca-app-pub-3892528257283491/6139860918"
+      }
     }
   },
   "submit": {
