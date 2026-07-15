@@ -81,7 +81,7 @@ export function SponsoredCard() {
 
   if (!showAds || !nativeAd || !ads) return null;
 
-  const { NativeAdView, NativeAsset, NativeAssetType } = ads;
+  const { NativeAdView, NativeAsset, NativeAssetType, NativeMediaView } = ads;
 
   return (
     <View style={styles.wrap}>
@@ -120,6 +120,10 @@ export function SponsoredCard() {
               </NativeAsset>
             ) : null}
           </View>
+          {/* Google's native-ad policy requires the main image/video asset to
+              be shown via MediaView (not a plain Image); it also lets video
+              creatives play. Kept as a slim strip to fit the minimal card. */}
+          <NativeMediaView style={styles.media} resizeMode="cover" />
         </View>
       </NativeAdView>
       <Pressable onPress={() => router.push('/plus' as never)}>
@@ -141,6 +145,13 @@ const styles = StyleSheet.create({
   topRow: { marginBottom: Spacing[2] },
   sponsored: { fontSize: 11, textTransform: 'lowercase' },
   body: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
+  media: {
+    width: '100%',
+    height: 150,
+    borderRadius: Radius.md,
+    marginTop: Spacing[3],
+    overflow: 'hidden',
+  },
   icon: { width: 40, height: 40, borderRadius: Radius.md },
   textCol: { flex: 1, gap: 2 },
   cta: {
