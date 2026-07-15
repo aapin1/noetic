@@ -43,6 +43,14 @@
         }
       ],
       [
+        "expo-media-library",
+        {
+          "photosPermission": "Mneme saves the cards you make to your Photos so you can share them.",
+          "savePhotosPermission": "Mneme saves the cards you make to your Photos so you can share them.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
+      [
         "expo-share-intent",
         {
           "iosActivationRules": {

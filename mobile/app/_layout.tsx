@@ -53,6 +53,7 @@ export default function RootLayout() {
                 <Stack.Screen name="profile/edit" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="settings" options={{ presentation: 'card' }} />
                 <Stack.Screen name="plus" options={{ presentation: 'modal' }} />
+                <Stack.Screen name="share-recap" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="shareintent" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="+not-found" />
               </Stack>
