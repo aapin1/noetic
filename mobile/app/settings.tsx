@@ -38,11 +38,11 @@ function SettingRow({ label, description, onPress, rightElement, destructive }: 
       accessibilityLabel={label}
     >
       <View style={styles.rowText}>
-        <Text variant="body" style={destructive ? { color: c.danger } : undefined}>
+        <Text variant="serif" style={destructive ? { color: c.danger } : undefined}>
           {label}
         </Text>
         {description ? (
-          <Text variant="caption" color="muted">
+          <Text variant="monoSmall" color="faint" numberOfLines={1} style={styles.rowDescription}>
             {description}
           </Text>
         ) : null}
@@ -88,7 +88,7 @@ export default function SettingsScreen() {
   const handleDeleteAccount = () => {
     Alert.alert(
       'Delete account',
-      'This permanently erases your account — every capture, insight, connection, and your profile. It cannot be undone.',
+      'This permanently erases your account and everything you have saved. It cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -136,7 +136,7 @@ export default function SettingsScreen() {
         <View style={[styles.profileCard, { borderBottomColor: c.border }]}>
           <Avatar uri={profile?.avatarUrl} displayName={profile?.displayName} size="md" />
           <View style={styles.profileInfo}>
-            <Text variant="bodyMedium">{profile?.displayName}</Text>
+            <Text variant="serif">{profile?.displayName}</Text>
             <Text variant="monoSmall" color="muted">
               @{profile?.handle}
             </Text>
@@ -158,7 +158,7 @@ export default function SettingsScreen() {
           <SettingRow label="Profile & handle" onPress={() => router.push('/profile/edit' as never)} />
           <SettingRow
             label="Mneme Plus"
-            description="Remove ads and lift every capture limit."
+            description="Remove ads and unlock every limit."
             onPress={() => router.push('/plus' as never)}
           />
           <SettingRow
@@ -177,7 +177,7 @@ export default function SettingsScreen() {
           />
           <SettingRow
             label="Delete account"
-            description="Permanently erase your account and everything you've saved."
+            description="Permanently erase your account and data."
             onPress={handleDeleteAccount}
             destructive
           />
@@ -187,7 +187,7 @@ export default function SettingsScreen() {
         <View style={[styles.section, { borderColor: c.border }]}>
           <SettingRow
             label="Weekly summary"
-            description="A recap of your drift and what you've been thinking about."
+            description="A weekly recap of what you saved."
             rightElement={
               <Switch
                 value={digestWeekly}
@@ -200,7 +200,7 @@ export default function SettingsScreen() {
           />
           <SettingRow
             label="Capture reminder"
-            description="A quiet nudge if you haven't saved anything in a few days."
+            description="A reminder when you haven't saved in a while."
             rightElement={
               <Switch
                 value={captureNudge}
@@ -217,7 +217,7 @@ export default function SettingsScreen() {
         <View style={[styles.section, { borderColor: c.border }]}>
           <SettingRow
             label="Your data stays yours"
-            description="Captures and insights are private by default. You can export them through the API, or request a full download once that feature ships."
+            description="Your captures are private by default."
           />
         </View>
 
@@ -297,6 +297,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   rowText: { flex: 1, marginRight: Spacing[3] },
+  rowDescription: { marginTop: Spacing[1] },
   signOutContainer: {
     marginHorizontal: Spacing[6],
     marginTop: Spacing[4],
