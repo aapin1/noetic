@@ -18,13 +18,15 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_ADMOB_NATIVE_UNIT_ID": "ca-app-pub-3892528257283491/6139860918"
+        "EXPO_PUBLIC_ADMOB_NATIVE_UNIT_ID": "ca-app-pub-3892528257283491/6139860918",
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "appl_SaCKbzifUHTPCxEHZtCEeerpQgK"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_ADMOB_NATIVE_UNIT_ID": "ca-app-pub-3892528257283491/6139860918"
+        "EXPO_PUBLIC_ADMOB_NATIVE_UNIT_ID": "ca-app-pub-3892528257283491/6139860918",
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "appl_SaCKbzifUHTPCxEHZtCEeerpQgK"
       }
     }
   },
