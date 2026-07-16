@@ -60,7 +60,20 @@ async function request<T>(
   }
 
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
-  const json = (await res.json()) as ApiResponse<T>;
+
+  // Never json() blind: a proxy error page, a dropped connection mid-body, or
+  // a crashed server returns non-JSON, and the raw SyntaxError ("JSON Parse
+  // error: …") used to surface directly in the UI. Read text, then parse.
+  let json: ApiResponse<T>;
+  try {
+    json = JSON.parse(await res.text()) as ApiResponse<T>;
+  } catch {
+    throw new Error(
+      res.ok
+        ? 'The server sent a response we could not read. Try again.'
+        : `The server had a problem (${res.status}). Try again in a moment.`,
+    );
+  }
 
   if (!json.ok) {
     const message =

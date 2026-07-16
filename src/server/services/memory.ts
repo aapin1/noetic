@@ -4,6 +4,7 @@ import type { DbClient } from "@/server/db";
 import { isGeneralTopic } from "@/server/cognition/generalTopics";
 import {
   isDegenerateLayout,
+  isGroupIncoherentLayout,
   peripheralPoint,
   placeNewNode,
   semanticLayout,
@@ -162,7 +163,20 @@ type Positionable = {
   id: string;
   mapX?: number | null;
   mapY?: number | null;
+  /** Topic rows, highest weight first (as fetched by getMemoryGraph) — used to
+   * derive the node's primary general field for the layout's domain prior. */
+  topics?: { topic: { name: string } }[];
 };
+
+/** The node's coarse classification: its first canonical general topic. The
+ * neutral "general" bucket is not in GENERAL_TOPICS, so unclassifiable nodes
+ * yield null and are laid out from embeddings alone. */
+function primaryGeneralOf(item: Positionable): string | null {
+  for (const row of item.topics ?? []) {
+    if (isGeneralTopic(row.topic.name)) return row.topic.name.toLowerCase();
+  }
+  return null;
+}
 
 /**
  * Resolves stable semantic coordinates for the visible captures.
@@ -194,10 +208,18 @@ async function resolveSemanticCoords(
   // (the steady state: plain refetches, tab focus), skip the fetch entirely.
   const allPositioned = ordered.filter((it) => it.mapX != null && it.mapY != null);
   const anyUnpositioned = allPositioned.length < ordered.length;
-  const maybeDegenerate = isDegenerateLayout(
-    allPositioned.map((it) => ({ x: it.mapX!, y: it.mapY! })),
-  );
-  if (!anyUnpositioned && !maybeDegenerate) {
+  const positionedPoints = allPositioned.map((it) => ({
+    x: it.mapX!,
+    y: it.mapY!,
+    group: primaryGeneralOf(it),
+  }));
+  const maybeDegenerate = isDegenerateLayout(positionedPoints);
+  // A layout that strongly contradicts the nodes' general fields (a science
+  // capture parked inside the psychology cluster — the pre-domain-prior
+  // failure shape) heals with one group-aware re-layout.
+  const groupIncoherent = isGroupIncoherentLayout(positionedPoints);
+  if (groupIncoherent) console.log("[layout] group-coherence heal triggered");
+  if (!anyUnpositioned && !maybeDegenerate && !groupIncoherent) {
     for (const it of allPositioned) coords[it.id] = { x: it.mapX!, y: it.mapY! };
     return coords;
   }
@@ -234,6 +256,7 @@ async function resolveSemanticCoords(
 
   const needsLayout =
     unpositioned.length > 0 ||
+    groupIncoherent ||
     isDegenerateLayout(positioned.map((it) => ({ x: it.mapX!, y: it.mapY! })));
 
   if (!needsLayout) {
@@ -256,7 +279,11 @@ async function resolveSemanticCoords(
     }
 
     const layout = semanticLayout(
-      embeddable.map((it) => ({ id: it.id, embedding: it.embedding ?? null })),
+      embeddable.map((it) => ({
+        id: it.id,
+        embedding: it.embedding ?? null,
+        group: primaryGeneralOf(it),
+      })),
       { init },
     );
 

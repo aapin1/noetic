@@ -2,11 +2,12 @@ import { Readability } from "@mozilla/readability";
 import { load } from "cheerio";
 import { parseHTML } from "linkedom";
 import slugify from "slugify";
+import { extractText, getDocumentProxy, getMeta } from "unpdf";
 import { createProxySession, type ProxySession } from "@/server/proxyFetch";
 import { groqConfigured, transcribeAudioUrl } from "@/server/transcribe";
 import { normalizeUrl } from "@/server/url";
 
-export type BodySource = "transcript" | "body" | "jsonld" | "reddit" | "description";
+export type BodySource = "transcript" | "body" | "jsonld" | "reddit" | "description" | "pdf";
 
 export type ExtractedMetadata = {
   title?: string;
@@ -528,27 +529,66 @@ async function attemptYouTubeBodyText(
   }
 }
 
+/** How long the first InnerTube client gets before the second one is started
+ * in parallel. A healthy round-trip answers well under this, so the hedge only
+ * fires on stalls — where the old serial retry stacked the full timeout chain
+ * of attempt one (up to ~20s) before attempt two even began. */
+const INNERTUBE_HEDGE_MS = 2500;
+
 async function fetchYouTubeBodyText(
   watchUrl: string,
 ): Promise<{ text: string; source: BodySource; viaProxy: boolean } | undefined> {
   const videoId = youTubeVideoId(watchUrl);
   if (!videoId) return undefined;
 
-  let attempt = await attemptYouTubeBodyText(videoId, INNERTUBE_CLIENTS[0]);
-
   // Empty player data, a bot-walled exit IP, or empty caption bodies are
-  // per-IP or per-client flakes — one retry on a fresh session (new exit IP
-  // when proxied) with the OTHER InnerTube client usually succeeds and costs
-  // nothing, unlike the Supadata credit the fallback would burn. "no_tracks" /
-  // "no_english_tracks" are facts about the video, not flakes: skip the retry
-  // — unless the ASR tier missed with an audio stream available (asrFlake),
-  // which is exit trouble, not video trouble.
-  const factual =
-    (attempt.failure === "no_tracks" || attempt.failure === "no_english_tracks") && !attempt.asrFlake;
-  if (!attempt.text && !factual) {
-    const retry = await attemptYouTubeBodyText(videoId, INNERTUBE_CLIENTS[1]);
-    if (retry.text || (retry.description && !attempt.description)) attempt = retry;
+  // per-IP or per-client flakes — a second attempt on a fresh session (new
+  // exit IP when proxied) with the OTHER InnerTube client usually succeeds and
+  // costs nothing, unlike the Supadata credit the fallback would burn.
+  // "no_tracks" / "no_english_tracks" are facts about the video, not flakes:
+  // skip the second client — unless the ASR tier missed with an audio stream
+  // available (asrFlake), which is exit trouble, not video trouble.
+  //
+  // The second client is HEDGED, not serial: if the first hasn't answered
+  // within INNERTUBE_HEDGE_MS it is probably stalling, so both race and the
+  // first transcript wins. The common fast path never starts the second
+  // request, so the extra cost only appears on captures that were already slow.
+  const first = attemptYouTubeBodyText(videoId, INNERTUBE_CLIENTS[0]);
+  let second: ReturnType<typeof attemptYouTubeBodyText> | undefined;
+  const startSecond = () => (second ??= attemptYouTubeBodyText(videoId, INNERTUBE_CLIENTS[1]));
+
+  let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
+  const hedged = new Promise<undefined>((resolve) => {
+    hedgeTimer = setTimeout(() => {
+      void startSecond();
+      resolve(undefined);
+    }, INNERTUBE_HEDGE_MS);
+  });
+
+  let attempt = await Promise.race([first, hedged]);
+  if (attempt) {
+    // First client answered before the hedge fired.
+    clearTimeout(hedgeTimer);
+    const factual =
+      (attempt.failure === "no_tracks" || attempt.failure === "no_english_tracks") && !attempt.asrFlake;
+    if (!attempt.text && !factual) {
+      const retry = await startSecond();
+      if (retry.text || (retry.description && !attempt.description)) attempt = retry;
+    }
+  } else {
+    // Hedge fired: both clients are in flight — first transcript wins, and a
+    // miss still waits for the other before falling through to Supadata.
+    const winner = await Promise.race([
+      first.then((r) => ({ r, other: () => startSecond() })),
+      startSecond().then((r) => ({ r, other: () => first })),
+    ]);
+    attempt = winner.r;
+    if (!attempt.text) {
+      const other = await winner.other();
+      if (other.text || (other.description && !attempt.description)) attempt = other;
+    }
   }
+  clearTimeout(hedgeTimer);
 
   if (attempt.text && attempt.source) {
     return { text: condenseToBudget(attempt.text), source: attempt.source, viaProxy: attempt.viaProxy };
@@ -844,6 +884,120 @@ async function fetchTikTokMetadata(
   }
 }
 
+// ── PDF pipeline ────────────────────────────────────────────────────────────
+
+/** PDFs above this are skipped: a paper is well under it, and parsing an
+ * arbitrarily large scan would pin the capture path on CPU. */
+const PDF_MAX_BYTES = 15 * 1024 * 1024;
+/** Hard cap on parse time — a malformed PDF must degrade to thin, not hang. */
+const PDF_PARSE_TIMEOUT_MS = 15000;
+
+function isPdfUrl(parsed: URL): boolean {
+  return parsed.pathname.toLowerCase().endsWith(".pdf");
+}
+
+/** Public form of isPdfUrl for callers holding a raw URL string. PDFs parse
+ * locally (no paid tier), so re-extracting one is always safe. */
+export function isPdfContentUrl(url: string): boolean {
+  try {
+    return isPdfUrl(new URL(normalizeUrl(url)));
+  } catch {
+    return false;
+  }
+}
+
+function isPdfResponse(res: Response): boolean {
+  return (res.headers?.get?.("content-type") ?? "").toLowerCase().includes("application/pdf");
+}
+
+/** Filename-derived title fallback: "Nagel_Bat.pdf" → "Nagel Bat". */
+function pdfFilenameTitle(url: string): string | undefined {
+  try {
+    const name = decodeURIComponent(new URL(url).pathname.split("/").pop() ?? "");
+    const cleaned = name.replace(/\.pdf$/i, "").replace(/[_\-+]+/g, " ").trim();
+    return cleaned.length >= 3 ? cleaned : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Extracts text + metadata from a PDF. Documents shared into Mneme are very
+ * often papers and essays as PDFs; before this pipeline existed they fell
+ * through the HTML parsers (which chew on raw PDF bytes for the full timeout
+ * ladder and produce nothing) and every one degraded to thin. Title comes from
+ * the PDF's own metadata, then the first plausible text line, then the
+ * filename. Best-effort: undefined on any failure.
+ */
+async function parsePdfMetadata(buffer: ArrayBuffer, url: string): Promise<ExtractedMetadata | undefined> {
+  if (buffer.byteLength < 512 || buffer.byteLength > PDF_MAX_BYTES) return undefined;
+  try {
+    const result = await Promise.race([
+      (async () => {
+        const pdf = await getDocumentProxy(new Uint8Array(buffer));
+        const [{ text }, meta] = await Promise.all([
+          extractText(pdf, { mergePages: true }),
+          getMeta(pdf).catch(() => undefined),
+        ]);
+        return { text, meta };
+      })(),
+      new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), PDF_PARSE_TIMEOUT_MS)),
+    ]);
+    if (!result) return undefined;
+
+    // Strip NULLs and other control characters pdf.js can emit - Postgres
+    // rejects any string containing 0x00 ("invalid byte sequence for encoding
+    // UTF8"), which silently voided the whole row update for affected PDFs.
+    const sanitize = (s: string) =>
+      // eslint-disable-next-line no-control-regex
+      s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+    const bodyText = sanitize(result.text).replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+    if (bodyText.length < 200) return undefined; // scanned/image-only PDF — nothing to read
+
+    const info = (result.meta?.info ?? {}) as Record<string, unknown>;
+    const metaTitle = typeof info.Title === "string" ? info.Title.trim() : "";
+    // First plausible text line — papers open with their title.
+    const firstLine = bodyText
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l.length >= 8 && l.length <= 160);
+    const title = (metaTitle.length >= 4 ? metaTitle : undefined) ?? firstLine ?? pdfFilenameTitle(url) ?? "PDF document";
+    const authorName = typeof info.Author === "string" && info.Author.trim().length >= 2
+      ? info.Author.trim()
+      : undefined;
+
+    const parsed = new URL(url);
+    const sourceDomain = parsed.hostname.replace(/^www\./, "");
+    return {
+      title: title.slice(0, 200),
+      description: undefined,
+      bodyText: condenseToBudget(bodyText),
+      bodySource: "pdf",
+      canonicalUrl: normalizeUrl(url),
+      originalUrl: url,
+      authorName,
+      sourceName: sourceDomain,
+      sourceDomain,
+      contentType: "document",
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Downloads and parses a PDF URL (the direct `.pdf` fast path). */
+async function fetchPdfMetadata(normalized: string, originalUrl: string): Promise<ExtractedMetadata | undefined> {
+  try {
+    const res = await fetchWithTimeout(normalized, { headers: { "user-agent": BROWSER_UA, accept: "application/pdf,*/*" } }, 12000);
+    if (!res.ok) return undefined;
+    const declared = Number(res.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > PDF_MAX_BYTES) return undefined;
+    return await parsePdfMetadata(await res.arrayBuffer(), originalUrl);
+  } catch {
+    return undefined;
+  }
+}
+
 /** Hosts whose body text requires Supadata AI transcription (mode=auto,
  * 2 credits/min) — the per-capture cost worth metering per user. */
 export function isPaidTranscriptHost(url: string): boolean {
@@ -862,6 +1016,14 @@ export async function fetchMetadata(
   const allowPaidTranscript = opts.allowPaidTranscript ?? true;
   const normalized = normalizeUrl(url);
   const parsed = new URL(normalized);
+
+  // Direct PDF links skip the HTML ladder entirely — its parsers can only
+  // chew on the raw bytes for the full timeout chain and come back empty.
+  if (isPdfUrl(parsed)) {
+    const metadata = await fetchPdfMetadata(normalized, url);
+    if (metadata) return { metadata, requiresManualInput: false };
+    return { requiresManualInput: true };
+  }
 
   if (isRedditHost(parsed)) {
     const metadata = await fetchRedditMetadata(normalized, url);
@@ -948,39 +1110,54 @@ export async function fetchMetadata(
 
   // Many sites serve bots a stripped page (or a 403), so a browser-UA attempt
   // is usually needed anyway — run it concurrently with the polite MNEME-UA
-  // fetch instead of serially after it. The polite result still wins unless
-  // the browser one is genuinely richer, so behavior matches the old ladder
-  // at up to 8s less latency for articles/blogs/Substack.
-  const [plainResponse, browserResponse] = await Promise.all([
-    fetchWithTimeout(normalized, {
-      headers: {
-        "user-agent": "MNEME/1.0 (+https://mneme.app)",
-        accept: "text/html,application/xhtml+xml",
-      },
-    }, 8000).catch(() => undefined),
-    fetchWithTimeout(normalized, {
-      headers: { ...YT_HEADERS, accept: "text/html,application/xhtml+xml" },
-    }, 8000).catch(() => undefined),
-  ]);
+  // fetch instead of serially after it. The browser response is only AWAITED
+  // when the plain result is missing a title or body: when the polite fetch
+  // already produced a full read, a slow browser-UA response can't improve it
+  // (it was never consulted in that case) and shouldn't hold the capture.
+  const plainPromise = fetchWithTimeout(normalized, {
+    headers: {
+      "user-agent": "MNEME/1.0 (+https://mneme.app)",
+      accept: "text/html,application/xhtml+xml",
+    },
+  }, 8000).catch(() => undefined);
+  const browserPromise = fetchWithTimeout(normalized, {
+    headers: { ...YT_HEADERS, accept: "text/html,application/xhtml+xml" },
+  }, 8000).catch(() => undefined);
 
   let metadata: ExtractedMetadata | undefined;
   try {
-    metadata = plainResponse?.ok ? parseMetadataFromHtml(await plainResponse.text(), normalized) : undefined;
+    const plainResponse = await plainPromise;
+    if (plainResponse?.ok && isPdfResponse(plainResponse)) {
+      // A PDF served from a non-.pdf URL (arxiv/doi-style links): parse the
+      // bytes we already have instead of feeding them to the HTML parsers.
+      metadata = await parsePdfMetadata(await plainResponse.arrayBuffer(), normalized);
+      if (metadata) return { metadata, requiresManualInput: false };
+    } else {
+      metadata = plainResponse?.ok ? parseMetadataFromHtml(await plainResponse.text(), normalized) : undefined;
+    }
   } catch {
     metadata = undefined;
   }
 
-  if (browserResponse?.ok && (!metadata?.title || !metadata.bodyText)) {
-    try {
-      const retried = parseMetadataFromHtml(await browserResponse.text(), normalized);
-      const better =
-        !metadata?.title ||
-        (Boolean(retried.title) && (retried.bodyText?.length ?? 0) > (metadata.bodyText?.length ?? 0));
-      if (better && retried.title) {
-        metadata = retried;
+  if (!metadata?.title || !metadata.bodyText) {
+    const browserResponse = await browserPromise;
+    if (browserResponse?.ok) {
+      try {
+        if (isPdfResponse(browserResponse)) {
+          const pdf = await parsePdfMetadata(await browserResponse.arrayBuffer(), normalized);
+          if (pdf) return { metadata: pdf, requiresManualInput: false };
+        } else {
+          const retried = parseMetadataFromHtml(await browserResponse.text(), normalized);
+          const better =
+            !metadata?.title ||
+            (Boolean(retried.title) && (retried.bodyText?.length ?? 0) > (metadata.bodyText?.length ?? 0));
+          if (better && retried.title) {
+            metadata = retried;
+          }
+        }
+      } catch {
+        // keep whatever the plain attempt produced
       }
-    } catch {
-      // keep whatever the plain attempt produced
     }
   }
 

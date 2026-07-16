@@ -169,6 +169,16 @@ const VEL_EMA = 0.4;
 // vectors before the scaled-up layer goes visibly soft. Zoom-out needs no
 // threshold of its own — it shrinks the layer, so the slack check catches it.
 const RECOMMIT_ZOOM_IN = 1.4;
+// While a pinch is ACTIVE the crispness threshold is far looser: every
+// re-rasterization is a native redraw of the whole vector layer, felt as a
+// mid-pinch hitch (worst when zoomed in, where the node glows cover the most
+// pixels). Mid-gesture the raster scales on the GPU — slightly soft is fine —
+// and the release commit re-rasterizes it crisp.
+const RECOMMIT_ZOOM_IN_PINCH = 2.5;
+// Pinch-out coverage commits rasterize at a slightly wider zoom than live, so
+// one redraw buys enough headroom for the rest of the gesture instead of
+// re-firing every ~1.15× as the shrinking layer keeps exposing edges.
+const PINCH_OUT_HEADROOM = 0.8;
 
 // Fixed raster size for the ambient glow, scaled to canvas size by a view
 // transform. It is one smooth gradient, so it survives any upscale.
@@ -220,6 +230,14 @@ function seededRng(seed: number) {
     v = (v * 9301 + 49297) % 233280;
     return v / 233280;
   };
+}
+
+// Color is a stable function of the topic id — NEVER of the cluster's rank in
+// a count-sorted list. Rank-indexed colors reshuffled every cluster's hue
+// whenever relative counts changed (each new capture could recolor the whole
+// map); a hash keeps a topic's color fixed for the life of the account.
+function clusterColorFor(topicId: string): string {
+  return CLUSTER_PALETTE[hashId(topicId) % CLUSTER_PALETTE.length]!;
 }
 
 const MAJOR_CLUSTER_MIN = 2;
@@ -1413,10 +1431,22 @@ export default function MapScreen() {
   const [settledCam, setSettledCam] = useState({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
 
   const committedCam = useRef({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
+  // The camera the on-screen SVG was actually RENDERED with. committedCam is
+  // the latest *request* — commitRender updates it synchronously, but React
+  // paints the matching viewBox one or more frames later. Computing the live
+  // transform against the request during that gap moved the (still old) raster
+  // by the recommit delta: the whole map jumped out of place mid-gesture, then
+  // "fixed itself" when the new render landed. The transform must always be
+  // expressed against what is painted, so this ref only advances in the
+  // layout effect that runs once the new render has committed.
+  const renderedCam = useRef({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
   const liveCam = useRef({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
   const liveTx = useRef(new RNAnimated.Value(0)).current;
   const liveTy = useRef(new RNAnimated.Value(0)).current;
   const liveScale = useRef(new RNAnimated.Value(1)).current;
+  // Non-null while a pinch is in flight. Gestures write it; maybeRecommit
+  // reads it to defer crispness re-rasterizations until the pinch settles.
+  const pinchStartRef = useRef<{ dist: number; zoom: number } | null>(null);
 
   // RN scales about the transformed view's ACTUAL centre — and inside the tab
   // navigator the map container is shorter than the window (tab bar), so the
@@ -1425,14 +1455,14 @@ export default function MapScreen() {
   // "correct" itself on commit.
   const wrapperSize = useRef({ w: SW, h: SH });
 
-  // Express the live camera as a transform of the committed rendering.
+  // Express the live camera as a transform of the RENDERED (painted) world.
   // screen = (world − live)·z_live must equal scale-about-view-centre (RN's
-  // transform origin) plus translate of the committed rendering, which solves
-  // to k = z_live/z_committed, t = (committed − live)·z_live, with the usual
+  // transform origin) plus translate of the rendered world, which solves
+  // to k = z_live/z_rendered, t = (rendered − live)·z_live, with the usual
   // centre-origin compensation C·(k−1).
   const applyLiveCamera = useCallback((x: number, y: number, z: number) => {
     liveCam.current = { x, y, zoom: z };
-    const c = committedCam.current;
+    const c = renderedCam.current;
     const k = z / c.zoom;
     liveTx.setValue((c.x - x) * z + (wrapperSize.current.w / 2) * (k - 1));
     liveTy.setValue((c.y - y) * z + (wrapperSize.current.h / 2) * (k - 1));
@@ -1511,7 +1541,8 @@ export default function MapScreen() {
       commitRender(x + (lead * vx) / speed, y + (lead * vy) / speed, z);
     };
 
-    if (k > RECOMMIT_ZOOM_IN) { commitAimed(); return; }
+    const pinching = pinchStartRef.current !== null;
+    if (k > (pinching ? RECOMMIT_ZOOM_IN_PINCH : RECOMMIT_ZOOM_IN)) { commitAimed(); return; }
 
     const { w: vw, h: vh } = wrapperSize.current;
     const cx = vw / 2;
@@ -1524,7 +1555,21 @@ export default function MapScreen() {
     const top = -(cy + ty + k * (-MARGIN_Y - cy));
     const bottom = (cy + ty + k * (SH + MARGIN_Y - cy)) - vh;
 
-    if (Math.min(left, right, top, bottom) < RECOMMIT_SLACK) commitAimed();
+    if (Math.min(left, right, top, bottom) < RECOMMIT_SLACK) {
+      if (pinching && zooming) {
+        // Pinch-out: commit at a wider-than-live zoom (same view centre) so
+        // this one redraw covers the rest of the gesture. k stays ≤ 1/0.8,
+        // an invisible upscale, and the release commit lands exact.
+        const zc = z * PINCH_OUT_HEADROOM;
+        commitRender(
+          x + (SW / z) / 2 - (SW / zc) / 2,
+          y + (SH / z) / 2 - (SH / zc) / 2,
+          zc,
+        );
+        return;
+      }
+      commitAimed();
+    }
   }, [commitRender]);
 
   // Move both tiers at once (programmatic, non-animated camera jumps). These
@@ -1541,14 +1586,16 @@ export default function MapScreen() {
     lastLive.current = { x, y, zoom: z };
   }, []);
 
-  // After every render the world reflects the committed camera, so re-derive
-  // the wrapper transform (identity once settled; still correct if an
-  // unrelated re-render lands mid-gesture).
+  // After every committed render the world reflects vbPos/zoom — advance the
+  // rendered-camera baseline to match and re-derive the wrapper transform
+  // (identity once settled; still correct if an unrelated re-render lands
+  // mid-gesture). Between a commitRender call and this effect, gesture frames
+  // keep transforming against the OLD rendered camera — which is exactly what
+  // is still on screen.
   useLayoutEffect(() => {
+    renderedCam.current = { x: vbPos.x, y: vbPos.y, zoom };
     applyLiveCamera(liveCam.current.x, liveCam.current.y, liveCam.current.zoom);
   });
-
-  const pinchStartRef = useRef<{ dist: number; zoom: number } | null>(null);
 
   const resetView = useCallback(() => {
     setCamera(INIT_VB_X, INIT_VB_Y, 0.4);
@@ -1741,10 +1788,33 @@ export default function MapScreen() {
 
   const clusterColorMap = useMemo(() => {
     const map = new Map<string, string>();
-    clusterLabels.forEach((cl, i) => {
-      map.set(cl.topicId, CLUSTER_PALETTE[i % CLUSTER_PALETTE.length]);
+    clusterLabels.forEach((cl) => {
+      map.set(cl.topicId, clusterColorFor(cl.topicId));
     });
     return map;
+  }, [clusterLabels]);
+
+  // Which domain regions actually contain a sub-topic label (a specific-topic
+  // cluster whose members mostly belong to that domain), and the reverse map.
+  // Drives the zoom-in handoff: a domain label only cedes its region when a
+  // sub-topic label exists to take over — otherwise it stays, shrinking.
+  const labelContainment = useMemo(() => {
+    const domains = clusterLabels.filter((cl) => cl.kind === 'domain');
+    const topics = clusterLabels.filter((cl) => cl.kind === 'topic');
+    const domainsBySubtopic = new Map<string, Set<string>>();
+    const domainsWithSubtopics = new Set<string>();
+    for (const d of domains) {
+      const dSet = new Set(d.itemIds);
+      for (const t of topics) {
+        const contained = t.itemIds.reduce((n, id) => n + (dSet.has(id) ? 1 : 0), 0);
+        if (contained < Math.max(1, t.itemIds.length / 2)) continue;
+        domainsWithSubtopics.add(d.topicId);
+        let set = domainsBySubtopic.get(t.topicId);
+        if (!set) { set = new Set(); domainsBySubtopic.set(t.topicId, set); }
+        set.add(d.topicId);
+      }
+    }
+    return { domainsBySubtopic, domainsWithSubtopics };
   }, [clusterLabels]);
 
   // ── Terrain: edge counts + node lookup ────────────────────────
@@ -2319,6 +2389,29 @@ export default function MapScreen() {
       .catch((): CapturePreflight => ({ confidence: 'thin' }))
       .then(apply);
   }, [tutorialActive]);
+
+  // Start the preflight as soon as a plausible URL sits in the input instead
+  // of waiting for "next": the server-side extraction (the slowest part of a
+  // capture) runs while the user is still looking at the sheet, and the
+  // eventual save reuses the extracted ContentItem. Dedupe by URL so goNext
+  // and quick save never re-run one that is already in flight.
+  const lastPreflightUrl = useRef<string | null>(null);
+  const preflightIfNew = useCallback((url: string) => {
+    if (lastPreflightUrl.current === url) return;
+    lastPreflightUrl.current = url;
+    runPreflight(url);
+  }, [runPreflight]);
+
+  useEffect(() => {
+    if (!showCapture || mode !== 'link') return;
+    const raw = payload.trim();
+    // Only for something that already looks like a complete URL — an http(s)
+    // scheme or a bare domain — never for prose being typed. Debounced so a
+    // URL being edited fires once, when the user pauses.
+    if (!/^(https?:\/\/\S+|[\w-]+(\.[a-z]{2,})+(\/\S*)?)$/i.test(raw)) return;
+    const t = setTimeout(() => preflightIfNew(normalizeLinkInput(raw)), 500);
+    return () => clearTimeout(t);
+  }, [payload, mode, showCapture, preflightIfNew]);
   const [newNodeId, setNewNodeId] = useState<string | null>(null);
   const landingAnim = useRef(new RNAnimated.Value(0)).current;
   const animatingRef = useRef(false);
@@ -2352,6 +2445,7 @@ export default function MapScreen() {
     setImageUri(null); setMediaUrl(null); setUploading(false);
     setCaptureError(''); setMode('link');
     setPreflight(null); setPreflightLoading(false); setUserContext('');
+    lastPreflightUrl.current = null;
     setClipboardHasUrl(false);
     Clipboard.hasUrlAsync().then(setClipboardHasUrl).catch(() => {});
     setShowCapture(true);
@@ -2395,11 +2489,11 @@ export default function MapScreen() {
     // the preflight status or the reaction field on the way in.
     Keyboard.dismiss();
     if (mode === 'link') {
-      runPreflight(normalizeLinkInput(payload));
+      preflightIfNew(normalizeLinkInput(payload));
     }
     setCaptureError(''); setStep(2);
     return true;
-  }, [validatePayload, mode, payload, runPreflight]);
+  }, [validatePayload, mode, payload, preflightIfNew]);
 
   const shareParams = useLocalSearchParams<{
     selectIds?: string; firstCapture?: string;
@@ -2479,14 +2573,24 @@ export default function MapScreen() {
   // landing ring plus a transient pill offering the insight — the same
   // "sharing IS the capture" contract as the share-sheet path. The full
   // reaction flow keeps opening the insight screen directly.
-  const [savedPill, setSavedPill] = useState<{ id: string } | null>(null);
+  // The capture pill's lifecycle is staged: 'logging' from the moment the
+  // sheet closes (the pipeline is running server-side), cleared when the node
+  // lands (the landing ring + camera fly-to ARE the confirmation), then
+  // 'saved' a beat later once the insight has had time to finish — so the
+  // node visibly arrives first and the insight is offered second.
+  type CapturePill = { phase: 'logging' } | { phase: 'saved'; id: string };
+  const [savedPill, setSavedPill] = useState<CapturePill | null>(null);
   const savedPillTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pillDelayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showSavedPill = useCallback((id: string) => {
     if (savedPillTimer.current) clearTimeout(savedPillTimer.current);
-    setSavedPill({ id });
+    setSavedPill({ phase: 'saved', id });
     savedPillTimer.current = setTimeout(() => setSavedPill(null), 6000);
   }, []);
-  useEffect(() => () => { if (savedPillTimer.current) clearTimeout(savedPillTimer.current); }, []);
+  useEffect(() => () => {
+    if (savedPillTimer.current) clearTimeout(savedPillTimer.current);
+    if (pillDelayTimer.current) clearTimeout(pillDelayTimer.current);
+  }, []);
 
   // A capture shared in from the OS share sheet whose insight was never
   // opened: offer it again on the next visit to the map — including a cold
@@ -2499,7 +2603,7 @@ export default function MapScreen() {
     });
   }, [showSavedPill]));
 
-  const commit = useCallback(async (opts?: { quick?: boolean }) => {
+  const commit = useCallback(async () => {
     // Drop the keyboard the moment they commit, so it doesn't linger over the
     // saving state or the map while the insight is generated.
     Keyboard.dismiss();
@@ -2528,45 +2632,58 @@ export default function MapScreen() {
       closeCapture();
       return;
     }
-    try {
-      let kind: CaptureKind = 'TEXT';
-      let url: string | undefined;
-      let text: string | undefined;
-      if (mode === 'link') { kind = 'LINK'; url = normalizeLinkInput(payload); }
-      else if (mode === 'image') { kind = 'IMAGE'; }
-      else { kind = 'TEXT'; text = payload.trim(); }
-      const res = await api.captures.create({
-        kind,
-        url,
-        text,
-        mediaUrl: mode === 'image' ? mediaUrl ?? undefined : undefined,
-        reaction: reaction.trim() || undefined,
-        userContext: mode === 'link' ? userContext.trim() || undefined : undefined,
-      });
-      setNewNodeId(res.id);
-      refetchMapData();
-      closeCapture();
-      if (opts?.quick) {
+    // Detached commit: the sheet closes NOW and the pipeline finishes on the
+    // server whether or not the app stays open — the server never aborts a
+    // capture on client disconnect, so sharing something and immediately
+    // leaving still logs it. The node lands on the map when the response
+    // arrives (or on the next focus refetch if the app was backgrounded), and
+    // the insight pill pops up once it's ready — the user is never held on a
+    // spinner waiting for a slow source.
+    let kind: CaptureKind = 'TEXT';
+    let url: string | undefined;
+    let text: string | undefined;
+    if (mode === 'link') { kind = 'LINK'; url = normalizeLinkInput(payload); }
+    else if (mode === 'image') { kind = 'IMAGE'; }
+    else { kind = 'TEXT'; text = payload.trim(); }
+    const body = {
+      kind,
+      url,
+      text,
+      mediaUrl: mode === 'image' ? mediaUrl ?? undefined : undefined,
+      reaction: reaction.trim() || undefined,
+      userContext: mode === 'link' ? userContext.trim() || undefined : undefined,
+    };
+    setBusy(false);
+    closeCapture();
+    setSavedPill({ phase: 'logging' });
+    void api.captures.create(body)
+      .then((res) => {
+        setNewNodeId(res.id);
+        refetchMapData();
         // Warm the insight screen while the pill is on screen — the server is
         // polishing the drafts in the background, and by the time the user
         // taps "see the insight" the screen opens instantly from cache.
         void prefetchQuery(`capture:${res.id}`, () => api.captures.get(res.id));
-        showSavedPill(res.id);
-      } else {
-        router.push(`/insight/${res.id}` as never);
-      }
-    } catch (e) {
-      setCaptureError(e instanceof Error ? e.message : 'Capture failed.');
-    } finally {
-      setBusy(false);
-    }
-  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, router, tutorialActive, showSavedPill]);
+        // Node first: drop the logging pill so the landing ring is the
+        // confirmation, then offer the insight once it has had a beat to land.
+        setSavedPill(null);
+        if (pillDelayTimer.current) clearTimeout(pillDelayTimer.current);
+        pillDelayTimer.current = setTimeout(() => showSavedPill(res.id), 2400);
+      })
+      .catch((e) => {
+        setSavedPill(null);
+        Alert.alert(
+          'Capture failed',
+          e instanceof Error ? e.message : 'Could not save that. Try again.',
+        );
+      });
+  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, tutorialActive, showSavedPill]);
 
   const quickSave = useCallback(() => {
     if (!validatePayload()) return;
     Keyboard.dismiss();
     setCaptureError('');
-    void commit({ quick: true });
+    void commit();
   }, [validatePayload, commit]);
 
   const pasteFromClipboard = useCallback(async () => {
@@ -2681,16 +2798,20 @@ export default function MapScreen() {
   // is a plain function of zoom, and it is CONSTANT outside 0.6 < zoom < 0.9,
   // so keying the graph on it (rather than on zoom) means a pinch that stays
   // zoomed in rebuilds no nodes at all.
-  const zoomFade = useMemo(
-    () => Math.max(0.6, Math.min(1, (zoom - 0.15) / 0.75)),
-    [zoom],
-  );
+  // Quantized to 0.05 steps: inside the 0.6–0.9 fade band a pinch used to
+  // rebuild every node element on each zoom commit (the fade is a prop of all
+  // of them) — a JS-thread stall felt as a mid-pinch hitch. Stepping the fade
+  // caps that at a handful of rebuilds across the whole band, invisibly.
+  const zoomFade = useMemo(() => {
+    const raw = Math.max(0.6, Math.min(1, (zoom - 0.15) / 0.75));
+    return Math.round(raw * 20) / 20;
+  }, [zoom]);
 
   // Gradients live at the <Svg> level; only the cluster set changes them.
   const worldDefs = useMemo(() => (
     <Defs>
-      {clusterLabels.map((cl, i) => {
-        const color = CLUSTER_PALETTE[i % CLUSTER_PALETTE.length];
+      {clusterLabels.map((cl) => {
+        const color = clusterColorFor(cl.topicId);
         return (
           <RadialGradient key={`grad-${cl.topicId}`} id={`clGrad-${cl.topicId}`} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
             <Stop offset="0%" stopColor={color} stopOpacity={0.14} />
@@ -2720,73 +2841,109 @@ export default function MapScreen() {
     </>
   ), [lensMode, clusterLabels, focusDimTopicId]);
 
-  // The only genuinely zoom-dependent art: text counter-scaled to stay a
-  // constant size on screen. A dozen elements, so rebuilding it per zoom
-  // commit is cheap — which is the whole reason it is split from the graph.
+  // The only genuinely zoom-dependent art: text sized against the screen, not
+  // the world. A dozen elements, so rebuilding it per zoom commit is cheap —
+  // which is the whole reason it is split from the graph.
   const labelLayer = useMemo(() => {
-    // Sub-topic labels are shown at every zoom, except where one would sit on
-    // top of a coarse domain label — there it stays zoom-gated so the two don't
-    // pile up while zoomed out. Approximate each label's world-space box (mono
-    // uppercase, so char advance ≈ 0.6·fontSize + letterSpacing) at the current
-    // zoom and test axis-aligned overlap. Boxes shrink as the user zooms in, so
-    // a colliding pair naturally separates and the sub-topic label appears.
-    const domainFontSize = Math.max(9, Math.min(22, 14 / zoom));
-    const topicFontSize = Math.max(7, Math.min(14, 10 / zoom));
-    const labelHalfBox = (name: string, fontSize: number, letterSpacing: number) => ({
-      hw: (name.length * (fontSize * 0.6 + letterSpacing)) / 2,
-      hh: fontSize / 2,
-    });
-    const domainBoxes = lensMode === 'semantic'
-      ? clusterLabels
-        .filter((cl) => cl.kind === 'domain')
-        .map((cl) => ({ x: cl.x, y: cl.y, ...labelHalfBox(cl.name, domainFontSize, 3.5) }))
-      : [];
-    const overlapsDomain = (cl: { x: number; y: number; name: string }) => {
-      const b = labelHalfBox(cl.name, topicFontSize, 3);
-      return domainBoxes.some(
-        (d) => Math.abs(cl.x - d.x) < b.hw + d.hw && Math.abs(cl.y - d.y) < b.hh + d.hh,
-      );
+    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
+    // Screen-first sizing: labels hold a constant on-screen size through the
+    // mid zooms, scale down with the map when fully zoomed out, and SHRINK
+    // (never loom) as the user dives in — the old world-clamped sizing grew
+    // domain labels back up past zoom ~1.6.
+    const domainScreen = zoom <= 1 ? 14 * Math.min(1, zoom / 0.64) : 14 / Math.pow(zoom, 0.8);
+    const topicScreen = zoom < 0.71 ? 10 * (zoom / 0.71) : 10;
+
+    type LabelCandidate = {
+      cl: (typeof clusterLabels)[number];
+      isDomain: boolean;
+      fontSize: number;      // world units
+      letterSpacing: number; // world units, proportional so tracking scales with the glyphs
+      opacity: number;
+      hw: number;
+      hh: number;
     };
+
+    const toCandidate = (cl: (typeof clusterLabels)[number], isDomain: boolean): LabelCandidate => {
+      const fontSize = (isDomain ? domainScreen : topicScreen) / zoom;
+      const letterSpacing = fontSize * (isDomain ? 0.25 : 0.3);
+      let opacity: number;
+      if (isDomain) {
+        if (zoom <= 1.0) {
+          opacity = Math.min(0.28, 0.12 + (1 - zoom) * 0.10);
+        } else if (labelContainment.domainsWithSubtopics.has(cl.topicId)) {
+          // A sub-topic label exists to take over this region — hand off.
+          opacity = Math.max(0, 0.12 * (1 - (zoom - 1.0) / 0.6));
+        } else {
+          // Nothing to hand off to: keep the label as the user zooms in. It
+          // shrinks smoothly with domainScreen and only fades away once it is
+          // genuinely small on screen.
+          opacity = 0.12 * clamp01((domainScreen - 5) / 2);
+        }
+      } else {
+        opacity = 0.28;
+      }
+      // Mono uppercase: char advance ≈ 0.6·fontSize + letterSpacing.
+      return {
+        cl, isDomain, fontSize, letterSpacing, opacity,
+        hw: (cl.name.length * (fontSize * 0.6 + letterSpacing)) / 2,
+        hh: fontSize / 2,
+      };
+    };
+
+    // Priority order: domain labels first (already count-sorted within each
+    // kind — clusterLabels comes from the server sorted by member count).
+    const candidates = lensMode === 'semantic'
+      ? [
+        ...clusterLabels.filter((c) => c.kind === 'domain').map((c) => toCandidate(c, true)),
+        ...clusterLabels.filter((c) => c.kind === 'topic').map((c) => toCandidate(c, false)),
+      ]
+      : [];
+
+    // Greedy de-clutter: a label renders only when it does not overlap any
+    // higher-priority label already kept — overlapping text is unreadable
+    // text, whatever the pair. The one sanctioned overlap is the zoom-in
+    // handoff: while a domain fades out past zoom 1, its own sub-topic label
+    // crossfades in over it.
+    const overlapping = (a: LabelCandidate, b: LabelCandidate) =>
+      Math.abs(a.cl.x - b.cl.x) < a.hw + b.hw && Math.abs(a.cl.y - b.cl.y) < a.hh + b.hh;
+    const kept: LabelCandidate[] = [];
+    for (const cand of candidates) {
+      if (cand.opacity <= 0.005) continue;
+      let blocked = false;
+      for (const k of kept) {
+        if (!overlapping(k, cand)) continue;
+        const handoff =
+          k.isDomain && !cand.isDomain && zoom > 1.0 &&
+          labelContainment.domainsBySubtopic.get(cand.cl.topicId)?.has(k.cl.topicId);
+        if (handoff) {
+          cand.opacity = Math.min(cand.opacity, clamp01((zoom - 1.1) / 0.5) * 0.28);
+          if (cand.opacity <= 0.005) { blocked = true; break; }
+        } else {
+          blocked = true;
+          break;
+        }
+      }
+      if (!blocked) kept.push(cand);
+    }
 
     return (
       <>
           {/* Cluster labels (semantic mode only) — hierarchical: coarse
               domain labels own the zoomed-out view; the more specific
-              topic labels fade in as the user zooms into their region. */}
-          {lensMode === 'semantic' && clusterLabels.map((cl) => {
-            const isDomain = cl.kind === 'domain';
-            const clFontSize = isDomain ? domainFontSize : topicFontSize;
-            // Domain labels own the zoomed-out view and fade as you zoom in.
-            // Sub-topic labels are always visible, faded to the same
-            // plateau as domain labels — unless they would collide with a
-            // domain label, in which case they fade in only once zoomed in
-            // enough to clear it.
-            let clOpacity: number;
-            let cap: number;
-            if (isDomain) {
-              clOpacity = zoom <= 1.0
-                ? 0.12 + (1 - zoom) * 0.10
-                : Math.max(0, 0.12 * (1 - (zoom - 1.0) / 0.6));
-              cap = 0.28;
-            } else if (overlapsDomain(cl)) {
-              clOpacity = zoom <= 1.1 ? 0 : Math.min(0.28, ((zoom - 1.1) / 0.5) * 0.28);
-              cap = 0.28;
-            } else {
-              clOpacity = 0.28;
-              cap = 0.28;
-            }
-            if (clOpacity <= 0.005) return null;
+              topic labels take over their regions as the user zooms in. */}
+          {kept.map(({ cl, fontSize, letterSpacing, opacity }) => {
             const dimmed = focusDimTopicId && cl.topicId !== focusDimTopicId;
             return (
               <SvgText
                 key={`cl-label-${cl.topicId}`}
                 x={cl.x} y={cl.y}
-                fontSize={clFontSize}
+                fontSize={fontSize}
                 fontFamily={FontFamily.mono}
                 fill="rgba(236,236,236,1)"
-                fillOpacity={dimmed ? Math.min(0.08, clOpacity) : Math.min(cap, clOpacity)}
+                fillOpacity={dimmed ? Math.min(0.08, opacity) : opacity}
                 textAnchor="middle"
-                letterSpacing={isDomain ? 3.5 : 3}
+                letterSpacing={letterSpacing}
               >
                 {cl.name.toUpperCase()}
               </SvgText>
@@ -2820,7 +2977,7 @@ export default function MapScreen() {
           })()}
       </>
     );
-  }, [zoom, lensMode, lensTransitioning, clusterLabels, focusDimTopicId, nodes.length]);
+  }, [zoom, lensMode, clusterLabels, labelContainment, focusDimTopicId, nodes.length]);
 
   // Edges + nodes: the bulk of the SVG tree. Keyed on zoomFade, not zoom, so a
   // zoom commit outside the fade band keeps this element identity and React
@@ -3392,16 +3549,24 @@ export default function MapScreen() {
         {savedPill && !showCapture && !drawerVisible && (
           <View style={[styles.discoveryBar, { bottom: TAB_H + Spacing[5] + FAB_SIZE + Spacing[3] }]} pointerEvents="box-none">
             <View style={[styles.discoveryPill, { backgroundColor: 'rgba(10,10,10,0.9)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
-              <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.6)' }]}>saved ✓</Text>
-              <Pressable
-                onPress={() => { const id = savedPill.id; setSavedPill(null); router.push(`/insight/${id}` as never); }}
-                hitSlop={8}
-                style={[styles.discoveryActionBtn, { backgroundColor: 'rgba(126,200,160,0.15)', borderColor: 'rgba(126,200,160,0.32)' }]}
-                accessibilityRole="button"
-                accessibilityLabel="Open the insight for this capture"
-              >
-                <Text style={[styles.discoveryAction, { color: DISCOVERY_ACCENT }]}>see the insight →</Text>
-              </Pressable>
+              {savedPill.phase === 'logging' ? (
+                <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.6)' }]}>
+                  reading & mapping…
+                </Text>
+              ) : (
+                <>
+                  <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.6)' }]}>saved ✓</Text>
+                  <Pressable
+                    onPress={() => { const id = savedPill.id; setSavedPill(null); router.push(`/insight/${id}` as never); }}
+                    hitSlop={8}
+                    style={[styles.discoveryActionBtn, { backgroundColor: 'rgba(126,200,160,0.15)', borderColor: 'rgba(126,200,160,0.32)' }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Open the insight for this capture"
+                  >
+                    <Text style={[styles.discoveryAction, { color: DISCOVERY_ACCENT }]}>see the insight →</Text>
+                  </Pressable>
+                </>
+              )}
               <Pressable onPress={() => setSavedPill(null)} hitSlop={10} style={styles.discoveryClose}>
                 <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.35)' }]}>✕</Text>
               </Pressable>

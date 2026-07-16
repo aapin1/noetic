@@ -3,7 +3,7 @@ import slugify from "slugify";
 import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/server/db";
-import { fetchMetadata, scoreContentConfidence, sourceSlug, type ContentConfidence } from "@/server/metadata";
+import { fetchMetadata, isPdfContentUrl, scoreContentConfidence, sourceSlug, type ContentConfidence } from "@/server/metadata";
 import { cleanContentMetadata } from "@/server/cognition/llm";
 import { upsertTopics } from "@/server/topics";
 import { normalizeUrl } from "@/server/url";
@@ -116,27 +116,46 @@ export async function ingestUrl(url: string, db: DbClient = prisma, opts: Ingest
     // the full ladder (including paid Supadata credits), and a URL that just
     // failed will almost always fail again minutes later.
     const RETRY_COOLDOWN_MS = 24 * 60 * 60 * 1000;
-    const retryDue = Date.now() - existing.updatedAt.getTime() > RETRY_COOLDOWN_MS;
+    // PDFs bypass the cooldown: they parse locally (no paid tier to protect),
+    // and every PDF captured before the PDF pipeline existed is a thin stub
+    // that would otherwise stay broken for a day after the fix shipped.
+    const retryDue =
+      Date.now() - existing.updatedAt.getTime() > RETRY_COOLDOWN_MS ||
+      isPdfContentUrl(existing.canonicalUrl ?? "");
     if (!existing.bodyText && existing.canonicalUrl && retryDue) {
       try {
         const refetched = await fetchMetadata(existing.canonicalUrl, opts);
         const body = refetched.metadata?.bodyText;
         if (body) {
+          // A stub row (scrape failed at first capture: hostname-as-title,
+          // URL-as-description) adopts the refetched identity too — healing
+          // only the body would leave the capture named after its domain.
+          const hostTitle = (() => {
+            try {
+              return new URL(existing.canonicalUrl).hostname.replace(/^www\./, "");
+            } catch {
+              return undefined;
+            }
+          })();
+          const isStubTitle = Boolean(refetched.metadata?.title) &&
+            (existing.title === hostTitle || existing.title === "Link");
+          const isStubDescription = !existing.description || /^https?:\/\//i.test(existing.description);
           await db.contentItem.update({
             where: { id: existing.id },
             data: {
               bodyText: body,
               bodySource: refetched.metadata?.bodySource,
+              ...(isStubTitle ? { title: refetched.metadata!.title } : {}),
               // Never let description become the full body/transcript — it is
               // surfaced as a short gist. Leave it null if we have no real
               // excerpt; the capture pipeline derives its own summary.
-              description: existing.description ?? refetched.metadata?.description,
+              ...(isStubDescription ? { description: refetched.metadata?.description ?? null } : {}),
             },
           });
           existing.bodyText = body;
-          if (!existing.description) {
-            existing.description = refetched.metadata?.description ?? null;
-          }
+          existing.bodySource = refetched.metadata?.bodySource ?? null;
+          if (isStubTitle) existing.title = refetched.metadata!.title!;
+          if (isStubDescription) existing.description = refetched.metadata?.description ?? null;
         } else {
           // Failed again: touch updatedAt so the cooldown restarts — otherwise
           // a permanently thin URL would retry the paid ladder on every capture.

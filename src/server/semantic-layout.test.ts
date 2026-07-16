@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { semanticLayout, cosineSim, placeNewNode, isDegenerateLayout } from "@/server/cognition/layout";
+import { semanticLayout, cosineSim, placeNewNode, isDegenerateLayout, isGroupIncoherentLayout } from "@/server/cognition/layout";
 import { classifyEdgeSemantic, SEMANTIC_CONNECT_THRESHOLD } from "@/server/cognition/insights";
 
 function dist(a: { x: number; y: number }, b: { x: number; y: number }): number {
@@ -98,6 +98,44 @@ describe("semanticLayout", () => {
     const init = { a: { x: 0.3, y: 0.3 }, b: { x: 0.6, y: 0.6 }, c: { x: 0.9, y: 0.9 } };
     expect(semanticLayout(items, { init })).toEqual(semanticLayout(items, { init }));
   });
+
+  // Regression: a lone science capture must sit with its own field even when
+  // another field has far more nodes. Raw embedding distances bunch all
+  // "unrelated" pairs into one band, so cluster mass could out-pull topical
+  // fit; the group prior keeps the map correct at the domain scale.
+  it("keeps same-field nodes together against a larger foreign cluster", () => {
+    const psych = Array.from({ length: 8 }, (_, i) => ({
+      id: `psy${i}`,
+      embedding: [0.05 + i * 0.01, 1, 0.1 + i * 0.005, 0],
+      group: "psychology",
+    }));
+    const items = [
+      ...psych,
+      { id: "bio", embedding: [1, 0.1, 0.05, 0.1], group: "science" },
+      { id: "mech", embedding: [0.9, 0.05, 0.1, 0.2], group: "science" },
+      // Quantum: modestly similar to the science pair, dissimilar to psychology.
+      { id: "quantum", embedding: [0.6, 0.15, 0.5, 0.55], group: "science" },
+    ];
+    const pos = semanticLayout(items);
+    const centroid = (ids: string[]) => ({
+      x: ids.reduce((s, id) => s + pos[id]!.x, 0) / ids.length,
+      y: ids.reduce((s, id) => s + pos[id]!.y, 0) / ids.length,
+    });
+    const psyCentroid = centroid(psych.map((p) => p.id));
+    const sciCentroid = centroid(["bio", "mech"]);
+    expect(dist(pos.quantum!, sciCentroid)).toBeLessThan(dist(pos.quantum!, psyCentroid));
+  });
+
+  it("group prior does not disturb single-group or ungrouped layouts", () => {
+    const items = [
+      { id: "A", embedding: [1, 0, 0] },
+      { id: "B", embedding: [0.95, 0.05, 0] },
+      { id: "C", embedding: [0, 0, 1] },
+    ];
+    const grouped = semanticLayout(items.map((it) => ({ ...it, group: "science" })));
+    const ungrouped = semanticLayout(items);
+    expect(grouped).toEqual(ungrouped);
+  });
 });
 
 describe("isDegenerateLayout", () => {
@@ -153,6 +191,60 @@ describe("placeNewNode", () => {
   it("returns null without an embedding or without usable anchors", () => {
     expect(placeNewNode(null, anchors)).toBeNull();
     expect(placeNewNode([1, 0, 0], [])).toBeNull();
+  });
+
+  // Regression: seeding must follow what the node is MOST similar to, not the
+  // biggest cluster's mass. Twenty mildly-dissimilar anchors on the right used
+  // to out-pull three highly-similar anchors on the left.
+  it("lands near its most similar anchors, not the largest cluster", () => {
+    const science = [
+      { x: 0.15, y: 0.2, embedding: [1, 0.1, 0] },
+      { x: 0.2, y: 0.25, embedding: [0.95, 0.15, 0] },
+      { x: 0.18, y: 0.15, embedding: [0.9, 0.1, 0.1] },
+    ];
+    const psychology = Array.from({ length: 20 }, (_, i) => ({
+      x: 0.75 + (i % 5) * 0.03,
+      y: 0.7 + Math.floor(i / 5) * 0.04,
+      embedding: [0.15, 1, 0.1 + i * 0.002],
+    }));
+    const p = placeNewNode([0.85, 0.25, 0.05], [...psychology, ...science])!;
+    const sciDist = Math.hypot(p.x - 0.18, p.y - 0.2);
+    const psyDist = Math.hypot(p.x - 0.81, p.y - 0.76);
+    expect(sciDist).toBeLessThan(psyDist);
+  });
+});
+
+describe("isGroupIncoherentLayout", () => {
+  const psych = Array.from({ length: 6 }, (_, i) => ({
+    x: 0.7 + (i % 3) * 0.05,
+    y: 0.7 + Math.floor(i / 3) * 0.05,
+    group: "psychology",
+  }));
+  const science = [
+    { x: 0.15, y: 0.2, group: "science" },
+    { x: 0.2, y: 0.15, group: "science" },
+  ];
+
+  it("flags a node parked deep inside a foreign field", () => {
+    // A science capture sitting in the middle of the psychology cluster.
+    expect(isGroupIncoherentLayout([
+      ...psych,
+      ...science,
+      { x: 0.72, y: 0.73, group: "science" },
+    ])).toBe(true);
+  });
+
+  it("accepts a coherent layout", () => {
+    expect(isGroupIncoherentLayout([
+      ...psych,
+      ...science,
+      { x: 0.25, y: 0.22, group: "science" },
+    ])).toBe(false);
+  });
+
+  it("never flags ungrouped or single-field layouts", () => {
+    expect(isGroupIncoherentLayout(psych.map((p) => ({ ...p, group: undefined })))).toBe(false);
+    expect(isGroupIncoherentLayout(psych)).toBe(false);
   });
 });
 

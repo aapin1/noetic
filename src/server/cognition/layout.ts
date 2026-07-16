@@ -66,13 +66,32 @@ export type SemanticLayoutOptions = {
   init?: Record<string, LayoutPoint>;
 };
 
+// Domain prior: how the coarse classification reshapes target distances.
+// Raw embedding distances carry coarse structure weakly (all "unrelated" pairs
+// sit in one narrow band), so a lone quantum-mechanics capture can end up
+// nearer a big psychology cluster than the science nodes it belongs with —
+// cluster mass beats topical fit. Blending the node's classified general field
+// into the targets makes the map hierarchical: same-field pairs compress into
+// the near band, cross-field pairs are pushed toward the far band, while the
+// affine form keeps every embedding distinction (ordering) intact within each
+// band — genuinely similar cross-field pairs still land nearer than unrelated
+// same-field ones (0.35 floor < 0.55 same-field ceiling).
+const SAME_GROUP_SCALE = 0.55;
+const CROSS_GROUP_FLOOR = 0.35;
+const CROSS_GROUP_SCALE = 0.6;
+
 /**
  * Lays out items with embeddings into normalized [0,1] x/y coordinates.
  * Items without a usable embedding are placed deterministically around the
  * periphery so they never collapse onto the semantic core.
+ *
+ * `group` (optional) is the item's coarse classification — its general field.
+ * When at least two distinct groups are present, target distances blend the
+ * group prior with the embedding distances so the map stays correct at the
+ * domain scale as well as the fine scale.
  */
 export function semanticLayout(
-  items: { id: string; embedding: number[] | null | undefined }[],
+  items: { id: string; embedding: number[] | null | undefined; group?: string | null }[],
   options: SemanticLayoutOptions = {},
 ): Record<string, LayoutPoint> {
   const iterations = options.iterations ?? 160;
@@ -81,7 +100,7 @@ export function semanticLayout(
   if (items.length === 0) return result;
 
   const withEmb = items.filter(
-    (it): it is { id: string; embedding: number[] } =>
+    (it): it is { id: string; embedding: number[]; group?: string | null } =>
       Array.isArray(it.embedding) && it.embedding.length > 0,
   );
   const withoutEmb = items.filter(
@@ -119,6 +138,27 @@ export function semanticLayout(
       for (let i = 0; i < n; i++) {
         for (let j = i + 1; j < n; j++) {
           const d = floor + ((dist[i]![j]! - dMin) / span) * (1 - floor);
+          dist[i]![j] = d;
+          dist[j]![i] = d;
+        }
+      }
+    }
+
+    // Blend in the domain prior (see constants above). Applied only between
+    // pairs whose groups are BOTH known, and only when the set actually spans
+    // more than one group — a single-group map gains nothing from a uniform
+    // rescale the normalization would undo anyway.
+    const groups = withEmb.map((it) => it.group ?? null);
+    const distinctGroups = new Set(groups.filter((g): g is string => Boolean(g)));
+    if (distinctGroups.size >= 2) {
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          const gi = groups[i];
+          const gj = groups[j];
+          if (!gi || !gj) continue;
+          const d = gi === gj
+            ? dist[i]![j]! * SAME_GROUP_SCALE
+            : CROSS_GROUP_FLOOR + dist[i]![j]! * CROSS_GROUP_SCALE;
           dist[i]![j] = d;
           dist[j]![i] = d;
         }
@@ -232,6 +272,56 @@ export function isDegenerateLayout(points: LayoutPoint[]): boolean {
   return minor / major < 0.02;
 }
 
+/**
+ * True when a persisted layout strongly contradicts the nodes' coarse
+ * classification — some node sits more than twice as close to a foreign
+ * general-field's centroid as to its own, and meaningfully far from home.
+ * Layouts persisted before the domain prior existed can hold exactly this
+ * shape (a lone science capture parked beside a big psychology cluster), and
+ * a plain refetch would keep it forever; this check lets the resolver heal
+ * them with one group-aware re-layout. Thresholds are deliberately strict so
+ * a healthy (converged, prior-aware) layout never re-triggers on noise.
+ */
+export function isGroupIncoherentLayout(
+  points: { x: number; y: number; group?: string | null }[],
+): boolean {
+  const grouped = points.filter((p): p is { x: number; y: number; group: string } => Boolean(p.group));
+  if (grouped.length < 4) return false;
+
+  const sums = new Map<string, { x: number; y: number; n: number }>();
+  for (const p of grouped) {
+    const s = sums.get(p.group) ?? { x: 0, y: 0, n: 0 };
+    s.x += p.x;
+    s.y += p.y;
+    s.n += 1;
+    sums.set(p.group, s);
+  }
+  // Centroids need ≥2 members to mean anything; the comparison needs ≥2 fields.
+  const centroids = Array.from(sums.entries())
+    .filter(([, s]) => s.n >= 2)
+    .map(([group, s]) => ({ group, x: s.x / s.n, y: s.y / s.n, n: s.n }));
+  if (centroids.length < 2) return false;
+
+  for (const p of grouped) {
+    const own = centroids.find((c) => c.group === p.group);
+    if (!own) continue;
+    // Own-group centroid excluding the node itself, so the node can't drag
+    // its own reference point toward its (possibly wrong) position.
+    const ex = own.n > 1
+      ? { x: (own.x * own.n - p.x) / (own.n - 1), y: (own.y * own.n - p.y) / (own.n - 1) }
+      : own;
+    const dOwn = Math.hypot(p.x - ex.x, p.y - ex.y);
+    let dForeign = Infinity;
+    for (const c of centroids) {
+      if (c.group === p.group) continue;
+      const d = Math.hypot(p.x - c.x, p.y - c.y);
+      if (d < dForeign) dForeign = d;
+    }
+    if (dOwn > 0.25 && dForeign < dOwn * 0.5) return true;
+  }
+  return false;
+}
+
 /** Deterministic point on the periphery, seeded by id (for un-embeddable items). */
 export function peripheralPoint(id: string): LayoutPoint {
   const angle = (hashId(id) % 360) * (Math.PI / 180);
@@ -266,25 +356,35 @@ export function placeNewNode(
   if (valid.length === 0) return null;
 
   const e = normalize(embedding);
-  const anchorVecs = valid.map((a) => normalize(a.embedding));
 
-  const targets = valid.map((a, i) => {
-    const sim = cosineSim(e, anchorVecs[i]!);
-    return {
-      x: a.x,
-      y: a.y,
-      d: Math.min(1, Math.max(0, 1 - sim)),
-      w: Math.max(0.0001, (sim + 1) / 2), // map cosine [-1,1] → weight (0,1]
-    };
-  });
+  // Fit against the TOP-K most similar anchors only. Fitting against every
+  // anchor let sheer cluster mass win: cosine weights are nearly flat across
+  // "related" vs "unrelated" text (~0.4 vs ~0.2), so thirty psychology nodes
+  // out-pulled three highly-similar science nodes and a new physics capture
+  // seeded (then converged) into the wrong region. The node's neighborhood is
+  // defined by what it is MOST like, not by everything it isn't.
+  const TOP_ANCHORS = 6;
+  const ranked = valid
+    .map((a) => ({ a, vec: normalize(a.embedding), sim: 0 }))
+    .map((entry) => ({ ...entry, sim: cosineSim(e, entry.vec) }))
+    .sort((x, y) => y.sim - x.sim)
+    .slice(0, TOP_ANCHORS);
 
-  // Calibrate embedding distances to the layout's 2D distance scale.
+  const targets = ranked.map(({ a, sim }) => ({
+    x: a.x,
+    y: a.y,
+    d: Math.min(1, Math.max(0, 1 - sim)),
+    w: Math.max(0.0001, (sim + 1) / 2), // map cosine [-1,1] → weight (0,1]
+  }));
+
+  // Calibrate embedding distances to the layout's 2D distance scale,
+  // measured over the same top-K anchors the fit uses.
   let geoSum = 0;
   let embSum = 0;
-  for (let i = 0; i < valid.length; i++) {
-    for (let j = i + 1; j < valid.length; j++) {
-      geoSum += Math.hypot(valid[i]!.x - valid[j]!.x, valid[i]!.y - valid[j]!.y);
-      embSum += Math.min(1, Math.max(0, 1 - cosineSim(anchorVecs[i]!, anchorVecs[j]!)));
+  for (let i = 0; i < ranked.length; i++) {
+    for (let j = i + 1; j < ranked.length; j++) {
+      geoSum += Math.hypot(ranked[i]!.a.x - ranked[j]!.a.x, ranked[i]!.a.y - ranked[j]!.a.y);
+      embSum += Math.min(1, Math.max(0, 1 - cosineSim(ranked[i]!.vec, ranked[j]!.vec)));
     }
   }
   const scale = embSum > 1e-6 ? geoSum / embSum : 1;

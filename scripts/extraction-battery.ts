@@ -26,6 +26,9 @@ const DEFAULT_BATTERY: { label: string; url: string; minChars: number }[] = [
   { label: "podcast page", url: "https://podcasts.apple.com/us/podcast/lex-fridman-podcast/id1434243584", minChars: 150 },
   { label: "tweet", url: "https://x.com/naval/status/1002103360646823936", minChars: 30 },
   { label: "reddit thread", url: "https://www.reddit.com/r/explainlikeimfive/comments/1lqx7c/eli5_why_is_the_sky_blue/", minChars: 0 },
+  { label: "pdf paper (.pdf url)", url: "https://www.sas.upenn.edu/~cavitch/pdf-library/Nagel_Bat.pdf", minChars: 800 },
+  // arxiv serves PDFs without a .pdf suffix — exercises content-type detection.
+  { label: "pdf large (content-type)", url: "https://arxiv.org/pdf/1706.03762", minChars: 800 },
 ];
 
 async function main() {

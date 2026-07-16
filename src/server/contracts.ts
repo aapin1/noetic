@@ -209,8 +209,10 @@ export const updatePreferencesSchema = z.object({
 });
 
 export const captureUploadSchema = z.object({
-  imageBase64: z.string().min(100).max(8_000_000),
-  mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]).optional(),
+  // Base64 payload: images up to ~6MB, PDFs up to ~15MB (route enforces the
+  // per-type byte limit after decoding).
+  imageBase64: z.string().min(100).max(21_000_000),
+  mimeType: z.enum(["image/jpeg", "image/png", "image/webp", "application/pdf"]).optional(),
 });
 
 export const avatarUploadSchema = z

@@ -693,13 +693,6 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
         })),
         skipDuplicates: true,
       });
-
-      await applyTopicWeights({
-        db: tx,
-        userId: payload.userId,
-        topicIds: classified.map((topic) => topic.topicId),
-        increment: 1,
-      });
     }
 
     const insightRows = drafts.length > 0
@@ -730,54 +723,6 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
         skipDuplicates: true,
       });
     }
-
-    await tx.cognitiveEvent.create({
-      data: {
-        userId: payload.userId,
-        capturedItemId: created.id,
-        type: CognitiveEventType.CAPTURED,
-        payload: {
-          kind: payload.kind,
-          topicIds: classified.map((topic) => topic.topicId),
-          neighborCount: neighborInfo.neighbors.length,
-        } as Prisma.InputJsonValue,
-      },
-    });
-
-    if (trajectory && Math.abs(trajectory.delta) >= 2) {
-      await tx.cognitiveEvent.create({
-        data: {
-          userId: payload.userId,
-          capturedItemId: created.id,
-          type: CognitiveEventType.TOPIC_SHIFT,
-          payload: trajectory as unknown as Prisma.InputJsonValue,
-        },
-      });
-    }
-
-    if (neighborInfo.neighbors.some((neighbor) => neighbor.edgeType === "CONTRADICTS")) {
-      await tx.cognitiveEvent.create({
-        data: {
-          userId: payload.userId,
-          capturedItemId: created.id,
-          type: CognitiveEventType.CONTRADICTION_DETECTED,
-          payload: { neighborCount: neighborInfo.neighbors.length } as Prisma.InputJsonValue,
-        },
-      });
-    }
-
-    if (isFirstCapture) {
-      await tx.cognitiveEvent.create({
-        data: {
-          userId: payload.userId,
-          capturedItemId: created.id,
-          type: CognitiveEventType.NOVELTY_DETECTED,
-          payload: {} as Prisma.InputJsonValue,
-        },
-      });
-    }
-
-    await incrementTasteProfileVersion(tx, payload.userId);
 
     const fullItem = await tx.capturedItem.findUniqueOrThrow({
       where: { id: created.id },
@@ -833,6 +778,64 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     `[capture] timings content=${contentDoneAt - startedAt}ms classify+embed+clean=${classifyDoneAt - contentDoneAt}ms ` +
     `neighbors=${neighborsDoneAt - classifyDoneAt}ms tx=${txDoneAt - neighborsDoneAt}ms total=${txDoneAt - startedAt}ms`,
   );
+
+  // Background: bookkeeping the response never reads — cognitive events (Pulse
+  // and trends surfaces), taste-profile weights, and the profile version bump.
+  // Inside the transaction these were 6–12 serial round-trips the user sat
+  // through (~1s of the old tx stage); nothing about the capture itself
+  // depends on them, so they land right after the response instead.
+  void (async () => {
+    const events: Prisma.CognitiveEventCreateManyInput[] = [{
+      userId: payload.userId,
+      capturedItemId: txResult.id,
+      type: CognitiveEventType.CAPTURED,
+      payload: {
+        kind: payload.kind,
+        topicIds: classified.map((topic) => topic.topicId),
+        neighborCount: neighborInfo.neighbors.length,
+      } as Prisma.InputJsonValue,
+    }];
+
+    if (trajectory && Math.abs(trajectory.delta) >= 2) {
+      events.push({
+        userId: payload.userId,
+        capturedItemId: txResult.id,
+        type: CognitiveEventType.TOPIC_SHIFT,
+        payload: trajectory as unknown as Prisma.InputJsonValue,
+      });
+    }
+
+    if (neighborInfo.neighbors.some((neighbor) => neighbor.edgeType === "CONTRADICTS")) {
+      events.push({
+        userId: payload.userId,
+        capturedItemId: txResult.id,
+        type: CognitiveEventType.CONTRADICTION_DETECTED,
+        payload: { neighborCount: neighborInfo.neighbors.length } as Prisma.InputJsonValue,
+      });
+    }
+
+    if (isFirstCapture) {
+      events.push({
+        userId: payload.userId,
+        capturedItemId: txResult.id,
+        type: CognitiveEventType.NOVELTY_DETECTED,
+        payload: {} as Prisma.InputJsonValue,
+      });
+    }
+
+    await db.cognitiveEvent.createMany({ data: events });
+
+    if (classified.length > 0) {
+      await applyTopicWeights({
+        db,
+        userId: payload.userId,
+        topicIds: classified.map((topic) => topic.topicId),
+        increment: 1,
+      });
+    }
+
+    await incrementTasteProfileVersion(db, payload.userId);
+  })().catch((err) => console.error("[capture] background bookkeeping failed", err));
 
   // Background: sharpen the draft insights with the LLM after the response is
   // on its way. The rows already exist with readable draft text; this swaps in
