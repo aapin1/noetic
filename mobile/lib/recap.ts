@@ -113,7 +113,11 @@ export function nodeIdea(item: CaptureSummary): string | null {
 type CaptureRef = Parameters<typeof captureRef>[0];
 
 export async function captureFrame(ref: CaptureRef): Promise<string> {
-  return captureRef(ref, { format: 'png', quality: 1, result: 'tmpfile' });
+  const uri = await captureRef(ref, { format: 'png', quality: 1, result: 'tmpfile' });
+  // On iOS `tmpfile` yields a bare path (no scheme). Sharing tolerates that, but
+  // MediaLibrary.saveToLibraryAsync needs a proper file:// URI or it throws —
+  // which is why "Save to Photos" failed while "Share" worked. Normalize once.
+  return uri.startsWith('file://') ? uri : `file://${uri}`;
 }
 
 export async function shareImage(uri: string): Promise<void> {
@@ -138,7 +142,10 @@ export async function saveFramesToPhotos(uris: string[]): Promise<boolean> {
     return false;
   }
   for (const uri of uris) {
-    await MediaLibrary.saveToLibraryAsync(uri);
+    // SDK 57's class-based API: Asset.create replaces the deprecated
+    // saveToLibraryAsync. We only save (never read the asset back), so
+    // write-only permission is enough.
+    await MediaLibrary.Asset.create(uri);
   }
   return true;
 }

@@ -24,7 +24,7 @@ import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
-import { Radius, Spacing, accentFor } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -45,6 +45,7 @@ import {
   type RecapFilters,
   type RecapWindow,
 } from '@/lib/recap';
+import { RECAP_TEMPLATES, resolveTemplate, type RecapTemplateId } from '@/lib/recapTemplates';
 import type { CaptureSummary } from '@/types/api';
 
 type Step = 'select' | 'compose';
@@ -66,6 +67,7 @@ export default function ShareRecapScreen() {
   const [filters, setFilters] = useState<RecapFilters>({ window: 'all', topicId: null, query: '' });
   const [title, setTitle] = useState<string>(RECAP_TITLE_PRESETS[0]);
   const [format, setFormat] = useState<Format>('slideshow');
+  const [template, setTemplate] = useState<RecapTemplateId>('paper');
 
   const all = useMemo(() => captures ?? [], [captures]);
   const filtered = useMemo(() => applyRecapFilters(all, filters), [all, filters]);
@@ -130,6 +132,8 @@ export default function ShareRecapScreen() {
           onTitle={setTitle}
           format={format}
           onFormat={setFormat}
+          template={template}
+          onTemplate={setTemplate}
           handle={profile?.handle ?? null}
           onBack={() => setStep('select')}
         />
@@ -344,6 +348,8 @@ function ComposeStep({
   onTitle,
   format,
   onFormat,
+  template,
+  onTemplate,
   handle,
   onBack,
 }: {
@@ -352,6 +358,8 @@ function ComposeStep({
   onTitle: (t: string) => void;
   format: Format;
   onFormat: (f: Format) => void;
+  template: RecapTemplateId;
+  onTemplate: (t: RecapTemplateId) => void;
   handle: string | null;
   onBack: () => void;
 }) {
@@ -359,7 +367,9 @@ function ComposeStep({
   const { width: screenW } = useWindowDimensions();
   const cardW = Math.min(screenW - Spacing[6] * 2, 360);
 
-  const accent = useMemo(() => accentFor(items.length * 31 + (items[0]?.id.length ?? 0)), [items]);
+  // Palette accents rotate per card, but bg/surface are constant across a
+  // template, so index 0 is enough to colour the matte behind every frame.
+  const matte = useMemo(() => resolveTemplate(template, 0).bg, [template]);
   const range = useMemo(() => dateRangeLabel(items), [items]);
   const heading = title.trim() || RECAP_TITLE_PRESETS[0];
 
@@ -380,17 +390,14 @@ function ComposeStep({
   React.useEffect(() => {
     let cancelled = false;
     const urls = items.map(nodeImage).filter((u): u is string => Boolean(u));
-    if (urls.length === 0) {
-      setReady(true);
-      return;
-    }
-    const done = () => {
-      if (!cancelled) setReady(true);
-    };
+    // Always resolve through a promise (never a synchronous setState in the
+    // effect body) — the empty-image case just resolves immediately.
     Promise.race([
-      Image.prefetch(urls),
+      urls.length > 0 ? Image.prefetch(urls) : Promise.resolve(),
       new Promise((res) => setTimeout(res, 2500)),
-    ]).finally(done);
+    ]).finally(() => {
+      if (!cancelled) setReady(true);
+    });
     return () => {
       cancelled = true;
     };
@@ -418,8 +425,8 @@ function ComposeStep({
           `${uris.length} ${uris.length === 1 ? 'card' : 'cards'} are in your camera roll. Open TikTok or Instagram and pick them as a slideshow.`,
         );
       }
-    } catch {
-      Alert.alert('Couldn’t make your cards', 'Something went wrong rendering the images. Try again.');
+    } catch (e) {
+      Alert.alert('Couldn’t save your cards', e instanceof Error ? e.message : 'Something went wrong. Try again.');
     } finally {
       setBusy(false);
     }
@@ -430,8 +437,8 @@ function ComposeStep({
     try {
       const view = frames.current.poster;
       if (view) await shareImage(await captureFrame(view));
-    } catch {
-      Alert.alert('Couldn’t make your image', 'Something went wrong rendering the image. Try again.');
+    } catch (e) {
+      Alert.alert('Couldn’t make your image', e instanceof Error ? e.message : 'Something went wrong. Try again.');
     } finally {
       setBusy(false);
     }
@@ -445,8 +452,8 @@ function ComposeStep({
         const saved = await saveFramesToPhotos([await captureFrame(view)]);
         if (saved) Alert.alert('Saved to Photos', 'Your image is in your camera roll.');
       }
-    } catch {
-      Alert.alert('Couldn’t save', 'Something went wrong rendering the image. Try again.');
+    } catch (e) {
+      Alert.alert('Couldn’t save', e instanceof Error ? e.message : 'Something went wrong. Try again.');
     } finally {
       setBusy(false);
     }
@@ -457,8 +464,8 @@ function ComposeStep({
     try {
       const view = frames.current.cover;
       if (view) await shareImage(await captureFrame(view));
-    } catch {
-      Alert.alert('Couldn’t share', 'Something went wrong. Try again.');
+    } catch (e) {
+      Alert.alert('Couldn’t share', e instanceof Error ? e.message : 'Something went wrong. Try again.');
     } finally {
       setBusy(false);
     }
@@ -487,16 +494,27 @@ function ComposeStep({
           onChangeText={onTitle}
           placeholder={RECAP_TITLE_PRESETS[0]}
           maxLength={60}
-          containerStyle={{ marginBottom: Spacing[3] }}
+          containerStyle={{ marginBottom: Spacing[2], paddingHorizontal: Spacing[6] }}
         />
+
+        <Text variant="label" color="muted" style={styles.pickerLabel}>
+          template
+        </Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.chipRow}
           keyboardShouldPersistTaps="handled"
         >
-          {RECAP_TITLE_PRESETS.map((preset) => (
-            <Chip key={preset} label={preset} active={title === preset} onPress={() => onTitle(preset)} />
+          {RECAP_TEMPLATES.map((t) => (
+            <TemplateSwatch
+              key={t.id}
+              name={t.name}
+              blurb={t.blurb}
+              swatch={t.swatch}
+              active={template === t.id}
+              onPress={() => onTemplate(t.id)}
+            />
           ))}
         </ScrollView>
 
@@ -520,8 +538,8 @@ function ComposeStep({
             items={items}
             cardW={cardW}
             screenW={screenW}
-            colors={c}
-            accent={accent}
+            matte={matte}
+            template={template}
             handle={handle}
             heading={heading}
             range={range}
@@ -529,10 +547,9 @@ function ComposeStep({
           />
         ) : (
           <View style={styles.singlePreview}>
-            <View ref={setFrame('poster')} collapsable={false} style={[styles.frameMatte, { backgroundColor: c.background }]}>
+            <View ref={setFrame('poster')} collapsable={false} style={[styles.frameMatte, { backgroundColor: matte }]}>
               <RecapPoster
-                colors={c}
-                accent={accent}
+                p={resolveTemplate(template, 0)}
                 width={cardW}
                 handle={handle}
                 title={heading}
@@ -612,8 +629,8 @@ function SlideshowPreview({
   items,
   cardW,
   screenW,
-  colors,
-  accent,
+  matte,
+  template,
   handle,
   heading,
   range,
@@ -622,8 +639,8 @@ function SlideshowPreview({
   items: CaptureSummary[];
   cardW: number;
   screenW: number;
-  colors: ReturnType<typeof useThemeColors>;
-  accent: string;
+  matte: string;
+  template: RecapTemplateId;
   handle: string | null;
   heading: string;
   range: string;
@@ -641,10 +658,9 @@ function SlideshowPreview({
       style={[styles.pager, { height: cardW * RECAP_ASPECT + Spacing[5] * 2 + Spacing[4] * 2 }]}
     >
       <View style={[styles.page, { width: screenW }]}>
-        <View ref={setFrame('cover')} collapsable={false} style={[styles.frameMatte, { backgroundColor: colors.background }]}>
+        <View ref={setFrame('cover')} collapsable={false} style={[styles.frameMatte, { backgroundColor: matte }]}>
           <RecapCoverCard
-            colors={colors}
-            accent={accent}
+            p={resolveTemplate(template, 0)}
             width={cardW}
             handle={handle}
             title={heading}
@@ -655,10 +671,9 @@ function SlideshowPreview({
       </View>
       {items.map((item, i) => (
         <View key={item.id} style={[styles.page, { width: screenW }]}>
-          <View ref={setFrame(item.id)} collapsable={false} style={[styles.frameMatte, { backgroundColor: colors.background }]}>
+          <View ref={setFrame(item.id)} collapsable={false} style={[styles.frameMatte, { backgroundColor: matte }]}>
             <RecapNodeCard
-              colors={colors}
-              accent={accent}
+              p={resolveTemplate(template, i)}
               width={cardW}
               handle={handle}
               item={item}
@@ -669,6 +684,47 @@ function SlideshowPreview({
         </View>
       ))}
     </ScrollView>
+  );
+}
+
+/** A tappable template chip: a row of colour chips over its name + blurb. */
+function TemplateSwatch({
+  name,
+  blurb,
+  swatch,
+  active,
+  onPress,
+}: {
+  name: string;
+  blurb: string;
+  swatch: string[];
+  active: boolean;
+  onPress: () => void;
+}) {
+  const c = useThemeColors();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      style={[
+        styles.swatch,
+        { borderColor: active ? c.text : c.border, backgroundColor: c.surface },
+        active && { borderWidth: 2 },
+      ]}
+    >
+      <View style={[styles.swatchStrip, { borderColor: c.border }]}>
+        {swatch.map((color, i) => (
+          <View key={i} style={{ flex: 1, backgroundColor: color }} />
+        ))}
+      </View>
+      <Text variant="serif" style={{ color: c.text, marginTop: Spacing[2] }}>
+        {name}
+      </Text>
+      <Text variant="monoSmall" style={{ color: c.faint }} numberOfLines={1}>
+        {blurb}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -710,6 +766,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[4],
     paddingVertical: Spacing[2],
     maxWidth: 200,
+  },
+  pickerLabel: { paddingHorizontal: Spacing[6], marginTop: Spacing[2], marginBottom: Spacing[1] },
+  swatch: {
+    width: 116,
+    borderWidth: 1,
+    borderRadius: Radius.lg,
+    padding: Spacing[3],
+  },
+  swatchStrip: {
+    flexDirection: 'row',
+    height: 40,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   selectHint: {
     paddingHorizontal: Spacing[6],

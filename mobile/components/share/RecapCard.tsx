@@ -2,21 +2,20 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { FontFamily, LetterSpacing, LineHeight, Radius, Spacing } from '@/constants/theme';
-import type { AppThemeColors } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
 import { RECAP_ASPECT, nodeIdea, nodeImage, primaryTopic } from '@/lib/recap';
+import type { TemplatePalette } from '@/lib/recapTemplates';
 import type { CaptureSummary } from '@/types/api';
 
 /**
- * The shareable cards. They are deliberately self-contained and take their
- * palette + accent as props (rather than reading the theme), so the exact same
- * component drives both the on-screen preview and the off-screen rasterization —
- * a captured frame is pixel-identical to what the user previewed.
+ * The shareable cards. They take a resolved template palette as a prop (rather
+ * than reading the app theme), so the exact same component drives the on-screen
+ * preview and the off-screen rasterization — a captured frame is pixel-identical
+ * to what the user previewed, in whatever template they picked.
  */
 
-interface CommonProps {
-  colors: AppThemeColors;
-  accent: string;
+interface CardBase {
+  p: TemplatePalette;
   width: number;
   handle: string | null;
 }
@@ -28,12 +27,15 @@ const KIND_WORD: Record<CaptureSummary['kind'], string> = {
   IMAGE: 'image',
 };
 
-function BrandFooter({ colors, handle }: { colors: AppThemeColors; handle: string | null }) {
+/** The Mono template's minimal flourish — the same blinking cat from loaders. */
+const ASCII_CAT = ' /\\_/\\\n( o.o )\n > ^ <';
+
+function BrandFooter({ p, handle }: { p: TemplatePalette; handle: string | null }) {
   return (
     <View style={styles.brandRow}>
-      <Text style={[styles.wordmarkSm, { color: colors.text }]}>mneme</Text>
+      <Text style={[styles.wordmarkSm, { color: p.text }]}>mneme</Text>
       {handle ? (
-        <Text variant="monoSmall" style={{ color: colors.faint }} numberOfLines={1}>
+        <Text variant="monoSmall" style={{ color: p.faint }} numberOfLines={1}>
           @{handle}
         </Text>
       ) : null}
@@ -44,45 +46,43 @@ function BrandFooter({ colors, handle }: { colors: AppThemeColors; handle: strin
 /* ----------------------------------------------------------------- cover --- */
 
 export function RecapCoverCard({
-  colors,
-  accent,
+  p,
   width,
   handle,
   title,
   count,
   dateRange,
-}: CommonProps & { title: string; count: number; dateRange: string }) {
+}: CardBase & { title: string; count: number; dateRange: string }) {
   const height = width * RECAP_ASPECT;
 
   return (
-    <View
-      style={[styles.card, { width, height, backgroundColor: colors.surface, borderColor: colors.border }]}
-    >
-      <View style={[styles.accentBar, { backgroundColor: accent }]} />
+    <View style={[styles.card, { width, height, backgroundColor: p.surface, borderColor: p.border }]}>
+      {p.barHeight > 0 ? <View style={{ height: p.barHeight, backgroundColor: p.accent }} /> : null}
       <View style={styles.coverBody}>
         <View style={styles.headerRow}>
-          <Text style={[styles.wordmark, { color: colors.text }]}>mneme</Text>
+          <Text style={[styles.wordmark, { color: p.text }]}>mneme</Text>
           {dateRange ? (
-            <Text variant="monoSmall" style={{ color: colors.muted }}>
+            <Text variant="monoSmall" style={{ color: p.faint }}>
               {dateRange}
             </Text>
           ) : null}
         </View>
 
         <View style={styles.coverCenter}>
-          <Text variant="label" style={{ color: accent, marginBottom: Spacing[3] }}>
+          {p.ascii ? <Text style={[styles.ascii, { color: p.faint }]}>{ASCII_CAT}</Text> : null}
+          <Text variant="label" style={{ color: p.accent, marginBottom: Spacing[3] }}>
             a recap
           </Text>
-          <Text style={[styles.coverTitle, { color: colors.text }]} numberOfLines={4}>
+          <Text style={[styles.coverTitle, { color: p.titleColor }]} numberOfLines={5}>
             {title}
           </Text>
-          <Text variant="mono" style={{ color: colors.muted, marginTop: Spacing[4] }}>
+          <Text variant="mono" style={{ color: p.faint, marginTop: Spacing[4] }}>
             {count} {count === 1 ? 'save' : 'saves'}
             {dateRange ? ` · ${dateRange}` : ''}
           </Text>
         </View>
 
-        <BrandFooter colors={colors} handle={handle} />
+        <BrandFooter p={p} handle={handle} />
       </View>
     </View>
   );
@@ -91,26 +91,24 @@ export function RecapCoverCard({
 /* ------------------------------------------------------------------ node --- */
 
 export function RecapNodeCard({
-  colors,
-  accent,
+  p,
   width,
   handle,
   item,
   index,
   total,
-}: CommonProps & { item: CaptureSummary; index: number; total: number }) {
+}: CardBase & { item: CaptureSummary; index: number; total: number }) {
   const height = width * RECAP_ASPECT;
   const image = nodeImage(item);
   const topic = primaryTopic(item);
   const idea = nodeIdea(item);
   const source = item.contentItem?.authorName ?? item.contentItem?.sourceName ?? null;
+  const bloom = p.id === 'bloom';
 
   return (
-    <View
-      style={[styles.card, { width, height, backgroundColor: colors.surface, borderColor: colors.border }]}
-    >
+    <View style={[styles.card, { width, height, backgroundColor: p.surface, borderColor: p.border }]}>
       <View style={styles.nodeBody}>
-        <Text variant="label" style={{ color: accent }} numberOfLines={1}>
+        <Text variant="label" style={{ color: p.accent }} numberOfLines={1}>
           {KIND_WORD[item.kind]}
           {topic ? ` · ${topic}` : ''}
         </Text>
@@ -118,46 +116,52 @@ export function RecapNodeCard({
         {image ? (
           <Image
             source={{ uri: image }}
-            style={[styles.nodeImage, { borderColor: colors.border }]}
+            style={[styles.nodeImage, { borderColor: bloom ? p.accent : p.border }]}
             contentFit="cover"
             cachePolicy="memory-disk"
             transition={0}
           />
         ) : null}
 
-        <Text
-          style={[styles.nodeTitle, { color: colors.text }]}
-          numberOfLines={image ? 3 : 4}
-        >
-          {item.title}
-        </Text>
-
-        {idea ? (
-          <Text
-            variant="serif"
-            style={[styles.nodeIdea, { color: colors.textSecondary }]}
-            numberOfLines={image ? 3 : 6}
-          >
-            {idea}
+        {/* Flex middle that clips its own overflow, so a long title/idea can
+            never push the footer off the fixed-height card (the cut-off bug). */}
+        <View style={styles.nodeMiddle}>
+          <Text style={[styles.nodeTitle, { color: p.text }]} numberOfLines={image ? 3 : 4}>
+            {item.title}
           </Text>
-        ) : null}
+          {idea ? (
+            bloom ? (
+              <View style={[styles.ideaPanel, { backgroundColor: p.accentSoft }]}>
+                <Text variant="serif" style={[styles.nodeIdea, { color: p.textSecondary }]} numberOfLines={image ? 4 : 7}>
+                  {idea}
+                </Text>
+              </View>
+            ) : (
+              <Text
+                variant="serif"
+                style={[styles.nodeIdea, styles.nodeIdeaGap, { color: p.textSecondary }]}
+                numberOfLines={image ? 4 : 7}
+              >
+                {idea}
+              </Text>
+            )
+          ) : null}
+        </View>
 
-        <View style={styles.nodeSpacer} />
-
-        <View style={[styles.nodeFooter, { borderTopColor: colors.borderSubtle }]}>
+        <View style={[styles.nodeFooter, { borderTopColor: p.border }]}>
           {source ? (
-            <Text variant="monoSmall" style={[styles.nodeSource, { color: colors.faint }]} numberOfLines={1}>
+            <Text variant="monoSmall" style={[styles.nodeSource, { color: p.faint }]} numberOfLines={1}>
               {source}
             </Text>
           ) : (
             <View style={{ flex: 1 }} />
           )}
-          <Text variant="monoSmall" style={{ color: colors.faint }}>
+          <Text variant="monoSmall" style={{ color: p.accent }}>
             {String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}
           </Text>
         </View>
 
-        <BrandFooter colors={colors} handle={handle} />
+        <BrandFooter p={p} handle={handle} />
       </View>
     </View>
   );
@@ -165,42 +169,38 @@ export function RecapNodeCard({
 
 /* ---------------------------------------------------------------- poster --- */
 
-/**
- * The whole recap condensed into a single tall image. Height wraps its content
- * rather than sitting on the 4:5 grid — a poster, not a slide.
- */
+/** The whole recap condensed into one tall image — height wraps its content. */
 export function RecapPoster({
-  colors,
-  accent,
+  p,
   width,
   handle,
   title,
   dateRange,
   items,
-}: CommonProps & { title: string; dateRange: string; items: CaptureSummary[] }) {
+}: CardBase & { title: string; dateRange: string; items: CaptureSummary[] }) {
   return (
-    <View
-      style={[styles.card, styles.poster, { width, backgroundColor: colors.surface, borderColor: colors.border }]}
-    >
-      <View style={[styles.accentBar, { backgroundColor: accent }]} />
+    <View style={[styles.card, { width, backgroundColor: p.surface, borderColor: p.border }]}>
+      {p.barHeight > 0 ? <View style={{ height: p.barHeight, backgroundColor: p.accent }} /> : null}
       <View style={styles.posterBody}>
         <View style={styles.headerRow}>
-          <Text style={[styles.wordmark, { color: colors.text }]}>mneme</Text>
+          <Text style={[styles.wordmark, { color: p.text }]}>mneme</Text>
           {dateRange ? (
-            <Text variant="monoSmall" style={{ color: colors.muted }}>
+            <Text variant="monoSmall" style={{ color: p.faint }}>
               {dateRange}
             </Text>
           ) : null}
         </View>
 
-        <Text style={[styles.posterTitle, { color: colors.text }]} numberOfLines={3}>
+        {p.ascii ? <Text style={[styles.ascii, styles.posterAscii, { color: p.faint }]}>{ASCII_CAT}</Text> : null}
+
+        <Text style={[styles.posterTitle, { color: p.titleColor }]} numberOfLines={3}>
           {title}
         </Text>
-        <Text variant="mono" style={{ color: colors.muted, marginTop: Spacing[2] }}>
+        <Text variant="mono" style={{ color: p.faint, marginTop: Spacing[2] }}>
           {items.length} {items.length === 1 ? 'save' : 'saves'}
         </Text>
 
-        <View style={[styles.posterRule, { backgroundColor: colors.border }]} />
+        <View style={[styles.posterRule, { backgroundColor: p.border }]} />
 
         {items.map((item, i) => {
           const topic = primaryTopic(item);
@@ -209,16 +209,16 @@ export function RecapPoster({
           return (
             <View
               key={item.id}
-              style={[styles.posterRow, i > 0 && { borderTopWidth: 1, borderTopColor: colors.borderSubtle }]}
+              style={[styles.posterRow, i > 0 && { borderTopWidth: 1, borderTopColor: p.border }]}
             >
-              <Text variant="monoSmall" style={[styles.posterIndex, { color: accent }]}>
+              <Text variant="monoSmall" style={[styles.posterIndex, { color: p.accent }]}>
                 {String(i + 1).padStart(2, '0')}
               </Text>
               <View style={styles.posterRowText}>
-                <Text variant="serif" style={{ color: colors.text }} numberOfLines={2}>
+                <Text variant="serif" style={{ color: p.text }} numberOfLines={2}>
                   {item.title}
                 </Text>
-                <Text variant="monoSmall" style={{ color: colors.faint, marginTop: 2 }} numberOfLines={1}>
+                <Text variant="monoSmall" style={{ color: p.faint, marginTop: 2 }} numberOfLines={1}>
                   {KIND_WORD[item.kind]}
                   {topic ? ` · ${topic}` : ''}
                   {source ? ` · ${source}` : ''}
@@ -227,7 +227,7 @@ export function RecapPoster({
               {image ? (
                 <Image
                   source={{ uri: image }}
-                  style={[styles.posterThumb, { borderColor: colors.border }]}
+                  style={[styles.posterThumb, { borderColor: p.border }]}
                   contentFit="cover"
                   cachePolicy="memory-disk"
                   transition={0}
@@ -238,24 +238,20 @@ export function RecapPoster({
         })}
 
         <View style={styles.posterFooter}>
-          <BrandFooter colors={colors} handle={handle} />
+          <BrandFooter p={p} handle={handle} />
         </View>
       </View>
     </View>
   );
 }
 
-const CARD_PAD = Spacing[7];
+const CARD_PAD = Spacing[6];
 
 const styles = StyleSheet.create({
   card: {
     borderRadius: Radius.xl,
     borderWidth: 1,
     overflow: 'hidden',
-  },
-  accentBar: {
-    height: 6,
-    width: '100%',
   },
   wordmark: {
     fontFamily: FontFamily.serif,
@@ -268,6 +264,13 @@ const styles = StyleSheet.create({
     letterSpacing: LetterSpacing.wide,
     opacity: 0.75,
   },
+  ascii: {
+    fontFamily: FontFamily.mono,
+    fontSize: 13,
+    lineHeight: 15,
+    textAlign: 'center',
+    marginBottom: Spacing[5],
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -277,39 +280,47 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: Spacing[5],
+    marginTop: Spacing[4],
   },
 
   coverBody: { flex: 1, padding: CARD_PAD },
   coverCenter: { flex: 1, justifyContent: 'center' },
   coverTitle: {
     fontFamily: FontFamily.serif,
-    fontSize: 36,
-    lineHeight: 36 * LineHeight.tight,
+    fontSize: 30,
+    lineHeight: 30 * LineHeight.snug,
     letterSpacing: LetterSpacing.tight,
   },
 
   nodeBody: { flex: 1, padding: CARD_PAD },
   nodeImage: {
     width: '100%',
-    height: '40%',
+    height: '30%',
     borderRadius: Radius.md,
     borderWidth: 1,
-    marginTop: Spacing[4],
+    marginTop: Spacing[3],
+  },
+  nodeMiddle: {
+    flex: 1,
+    overflow: 'hidden',
+    marginTop: Spacing[3],
   },
   nodeTitle: {
     fontFamily: FontFamily.serif,
-    fontSize: 24,
-    lineHeight: 24 * LineHeight.snug,
+    fontSize: 20,
+    lineHeight: 20 * LineHeight.snug,
     letterSpacing: LetterSpacing.tight,
-    marginTop: Spacing[4],
   },
   nodeIdea: {
-    fontSize: 15,
-    lineHeight: 15 * LineHeight.relaxed,
-    marginTop: Spacing[3],
+    fontSize: 13.5,
+    lineHeight: 13.5 * LineHeight.normal,
   },
-  nodeSpacer: { flex: 1, minHeight: Spacing[4] },
+  nodeIdeaGap: { marginTop: Spacing[3] },
+  ideaPanel: {
+    marginTop: Spacing[3],
+    padding: Spacing[3],
+    borderRadius: Radius.md,
+  },
   nodeFooter: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -319,8 +330,8 @@ const styles = StyleSheet.create({
   },
   nodeSource: { flex: 1, marginRight: Spacing[3] },
 
-  poster: {},
   posterBody: { padding: CARD_PAD },
+  posterAscii: { marginTop: Spacing[5], marginBottom: 0, alignSelf: 'center' },
   posterTitle: {
     fontFamily: FontFamily.serif,
     fontSize: 30,
