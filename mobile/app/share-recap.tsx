@@ -31,6 +31,7 @@ import { Input } from '@/components/ui/Input';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { RecapCoverCard, RecapNodeCard, RecapPoster } from '@/components/share/RecapCard';
 import {
+  RECAP_ASPECT,
   RECAP_MAX,
   RECAP_TITLE_PRESETS,
   RECAP_WINDOWS,
@@ -633,7 +634,11 @@ function SlideshowPreview({
       horizontal
       pagingEnabled
       showsHorizontalScrollIndicator={false}
-      style={styles.pager}
+      // Nested inside a vertical ScrollView, the horizontal pager doesn't
+      // reliably adopt its pages' height and clips the bottom of each card
+      // (the brand footer). Pin it to the exact page height: card + frameMatte
+      // padding + page padding.
+      style={[styles.pager, { height: cardW * RECAP_ASPECT + Spacing[5] * 2 + Spacing[4] * 2 }]}
     >
       <View style={[styles.page, { width: screenW }]}>
         <View ref={setFrame('cover')} collapsable={false} style={[styles.frameMatte, { backgroundColor: colors.background }]}>

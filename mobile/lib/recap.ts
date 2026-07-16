@@ -130,7 +130,9 @@ export async function shareImage(uri: string): Promise<void> {
 
 /** Save every frame to the camera roll so the user can build a slideshow post. */
 export async function saveFramesToPhotos(uris: string[]): Promise<boolean> {
-  const perm = await MediaLibrary.requestPermissionsAsync();
+  // writeOnly ("add photos") — saving a card only needs add access, and asking
+  // for full-library access is more likely to be denied/limited.
+  const perm = await MediaLibrary.requestPermissionsAsync(true);
   if (!perm.granted) {
     Alert.alert('Photos access needed', 'Allow Photos access in Settings to save your cards.');
     return false;
