@@ -59,12 +59,38 @@ export default function InsightDetailScreen() {
       await api.captures.updateContext(id, text);
       await refetch();
       setEditing(false);
+      // The reprocess returns draft insights and polishes them in the
+      // background (like a fresh capture) — quietly re-read so the sharpened
+      // text swaps in. The young-capture timers above don't cover edits of
+      // older captures.
+      setTimeout(() => void refetch(), 4000);
+      setTimeout(() => void refetch(), 10000);
     } catch (e) {
       setEditError(e instanceof Error ? e.message : 'Could not save that.');
     } finally {
       setSaving(false);
     }
   }, [contextDraft, id, refetch]);
+
+  // Renaming the capture — cosmetic, instant, never reruns the pipeline.
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [savingTitle, setSavingTitle] = useState(false);
+
+  const saveTitle = useCallback(async () => {
+    const text = titleDraft.trim();
+    if (!text) { setEditingTitle(false); return; }
+    setSavingTitle(true);
+    try {
+      await api.captures.updateTitle(id, text);
+      await refetch();
+      setEditingTitle(false);
+    } catch {
+      // keep the editor open so nothing typed is lost
+    } finally {
+      setSavingTitle(false);
+    }
+  }, [titleDraft, id, refetch]);
 
   if (loading && !data) {
     return (
@@ -162,7 +188,45 @@ export default function InsightDetailScreen() {
                 />
               ))}
           </View>
-          <Text variant="h2">{title}</Text>
+          {editingTitle ? (
+            <View>
+              <TextInput
+                style={[styles.titleInput, { color: c.text, borderColor: c.border }]}
+                value={titleDraft}
+                onChangeText={setTitleDraft}
+                autoFocus
+                multiline
+                editable={!savingTitle}
+                onSubmitEditing={() => void saveTitle()}
+              />
+              <View style={styles.titleActions}>
+                <Pressable onPress={() => setEditingTitle(false)} disabled={savingTitle}>
+                  <Text variant="monoSmall" color="muted">cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void saveTitle()}
+                  disabled={savingTitle}
+                  style={[styles.saveBtn, { backgroundColor: c.text, opacity: savingTitle ? 0.5 : 1 }]}
+                >
+                  <Text variant="monoSmall" style={{ color: c.background }}>
+                    {savingTitle ? 'saving…' : 'save →'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.titleRow}>
+              <Text variant="h2" style={{ flex: 1 }}>{title}</Text>
+              <Pressable
+                onPress={() => { setTitleDraft(title); setEditingTitle(true); }}
+                accessibilityLabel="Rename this capture"
+                style={styles.editBtn}
+                hitSlop={6}
+              >
+                <PencilIcon size={14} color={c.muted} />
+              </Pressable>
+            </View>
+          )}
           {author ? (
             <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[2] }}>
               {author}
@@ -226,7 +290,7 @@ export default function InsightDetailScreen() {
                     onError={setEditError}
                   />
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing[4] }}>
-                    <Pressable onPress={() => setEditing(false)}>
+                    <Pressable onPress={() => { setEditing(false); setEditError(''); }}>
                       <Text variant="monoSmall" color="muted">cancel</Text>
                     </Pressable>
                     <Pressable onPress={() => void saveContext()} style={[styles.saveBtn, { backgroundColor: c.text }]}>
@@ -314,6 +378,21 @@ const styles = StyleSheet.create({
   section: { paddingHorizontal: Spacing[6], marginTop: Spacing[8] },
   aboutHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   editBtn: { padding: Spacing[2] },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing[2] },
+  titleInput: {
+    fontFamily: FontFamily.serif,
+    fontSize: FontSize['2xl'],
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    padding: Spacing[3],
+  },
+  titleActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: Spacing[4],
+    marginTop: Spacing[3],
+  },
   savingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2], marginTop: Spacing[4] },
   editBox: { borderWidth: 1, borderRadius: Radius.md, padding: Spacing[4], marginTop: Spacing[4] },
   editInput: { minHeight: 88, paddingVertical: Spacing[1] },

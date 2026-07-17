@@ -59,11 +59,14 @@ export default function ShareIntentScreen() {
           const base64 = await FileSystem.readAsStringAsync(uri, {
             encoding: FileSystem.EncodingType.Base64,
           });
-          const { mediaUrl } = await api.captures.upload(base64, file.mimeType);
           // A shared PDF is a document, not an image: capture it as a LINK to
           // the stored file so the server's PDF pipeline reads its actual text
-          // (the IMAGE path would send it to a vision model and fail).
-          res = file.mimeType?.includes('pdf')
+          // (the IMAGE path would send it to a vision model and fail). iOS
+          // reports PDFs under several type names, so check the filename too;
+          // the upload route also sniffs the bytes as a final guard.
+          const isPdf = file.mimeType?.toLowerCase().includes('pdf') || /\.pdf$/i.test(file.path);
+          const { mediaUrl } = await api.captures.upload(base64, isPdf ? 'application/pdf' : file.mimeType);
+          res = isPdf || /\.pdf($|\?)/i.test(mediaUrl)
             ? await api.captures.create({ kind: 'LINK', url: mediaUrl })
             : await api.captures.create({ kind: 'IMAGE', mediaUrl });
         } else if (shareIntent.text) {

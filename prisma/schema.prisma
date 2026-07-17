@@ -559,6 +559,8 @@ model CapturedItem {
   reaction        String?             @db.Text
   /// The user's own account of what the content was about (capture fail-safe / post-hoc correction). Treated as ground truth by the pipeline.
   userContext     String?             @db.Text
+  /// User-chosen display title. Cosmetic only — never fed to the pipeline; wins over the content title on every read surface.
+  userTitle       String?
   summary         String?             @db.Text
   keyIdea         String?             @db.Text
   terms           Json

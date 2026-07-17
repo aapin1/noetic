@@ -188,9 +188,15 @@ export const captureTranscribeSchema = z.object({
   mimeType: z.string().min(3).max(80).optional(),
 });
 
-export const captureUpdateSchema = z.object({
-  userContext: z.string().min(1).max(4000),
-});
+export const captureUpdateSchema = z
+  .object({
+    userContext: z.string().min(1).max(4000).optional(),
+    /** Cosmetic rename — never triggers the reprocess pipeline. */
+    title: z.string().min(1).max(200).optional(),
+  })
+  .refine((d) => d.userContext !== undefined || d.title !== undefined, {
+    message: "Provide userContext or title",
+  });
 
 export const memoryGraphSchema = z.object({
   limit: z.coerce.number().int().min(10).max(200).default(80),
@@ -212,7 +218,9 @@ export const captureUploadSchema = z.object({
   // Base64 payload: images up to ~6MB, PDFs up to ~15MB (route enforces the
   // per-type byte limit after decoding).
   imageBase64: z.string().min(100).max(21_000_000),
-  mimeType: z.enum(["image/jpeg", "image/png", "image/webp", "application/pdf"]).optional(),
+  // Free-form: iOS share extensions report PDFs under several names
+  // (application/pdf, com.adobe.pdf) — the route sniffs magic bytes anyway.
+  mimeType: z.string().min(3).max(80).optional(),
 });
 
 export const avatarUploadSchema = z

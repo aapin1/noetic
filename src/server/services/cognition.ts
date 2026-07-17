@@ -104,6 +104,11 @@ export type CaptureWithRelations = Prisma.CapturedItemGetPayload<{
 }>;
 
 function captureTitle(item: CaptureWithRelations): string {
+  // The user's own rename always wins — cosmetic, never fed to the pipeline.
+  if (item.userTitle?.trim()) {
+    return item.userTitle.trim();
+  }
+
   if (item.contentItem?.title) {
     return item.contentItem.title;
   }
@@ -980,24 +985,11 @@ export async function updateCaptureContext(args: {
     contentThin: false,
   });
 
-  const polishedDrafts = await polishInsights({
-    style: insightStyle,
-    itemTitle,
-    contentText: combinedText,
-    contentGrounding,
-    userContext,
-    topicNames: classified.map((topic) => topic.name),
-    neighborContext: neighborInfo.neighbors.map((n) => ({
-      title: n.title,
-      edgeType: n.edgeType,
-    })),
-    drafts,
-  });
-
   const oldTopicIds = new Set(item.topics.map((row) => row.topicId));
   const removedTopicIds = [...oldTopicIds].filter((id) => !topicIdSet.has(id));
   const addedTopicIds = [...topicIdSet].filter((id) => !oldTopicIds.has(id));
 
+  const insightIds: string[] = [];
   await prisma.$transaction(async (tx: DbClient) => {
     await tx.capturedItem.update({
       where: { id: item.id },
@@ -1051,8 +1043,8 @@ export async function updateCaptureContext(args: {
     }
 
     await tx.insight.deleteMany({ where: { capturedItemId: item.id } });
-    for (const draft of polishedDrafts) {
-      await tx.insight.create({
+    for (const draft of drafts) {
+      const row = await tx.insight.create({
         data: {
           userId: args.userId,
           capturedItemId: item.id,
@@ -1063,11 +1055,74 @@ export async function updateCaptureContext(args: {
           strength: draft.strength,
         },
       });
+      insightIds.push(row.id);
     }
 
     await incrementTasteProfileVersion(tx, args.userId);
   });
 
+  // Polish in the background, exactly like a fresh capture: the inline polish
+  // was 5–10s the user sat on the "re-mapping connections…" state for (and a
+  // timeout-class failure on slow networks). The rows exist with readable
+  // draft text; the sharpened version swaps in when it lands.
+  void polishInsights({
+    style: insightStyle,
+    itemTitle,
+    contentText: combinedText,
+    contentGrounding,
+    userContext,
+    topicNames: classified.map((topic) => topic.name),
+    neighborContext: neighborInfo.neighbors.map((n) => ({
+      title: n.title,
+      edgeType: n.edgeType,
+    })),
+    drafts,
+  })
+    .then(async (polished) => {
+      await Promise.all(
+        polished.map((draft, index) => {
+          const insightId = insightIds[index];
+          if (!insightId) return null;
+          return db.insight.update({
+            where: { id: insightId },
+            data: {
+              headline: draft.headline,
+              body: draft.body,
+              evidence: draft.evidence as Prisma.InputJsonValue,
+            },
+          });
+        }),
+      );
+    })
+    .catch((err) => console.error("[capture] context-edit background polish failed", err));
+
+  return getCapture({ userId: args.userId, capturedItemId: item.id, db });
+}
+
+/**
+ * Renames a capture. Cosmetic only — `userTitle` wins on every read surface
+ * but is never fed to the pipeline, so nothing is re-embedded, re-classified,
+ * or re-connected.
+ */
+export async function updateCaptureTitle(args: {
+  userId: string;
+  capturedItemId: string;
+  title: string;
+  db?: RootDbClient;
+}) {
+  const db = args.db ?? prisma;
+  const item = await db.capturedItem.findUnique({
+    where: { id: args.capturedItemId },
+    select: { id: true, userId: true },
+  });
+  if (!item || item.userId !== args.userId) {
+    throw new AppError("CAPTURE_NOT_FOUND", "Capture not found", 404);
+  }
+  const title = args.title.trim().slice(0, 200);
+  if (!title) {
+    throw new AppError("INVALID_TITLE", "Title cannot be empty", 422);
+  }
+  await db.capturedItem.update({ where: { id: item.id }, data: { userTitle: title } });
   return getCapture({ userId: args.userId, capturedItemId: item.id, db });
 }
 
@@ -1215,6 +1270,7 @@ export async function listCaptures(args: { userId: string; limit?: number; query
         ? {
           OR: [
             { contentItem: { title: { contains: query, mode: "insensitive" } } },
+            { userTitle: { contains: query, mode: "insensitive" } },
             { rawText: { contains: query, mode: "insensitive" } },
             { summary: { contains: query, mode: "insensitive" } },
             { caption: { contains: query, mode: "insensitive" } },

@@ -266,6 +266,13 @@ export const api = {
         body: JSON.stringify({ userContext }),
       });
     },
+    /** Cosmetic rename — the server never reruns the pipeline for this. */
+    updateTitle(id: string, title: string) {
+      return request<CaptureDetail>(`/api/captures/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ title }),
+      });
+    },
     delete(id: string) {
       return request<{ deleted: true }>(`/api/captures/${id}`, {
         method: 'DELETE',

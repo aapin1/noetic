@@ -27,11 +27,16 @@ const CONTENT_TYPE_BY_EXT: Record<string, string> = {
 function decodeUploadPayload(imageBase64: string, mimeType?: string): { buffer: Buffer; ext: string } {
   const dataUrlMatch = /^data:([^;]+);base64,(.+)$/s.exec(imageBase64.trim());
 
-  if (dataUrlMatch) {
-    return { buffer: Buffer.from(dataUrlMatch[2], "base64"), ext: EXT_BY_MIME(dataUrlMatch[1]) };
-  }
+  const [buffer, declared] = dataUrlMatch
+    ? [Buffer.from(dataUrlMatch[2], "base64"), dataUrlMatch[1]]
+    : [Buffer.from(imageBase64, "base64"), mimeType ?? "image/jpeg"];
 
-  return { buffer: Buffer.from(imageBase64, "base64"), ext: EXT_BY_MIME(mimeType ?? "image/jpeg") };
+  // Sniff the magic bytes rather than trusting the declared type: iOS share
+  // extensions report PDFs under several names (application/pdf, com.adobe.pdf,
+  // sometimes nothing), and a PDF mis-filed as an image gets sent to a vision
+  // model and fails.
+  const ext = buffer.subarray(0, 5).toString("latin1") === "%PDF-" ? "pdf" : EXT_BY_MIME(declared);
+  return { buffer, ext };
 }
 
 export async function POST(request: Request) {

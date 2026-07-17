@@ -141,11 +141,16 @@ type GraphCluster = {
 };
 
 function nodeLabel(input: {
+  userTitle?: string | null;
   contentTitle?: string | null;
   rawText?: string | null;
   caption?: string | null;
   kind: string;
 }): string {
+  if (input.userTitle?.trim()) {
+    return input.userTitle.trim();
+  }
+
   if (input.contentTitle) {
     return input.contentTitle;
   }
@@ -350,6 +355,7 @@ export async function getMemoryGraph(args: {
       capturedAt: true,
       mapX: true,
       mapY: true,
+      userTitle: true,
       contentItem: { select: { title: true } },
       // Highest-weight topic first: the coarse domain (score 1.0) leads, so the
       // semantic layout anchors each node to its broad field deterministically.
@@ -368,6 +374,7 @@ export async function getMemoryGraph(args: {
   const nodes: GraphNode[] = captures.map((item) => ({
     id: item.id,
     label: nodeLabel({
+      userTitle: item.userTitle,
       contentTitle: item.contentItem?.title,
       rawText: item.rawText,
       caption: item.caption,

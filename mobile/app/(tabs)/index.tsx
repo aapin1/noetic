@@ -11,6 +11,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Text as RNText,
   TextInput,
   View,
 } from 'react-native';
@@ -2585,7 +2586,7 @@ export default function MapScreen() {
   const showSavedPill = useCallback((id: string) => {
     if (savedPillTimer.current) clearTimeout(savedPillTimer.current);
     setSavedPill({ phase: 'saved', id });
-    savedPillTimer.current = setTimeout(() => setSavedPill(null), 6000);
+    savedPillTimer.current = setTimeout(() => setSavedPill(null), 10000);
   }, []);
   useEffect(() => () => {
     if (savedPillTimer.current) clearTimeout(savedPillTimer.current);
@@ -2658,17 +2659,17 @@ export default function MapScreen() {
     setSavedPill({ phase: 'logging' });
     void api.captures.create(body)
       .then((res) => {
-        setNewNodeId(res.id);
+        // The node plots via the refetch — deliberately NO camera fly-to or
+        // highlight ring: the user may be mid-something else, and the pill's
+        // "atlas →" action performs the guided reveal only when asked.
         refetchMapData();
         // Warm the insight screen while the pill is on screen — the server is
         // polishing the drafts in the background, and by the time the user
-        // taps "see the insight" the screen opens instantly from cache.
+        // taps "insight →" the screen opens instantly from cache.
         void prefetchQuery(`capture:${res.id}`, () => api.captures.get(res.id));
-        // Node first: drop the logging pill so the landing ring is the
-        // confirmation, then offer the insight once it has had a beat to land.
         setSavedPill(null);
         if (pillDelayTimer.current) clearTimeout(pillDelayTimer.current);
-        pillDelayTimer.current = setTimeout(() => showSavedPill(res.id), 2400);
+        pillDelayTimer.current = setTimeout(() => showSavedPill(res.id), 1800);
       })
       .catch((e) => {
         setSavedPill(null);
@@ -2841,31 +2842,63 @@ export default function MapScreen() {
     </>
   ), [lensMode, clusterLabels, focusDimTopicId]);
 
-  // The only genuinely zoom-dependent art: text sized against the screen, not
-  // the world. A dozen elements, so rebuilding it per zoom commit is cheap —
-  // which is the whole reason it is split from the graph.
-  const labelLayer = useMemo(() => {
-    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+  // ── Cluster labels: screen-space overlay, natively counter-scaled ──────
+  // Labels live OUTSIDE the world SVG, as RN views inside the transformed
+  // wrapper. Inside the SVG their size was frozen into the raster between
+  // zoom commits: mid-pinch they scaled with the map (up to ~5× oversize once
+  // pinch recommits were deferred) and then SNAPPED to the recomputed size at
+  // the commit — the "chunky" label updates. As views, each label carries an
+  // Animated counter-scale derived from the live wrapper scale, so its
+  // on-screen size tracks the target curve CONTINUOUSLY through the gesture.
 
-    // Screen-first sizing: labels hold a constant on-screen size through the
-    // mid zooms, scale down with the map when fully zoomed out, and SHRINK
-    // (never loom) as the user dives in — the old world-clamped sizing grew
-    // domain labels back up past zoom ~1.6.
-    const domainScreen = zoom <= 1 ? 14 * Math.min(1, zoom / 0.64) : 14 / Math.pow(zoom, 0.8);
-    const topicScreen = zoom < 0.71 ? 10 * (zoom / 0.71) : 10;
+  /** On-screen font size targets. Constant through the mid zooms, scaling
+   * down with the map when far out, SHRINKING (never looming) on the way in. */
+  const domainScreenAt = (z: number) => (z <= 1 ? 14 * Math.min(1, z / 0.64) : 14 / Math.pow(z, 0.8));
+  const topicScreenAt = (z: number) => (z < 0.71 ? 10 * (z / 0.71) : 10);
+
+  // Counter-scale nodes, rebuilt per zoom commit. The wrapper scales every
+  // child by k = z_live/z_committed; each label wants screenFont(zc·k) on
+  // screen, so its own scale must be screenFont(zc·k) / (screenFont(zc)·k).
+  // Piecewise-linear over enough samples to be visually indistinguishable
+  // from the true curve.
+  const labelScales = useMemo(() => {
+    const ks = [0.25, 0.4, 0.55, 0.7, 0.85, 1, 1.2, 1.5, 1.9, 2.4, 3, 4];
+    const domainBase = domainScreenAt(zoom);
+    const topicBase = topicScreenAt(zoom);
+    return {
+      domain: liveScale.interpolate({
+        inputRange: ks,
+        outputRange: ks.map((k) => domainScreenAt(zoom * k) / (domainBase * k)),
+        extrapolate: 'clamp',
+      }),
+      topic: liveScale.interpolate({
+        inputRange: ks,
+        outputRange: ks.map((k) => topicScreenAt(zoom * k) / (topicBase * k)),
+        extrapolate: 'clamp',
+      }),
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom, liveScale]);
+
+  const labelSpecs = useMemo(() => {
+    if (lensMode !== 'semantic') return [];
+    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+    const domainScreen = domainScreenAt(zoom);
+    const topicScreen = topicScreenAt(zoom);
 
     type LabelCandidate = {
       cl: (typeof clusterLabels)[number];
       isDomain: boolean;
-      fontSize: number;      // world units
-      letterSpacing: number; // world units, proportional so tracking scales with the glyphs
+      fontSize: number;      // screen units at the committed zoom
+      letterSpacing: number; // proportional, so tracking scales with the glyphs
       opacity: number;
-      hw: number;
+      hw: number;            // world-space half box, for overlap tests
       hh: number;
     };
 
     const toCandidate = (cl: (typeof clusterLabels)[number], isDomain: boolean): LabelCandidate => {
-      const fontSize = (isDomain ? domainScreen : topicScreen) / zoom;
+      const fontSize = isDomain ? domainScreen : topicScreen;
+      const worldFont = fontSize / zoom;
       const letterSpacing = fontSize * (isDomain ? 0.25 : 0.3);
       let opacity: number;
       if (isDomain) {
@@ -2876,29 +2909,27 @@ export default function MapScreen() {
           opacity = Math.max(0, 0.12 * (1 - (zoom - 1.0) / 0.6));
         } else {
           // Nothing to hand off to: keep the label as the user zooms in. It
-          // shrinks smoothly with domainScreen and only fades away once it is
-          // genuinely small on screen.
+          // shrinks smoothly and only fades away once genuinely small.
           opacity = 0.12 * clamp01((domainScreen - 5) / 2);
         }
       } else {
         opacity = 0.28;
       }
       // Mono uppercase: char advance ≈ 0.6·fontSize + letterSpacing.
+      const worldLs = worldFont * (isDomain ? 0.25 : 0.3);
       return {
         cl, isDomain, fontSize, letterSpacing, opacity,
-        hw: (cl.name.length * (fontSize * 0.6 + letterSpacing)) / 2,
-        hh: fontSize / 2,
+        hw: (cl.name.length * (worldFont * 0.6 + worldLs)) / 2,
+        hh: worldFont / 2,
       };
     };
 
     // Priority order: domain labels first (already count-sorted within each
     // kind — clusterLabels comes from the server sorted by member count).
-    const candidates = lensMode === 'semantic'
-      ? [
-        ...clusterLabels.filter((c) => c.kind === 'domain').map((c) => toCandidate(c, true)),
-        ...clusterLabels.filter((c) => c.kind === 'topic').map((c) => toCandidate(c, false)),
-      ]
-      : [];
+    const candidates = [
+      ...clusterLabels.filter((c) => c.kind === 'domain').map((c) => toCandidate(c, true)),
+      ...clusterLabels.filter((c) => c.kind === 'topic').map((c) => toCandidate(c, false)),
+    ];
 
     // Greedy de-clutter: a label renders only when it does not overlap any
     // higher-priority label already kept — overlapping text is unreadable
@@ -2927,30 +2958,62 @@ export default function MapScreen() {
       if (!blocked) kept.push(cand);
     }
 
+    return kept.map(({ cl, isDomain, fontSize, letterSpacing, opacity }) => {
+      const dimmed = focusDimTopicId && cl.topicId !== focusDimTopicId;
+      return {
+        key: cl.topicId,
+        name: cl.name.toUpperCase(),
+        isDomain,
+        // Committed screen coordinates — the wrapper transform carries them
+        // to the live camera, exactly like the world SVG.
+        screenX: (cl.x - vbPos.x) * zoom,
+        screenY: (cl.y - vbPos.y) * zoom,
+        fontSize,
+        letterSpacing,
+        opacity: dimmed ? Math.min(0.08, opacity) : opacity,
+      };
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lensMode, clusterLabels, labelContainment, focusDimTopicId, zoom, vbPos]);
+
+  const labelOverlay = useMemo(() => (
+    <>
+      {labelSpecs.map((l) => (
+        <RNAnimated.View
+          key={`cl-label-${l.key}`}
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: l.screenX - 150,
+            top: l.screenY - 20,
+            width: 300,
+            height: 40,
+            alignItems: 'center',
+            justifyContent: 'center',
+            transform: [{ scale: l.isDomain ? labelScales.domain : labelScales.topic }],
+          }}
+        >
+          <RNText
+            numberOfLines={1}
+            style={{
+              fontFamily: FontFamily.mono,
+              fontSize: l.fontSize,
+              letterSpacing: l.letterSpacing,
+              color: `rgba(236,236,236,${l.opacity.toFixed(3)})`,
+              textAlign: 'center',
+            }}
+          >
+            {l.name}
+          </RNText>
+        </RNAnimated.View>
+      ))}
+    </>
+  ), [labelSpecs, labelScales]);
+
+  // World-anchored text that stays in the SVG: the temporal axis captions.
+  const labelLayer = useMemo(() => {
     return (
       <>
-          {/* Cluster labels (semantic mode only) — hierarchical: coarse
-              domain labels own the zoomed-out view; the more specific
-              topic labels take over their regions as the user zooms in. */}
-          {kept.map(({ cl, fontSize, letterSpacing, opacity }) => {
-            const dimmed = focusDimTopicId && cl.topicId !== focusDimTopicId;
-            return (
-              <SvgText
-                key={`cl-label-${cl.topicId}`}
-                x={cl.x} y={cl.y}
-                fontSize={fontSize}
-                fontFamily={FontFamily.mono}
-                fill="rgba(236,236,236,1)"
-                fillOpacity={dimmed ? Math.min(0.08, opacity) : opacity}
-                textAnchor="middle"
-                letterSpacing={letterSpacing}
-              >
-                {cl.name.toUpperCase()}
-              </SvgText>
-            );
-          })}
-
-
           {/* Temporal axis label */}
           {lensMode === 'temporal' && nodes.length > 0 && (() => {
             const fontSize = Math.max(8, Math.min(14, 10 / zoom));
@@ -2977,7 +3040,7 @@ export default function MapScreen() {
           })()}
       </>
     );
-  }, [zoom, lensMode, clusterLabels, labelContainment, focusDimTopicId, nodes.length]);
+  }, [zoom, lensMode, nodes.length]);
 
   // Edges + nodes: the bulk of the SVG tree. Keyed on zoomFade, not zoom, so a
   // zoom commit outside the fade band keeps this element identity and React
@@ -3300,6 +3363,10 @@ export default function MapScreen() {
                 a commit only moves and scales this view. */}
             <View style={glowStyle} pointerEvents="none">{ambientGlow}</View>
             {mapWorld}
+            {/* Cluster labels — native views that counter-scale continuously
+                against the live wrapper transform (smooth through pinches,
+                unlike text baked into the SVG raster). */}
+            {labelOverlay}
             {/* New node landing animation */}
             {landingRing}
           </RNAnimated.View>
@@ -3550,11 +3617,15 @@ export default function MapScreen() {
           <View style={[styles.discoveryBar, { bottom: TAB_H + Spacing[5] + FAB_SIZE + Spacing[3] }]} pointerEvents="box-none">
             <View style={[styles.discoveryPill, { backgroundColor: 'rgba(10,10,10,0.9)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
               {savedPill.phase === 'logging' ? (
-                <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.6)' }]}>
-                  reading & mapping…
-                </Text>
+                <>
+                  <AsciiLoader variant="cat" size={30} color="rgba(236,236,236,0.7)" />
+                  <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.6)' }]}>
+                    reading & mapping…
+                  </Text>
+                </>
               ) : (
                 <>
+                  <AsciiLoader variant="cat" size={30} idle color="rgba(236,236,236,0.7)" />
                   <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.6)' }]}>saved ✓</Text>
                   <Pressable
                     onPress={() => { const id = savedPill.id; setSavedPill(null); router.push(`/insight/${id}` as never); }}
@@ -3563,7 +3634,22 @@ export default function MapScreen() {
                     accessibilityRole="button"
                     accessibilityLabel="Open the insight for this capture"
                   >
-                    <Text style={[styles.discoveryAction, { color: DISCOVERY_ACCENT }]}>see the insight →</Text>
+                    <Text style={[styles.discoveryAction, { color: DISCOVERY_ACCENT }]}>insight →</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      const id = savedPill.id;
+                      setSavedPill(null);
+                      // The guided reveal, on request only: fly to the node
+                      // and pulse the landing ring.
+                      setNewNodeId(id);
+                    }}
+                    hitSlop={8}
+                    style={[styles.discoveryActionBtn, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.18)' }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Show this capture on the atlas map"
+                  >
+                    <Text style={[styles.discoveryAction, { color: 'rgba(236,236,236,0.8)' }]}>atlas →</Text>
                   </Pressable>
                 </>
               )}
