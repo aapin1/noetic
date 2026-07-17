@@ -49,6 +49,12 @@ export type TopicGroup = {
   captures: LoadedCapture[];
 };
 
+/** A small node the visualizations can render and deep-link (→ /insight/id). */
+export type IntelNode = {
+  id: string;
+  label: string;
+};
+
 export type ContradictionCard = {
   itemAId: string;
   itemBId: string;
@@ -57,6 +63,22 @@ export type ContradictionCard = {
   previewA: string;
   previewB: string;
   tension: string;
+  /** The question at stake, ≤ 8 words — sits inside the fracture UI. */
+  crux: string | null;
+  /** One concrete way for the user to settle which side they hold. */
+  test: string | null;
+  /** Captures that reinforce each pole — the two opposing masses either side
+   * of the FractureZone chasm. May be empty (the pole stands alone). */
+  sideA: IntelNode[];
+  sideB: IntelNode[];
+};
+
+export type ThreadTimelineNode = IntelNode & { capturedAt: string };
+
+export type ThreadDrift = {
+  /** Index into `timeline` the note sits after. */
+  atIndex: number;
+  text: string;
 };
 
 export type ThreadSynthesis = {
@@ -65,8 +87,21 @@ export type ThreadSynthesis = {
   captureCount: number;
   position: string;
   openQuestion: string;
+  /** The position compressed to 3-6 words — the strand's direction label. */
+  heading: string | null;
+  /** One concrete act, doable this week, that advances or tests the position. */
+  nextMove: string | null;
   /** Capture ids feeding this thread — used to deep-link into companion/Atlas. */
   itemIds: string[];
+  /** Chronological (oldest first) captures along the TemporalSpine. */
+  timeline: ThreadTimelineNode[];
+  /** AI observations of how thinking moved, keyed to timeline positions. */
+  driftNotes: ThreadDrift[];
+};
+
+export type ConvergenceCluster = {
+  source: string;
+  items: IntelNode[];
 };
 
 export type ConvergenceSignal = {
@@ -75,6 +110,13 @@ export type ConvergenceSignal = {
   captureCount: number;
   sourceCount: number;
   signal: string;
+  /** The destination idea compressed to ≤ 8 words — the keystone's label. */
+  arrival: string | null;
+  /** Where the convergence points next — one concrete move. */
+  act: string | null;
+  /** Captures grouped by origin source — the distinct masses the
+   * KeystoneBridge pulls together. Largest sources first. */
+  clusters: ConvergenceCluster[];
 };
 
 export type DormantThread = {
@@ -86,11 +128,15 @@ export type DormantThread = {
 };
 
 export type PersonalIntelligenceData = {
+  /** Bumped whenever the payload shape changes so stale caches regenerate. */
+  payloadVersion: number;
   contradictionCards: ContradictionCard[];
   threadSyntheses: ThreadSynthesis[];
   convergenceSignals: ConvergenceSignal[];
   dormantThreads: DormantThread[];
 };
+
+const INTEL_PAYLOAD_VERSION = 3;
 
 export function groupCapturesByTopic(captures: LoadedCapture[], minCount: number): TopicGroup[] {
   const map = new Map<string, TopicGroup>();
@@ -189,7 +235,11 @@ export async function getPersonalIntelligence(args: {
 
   if (user && cached && cached.version === user.tasteProfileVersion) {
     const payload = cached.payload as unknown as PersonalIntelligenceData;
-    if (payload && Array.isArray(payload.contradictionCards)) {
+    if (
+      payload &&
+      Array.isArray(payload.contradictionCards) &&
+      payload.payloadVersion === INTEL_PAYLOAD_VERSION
+    ) {
       return { ...payload, dormantThreads };
     }
   }
@@ -233,6 +283,14 @@ export async function getPersonalIntelligence(args: {
       .find((part) => part && part.trim().length > 0) ?? "";
   }
 
+  // The spine is chronological: the 10 most recent captures per thread, oldest
+  // first, so the LLM's drift notes index into the same order the UI renders.
+  const threadChrono = threadCandidates.slice(0, THREAD_SYNTHESIS_LIMIT).map((group) =>
+    [...group.captures]
+      .sort((a, b) => a.capturedAt.getTime() - b.capturedAt.getTime())
+      .slice(-10),
+  );
+
   const [cardTensions, syntheses, convergenceTexts, topicTensions] = await Promise.all([
     Promise.all(
       contradictEdges.map((edge) =>
@@ -245,13 +303,14 @@ export async function getPersonalIntelligence(args: {
       ),
     ),
     Promise.all(
-      threadCandidates.slice(0, THREAD_SYNTHESIS_LIMIT).map((group) =>
+      threadCandidates.slice(0, THREAD_SYNTHESIS_LIMIT).map((group, i) =>
         generateThreadSynthesis({
           topicName: group.topicName,
-          captures: group.captures.slice(0, 10).map((c) => ({
+          captures: threadChrono[i].map((c) => ({
             label: c.label,
             keyIdea: c.keyIdea,
             text: c.gist,
+            capturedAt: c.capturedAt.toISOString().slice(0, 10),
           })),
         }),
       ),
@@ -284,8 +343,8 @@ export async function getPersonalIntelligence(args: {
 
   const edgeCards: ContradictionCard[] = contradictEdges
     .map((edge, i) => {
-      const tension = cardTensions[i];
-      if (!tension) return null;
+      const insight = cardTensions[i];
+      if (!insight) return null;
       return {
         itemAId: edge.fromItemId,
         itemBId: edge.toItemId,
@@ -293,7 +352,11 @@ export async function getPersonalIntelligence(args: {
         labelB: edgeItemLabel(edge.toItem),
         previewA: edgeItemText(edge.fromItem).slice(0, 200),
         previewB: edgeItemText(edge.toItem).slice(0, 200),
-        tension,
+        tension: insight.tension,
+        crux: insight.crux,
+        test: insight.test,
+        sideA: [] as IntelNode[],
+        sideB: [] as IntelNode[],
       };
     })
     .filter((c): c is ContradictionCard => c !== null);
@@ -314,6 +377,10 @@ export async function getPersonalIntelligence(args: {
         previewA: a.gist.slice(0, 200),
         previewB: b.gist.slice(0, 200),
         tension: result.tension,
+        crux: result.crux,
+        test: result.test,
+        sideA: [] as IntelNode[],
+        sideB: [] as IntelNode[],
       };
     })
     .filter((c): c is ContradictionCard => c !== null);
@@ -329,6 +396,45 @@ export async function getPersonalIntelligence(args: {
     if (contradictionCards.length >= CONTRADICTION_CARD_LIMIT) break;
   }
 
+  // Populate each pole's supporting mass: captures whose edges reinforce (or
+  // recur with) the pole. Pure DB — no LLM cost. Empty sides are fine; the
+  // FractureZone renders a lone pole just as well.
+  const poleIds = Array.from(new Set(contradictionCards.flatMap((c) => [c.itemAId, c.itemBId])));
+  if (poleIds.length > 0) {
+    const satelliteEdges = await db.memoryEdge.findMany({
+      where: {
+        userId: args.userId,
+        type: { in: [MemoryEdgeType.REINFORCES, MemoryEdgeType.RECURS] },
+        OR: [{ fromItemId: { in: poleIds } }, { toItemId: { in: poleIds } }],
+      },
+      orderBy: { weight: "desc" },
+      take: 80,
+      include: {
+        fromItem: { include: { contentItem: true } },
+        toItem: { include: { contentItem: true } },
+      },
+    });
+    const satellitesOf = new Map<string, IntelNode[]>();
+    for (const edge of satelliteEdges) {
+      const pairs = [
+        { pole: edge.fromItemId, other: { id: edge.toItemId, label: edgeItemLabel(edge.toItem) } },
+        { pole: edge.toItemId, other: { id: edge.fromItemId, label: edgeItemLabel(edge.fromItem) } },
+      ];
+      for (const { pole, other } of pairs) {
+        if (!poleIds.includes(pole)) continue;
+        const list = satellitesOf.get(pole) ?? [];
+        if (list.length >= 3 || list.some((n) => n.id === other.id)) continue;
+        list.push(other);
+        satellitesOf.set(pole, list);
+      }
+    }
+    for (const card of contradictionCards) {
+      const exclude = new Set([card.itemAId, card.itemBId]);
+      card.sideA = (satellitesOf.get(card.itemAId) ?? []).filter((n) => !exclude.has(n.id));
+      card.sideB = (satellitesOf.get(card.itemBId) ?? []).filter((n) => !exclude.has(n.id));
+    }
+  }
+
   const threadSyntheses: ThreadSynthesis[] = threadCandidates
     .slice(0, THREAD_SYNTHESIS_LIMIT)
     .map((group, i) => {
@@ -340,7 +446,15 @@ export async function getPersonalIntelligence(args: {
         captureCount: group.captures.length,
         position: synthesis.position,
         openQuestion: synthesis.openQuestion,
+        heading: synthesis.heading ?? null,
+        nextMove: synthesis.nextMove ?? null,
         itemIds: group.captures.slice(0, THREAD_ITEM_IDS_LIMIT).map((c) => c.id),
+        timeline: threadChrono[i].map((c) => ({
+          id: c.id,
+          label: c.label,
+          capturedAt: c.capturedAt.toISOString(),
+        })),
+        driftNotes: synthesis.driftNotes ?? [],
       };
     })
     .filter((s): s is ThreadSynthesis => s !== null);
@@ -349,17 +463,32 @@ export async function getPersonalIntelligence(args: {
     .map((group, i) => {
       const signal = convergenceTexts[i];
       if (!signal) return null;
+      const bySource = new Map<string, IntelNode[]>();
+      for (const c of group.captures) {
+        const source = c.sourceName ?? "elsewhere";
+        const list = bySource.get(source) ?? [];
+        if (list.length < 4) list.push({ id: c.id, label: c.label });
+        bySource.set(source, list);
+      }
+      const clusters: ConvergenceCluster[] = Array.from(bySource.entries())
+        .map(([source, items]) => ({ source, items }))
+        .sort((a, b) => b.items.length - a.items.length)
+        .slice(0, 3);
       return {
         topicId: group.topicId,
         topicName: group.topicName,
         captureCount: group.captures.length,
         sourceCount: new Set(group.captures.map((c) => c.sourceName ?? "__unknown__")).size,
-        signal,
+        signal: signal.signal,
+        arrival: signal.arrival,
+        act: signal.act,
+        clusters,
       };
     })
     .filter((s): s is ConvergenceSignal => s !== null);
 
   const result: PersonalIntelligenceData = {
+    payloadVersion: INTEL_PAYLOAD_VERSION,
     contradictionCards,
     threadSyntheses,
     convergenceSignals,

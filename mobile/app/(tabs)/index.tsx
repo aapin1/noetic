@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Animated as RNAnimated,
   Dimensions,
@@ -14,6 +15,7 @@ import {
   Text as RNText,
   TextInput,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -33,12 +35,13 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
-import { ChevronDown, ChevronUp, Crosshair, Moon, Search, Sun, Trash2Icon, type LucideIcon } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Crosshair, MessageCircleIcon, Moon, Search, Sun, Trash2Icon, type LucideIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { takeRecentSharedCapture } from '@/lib/lastShared';
 import { prefetchQuery, useApiQuery } from '@/hooks/useApiQuery';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
+import { useSocratic } from '@/contexts/SocraticContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { useTutorial, useTutorialTarget } from '@/contexts/TutorialContext';
@@ -58,19 +61,38 @@ type GraphEdge = MemoryGraphResponse['edges'][number];
 
 const { width: SW, height: SH } = Dimensions.get('window');
 const TAB_H = Platform.OS === 'ios' ? 86 : 68;
-const FAB_SIZE = 64;
+const FAB_SIZE = 82;
 // Just barely larger than the button itself — a subtle breathing ring, not a halo.
 const FAB_GLOW_SIZE = FAB_SIZE * 1.14;
-// Mirrors the global SocraticFab's position (app/(tabs)/_layout.tsx) — it
-// floats above the tab bar on the same right edge as the timeline rail, so
-// the rail's bottom bound must clear it, not just the tab bar.
-const SOCRATIC_FAB_BOTTOM = Platform.OS === 'ios' ? 104 : 86;
-const SOCRATIC_FAB_SIZE = 50;
+// Bottom summary strip: full width, sitting directly on top of the tab bar.
+// Nominal height only — one row of monoSmall plus padding. The strip wraps to a
+// second row on a narrow screen, so its REAL height is measured at runtime and
+// everything above it (the capture FAB, the discovery pills) is placed off that
+// measurement. This constant is the pre-measurement fallback, and the estimate
+// the module-scope camera bounds below are built from.
+const INFO_STRIP_H = 48;
+// Gap between the strip and the capture FAB floating above it.
+const FAB_GAP = Spacing[3];
 
 // Always-dark map colors (map is always dark regardless of theme)
 const MAP_BG = '#060606';
 const MAP_NODE = 'rgba(236,236,236,0.9)';
 const MAP_LINE = 'rgba(255,255,255,0.92)';
+
+// One glass recipe for everything floating over the map — the toolbar pill, the
+// capture FAB, the bottom summary strip — so they read as the same surface
+// rather than as unrelated controls.
+//
+// The map is dark in BOTH themes (light mode's mapBackground is #1E1E1E, dark
+// mode's is #060606), so these are safe to hardcode. The same 0.72 alpha is
+// what makes one constant serve the FAB in both modes: over light mode's
+// #1E1E1E it composites to a grey that matches the toolbar buttons, and over
+// dark mode's #060606 it lands at near-black.
+const GLASS_BG = 'rgba(10,10,10,0.72)';
+const GLASS_BORDER = 'rgba(255,255,255,0.12)';
+// Brighter than GLASS_BORDER: the FAB is the primary action, so its edge
+// catches light where the passive surfaces' do not.
+const GLASS_BORDER_GLOW = 'rgba(236,236,236,0.3)';
 // Green accent shared by every discovery/multi-select affordance.
 const DISCOVERY_ACCENT = '#7EC8A0';
 // Stable identity for an edge, independent of its array index.
@@ -134,6 +156,42 @@ const ZOOM_MIN = 0.22;
 const ZOOM_MAX = 5.0;
 const SCRUBBER_H = 80;
 
+// ── Chrome-safe framing zone ──────────────────────────────────────
+// The map's floating controls sit on top of the canvas, so fitting nodes to the
+// full screen tucks the outermost ones — and their labels, which extend well
+// past a node's center — under the header and the FAB row. These bounds keep
+// the fitted camera inside the clear air between them.
+//
+// This governs FRAMING, not panning: it holds whenever the camera is fitted
+// (load, recenter, lens change), which is where the collisions were. Panning
+// and zooming stay unclamped, so a node can still be dragged under a control —
+// clamping the pan to enforce this would fight the gesture and feel broken.
+// Asymmetric on purpose. The top is where the only *bare* chrome lives — the
+// wordmark and lens row paint straight onto the map, so a label that reaches
+// them genuinely collides; 80px keeps labels (which extend past their node's
+// centre) well clear. The bottom chrome is just two small opaque FABs that
+// don't span the width, so a node behind one is hidden, not collided — paying
+// full freight to reserve that mostly-empty band isn't worth it.
+//
+// Padding is not free: every pixel reserved here shrinks the fitted map, and
+// smaller labels crowd each other harder. That's the ceiling on these numbers.
+const MAP_EDGE_PAD_TOP = 80;
+const MAP_EDGE_PAD_BOTTOM = 24;
+// Header = safe-area top + wordmark + lens row. Mirrors the timeline rail's
+// `insets.top + 90` fallback (see MapScreen) — module scope has no insets, so
+// this assumes a notched inset. The info panel hangs lower than this on the
+// right, but it's an opaque card now: nodes behind it are hidden rather than
+// tangled with it, and clearing it outright would reserve a third of the screen.
+const MAP_CHROME_TOP = (Platform.OS === 'ios' ? 59 : 24) + 90 + MAP_EDGE_PAD_TOP;
+// Bottom chrome, from the window's edge up: tab bar, summary strip, gap, FAB.
+const MAP_CHROME_BOTTOM = TAB_H + INFO_STRIP_H + FAB_GAP + FAB_SIZE + MAP_EDGE_PAD_BOTTOM;
+// Height left for nodes once both bands are reserved. Floored so a short screen
+// degrades to "fit tight" rather than inverting the rect.
+const MAP_SAFE_H = Math.max(SH - MAP_CHROME_TOP - MAP_CHROME_BOTTOM, 160);
+// Where that band's centre falls on screen. The fitted camera centres nodes
+// here instead of at SH / 2, which is what lifts them out from under the FABs.
+const MAP_SAFE_CENTER_Y = MAP_CHROME_TOP + MAP_SAFE_H / 2;
+
 // ── Overscan ──────────────────────────────────────────────────────────
 // An <Svg> clips to its own width/height, so a screen-sized world SVG holds
 // nothing beyond the viewport it was rendered for: the instant the wrapper
@@ -176,10 +234,27 @@ const RECOMMIT_ZOOM_IN = 1.4;
 // pixels). Mid-gesture the raster scales on the GPU — slightly soft is fine —
 // and the release commit re-rasterizes it crisp.
 const RECOMMIT_ZOOM_IN_PINCH = 2.5;
-// Pinch-out coverage commits rasterize at a slightly wider zoom than live, so
-// one redraw buys enough headroom for the rest of the gesture instead of
-// re-firing every ~1.15× as the shrinking layer keeps exposing edges.
+// Pinch-out coverage commits rasterize at a wider zoom than live, so one redraw
+// buys enough headroom for the rest of the gesture instead of re-firing every
+// ~1.15× as the shrinking layer keeps exposing edges. This is the ceiling — the
+// headroom actually used is led by the zoom's own rate, see below.
 const PINCH_OUT_HEADROOM = 0.8;
+// How far ahead to lead a zoom-out, in frames.
+//
+// The pan has always been led by its velocity (RECOMMIT_LEAD_MAX/LEAD_FRAMES);
+// the zoom never was. A flat 20% of headroom quietly assumes the pinch is slow,
+// and RECOMMIT_SLACK's budget of "one fast frame" is calibrated for a FINGER
+// (~50px/frame) — but a pinch-out uncovers the raster's edges by SCALING, at a
+// rate that has nothing to do with finger travel. So a sudden pinch-out could
+// traverse its whole headroom before the redraw landed, re-fire, and be outrun
+// again: the newly exposed map reads as blank while that plays out. Committing
+// for where the zoom will be in a few frames covers the gesture instead of
+// chasing it.
+const PINCH_OUT_LEAD_FRAMES = 4;
+// Floor on that lead. At the floor the layer is upscaled 1/0.4 = 2.5× for the
+// rest of the gesture — soft, which is the trade this file already accepts
+// mid-pinch (see RECOMMIT_ZOOM_IN_PINCH). Blank is not.
+const PINCH_OUT_HEADROOM_MIN = 0.4;
 
 // Fixed raster size for the ambient glow, scaled to canvas size by a view
 // transform. It is one smooth gradient, so it survives any upscale.
@@ -189,21 +264,46 @@ const GLOW_H = (GLOW_W * CANVAS_H) / CANVAS_W;
 // Static: the world SVG is always offset by exactly the overscan margin.
 const MAP_WORLD_STYLE = { position: 'absolute' as const, left: -MARGIN_X, top: -MARGIN_Y };
 
+// Muted on purpose. The rest of the map is near-monochrome, so saturated hues
+// read as the loudest thing on screen rather than as a quiet grouping cue —
+// these are the original hues pulled ~35% toward their own luma and dimmed
+// slightly, which keeps every cluster distinguishable at ~40% of the chroma.
 const CLUSTER_PALETTE = [
-  '#6B9FD4',
-  '#9B84CC',
-  '#7EC8A0',
-  '#E8A87C',
-  '#E87878',
-  '#78C8C8',
-  '#C4A882',
-  '#A0B8D4',
-  '#CC84A0',
-  '#A8CC84',
+  '#7393B3',
+  '#8D7FAB',
+  '#89B69D',
+  '#C8A186',
+  '#BD7979',
+  '#86B6B6',
+  '#B09F88',
+  '#9DACBD',
+  '#AE8293',
+  '#A6BC90',
 ];
 
 // Recent threshold: 14 days
 const RECENT_MS = 14 * 24 * 60 * 60 * 1000;
+
+// ── Node glow ─────────────────────────────────────────────────────
+// Every colour a node can take: its cluster's, the recent accent, or the
+// default. The set is finite and known up front, so each node's glow can be a
+// prebuilt radial gradient looked up by colour — the defs never rebuild as the
+// node set changes.
+//
+// A gradient rather than stacked discs: the glow used to be two flat-filled
+// circles (5.5x and 2.8x the node radius), and a flat fill has a hard edge, so
+// each radius drew a visible ring. One gradient falls off smoothly and has no
+// edge to see. It's also one fewer element per node, and a third of the glow
+// area — the vector layer's re-rasterization cost scales with exactly this (see
+// RECOMMIT_ZOOM_IN_PINCH), so it buys smoothness during a pinch too.
+const RECENT_NODE_COLOR = '#D4B896';
+const NODE_GLOW_COLORS: string[] = [...CLUSTER_PALETTE, RECENT_NODE_COLOR, MAP_NODE];
+// Index-based ids: the colours themselves ('#7393B3', 'rgba(...)') aren't valid
+// SVG id characters.
+const nodeGlowId = (color: string) => {
+  const i = NODE_GLOW_COLORS.indexOf(color);
+  return `nodeGlow${i === -1 ? NODE_GLOW_COLORS.length - 1 : i}`;
+};
 
 // One-time flag: the first time a source can't be read, a popup explains why
 // and what the "what was it about?" box is for. Never shown again after that.
@@ -442,7 +542,9 @@ function computeCameraFit(nodes: GraphNode[], positions: PositionMap): { x: numb
   const PAD = 72;
   const boundsW = maxX - minX + PAD * 2;
   const boundsH = maxY - minY + PAD * 2;
-  const fitZoom = Math.min(SW / boundsW, (SH - TAB_H) / boundsH, 2.5);
+  // Fit into the chrome-safe band rather than the full screen, so the framing
+  // leaves clear air beside the outermost nodes for their labels.
+  const fitZoom = Math.min(SW / boundsW, MAP_SAFE_H / boundsH, 2.5);
   const zoom = Math.max(ZOOM_MIN, fitZoom);
   const vbW = SW / zoom;
   const vbH = SH / zoom;
@@ -450,7 +552,10 @@ function computeCameraFit(nodes: GraphNode[], positions: PositionMap): { x: numb
   const centerY = (minY + maxY) / 2;
   return {
     x: clampVBX(centerX - vbW / 2, vbW),
-    y: clampVBY(centerY - vbH / 2, vbH),
+    // Land the centroid on the safe band's centre, not the screen's. A screen
+    // point s shows world `vb + s / zoom`, so this is that solved for vb — the
+    // offset from SH / 2 is what lifts the map clear of the FAB row.
+    y: clampVBY(centerY - MAP_SAFE_CENTER_Y / zoom, vbH),
     zoom,
   };
 }
@@ -798,8 +903,39 @@ function Toolbar({
 
   const recenterVisible = !!onRecenter && showRecenter !== false;
 
+  // Companion — moved here from the floating FAB that used to sit above the tab
+  // bar on every screen (app/(tabs)/_layout.tsx). Behaviour is carried over
+  // verbatim: resolve a topic, falling back to the strongest current theme and
+  // then to the untargeted companion. Only the affordance changed.
+  const router = useRouter();
+  const { topicId } = useSocratic();
+  const [companionLoading, setCompanionLoading] = useState(false);
+  const companionTarget = useTutorialTarget(TUTORIAL_TARGET.companionFab);
+
+  const openCompanion = async () => {
+    if (companionLoading) return;
+    companionTarget.press();
+    let tid = topicId;
+    if (!tid) {
+      setCompanionLoading(true);
+      try {
+        const trends = await api.memory.trends();
+        tid = trends.themes[0]?.topicId ?? null;
+      } catch {
+        tid = null;
+      } finally {
+        setCompanionLoading(false);
+      }
+    }
+    if (!tid) {
+      router.push('/companion' as never);
+      return;
+    }
+    router.push({ pathname: '/socratic/[topicId]' as never, params: { topicId: tid } });
+  };
+
   return (
-    <View style={[tb.pill, { backgroundColor: 'rgba(10,10,10,0.72)', borderColor: 'rgba(255,255,255,0.12)' }]}>
+    <View style={[tb.pill, { backgroundColor: GLASS_BG, borderColor: GLASS_BORDER }]}>
       {recenterVisible && (
         <>
           <Pressable
@@ -839,6 +975,20 @@ function Toolbar({
           </React.Fragment>
         );
       })}
+      <View style={[tb.sep, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
+      <Pressable
+        ref={companionTarget.isActive ? companionTarget.ref : undefined}
+        onLayout={companionTarget.isActive ? companionTarget.onLayout : undefined}
+        onPress={() => void openCompanion()}
+        disabled={companionLoading}
+        style={tb.btn}
+        accessibilityLabel="Open Socratic dialogue"
+        accessibilityRole="button"
+      >
+        {companionLoading
+          ? <ActivityIndicator size="small" color={c.muted} />
+          : <MessageCircleIcon size={17} color={c.muted} strokeWidth={1.5} />}
+      </Pressable>
     </View>
   );
 }
@@ -860,133 +1010,139 @@ const tb = StyleSheet.create({
   sep: { width: 1, height: 18 },
 });
 
-// ── Info panel (top-right map summary) ────────────────────────────
+// ── Info strip (bottom map summary) ───────────────────────────────
 
-interface ExcitingLine {
-  text: string;
-  route: string;
-}
-
-function InfoPanel({
-  top, collapsed, onToggle, pointCount, totalPointCount, fieldCount, connectionCount, tensionCount, exciting, onNavigate,
+function InfoStrip({
+  collapsed, onToggle, onLayout, mapBg, pointCount, totalPointCount, fieldCount, connectionCount,
 }: {
-  top: number;
   collapsed: boolean;
   onToggle: () => void;
+  onLayout: (e: LayoutChangeEvent) => void;
+  /** The map's own background, so the strip fades out of it rather than onto it. */
+  mapBg: string;
   pointCount: number;
   /** Matching captures server-side; > pointCount means the map is truncated. */
   totalPointCount: number;
   fieldCount: number;
   connectionCount: number;
-  tensionCount: number;
-  exciting: ExcitingLine | null;
-  onNavigate: (route: string) => void;
 }) {
-  // At most five lines. Topics are intentionally omitted here (they're
-  // surfaced on Archive and elsewhere) to keep this compact. Lines are
-  // ordered longest-first so the right-aligned block tapers cleanly.
-  const entries: { key: string; label: string; node: React.ReactNode }[] = [];
+  // Standalone counts only. This is baseline information, not navigation — the
+  // strip used to also carry two tappable lines (a "rising theme" link and a
+  // tensions link), which made it a third place to route from and pushed it
+  // past one row. Topics stay omitted too (they're surfaced on Archive).
+  const items: React.ReactNode[] = [];
 
-  // Never pretend the visible window is everything: past the fetch limit the
-  // map shows the most recent captures, and this line says so.
-  const pointsLabel = totalPointCount > pointCount
-    ? `latest ${pointCount} of ${totalPointCount} points`
-    : `${pointCount} ${pointCount === 1 ? 'point' : 'points'}`;
-  entries.push({
-    key: 'points',
-    label: pointsLabel,
-    node: (
-      <Text key="points" variant="monoSmall" style={infoPanelStyles.line}>{pointsLabel}</Text>
-    ),
-  });
-  if (fieldCount > 0) {
-    const label = `${fieldCount} ${fieldCount === 1 ? 'field' : 'fields'}`;
-    entries.push({
-      key: 'fields',
-      label,
-      node: (
-        <Text key="fields" variant="monoSmall" style={infoPanelStyles.line}>{label}</Text>
-      ),
-    });
-  }
   if (connectionCount > 0) {
-    const label = `${connectionCount} ${connectionCount === 1 ? 'connection' : 'connections'}`;
-    entries.push({
-      key: 'connections',
-      label,
-      node: (
-        <Text key="connections" variant="monoSmall" style={infoPanelStyles.line}>{label}</Text>
-      ),
-    });
+    items.push(
+      <Text key="connections" variant="monoSmall" style={infoStripStyles.item}>
+        {`${connectionCount} ${connectionCount === 1 ? 'connection' : 'connections'}`}
+      </Text>,
+    );
   }
-  if (tensionCount > 0) {
-    const label = `${tensionCount} ${tensionCount === 1 ? 'tension' : 'tensions'} →`;
-    entries.push({
-      key: 'tensions',
-      label,
-      node: (
-        <Pressable key="tensions" onPress={() => onNavigate('/(tabs)/mind')} hitSlop={6} pointerEvents="auto">
-          <Text variant="monoSmall" style={infoPanelStyles.exciting}>{label}</Text>
-        </Pressable>
-      ),
-    });
+  // Never pretend the visible window is everything: past the fetch limit the
+  // map shows the most recent captures, and this says so.
+  items.push(
+    <Text key="points" variant="monoSmall" style={infoStripStyles.item}>
+      {totalPointCount > pointCount
+        ? `latest ${pointCount} of ${totalPointCount} points`
+        : `${pointCount} ${pointCount === 1 ? 'point' : 'points'}`}
+    </Text>,
+  );
+  if (fieldCount > 0) {
+    items.push(
+      <Text key="fields" variant="monoSmall" style={infoStripStyles.item}>
+        {`${fieldCount} ${fieldCount === 1 ? 'field' : 'fields'}`}
+      </Text>,
+    );
   }
-  if (exciting) {
-    entries.push({
-      key: 'exciting',
-      label: exciting.text,
-      node: (
-        <Pressable key="exciting" onPress={() => onNavigate(exciting.route)} hitSlop={6} pointerEvents="auto">
-          <Text variant="monoSmall" style={infoPanelStyles.exciting} numberOfLines={1}>{exciting.text}</Text>
-        </Pressable>
-      ),
-    });
-  }
-
-  const items = entries
-    .sort((a, b) => b.label.length - a.label.length)
-    .map((e) => e.node);
 
   return (
-    <View style={[infoPanelStyles.wrap, { top }]} pointerEvents="box-none">
-      {!collapsed && <View style={infoPanelStyles.lines}>{items.slice(0, 5)}</View>}
+    <View
+      style={[infoStripStyles.wrap, !collapsed && infoStripStyles.wrapExpanded]}
+      onLayout={onLayout}
+      pointerEvents="box-none"
+    >
+      {!collapsed && (
+        <>
+          {/* Painted in the MAP's own colour, ramping from fully transparent at
+              the top. A flat scrim gave the strip a hard top edge and a tint of
+              its own, which read as a black bar laid over a lighter canvas —
+              the fade has no edge to see and no colour that isn't already the
+              map's, so it just looks like the map getting denser underfoot. */}
+          <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+            <Defs>
+              <LinearGradient id="stripFade" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor={mapBg} stopOpacity={0} />
+                <Stop offset="45%" stopColor={mapBg} stopOpacity={0.55} />
+                <Stop offset="100%" stopColor={mapBg} stopOpacity={0.92} />
+              </LinearGradient>
+            </Defs>
+            <Rect x="0" y="0" width="100%" height="100%" fill="url(#stripFade)" />
+          </Svg>
+          <View style={infoStripStyles.row} pointerEvents="box-none">
+            {items}
+          </View>
+        </>
+      )}
       <Pressable
         onPress={onToggle}
         hitSlop={10}
-        style={infoPanelStyles.toggle}
+        style={infoStripStyles.toggle}
         pointerEvents="auto"
         accessibilityLabel={collapsed ? 'Show map summary' : 'Hide map summary'}
         accessibilityRole="button"
       >
         {collapsed
-          ? <ChevronDown size={16} color="rgba(236,236,236,0.4)" strokeWidth={1.5} />
-          : <ChevronUp size={16} color="rgba(236,236,236,0.4)" strokeWidth={1.5} />}
+          ? <ChevronUp size={16} color="rgba(236,236,236,0.4)" strokeWidth={1.5} />
+          : <ChevronDown size={16} color="rgba(236,236,236,0.4)" strokeWidth={1.5} />}
       </Pressable>
     </View>
   );
 }
 
-const infoPanelStyles = StyleSheet.create({
+const infoStripStyles = StyleSheet.create({
   wrap: {
     position: 'absolute',
-    right: Spacing[6],
-    alignItems: 'flex-end',
-    maxWidth: 210,
+    left: 0, right: 0, bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: Spacing[4],
+    paddingRight: Spacing[2],
   },
-  lines: {
-    alignItems: 'flex-end',
+  // Padding only — the background itself is the gradient <Svg> above, which
+  // needs vertical room to ramp: too tight and the fade becomes the hard edge
+  // it exists to avoid. Collapsed, the strip leaves nothing but its chevron
+  // over the bare map. The FAB above it does NOT follow it down (see
+  // fabBottom): collapsing is meant to clear the counts, not to rearrange the
+  // controls.
+  wrapExpanded: {
+    paddingTop: Spacing[6],
+    paddingBottom: Spacing[2],
+  },
+  // Three counts fit one row comfortably, even at the widest phrasing
+  // ("latest 300 of 1200 points"). Wrapping is kept as a safety valve rather
+  // than a layout: a longer future count takes a second row instead of
+  // clipping, and the strip is measured at runtime (see MapScreen) so the
+  // capture FAB stays clear of whatever height it lands at.
+  row: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-evenly',
+    alignItems: 'center',
+    // Small, because space-evenly supplies the real spacing — this is only the
+    // floor when the counts get long enough to crowd. At the widest phrasing
+    // ("latest 300 of 1200 points" alongside two others) the row is within ~8px
+    // of a 393px screen, so the gap is where the headroom comes from.
+    columnGap: Spacing[2],
+    rowGap: 2,
   },
   toggle: {
-    marginTop: 2,
-    padding: 2,
+    padding: 4,
+    marginLeft: 'auto',
   },
-  line: {
-    color: 'rgba(236,236,236,0.28)',
-    marginBottom: 4,
-  },
-  exciting: {
-    color: 'rgba(236,236,236,0.5)',
-    marginBottom: 4,
+  item: {
+    color: 'rgba(236,236,236,0.45)',
   },
 });
 
@@ -1275,6 +1431,12 @@ export default function MapScreen() {
   // actual gap below the header instead of guessing. Falls back to a sane
   // estimate until the first layout pass reports the real value.
   const [headerH, setHeaderH] = useState(0);
+  // Same idea for the bottom summary strip: it wraps to a second row on narrow
+  // screens and shrinks to just its chevron when collapsed, so the capture FAB
+  // and the discovery pills above it are placed off the measured height rather
+  // than a guess. `stripVisible` / `fabBottom` are derived further down, once
+  // the modes the strip depends on are in scope.
+  const [stripH, setStripH] = useState(0);
 
   const mapBg = c.mapBackground;
   const isDarkMode = c.mapBackground === '#060606';
@@ -1326,11 +1488,15 @@ export default function MapScreen() {
     return created ? new Date(created).getTime() : null;
   }, [profileData]);
 
-  // Info panel: independent, non-blocking fetches — each line appears as
-  // soon as its own data resolves, without gating on the others.
-  const { data: intelligenceData, refetch: refetchIntelligence } = useApiQuery(() => api.memory.intelligence(), [], { cacheKey: 'memory.intelligence' });
-  const { data: trendsData, refetch: refetchTrends } = useApiQuery(() => api.memory.trends({ window: 'week' }), [], { cacheKey: 'memory.trends:week' });
-  const { data: pulseData, refetch: refetchPulse } = useApiQuery(() => api.social.pulse(), [], { cacheKey: 'social.pulse' });
+  // Kept for their cache keys, not their data: Atlas mounts first, so issuing
+  // these here is what makes Mind and Pulse render from a warm cache instead of
+  // a loader on first visit. Their refetch handles also drive the revalidation
+  // fan-out below, so a capture or delete can't leave those tabs stale. The
+  // summary strip no longer reads any of them — it shows standalone counts
+  // derived from the graph itself.
+  const { refetch: refetchIntelligence } = useApiQuery(() => api.memory.intelligence(), [], { cacheKey: 'memory.intelligence' });
+  const { refetch: refetchTrends } = useApiQuery(() => api.memory.trends({ window: 'week' }), [], { cacheKey: 'memory.trends:week' });
+  const { refetch: refetchPulse } = useApiQuery(() => api.social.pulse(), [], { cacheKey: 'social.pulse' });
 
   // Revalidate every map surface at once. The info panel's counts (tensions,
   // rising themes, connections) derive from these side-fetches, so refetching
@@ -1384,32 +1550,8 @@ export default function MapScreen() {
     return fieldIds.size;
   }, [nodes]);
 
-  const tensionCount = intelligenceData?.contradictionCards.length ?? 0;
-
-  const excitingLine = useMemo((): ExcitingLine | null => {
-    const friendWithRecent = pulseData?.friends.find((f) => {
-      const latest = f.latest[0];
-      return latest && Date.now() - new Date(latest.capturedAt).getTime() < DAY_MS;
-    });
-    if (friendWithRecent) {
-      return { text: `${friendWithRecent.user.displayName} added something →`, route: '/(tabs)/pulse' };
-    }
-    // The server ranks this by per-day rate, so a topic that just woke up beats
-    // the one that's merely biggest. Ranking `shifts` here instead re-introduced
-    // that bias — the largest topic stayed "rising" no matter what was captured.
-    const risingTheme = trendsData?.rising;
-    if (risingTheme) {
-      // Route to the topic's archive (a real screen) — there is no trends tab.
-      return { text: `${risingTheme.name} rising →`, route: `/archive/${risingTheme.topicId}` };
-    }
-    return null;
-  }, [pulseData, trendsData]);
-
   // ── Lens mode ──────────────────────────────────────────────────
   const [lensMode, setLensMode] = useState<LensMode>('semantic');
-  // True while nodes are easing between layouts, so per-lens labels can stay
-  // hidden until the map has settled (otherwise they float over moving nodes).
-  const [lensTransitioning, setLensTransitioning] = useState(false);
 
   // ── Viewport: pan + zoom ──────────────────────────────────────
   // Two-tier camera. The COMMITTED camera (vbPos/zoom React state) is what the
@@ -1525,6 +1667,8 @@ export default function MapScreen() {
     // single jittery frame can't swing the aim.
     const prev = lastLive.current;
     const zooming = z !== prev.zoom;
+    // Per-frame zoom rate: <1 while zooming out, >1 while zooming in.
+    const zRate = prev.zoom > 0 ? z / prev.zoom : 1;
     camVel.current = {
       x: camVel.current.x * (1 - VEL_EMA) + (x - prev.x) * z * VEL_EMA,
       y: camVel.current.y * (1 - VEL_EMA) + (y - prev.y) * z * VEL_EMA,
@@ -1559,9 +1703,23 @@ export default function MapScreen() {
     if (Math.min(left, right, top, bottom) < RECOMMIT_SLACK) {
       if (pinching && zooming) {
         // Pinch-out: commit at a wider-than-live zoom (same view centre) so
-        // this one redraw covers the rest of the gesture. k stays ≤ 1/0.8,
-        // an invisible upscale, and the release commit lands exact.
-        const zc = z * PINCH_OUT_HEADROOM;
+        // this one redraw covers the rest of the gesture, and the release
+        // commit lands exact.
+        //
+        // The headroom is led by the zoom's own rate — project this frame's
+        // rate forward a few frames and rasterize for THERE, so a fast pinch
+        // can't outrun its own coverage. A gentle pinch projects to ~the old
+        // flat 0.8 (an invisible upscale); only a fast one buys the wider,
+        // softer raster, which is the right trade at the only moment it
+        // applies. Zooming IN projects >1 and clamps back to the ceiling.
+        //
+        // Unsmoothed, unlike the pan lead: a jittery frame here costs a
+        // marginally softer raster, not a mis-aimed one.
+        const headroom = Math.max(
+          PINCH_OUT_HEADROOM_MIN,
+          Math.min(PINCH_OUT_HEADROOM, Math.pow(zRate, PINCH_OUT_LEAD_FRAMES)),
+        );
+        const zc = z * headroom;
         commitRender(
           x + (SW / z) / 2 - (SW / zc) / 2,
           y + (SH / z) / 2 - (SH / zc) / 2,
@@ -1703,66 +1861,20 @@ export default function MapScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeIdsKey]);
 
+  // Switching lens is a mode flip and nothing else — it must leave the user
+  // exactly where they were standing.
+  //
+  // Both lenses share one layout (temporalPos IS semanticPos: "time" is carried
+  // by the scrubber dimming nodes, not by moving them). So the cross-lens
+  // position tween this used to run was easing every node from its position to
+  // that same position — 720ms of no-op. Its one real effect was the
+  // computeCameraFit it ran per frame, which threw away the user's zoom and pan
+  // and dropped them on a recentered map. Both are gone; the camera is now left
+  // untouched, which is the whole point.
   const handleLensChange = useCallback((newLens: LensMode) => {
     if (newLens === lensMode) return;
-
-    if (lensAnimCancelRef.current) {
-      lensAnimCancelRef.current();
-      lensAnimCancelRef.current = null;
-    }
-
-    const targetPos = newLens === 'semantic' ? semanticPos : temporalPos;
-
     setLensMode(newLens);
-
-    if (Object.keys(renderPosRef.current).length === 0) {
-      renderPosRef.current = targetPos;
-      setRenderPos(targetPos);
-      const fit = computeCameraFit(nodes, targetPos);
-      if (fit) setCamera(fit.x, fit.y, fit.zoom);
-      return;
-    }
-
-    const fromPos: PositionMap = { ...renderPosRef.current };
-    const startTime = Date.now();
-    const duration = 720;
-    let cancelled = false;
-
-    const easeInOutCubic = (t: number) =>
-      t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-
-    setLensTransitioning(true);
-
-    const tick = () => {
-      if (cancelled) return;
-      const t = Math.min(1, (Date.now() - startTime) / duration);
-      const eased = easeInOutCubic(t);
-      const newPos: PositionMap = {};
-      for (const [id, target] of Object.entries(targetPos)) {
-        const from = fromPos[id] ?? target;
-        newPos[id] = {
-          x: from.x + (target.x - from.x) * eased,
-          y: from.y + (target.y - from.y) * eased,
-        };
-      }
-      renderPosRef.current = newPos;
-      setRenderPos(newPos);
-
-      // Derive the camera from these same in-flight positions every frame
-      // instead of flying it toward a separately-eased target — see
-      // computeCameraFit for why an independent camera tween causes overshoot.
-      // The lens tick re-renders per frame anyway (node positions are React
-      // state), so committing the camera per frame here costs nothing extra.
-      const fit = computeCameraFit(nodes, newPos);
-      if (fit) setCamera(fit.x, fit.y, fit.zoom);
-
-      if (t < 1) requestAnimationFrame(tick);
-      else setLensTransitioning(false);
-    };
-
-    requestAnimationFrame(tick);
-    lensAnimCancelRef.current = () => { cancelled = true; setLensTransitioning(false); };
-  }, [lensMode, semanticPos, temporalPos, nodes, setCamera]);
+  }, [lensMode]);
 
   // Use renderPos for display, fall back to semanticPos on first render
   const pos = Object.keys(renderPos).length > 0 ? renderPos : semanticPos;
@@ -2039,6 +2151,32 @@ export default function MapScreen() {
     const startX = savedVB.current.x;
     const startY = savedVB.current.y;
     const startZ = savedZoom.current;
+
+    // A fly-to has a known start AND end, unlike an open-ended gesture — so
+    // the coverage it will ever need is knowable up front. Pre-render one
+    // raster wide enough to span the whole path so maybeRecommit never has
+    // to fire mid-flight: on a big pan+zoom-in (e.g. overview → a fresh
+    // capture) it was crossing RECOMMIT_ZOOM_IN/RECOMMIT_SLACK several times
+    // over one flight, each a full re-render of the whole graph — that's the
+    // "choppy" popping. One wider-than-needed raster trades a touch of
+    // softness mid-flight for zero pops, then commitCamera() re-rasterizes
+    // crisp on landing — the same trade already made for pinch-out.
+    const wStart = SW / startZ, hStart = SH / startZ;
+    const wTarget = SW / targetZoom, hTarget = SH / targetZoom;
+    const minX = Math.min(startX, targetX);
+    const maxX = Math.max(startX + wStart, targetX + wTarget);
+    const minY = Math.min(startY, targetY);
+    const maxY = Math.max(startY + hStart, targetY + hTarget);
+    const flightZoom = Math.min(
+      startZ, targetZoom,
+      (OS_W * 0.9) / Math.max(maxX - minX, 1),
+      (OS_H * 0.9) / Math.max(maxY - minY, 1),
+    );
+    const flightW2 = SW / flightZoom, flightH2 = SH / flightZoom;
+    const flightX = clampVBX((minX + maxX) / 2 - flightW2 / 2, flightW2);
+    const flightY = clampVBY((minY + maxY) / 2 - flightH2 / 2, flightH2);
+    commitRender(flightX, flightY, flightZoom);
+
     const startTime = Date.now();
     let frameId: number;
     let cancelled = false;
@@ -2059,12 +2197,12 @@ export default function MapScreen() {
       savedVB.current = { x: cx, y: cy };
       savedZoom.current = z;
       applyLiveCamera(cx, cy, z);
-      if (t < 1) { maybeRecommit(cx, cy, z); frameId = requestAnimationFrame(frame); }
+      if (t < 1) { frameId = requestAnimationFrame(frame); }
       else commitCamera();
     };
     frameId = requestAnimationFrame(frame);
     animCancelRef.current = () => { cancelled = true; cancelAnimationFrame(frameId); commitCamera(); };
-  }, [applyLiveCamera, commitCamera, maybeRecommit]);
+  }, [applyLiveCamera, commitCamera, commitRender]);
 
   const centerOnNodes = useCallback((posOverride?: PositionMap, animated = false, animDuration = 720) => {
     const positions = posOverride ?? pos;
@@ -2348,6 +2486,21 @@ export default function MapScreen() {
   const [userContext, setUserContext] = useState('');
   const preflightSeq = useRef(0);
 
+  // Single source of truth for the bottom summary strip: the render below and
+  // everything stacked above it must agree, or the FAB floats over a gap. The
+  // strip yields the bottom edge to any mode that owns it — the temporal rail,
+  // search, and an active discovery selection all replace it.
+  const stripVisible =
+    nodes.length > 0 && !showCapture && !drawerVisible && lensMode !== 'temporal' &&
+    toolMode !== 'search' &&
+    !(toolMode === 'discover' && (discoveryNodeIds.length > 0 || discoveryEdgeKeys.length > 0));
+  // Deliberately independent of `infoCollapsed`: the FAB reserves the strip's
+  // EXPANDED height whenever the strip is on screen at all, so toggling the
+  // counts doesn't slide the button up and down under the user's thumb. It only
+  // drops to the bottom edge when the strip is gone entirely — a mode change,
+  // where the whole bottom of the screen is being handed to something else.
+  const fabBottom = (stripVisible ? (stripH || INFO_STRIP_H) : 0) + FAB_GAP;
+
   // First time ever that a source comes back unreadable, explain what
   // happened and what to do about it — after that the inline red line and
   // the context box speak for themselves.
@@ -2581,6 +2734,20 @@ export default function MapScreen() {
   // node visibly arrives first and the insight is offered second.
   type CapturePill = { phase: 'logging' } | { phase: 'saved'; id: string };
   const [savedPill, setSavedPill] = useState<CapturePill | null>(null);
+  // Slides in from the right edge on arrival. Driven by the pill's PRESENCE,
+  // not its contents — 'logging' → 'saved' is the same pill changing its mind,
+  // and re-running the entrance there would look like a second thing arrived.
+  const pillSlide = useRef(new RNAnimated.Value(0)).current;
+  const pillPresent = savedPill !== null;
+  useEffect(() => {
+    if (!pillPresent) { pillSlide.setValue(0); return; }
+    RNAnimated.timing(pillSlide, {
+      toValue: 1,
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [pillPresent, pillSlide]);
   const savedPillTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pillDelayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showSavedPill = useCallback((id: string) => {
@@ -2694,8 +2861,10 @@ export default function MapScreen() {
     if (/^https?:\/\//i.test(t)) setMode('link');
   }, []);
 
-  const glowOpacity = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [0.0, 0.16] });
-  const glowScale = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1.05] });
+  // A breath, not a beacon — shallow enough that it reads as ambient rather
+  // than as the button asking for attention.
+  const glowOpacity = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [0.0, 0.09] });
+  const glowScale = fabPulse.interpolate({ inputRange: [0, 1], outputRange: [0.99, 1.02] });
   const isEmpty = !graphLoading && nodes.length === 0;
 
   useEffect(() => {
@@ -2736,7 +2905,7 @@ export default function MapScreen() {
       undefined,
     );
     if (clusterColor) return clusterColor;
-    return isRecentNode(node) ? '#D4B896' : MAP_NODE;
+    return isRecentNode(node) ? RECENT_NODE_COLOR : MAP_NODE;
   }, [clusterColorMap, isRecentNode]);
 
   const landingRing = newNodeId && pos[newNodeId] ? (() => {
@@ -2821,6 +2990,16 @@ export default function MapScreen() {
           </RadialGradient>
         );
       })}
+      {/* One per possible node colour; constant, so this never rebuilds. The
+          stops carry the falloff — a node's own fillOpacity just scales it. */}
+      {NODE_GLOW_COLORS.map((color, i) => (
+        <RadialGradient key={`nodeGlow-${i}`} id={`nodeGlow${i}`} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+          <Stop offset="0%" stopColor={color} stopOpacity={1} />
+          <Stop offset="30%" stopColor={color} stopOpacity={0.45} />
+          <Stop offset="62%" stopColor={color} stopOpacity={0.14} />
+          <Stop offset="100%" stopColor={color} stopOpacity={0} />
+        </RadialGradient>
+      ))}
     </Defs>
   ), [clusterLabels]);
 
@@ -2853,7 +3032,7 @@ export default function MapScreen() {
 
   /** On-screen font size targets. Constant through the mid zooms, scaling
    * down with the map when far out, SHRINKING (never looming) on the way in. */
-  const domainScreenAt = (z: number) => (z <= 1 ? 14 * Math.min(1, z / 0.64) : 14 / Math.pow(z, 0.8));
+  const domainScreenAt = (z: number) => (z <= 1 ? 16 * Math.min(1, z / 0.64) : 16 / Math.pow(z, 0.8));
   const topicScreenAt = (z: number) => (z < 0.71 ? 10 * (z / 0.71) : 10);
 
   // Counter-scale nodes, rebuilt per zoom commit. The wrapper scales every
@@ -2896,24 +3075,34 @@ export default function MapScreen() {
       hh: number;
     };
 
+    // Sub-topics earn their ink only once the user has zoomed into a region.
+    // At a flat opacity they painted at every altitude, so a fully zoomed-out
+    // map showed every sub-topic at once — the clutter — and they competed with
+    // the domain labels that are meant to own that altitude. This is the same
+    // ramp the hand-off below uses, so a domain fading out and its sub-topics
+    // fading in are two halves of one crossfade.
+    const subtopicOpacityAt = (z: number) => clamp01((z - 1.1) / 0.5) * 0.28;
+
     const toCandidate = (cl: (typeof clusterLabels)[number], isDomain: boolean): LabelCandidate => {
       const fontSize = isDomain ? domainScreen : topicScreen;
       const worldFont = fontSize / zoom;
       const letterSpacing = fontSize * (isDomain ? 0.25 : 0.3);
       let opacity: number;
       if (isDomain) {
+        // Domains carry the map's structure at a glance, so they sit a little
+        // heavier than the sub-topics that replace them further in.
         if (zoom <= 1.0) {
-          opacity = Math.min(0.28, 0.12 + (1 - zoom) * 0.10);
+          opacity = Math.min(0.38, 0.20 + (1 - zoom) * 0.12);
         } else if (labelContainment.domainsWithSubtopics.has(cl.topicId)) {
           // A sub-topic label exists to take over this region — hand off.
-          opacity = Math.max(0, 0.12 * (1 - (zoom - 1.0) / 0.6));
+          opacity = Math.max(0, 0.20 * (1 - (zoom - 1.0) / 0.6));
         } else {
           // Nothing to hand off to: keep the label as the user zooms in. It
           // shrinks smoothly and only fades away once genuinely small.
-          opacity = 0.12 * clamp01((domainScreen - 5) / 2);
+          opacity = 0.20 * clamp01((domainScreen - 5) / 2);
         }
       } else {
-        opacity = 0.28;
+        opacity = subtopicOpacityAt(zoom);
       }
       // Mono uppercase: char advance ≈ 0.6·fontSize + letterSpacing.
       const worldLs = worldFont * (isDomain ? 0.25 : 0.3);
@@ -2948,7 +3137,7 @@ export default function MapScreen() {
           k.isDomain && !cand.isDomain && zoom > 1.0 &&
           labelContainment.domainsBySubtopic.get(cand.cl.topicId)?.has(k.cl.topicId);
         if (handoff) {
-          cand.opacity = Math.min(cand.opacity, clamp01((zoom - 1.1) / 0.5) * 0.28);
+          cand.opacity = Math.min(cand.opacity, subtopicOpacityAt(zoom));
           if (cand.opacity <= 0.005) { blocked = true; break; }
         } else {
           blocked = true;
@@ -3096,14 +3285,20 @@ export default function MapScreen() {
 
             const finalOpacity = getNodeOpacity(node, baseOpacity, zoomFade);
 
-            const glowR = isHighlighted || isDiscoverySelected ? baseR * 9 : baseR * 5.5;
-            const glowOp = (isHighlighted || isDiscoverySelected) ? 0.12 : 0.03;
-            const innerGlowOp = (isHighlighted || isDiscoverySelected) ? 0.28 : 0.09;
+            // One gradient disc replaces the two flat ones. Much tighter than
+            // the old 5.5x outer ring — the falloff lives in the gradient's
+            // stops now, so it can be small and still read as a halo instead of
+            // needing reach to look soft.
+            const glowR = isHighlighted || isDiscoverySelected ? baseR * 5 : baseR * 3;
+            const glowOp = (isHighlighted || isDiscoverySelected) ? 0.42 : 0.13;
 
             return (
               <G key={node.id}>
-                <Circle cx={p.x} cy={p.y} r={glowR} fill={color} fillOpacity={finalOpacity === 0 ? 0 : glowOp * zoomFade} />
-                <Circle cx={p.x} cy={p.y} r={baseR * 2.8} fill={color} fillOpacity={finalOpacity === 0 ? 0 : innerGlowOp * zoomFade} />
+                <Circle
+                  cx={p.x} cy={p.y} r={glowR}
+                  fill={`url(#${nodeGlowId(color)})`}
+                  fillOpacity={finalOpacity === 0 ? 0 : glowOp * zoomFade}
+                />
                 <Circle
                   cx={p.x} cy={p.y}
                   r={(isHighlighted || isDiscoverySelected) ? baseR * 1.7 : baseR}
@@ -3384,11 +3579,13 @@ export default function MapScreen() {
       </View>
 
       {/* Timeline scrubber (temporal lens) — centered in the real gap between
-          the header buttons and the Socratic FAB (which shares the rail's
-          right edge), nudged up a bit above dead-center. */}
+          the header buttons and the bottom summary strip, nudged up a bit above
+          dead-center. */}
       {lensMode === 'temporal' && nodes.length > 0 && !showCapture && !drawerVisible && (() => {
         const zoneTop = (headerH || insets.top + 90) + Spacing[4];
-        const zoneBottom = SH - SOCRATIC_FAB_BOTTOM - SOCRATIC_FAB_SIZE - Spacing[4];
+        // Nothing shares the rail's right edge any more: the Socratic FAB moved
+        // into the header toolbar, and the summary strip hides in this lens.
+        const zoneBottom = SH - TAB_H - Spacing[4];
         const zoneH = Math.max(zoneBottom - zoneTop, 120);
         const railH = Math.min(zoneH, 440);
         const railTop = Math.max(zoneTop, zoneTop + (zoneH - railH) / 2 - Spacing[4]);
@@ -3516,20 +3713,19 @@ export default function MapScreen() {
           body="mneme tried to read the page but was blocked — some sites shut out automated readers. when that happens, just give it a few words about the piece, typed or spoken with the mic, and mneme builds the node and its connections from your summary instead."
         />
 
-        {/* Info panel (top-right map summary) */}
-        {nodes.length > 0 && !showCapture && !drawerVisible && lensMode !== 'temporal' &&
-          toolMode !== 'search' && !(toolMode === 'discover' && (discoveryNodeIds.length > 0 || discoveryEdgeKeys.length > 0)) && (
-          <InfoPanel
-            top={insets.top + 58}
+        {/* Summary strip — baseline counts along the bottom, above the tab bar */}
+        {stripVisible && (
+          <InfoStrip
             collapsed={infoCollapsed}
             onToggle={() => setInfoCollapsed((v) => !v)}
+            // Only the EXPANDED height is recorded, so collapsing hides the
+            // counts without dropping the FAB onto the tab bar and back.
+            onLayout={(e) => { if (!infoCollapsed) setStripH(e.nativeEvent.layout.height); }}
+            mapBg={mapBg}
             pointCount={nodes.length}
             totalPointCount={totalCaptureCount}
             fieldCount={fieldCount}
             connectionCount={edges.length}
-            tensionCount={tensionCount}
-            exciting={excitingLine}
-            onNavigate={(route) => router.push(route as never)}
           />
         )}
 
@@ -3584,7 +3780,7 @@ export default function MapScreen() {
 
         {/* Discover mode: selection count + open-in-companion button */}
         {toolMode === 'discover' && (discoveryNodeIds.length > 0 || discoveryEdgeKeys.length > 0) && !showCapture && !drawerVisible && (
-          <View style={[styles.discoveryBar, { bottom: TAB_H + Spacing[5] + FAB_SIZE + Spacing[3] }]} pointerEvents="box-none">
+          <View style={[styles.discoveryBar, { bottom: fabBottom + FAB_SIZE + Spacing[3] }]} pointerEvents="box-none">
             <View style={[styles.discoveryPill, { backgroundColor: 'rgba(10,10,10,0.9)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
               <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.5)' }]}>
                 {[
@@ -3612,52 +3808,72 @@ export default function MapScreen() {
         )}
 
         {/* Quick-save confirmation: the capture is on the map; the insight is
-            an offered next step, not a forced screen. Auto-dismisses. */}
+            an offered next step, not a forced screen. Auto-dismisses.
+            Top-right, under the toolbar, arriving from the right edge — it's a
+            notification, and it used to sit centred above the FAB where it
+            blocked the map it was reporting on. */}
         {savedPill && !showCapture && !drawerVisible && (
-          <View style={[styles.discoveryBar, { bottom: TAB_H + Spacing[5] + FAB_SIZE + Spacing[3] }]} pointerEvents="box-none">
-            <View style={[styles.discoveryPill, { backgroundColor: 'rgba(10,10,10,0.9)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
-              {savedPill.phase === 'logging' ? (
-                <>
-                  <AsciiLoader variant="cat" size={30} color="rgba(236,236,236,0.7)" />
-                  <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.6)' }]}>
-                    reading & mapping…
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <AsciiLoader variant="cat" size={30} idle color="rgba(236,236,236,0.7)" />
-                  <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.6)' }]}>saved ✓</Text>
-                  <Pressable
-                    onPress={() => { const id = savedPill.id; setSavedPill(null); router.push(`/insight/${id}` as never); }}
-                    hitSlop={8}
-                    style={[styles.discoveryActionBtn, { backgroundColor: 'rgba(126,200,160,0.15)', borderColor: 'rgba(126,200,160,0.32)' }]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Open the insight for this capture"
-                  >
-                    <Text style={[styles.discoveryAction, { color: DISCOVERY_ACCENT }]}>insight →</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => {
-                      const id = savedPill.id;
-                      setSavedPill(null);
-                      // The guided reveal, on request only: fly to the node
-                      // and pulse the landing ring.
-                      setNewNodeId(id);
-                    }}
-                    hitSlop={8}
-                    style={[styles.discoveryActionBtn, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.18)' }]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Show this capture on the atlas map"
-                  >
-                    <Text style={[styles.discoveryAction, { color: 'rgba(236,236,236,0.8)' }]}>atlas →</Text>
-                  </Pressable>
-                </>
-              )}
-              <Pressable onPress={() => setSavedPill(null)} hitSlop={10} style={styles.discoveryClose}>
+          <RNAnimated.View
+            style={[
+              styles.capturePill,
+              {
+                top: insets.top + 58,
+                backgroundColor: GLASS_BG,
+                borderColor: GLASS_BORDER,
+                opacity: pillSlide,
+                transform: [{
+                  translateX: pillSlide.interpolate({ inputRange: [0, 1], outputRange: [72, 0] }),
+                }],
+              },
+            ]}
+            pointerEvents="box-none"
+          >
+            <View style={styles.capturePillRow} pointerEvents="auto">
+              {/* 'mail' plays the envelope beats then hands off to the cat — the
+                  capture arriving, then something reading it. */}
+              <AsciiLoader
+                inline
+                variant={savedPill.phase === 'logging' ? 'mail' : 'cat'}
+                idle={savedPill.phase !== 'logging'}
+                size={30}
+                color="rgba(236,236,236,0.7)"
+              />
+              <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.6)', flex: 1 }]}>
+                {savedPill.phase === 'logging' ? 'reading & mapping…' : 'saved ✓'}
+              </Text>
+              <Pressable onPress={() => setSavedPill(null)} hitSlop={10}>
                 <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.35)' }]}>✕</Text>
               </Pressable>
             </View>
-          </View>
+            {savedPill.phase === 'saved' && (
+              <View style={styles.capturePillActions} pointerEvents="auto">
+                <Pressable
+                  onPress={() => { const id = savedPill.id; setSavedPill(null); router.push(`/insight/${id}` as never); }}
+                  hitSlop={8}
+                  style={[styles.discoveryActionBtn, { backgroundColor: 'rgba(126,200,160,0.15)', borderColor: 'rgba(126,200,160,0.32)' }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open the insight for this capture"
+                >
+                  <Text style={[styles.discoveryAction, { color: DISCOVERY_ACCENT }]}>insight →</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    const id = savedPill.id;
+                    setSavedPill(null);
+                    // The guided reveal, on request only: fly to the node
+                    // and pulse the landing ring.
+                    setNewNodeId(id);
+                  }}
+                  hitSlop={8}
+                  style={[styles.discoveryActionBtn, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.18)' }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Show this capture on the atlas map"
+                >
+                  <Text style={[styles.discoveryAction, { color: 'rgba(236,236,236,0.8)' }]}>atlas →</Text>
+                </Pressable>
+              </View>
+            )}
+          </RNAnimated.View>
         )}
 
         {/* First-load state: map is still fetching, show a clear signal */}
@@ -3813,7 +4029,7 @@ export default function MapScreen() {
 
         {/* FAB — fixed position just above tab bar regardless of active lens */}
         {!showCapture && !drawerVisible && (
-          <View style={[styles.fabWrap, { bottom: TAB_H + Spacing[5] }]} pointerEvents="box-none">
+          <View style={[styles.fabWrap, { bottom: fabBottom }]} pointerEvents="box-none">
             <RNAnimated.View
               style={[styles.fabGlow, { backgroundColor: MAP_NODE, opacity: glowOpacity, transform: [{ scale: glowScale }] }]}
               pointerEvents="none"
@@ -3822,11 +4038,11 @@ export default function MapScreen() {
               ref={fabTarget.ref}
               onLayout={fabTarget.onLayout}
               onPress={openCaptureFromFab}
-              style={[styles.fab, { backgroundColor: MAP_NODE }]}
+              style={styles.fab}
               accessibilityLabel="Capture new memory"
               accessibilityRole="button"
             >
-              <Text style={[styles.fabPlus, { color: '#060606' }]}>+</Text>
+              <Text style={styles.fabPlus}>+</Text>
             </Pressable>
           </View>
         )}
@@ -4028,6 +4244,33 @@ const styles = StyleSheet.create({
     paddingRight: 6,
     gap: Spacing[3],
   },
+  // A card, not a pill: 'saved' carries two actions under the caption, which no
+  // amount of rounding fits on one line at this width.
+  capturePill: {
+    position: 'absolute',
+    right: Spacing[4],
+    width: 226,
+    borderWidth: 1,
+    borderRadius: Radius.lg,
+    paddingVertical: Spacing[3],
+    paddingHorizontal: Spacing[3],
+    gap: Spacing[3],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.24,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  capturePillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[3],
+  },
+  capturePillActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[2],
+  },
   discoveryCount: {
     fontFamily: FontFamily.mono,
     fontSize: FontSize.xs,
@@ -4095,6 +4338,12 @@ const styles = StyleSheet.create({
     width: FAB_SIZE, height: FAB_SIZE,
     borderRadius: FAB_SIZE / 2,
     alignItems: 'center', justifyContent: 'center',
+    // Dark glass rather than a solid white disc, which read as a hole punched
+    // in the map. The breathing glow ring behind it (fabGlow) plus this lit
+    // edge carry the prominence the fill used to.
+    backgroundColor: GLASS_BG,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER_GLOW,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.18,
@@ -4102,10 +4351,13 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   fabPlus: {
-    fontSize: 30,
-    lineHeight: 34,
+    fontSize: 38,
+    lineHeight: 42,
     fontFamily: FontFamily.sans,
     includeFontPadding: false,
+    // Light on dark glass — the near-black that sat on the old white fill
+    // would be invisible now.
+    color: MAP_NODE,
   },
   modal: {
     borderTopLeftRadius: Radius['2xl'],

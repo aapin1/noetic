@@ -1,21 +1,17 @@
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, View, type ColorValue } from 'react-native';
-import { Tabs, useRouter } from 'expo-router';
+import React, { useEffect } from 'react';
+import { Platform, StyleSheet, View, type ColorValue } from 'react-native';
+import { Tabs } from 'expo-router';
 import { Redirect } from 'expo-router';
 import {
   GitGraphIcon,
   ListIcon,
-  MessageCircleIcon,
   UserIcon,
   UsersIcon,
   ZapIcon,
 } from 'lucide-react-native';
-import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
-import { SocraticProvider, useSocratic } from '@/contexts/SocraticContext';
-import { useTutorialTarget } from '@/contexts/TutorialContext';
-import { TUTORIAL_TARGET } from '@/constants/tutorialSteps';
+import { SocraticProvider } from '@/contexts/SocraticContext';
 import { api } from '@/lib/api';
 import { prefetchQuery } from '@/hooks/useApiQuery';
 
@@ -23,55 +19,7 @@ function TabBarIcon({ color, icon: Icon }: { color: ColorValue; icon: React.Elem
   return <Icon size={22} color={color as string} strokeWidth={1.4} />;
 }
 
-function SocraticFab() {
-  const c = useThemeColors();
-  const router = useRouter();
-  const { topicId } = useSocratic();
-  const [loading, setLoading] = useState(false);
-  const companionTarget = useTutorialTarget(TUTORIAL_TARGET.companionFab);
-
-  const handlePress = async () => {
-    if (loading) return;
-    companionTarget.press();
-    let tid = topicId;
-    if (!tid) {
-      setLoading(true);
-      try {
-        const trends = await api.memory.trends();
-        tid = trends.themes[0]?.topicId ?? null;
-      } catch {
-        tid = null;
-      } finally {
-        setLoading(false);
-      }
-    }
-    if (!tid) {
-      router.push('/companion' as never);
-      return;
-    }
-    router.push({ pathname: '/socratic/[topicId]' as never, params: { topicId: tid } });
-  };
-
-  return (
-    <Pressable
-      ref={companionTarget.isActive ? companionTarget.ref : undefined}
-      onLayout={companionTarget.isActive ? companionTarget.onLayout : undefined}
-      onPress={() => void handlePress()}
-      disabled={loading}
-      style={[styles.fab, { borderColor: c.border, backgroundColor: c.elevated }]}
-      accessibilityLabel="Open Socratic dialogue"
-      accessibilityRole="button"
-    >
-      {loading ? (
-        <ActivityIndicator size="small" color={c.muted} />
-      ) : (
-        <MessageCircleIcon size={20} color={c.muted} strokeWidth={1.4} />
-      )}
-    </Pressable>
-  );
-}
-
-function TabsWithFab() {
+function TabsRoot() {
   const c = useThemeColors();
   const { isAuthenticated, isLoading } = useAuth();
 
@@ -148,7 +96,6 @@ function TabsWithFab() {
           }}
         />
       </Tabs>
-      <SocraticFab />
     </View>
   );
 }
@@ -156,27 +103,11 @@ function TabsWithFab() {
 export default function TabsLayout() {
   return (
     <SocraticProvider>
-      <TabsWithFab />
+      <TabsRoot />
     </SocraticProvider>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  fab: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 104 : 86,
-    right: Spacing[5],
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    elevation: 8,
-  },
 });

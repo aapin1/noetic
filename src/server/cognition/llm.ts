@@ -731,12 +731,51 @@ export async function generateRecommendations(args: {
   }
 }
 
+/** Shared bar for every Mind insight: no observation a stranger could make
+ * without having read the user's actual captures. */
+const SPECIFICITY_RULES = [
+  "SPECIFICITY — the bar every sentence must clear:",
+  "- If a generic chatbot could write the sentence WITHOUT having read these exact captures, it is filler. Cut it or sharpen it until it could only be about this user.",
+  "- Ground claims in the captures: reference them by (shortened) title, and use their actual arguments, not the topic label.",
+  "- Never merely name two camps ('one is materialist, the other panpsychist') — say what the disagreement TURNS ON: the load-bearing assumption that, if settled, would settle the rest.",
+  "- Banned words: 'interesting', 'fascinating', 'highlights', 'underscores', 'reflects', 'interplay', 'delve', 'explore further', 'consider reflecting'.",
+].join("\n");
+
+export type ContradictionInsight = {
+  tension: string;
+  /** The question at stake, ≤ 8 words — rendered inside the fracture UI. */
+  crux: string | null;
+  /** One concrete way to settle it — something the user can do this week. */
+  test: string | null;
+};
+
+function parseContradictionInsight(raw: string): ContradictionInsight | null {
+  const parsed = JSON.parse(raw) as { tension?: unknown; crux?: unknown; test?: unknown };
+  if (typeof parsed.tension !== "string" || parsed.tension.trim().length === 0) return null;
+  return {
+    tension: parsed.tension.trim(),
+    crux: typeof parsed.crux === "string" && parsed.crux.trim().length > 0 ? parsed.crux.trim() : null,
+    test: typeof parsed.test === "string" && parsed.test.trim().length > 0 ? parsed.test.trim() : null,
+  };
+}
+
+const CONTRADICTION_OUTPUT_RULES = [
+  "Return three fields:",
+  "- crux: the question actually at stake between them, ≤ 8 words, phrased as a question. Not the topic ('free will') — the hinge ('Does causal inevitability erase blame?').",
+  "- tension: 1-2 sentences. Name the exact claim each side makes (grounded in its actual text), then the load-bearing assumption the disagreement turns on. Do not start with 'These captures' or 'These items'.",
+  "- test: ONE concrete move that would tell the user which side they actually hold — a question to answer in one written paragraph, a specific comparison to run, or a specific named thing to read that adjudicates. Never 'reflect on this'.",
+  "",
+  SPECIFICITY_RULES,
+  "",
+  "Return strictly valid JSON (no markdown): {\"crux\": \"...\", \"tension\": \"...\", \"test\": \"...\"}",
+].join("\n");
+
 export async function generateContradictionTension(args: {
   labelA: string;
   textA: string;
   labelB: string;
   textB: string;
-}): Promise<string | null> {
+}): Promise<ContradictionInsight | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
 
@@ -744,13 +783,9 @@ export async function generateContradictionTension(args: {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   const systemPrompt = [
-    "Two saved captures appear to hold opposing positions on the same question.",
-    "Name the specific intellectual tension between them in 1-2 sentences.",
-    "Requirements:",
-    "- Name the exact claim in conflict, not the general topic area.",
-    "- Bad: 'These items disagree about free will.' Good: 'Item A grounds moral responsibility in the causal structure of neural events, while Item B holds that uncompelled choice is a necessary condition for culpability — the disagreement turns on whether causal inevitability eliminates genuine agency.'",
-    "- Do not start with 'These captures' or 'These items'.",
-    "Return strictly valid JSON (no markdown): {\"tension\": \"...\"}",
+    "Two things a user saved hold opposing positions on the same question. You have read both; the user may not have noticed the collision.",
+    "",
+    CONTRADICTION_OUTPUT_RULES,
   ].join("\n");
 
   try {
@@ -764,7 +799,7 @@ export async function generateContradictionTension(args: {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.3,
-        max_tokens: 150,
+        max_tokens: 280,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -785,10 +820,7 @@ export async function generateContradictionTension(args: {
     const raw = payload.choices?.[0]?.message?.content;
     if (!raw) return null;
 
-    const parsed = JSON.parse(raw) as { tension?: unknown };
-    if (typeof parsed.tension !== "string" || parsed.tension.trim().length === 0) return null;
-
-    return parsed.tension.trim();
+    return parseContradictionInsight(raw);
   } catch {
     return null;
   } finally {
@@ -807,7 +839,7 @@ export async function generateContradictionTension(args: {
 export async function generateTopicTension(args: {
   topicName: string;
   captures: { label: string; keyIdea: string | null; text: string }[];
-}): Promise<{ aIndex: number; bIndex: number; tension: string } | null> {
+}): Promise<({ aIndex: number; bIndex: number } & ContradictionInsight) | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
   if (args.captures.length < 2) return null;
@@ -821,12 +853,12 @@ export async function generateTopicTension(args: {
     "This need NOT be a direct logical contradiction ('X is opposed to Y').",
     "It counts as tension whenever two ideas pull against each other, sit in",
     "uneasy balance, reveal ambivalence, or simply don't add up together.",
-    "Requirements:",
-    "- Pick the two items (by their index numbers) that are most in tension.",
-    "- Name the specific friction in 1-2 sentences, addressing the user as 'you'.",
-    "- Do not start with 'These captures' or 'These items'.",
-    "- If nothing genuinely pulls against anything else, return null.",
-    'Return strictly valid JSON (no markdown): {"a": <index>, "b": <index>, "tension": "..."} or {"tension": null}',
+    "If nothing genuinely pulls against anything else, return {\"tension\": null} — a forced tension is worse than none.",
+    "",
+    "Pick the two items (by their index numbers) that are most in tension, then, addressing the user as 'you':",
+    CONTRADICTION_OUTPUT_RULES,
+    "",
+    'Include the indices in the JSON: {"a": <index>, "b": <index>, "crux": "...", "tension": "...", "test": "..."} or {"tension": null}',
   ].join("\n");
 
   try {
@@ -840,7 +872,7 @@ export async function generateTopicTension(args: {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.3,
-        max_tokens: 200,
+        max_tokens: 320,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -866,8 +898,9 @@ export async function generateTopicTension(args: {
     const raw = payload.choices?.[0]?.message?.content;
     if (!raw) return null;
 
-    const parsed = JSON.parse(raw) as { a?: unknown; b?: unknown; tension?: unknown };
-    if (typeof parsed.tension !== "string" || parsed.tension.trim().length === 0) return null;
+    const insight = parseContradictionInsight(raw);
+    if (!insight) return null;
+    const parsed = JSON.parse(raw) as { a?: unknown; b?: unknown };
     if (typeof parsed.a !== "number" || typeof parsed.b !== "number") return null;
 
     const aIndex = Math.trunc(parsed.a);
@@ -880,7 +913,7 @@ export async function generateTopicTension(args: {
       return null;
     }
 
-    return { aIndex, bIndex, tension: parsed.tension.trim() };
+    return { aIndex, bIndex, ...insight };
   } catch {
     return null;
   } finally {
@@ -888,10 +921,24 @@ export async function generateTopicTension(args: {
   }
 }
 
+export type ThreadDriftNote = {
+  /** Index into the (chronological) capture list this note sits after. */
+  atIndex: number;
+  text: string;
+};
+
 export async function generateThreadSynthesis(args: {
   topicName: string;
-  captures: { label: string; keyIdea: string | null; text: string }[];
-}): Promise<{ position: string; openQuestion: string } | null> {
+  /** Chronological (oldest first) when capturedAt is provided — drift notes
+   * describe movement along this order. */
+  captures: { label: string; keyIdea: string | null; text: string; capturedAt?: string }[];
+}): Promise<{
+  position: string;
+  openQuestion: string;
+  heading?: string;
+  nextMove?: string;
+  driftNotes?: ThreadDriftNote[];
+} | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
   if (args.captures.length < 3) return null;
@@ -900,19 +947,32 @@ export async function generateThreadSynthesis(args: {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   const systemPrompt = [
-    "A user has been circling the same topic from multiple angles.",
-    "Based on what they've saved, state where their thinking appears to have landed — not a summary of what they read, but a claim about what they seem to believe.",
+    "A user has been circling the same topic from multiple angles. Captures are listed in the order they were saved (oldest first). You can see the whole arc; they only saw one item at a time.",
+    "Your job is diagnosis, not summary: where has their thinking actually landed, how did it move, and what should they do next.",
     "",
     "POSITION rules:",
-    "- One sentence. A specific intellectual claim, not a category description.",
-    "- Bad: 'The user has explored consciousness from many angles.' Good: 'The pattern suggests you hold that subjective experience is not reducible to physical processes, though you remain uncertain about what that irreducibility implies.'",
+    "- One sentence. A specific, falsifiable intellectual claim about what they seem to believe — cite the capture(s) that push them there by shortened title.",
+    "- Bad: 'You have explored consciousness from many angles.' Good: 'Between \"Integrated Information\" and \"The Hard Problem is a Category Error\" you've moved from measuring consciousness to doubting it can be measured — you now treat irreducibility as the default.'",
     "- Address the user directly as 'you'.",
+    "",
+    "HEADING rules:",
+    "- The position compressed to 3-6 words, lowercase, no ending period — the direction of travel, e.g. 'toward embodied cognition', 'against measurement optimism'.",
     "",
     "OPEN_QUESTION rules:",
     "- One question the user hasn't yet asked themselves but that follows naturally from this position.",
     "- Should feel generative — answerable with more thought or research.",
     "",
-    "Return strictly valid JSON (no markdown): {\"position\": \"...\", \"open_question\": \"...\"}",
+    "NEXT_MOVE rules:",
+    "- ONE concrete act doable this week that would advance or stress-test the position: a specific named thing to read, a paragraph to write, a claim to check against a specific capture. Never 'reflect', 'explore', or 'continue reading'.",
+    "",
+    "DRIFT_NOTES rules:",
+    "- 1-3 short observations of how the thinking MOVED across the sequence — a shift in angle, framing, or conviction between earlier and later captures.",
+    "- Each note: {\"after\": <index of the capture it follows>, \"note\": \"...\"} — one sentence, max ~20 words, addressed as 'you'.",
+    "- Only note real shifts. If the sequence shows no movement, return an empty list.",
+    "",
+    SPECIFICITY_RULES,
+    "",
+    "Return strictly valid JSON (no markdown): {\"position\": \"...\", \"heading\": \"...\", \"open_question\": \"...\", \"next_move\": \"...\", \"drift_notes\": [{\"after\": 0, \"note\": \"...\"}]}",
   ].join("\n");
 
   try {
@@ -926,7 +986,7 @@ export async function generateThreadSynthesis(args: {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.4,
-        max_tokens: 200,
+        max_tokens: 460,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -934,10 +994,12 @@ export async function generateThreadSynthesis(args: {
             role: "user",
             content: JSON.stringify({
               topic: args.topicName,
-              captures: args.captures.map((c) => ({
+              captures: args.captures.map((c, i) => ({
+                index: i,
                 title: c.label,
                 key_idea: c.keyIdea ?? "",
                 excerpt: c.text.slice(0, 400),
+                ...(c.capturedAt ? { captured_at: c.capturedAt } : {}),
               })),
             }),
           },
@@ -951,15 +1013,47 @@ export async function generateThreadSynthesis(args: {
     const raw = payload.choices?.[0]?.message?.content;
     if (!raw) return null;
 
-    const parsed = JSON.parse(raw) as { position?: unknown; open_question?: unknown };
+    const parsed = JSON.parse(raw) as {
+      position?: unknown;
+      open_question?: unknown;
+      heading?: unknown;
+      next_move?: unknown;
+      drift_notes?: unknown;
+    };
     if (
       typeof parsed.position !== "string" || parsed.position.trim().length === 0 ||
       typeof parsed.open_question !== "string" || parsed.open_question.trim().length === 0
     ) return null;
 
+    const driftNotes: ThreadDriftNote[] = [];
+    if (Array.isArray(parsed.drift_notes)) {
+      for (const row of parsed.drift_notes) {
+        if (typeof row !== "object" || row === null) continue;
+        const after = (row as { after?: unknown }).after;
+        const note = (row as { note?: unknown }).note;
+        if (typeof after !== "number" || typeof note !== "string" || note.trim().length === 0) continue;
+        const atIndex = Math.trunc(after);
+        if (atIndex < 0 || atIndex >= args.captures.length) continue;
+        driftNotes.push({ atIndex, text: note.trim() });
+        if (driftNotes.length >= 3) break;
+      }
+    }
+
+    const heading =
+      typeof parsed.heading === "string" && parsed.heading.trim().length > 0
+        ? parsed.heading.trim()
+        : undefined;
+    const nextMove =
+      typeof parsed.next_move === "string" && parsed.next_move.trim().length > 0
+        ? parsed.next_move.trim()
+        : undefined;
+
     return {
       position: parsed.position.trim(),
       openQuestion: parsed.open_question.trim(),
+      ...(heading ? { heading } : {}),
+      ...(nextMove ? { nextMove } : {}),
+      ...(driftNotes.length > 0 ? { driftNotes } : {}),
     };
   } catch {
     return null;
@@ -968,10 +1062,18 @@ export async function generateThreadSynthesis(args: {
   }
 }
 
+export type ConvergenceInsight = {
+  signal: string;
+  /** The destination idea compressed to ≤ 8 words — the keystone's label. */
+  arrival: string | null;
+  /** Where this convergence points next — one concrete move. */
+  act: string | null;
+};
+
 export async function generateConvergenceSignal(args: {
   topicName: string;
   captures: { label: string; source: string | null; keyIdea: string | null }[];
-}): Promise<string | null> {
+}): Promise<ConvergenceInsight | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
   if (args.captures.length < 2) return null;
@@ -980,11 +1082,16 @@ export async function generateConvergenceSignal(args: {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   const systemPrompt = [
-    "A user has arrived at the same intellectual territory from multiple completely different sources.",
-    "Name the convergent insight in 1-2 sentences — the core idea they keep returning to, and why it's notable that it arrived from such different starting points.",
-    "Be specific about the divergent paths AND the convergent destination.",
-    "Address the user directly as 'you'.",
-    "Return strictly valid JSON (no markdown): {\"signal\": \"...\"}",
+    "A user has arrived at the same intellectual territory from completely different sources. They probably haven't noticed — you can see all the paths at once.",
+    "",
+    "Return three fields, addressing the user directly as 'you':",
+    "- arrival: the destination idea compressed to ≤ 8 words, lowercase — the single thought all paths lead to. Not the topic name; the idea itself.",
+    "- signal: 1-2 sentences naming what each source's DISTINCT path was (grounded in the actual captures, by shortened title or source) and the precise idea where they meet. The value is the triangulation: independent routes to one point is evidence the idea matters to you.",
+    "- act: one concrete move this convergence points to — e.g. the capture pair to re-read side by side, a paragraph to write stating the converged idea in your own words, or a specific named next thing to read that extends it.",
+    "",
+    SPECIFICITY_RULES,
+    "",
+    "Return strictly valid JSON (no markdown): {\"arrival\": \"...\", \"signal\": \"...\", \"act\": \"...\"}",
   ].join("\n");
 
   try {
@@ -998,7 +1105,7 @@ export async function generateConvergenceSignal(args: {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
         temperature: 0.4,
-        max_tokens: 150,
+        max_tokens: 300,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -1023,10 +1130,17 @@ export async function generateConvergenceSignal(args: {
     const raw = payload.choices?.[0]?.message?.content;
     if (!raw) return null;
 
-    const parsed = JSON.parse(raw) as { signal?: unknown };
+    const parsed = JSON.parse(raw) as { signal?: unknown; arrival?: unknown; act?: unknown };
     if (typeof parsed.signal !== "string" || parsed.signal.trim().length === 0) return null;
 
-    return parsed.signal.trim();
+    return {
+      signal: parsed.signal.trim(),
+      arrival:
+        typeof parsed.arrival === "string" && parsed.arrival.trim().length > 0
+          ? parsed.arrival.trim()
+          : null,
+      act: typeof parsed.act === "string" && parsed.act.trim().length > 0 ? parsed.act.trim() : null,
+    };
   } catch {
     return null;
   } finally {

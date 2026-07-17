@@ -289,6 +289,12 @@ export interface IngestedMetadata {
   requiresManualInput: boolean;
 }
 
+/** A small node the Mind visualizations render and deep-link (→ /insight/id). */
+export interface IntelNode {
+  id: string;
+  label: string;
+}
+
 export interface ContradictionCard {
   itemAId: string;
   itemBId: string;
@@ -297,6 +303,20 @@ export interface ContradictionCard {
   previewA: string;
   previewB: string;
   tension: string;
+  /** The question at stake, ≤ 8 words — sits inside the fracture UI. */
+  crux?: string | null;
+  /** One concrete way for the user to settle which side they hold. */
+  test?: string | null;
+  /** Captures reinforcing each pole — the opposing masses in the FractureZone.
+   * Optional: a payload cached before this shape existed omits them. */
+  sideA?: IntelNode[];
+  sideB?: IntelNode[];
+}
+
+export interface ThreadDrift {
+  /** Index into `timeline` the note sits after. */
+  atIndex: number;
+  text: string;
 }
 
 export interface ThreadSynthesis {
@@ -305,8 +325,21 @@ export interface ThreadSynthesis {
   captureCount: number;
   position: string;
   openQuestion: string;
+  /** The position compressed to 3-6 words — the strand's direction label. */
+  heading?: string | null;
+  /** One concrete act, doable this week, that advances or tests the position. */
+  nextMove?: string | null;
   /** Capture ids feeding this thread — used to deep-link into companion/Atlas. */
   itemIds: string[];
+  /** Chronological (oldest first) captures along the TemporalSpine. Optional:
+   * a payload cached before this shape existed omits it. */
+  timeline?: (IntelNode & { capturedAt: string })[];
+  driftNotes?: ThreadDrift[];
+}
+
+export interface ConvergenceCluster {
+  source: string;
+  items: IntelNode[];
 }
 
 export interface ConvergenceSignal {
@@ -315,6 +348,13 @@ export interface ConvergenceSignal {
   captureCount: number;
   sourceCount: number;
   signal: string;
+  /** The destination idea compressed to ≤ 8 words — the keystone's label. */
+  arrival?: string | null;
+  /** Where the convergence points next — one concrete move. */
+  act?: string | null;
+  /** Captures grouped by origin source — the masses the KeystoneBridge pulls
+   * together. Optional: a payload cached before this shape existed omits it. */
+  clusters?: ConvergenceCluster[];
 }
 
 export interface DormantThread {

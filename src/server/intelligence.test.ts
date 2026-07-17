@@ -21,7 +21,33 @@ describe("generateContradictionTension", () => {
     expect(result).toBeNull();
   });
 
-  it("returns the tension string from a valid API response", async () => {
+  it("returns the insight from a valid API response", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              tension: "A holds X while B holds Y.",
+              crux: "Does X survive Y?",
+              test: "Write one paragraph defending X against Y.",
+            }),
+          },
+        }],
+      }),
+    }));
+    const result = await generateContradictionTension({
+      labelA: "A", textA: "text A", labelB: "B", textB: "text B",
+    });
+    expect(result).toEqual({
+      tension: "A holds X while B holds Y.",
+      crux: "Does X survive Y?",
+      test: "Write one paragraph defending X against Y.",
+    });
+  });
+
+  it("returns null crux/test when the model omits them", async () => {
     vi.stubEnv("OPENAI_API_KEY", "sk-test");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
@@ -32,7 +58,7 @@ describe("generateContradictionTension", () => {
     const result = await generateContradictionTension({
       labelA: "A", textA: "text A", labelB: "B", textB: "text B",
     });
-    expect(result).toBe("A holds X while B holds Y.");
+    expect(result).toEqual({ tension: "A holds X while B holds Y.", crux: null, test: null });
   });
 
   it("returns null when API response is not ok", async () => {
@@ -148,18 +174,30 @@ describe("generateConvergenceSignal", () => {
     expect(result).toBeNull();
   });
 
-  it("returns the signal string from a valid API response", async () => {
+  it("returns the insight from a valid API response", async () => {
     vi.stubEnv("OPENAI_API_KEY", "sk-test");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        choices: [{ message: { content: JSON.stringify({ signal: "From physics, philosophy, and literature you keep landing on: agency requires indeterminacy." }) } }],
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              signal: "From physics, philosophy, and literature you keep landing on: agency requires indeterminacy.",
+              arrival: "agency requires indeterminacy",
+              act: "Re-read A and C side by side.",
+            }),
+          },
+        }],
       }),
     }));
     const result = await generateConvergenceSignal({
       topicName: "free will", captures: diverseCaptures,
     });
-    expect(result).toBe("From physics, philosophy, and literature you keep landing on: agency requires indeterminacy.");
+    expect(result).toEqual({
+      signal: "From physics, philosophy, and literature you keep landing on: agency requires indeterminacy.",
+      arrival: "agency requires indeterminacy",
+      act: "Re-read A and C side by side.",
+    });
   });
 
   it("returns null when signal field is missing", async () => {
