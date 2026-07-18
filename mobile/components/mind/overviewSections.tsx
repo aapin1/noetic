@@ -32,12 +32,10 @@ function hashId(id: string): number {
 export function SectionHeader({
   title,
   whisper,
-  count,
   color,
 }: {
   title: string;
   whisper: string;
-  count: string;
   color: string;
 }) {
   return (
@@ -45,8 +43,6 @@ export function SectionHeader({
       <View style={styles.sectionTitleRow}>
         <View style={[styles.tick, { backgroundColor: color }]} />
         <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>{title}</Text>
-        <View style={{ flex: 1 }} />
-        <Text variant="monoSmall" style={{ color: stageInk(0.35) }}>{count}</Text>
       </View>
       <Text variant="monoSmall" style={{ color: stageInk(0.4), marginTop: 2 }}>{whisper}</Text>
     </View>
@@ -103,6 +99,13 @@ export function ThreadStrand({
 
   return (
     <Pressable onPress={onPress} style={styles.strandRow} accessibilityLabel={`Open thread: ${data.topicName}`}>
+      {/* Title first, larger, so each strand clearly belongs to its name */}
+      <View style={styles.strandTitleRow}>
+        <Text variant="h3" numberOfLines={1} style={{ color: stageInk(0.92), flex: 1 }}>
+          {data.topicName}
+        </Text>
+        <Text variant="monoSmall" style={{ color: stageInk(0.35) }}>{data.captureCount} captures</Text>
+      </View>
       <Svg width={INNER_W} height={STRAND_H}>
         <Path d={path} fill="none" stroke={color} strokeOpacity={0.45} strokeWidth={thickness} />
         {beads.map((b) => {
@@ -125,14 +128,8 @@ export function ThreadStrand({
           strokeWidth={1.4}
         />
       </Svg>
-      <View style={styles.strandMeta}>
-        <Text variant="bodyMedium" numberOfLines={1} style={{ color: stageInk(0.9), flex: 1 }}>
-          {data.topicName}
-        </Text>
-        <Text variant="monoSmall" style={{ color: stageInk(0.35) }}>{data.captureCount}</Text>
-      </View>
       {data.heading ? (
-        <Text variant="monoSmall" numberOfLines={1} style={{ color, marginTop: 2 }}>
+        <Text variant="monoSmall" numberOfLines={1} style={{ color, marginTop: Spacing[1] }}>
           → {data.heading}
         </Text>
       ) : null}
@@ -142,7 +139,7 @@ export function ThreadStrand({
 
 // ── Contradictions: the fault wall ────────────────────────────────────────
 
-const FAULT_ROW_H = 128;
+const FAULT_ROW_H = 156;
 
 function crackPath(height: number, seed: number): string {
   const pts: string[] = [];
@@ -199,7 +196,7 @@ export function FaultWall({
           </View>
           <View style={[styles.cruxChip, { borderColor: color }]}>
             <Text variant="monoSmall" numberOfLines={2} style={{ color, textAlign: 'center' }}>
-              {card.crux ?? 'tap to see what this turns on'}
+              {card.crux ?? 'Tap to see what this turns on'}
             </Text>
           </View>
         </Pressable>
@@ -255,13 +252,7 @@ export function ConfluenceRow({
             ⌾ {data.arrival}
           </Text>
         ) : null}
-        {/* names stay off the streams — they were unreadable riding the lines */}
-        <Text variant="monoSmall" numberOfLines={1} style={{ color: stageInk(0.4), marginTop: 2 }}>
-          {clusters.length > 0
-            ? clusters.map((cl) => cl.source).join(' · ')
-            : `${data.sourceCount} sources`}
-        </Text>
-        <Text variant="monoSmall" style={{ color: stageInk(0.3), marginTop: 2 }}>
+        <Text variant="monoSmall" style={{ color: stageInk(0.35), marginTop: 2 }}>
           {data.sourceCount} sources · {data.captureCount} captures
         </Text>
       </View>
@@ -303,8 +294,8 @@ const styles = StyleSheet.create({
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center' },
   tick: { width: 8, height: 2, borderRadius: 1, marginRight: Spacing[2] },
 
-  strandRow: { paddingHorizontal: PAD, marginBottom: Spacing[6] },
-  strandMeta: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing[1] },
+  strandRow: { paddingHorizontal: PAD, marginBottom: Spacing[10] },
+  strandTitleRow: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing[3], marginBottom: Spacing[2] },
 
   faultRow: {
     position: 'absolute',
@@ -312,7 +303,7 @@ const styles = StyleSheet.create({
     right: 0,
     height: FAULT_ROW_H,
     paddingHorizontal: PAD,
-    paddingTop: Spacing[3],
+    paddingTop: Spacing[5],
   },
   faultLabels: { flexDirection: 'row' },
   faultLabelA: {
@@ -330,7 +321,7 @@ const styles = StyleSheet.create({
   cruxChip: {
     alignSelf: 'center',
     maxWidth: '80%',
-    marginTop: Spacing[3],
+    marginTop: Spacing[5],
     paddingVertical: Spacing[2],
     paddingHorizontal: Spacing[4],
     borderWidth: StyleSheet.hairlineWidth,
@@ -338,7 +329,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(10,10,12,0.92)',
   },
 
-  confRow: { paddingHorizontal: PAD, marginBottom: Spacing[5], height: CONF_H },
+  confRow: { paddingHorizontal: PAD, marginBottom: Spacing[8], height: CONF_H },
   confMeta: {
     position: 'absolute',
     left: PAD + CONF_SVG_W + Spacing[4],

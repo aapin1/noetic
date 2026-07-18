@@ -188,6 +188,8 @@ export function FractureZone({ data, color, background, onClose, onOpenItem }: F
 
   return (
     <DetailShell typeLabel="TENSION" accent={color} background={background} onClose={onClose}>
+      {/* One continuous page: the rift scrolls away with the text */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.page}>
       <View style={styles.stage}>
         <Svg width={SW} height={STAGE_H} style={StyleSheet.absoluteFill}>
           {/* The chasm — a rift, not a link */}
@@ -213,8 +215,8 @@ export function FractureZone({ data, color, background, onClose, onOpenItem }: F
         </Animated.View>
       </View>
 
-      {/* The crux sits at the base of the rift; everything below scrolls. */}
-      <ScrollView style={styles.below} showsVerticalScrollIndicator={false} contentContainerStyle={styles.belowContent}>
+      {/* The crux sits at the base of the rift */}
+      <View style={styles.below}>
         <View style={[styles.crux, { borderColor: color }]}>
           <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>THE CRUX</Text>
           <Text
@@ -237,6 +239,7 @@ export function FractureZone({ data, color, background, onClose, onOpenItem }: F
             </Text>
           </View>
         ) : null}
+      </View>
       </ScrollView>
     </DetailShell>
   );
@@ -294,8 +297,8 @@ const styles = StyleSheet.create({
   },
   satHit: { position: 'absolute', width: 36, height: 36, borderRadius: 18 },
   poleLabel: { position: 'absolute' },
-  below: { flex: 1 },
-  belowContent: { paddingHorizontal: Spacing[6], paddingBottom: Spacing[12] },
+  page: { paddingBottom: Spacing[12] },
+  below: { paddingHorizontal: Spacing[6] },
   crux: {
     alignSelf: 'center',
     width: SW * 0.8,

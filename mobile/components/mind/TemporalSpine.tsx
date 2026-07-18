@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Dimensions, Pressable, StyleSheet, View } from 'react-native';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 import Animated, {
   Extrapolation,
   FadeIn,
@@ -28,12 +28,15 @@ const { width: SW, height: SH } = Dimensions.get('window');
 
 const TOP_PAD = 96; // room for the thread header before the first node
 const NODE_H = 72;
-const DRIFT_H = 116;
+const DRIFT_H = 132;
 const SWAY = SW * 0.2; // how far nodes swing off the center line
+// A drift box owns the bend's pocket: the 48% of the width the spine has not
+// yet crossed into at the top of the slot.
+const DRIFT_FAR_EDGE = SW * 0.52;
 
 type Row =
   | { kind: 'node'; y: number; x: number; index: number; id: string; label: string; capturedAt: string }
-  | { kind: 'drift'; y: number; text: string; side: 'left' | 'right' };
+  | { kind: 'drift'; y: number; text: string; side: 'left' | 'right'; anchorX: number };
 
 export interface TemporalSpineProps {
   data: ThreadSynthesis;
@@ -68,8 +71,9 @@ export function TemporalSpine({
       y += NODE_H;
       for (const note of driftNotes) {
         if (note.atIndex === i) {
-          // The note sits opposite the node it follows, clear of the spine.
-          out.push({ kind: 'drift', y, text: note.text, side: onLeft ? 'right' : 'left' });
+          // The note sits in the bend's pocket — the side the spine is about
+          // to leave — with a leader line tying it to the line itself.
+          out.push({ kind: 'drift', y, text: note.text, side: onLeft ? 'right' : 'left', anchorX: x });
           y += DRIFT_H;
         }
       }
@@ -112,7 +116,7 @@ export function TemporalSpine({
             {data.captureCount} captures · oldest first
           </Text>
           <Text variant="monoSmall" style={{ color, marginTop: Spacing[1], opacity: 0.85 }}>
-            tap a point to see the capture
+            Tap a point to see the capture
           </Text>
         </View>
 
@@ -120,7 +124,7 @@ export function TemporalSpine({
         <View style={{ height: spineHeight }}>
           <Svg width={SW} height={spineHeight} style={StyleSheet.absoluteFill}>
             <Path d={path} fill="none" stroke={color} strokeOpacity={0.34} strokeWidth={1.6} />
-            {rows.map((row) =>
+            {rows.map((row, i) =>
               row.kind === 'node' ? (
                 <React.Fragment key={`dot-${row.id}`}>
                   <Circle
@@ -129,7 +133,20 @@ export function TemporalSpine({
                   />
                   <Circle cx={row.x} cy={row.y + NODE_H / 2} r={6} fill={color} fillOpacity={0.92} />
                 </React.Fragment>
-              ) : null,
+              ) : (
+                // Leader from the spine into the drift note's pocket
+                <Line
+                  key={`lead-${i}`}
+                  x1={row.anchorX}
+                  y1={row.y + 22}
+                  x2={row.side === 'left' ? SW - DRIFT_FAR_EDGE + 2 : DRIFT_FAR_EDGE - 2}
+                  y2={row.y + 22}
+                  stroke={color}
+                  strokeOpacity={0.35}
+                  strokeWidth={1}
+                  strokeDasharray="2 5"
+                />
+              ),
             )}
           </Svg>
 
@@ -139,7 +156,7 @@ export function TemporalSpine({
                 <FadeInBlock key={`d-${i}`} top={row.y} side={row.side} scrollY={scrollY}>
                   <View style={[styles.drift, { borderLeftColor: color }]}>
                     <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>DRIFT</Text>
-                    <Text variant="body" numberOfLines={4} style={{ color: stageInk(0.82), marginTop: Spacing[1] }}>
+                    <Text variant="body" numberOfLines={3} style={{ color: stageInk(0.82), marginTop: Spacing[1] }}>
                       {row.text}
                     </Text>
                   </View>
@@ -179,7 +196,7 @@ export function TemporalSpine({
                       {row.label}
                     </Text>
                     <Pressable onPress={() => onOpenItem(row.id)} hitSlop={8} style={{ marginTop: Spacing[2] }}>
-                      <Text variant="monoSmall" style={{ color }}>open capture →</Text>
+                      <Text variant="monoSmall" style={{ color }}>Open capture →</Text>
                     </Pressable>
                   </Animated.View>
                 )}
@@ -249,7 +266,9 @@ function FadeInBlock({
       style={[
         styles.driftWrap,
         { top },
-        side === 'left' ? { left: Spacing[4], right: SW * 0.44 } : { right: Spacing[4], left: SW * 0.44 },
+        side === 'left'
+          ? { left: Spacing[4], right: DRIFT_FAR_EDGE }
+          : { right: Spacing[4], left: DRIFT_FAR_EDGE },
         style,
       ]}
     >
@@ -286,7 +305,9 @@ const styles = StyleSheet.create({
     zIndex: 5,
     elevation: 5,
   },
-  driftWrap: { position: 'absolute', height: DRIFT_H, justifyContent: 'center' },
+  // Top-anchored: the box lives in the bend's pocket before the spine
+  // crosses to its side of the screen.
+  driftWrap: { position: 'absolute', height: DRIFT_H, justifyContent: 'flex-start', paddingTop: 6 },
   drift: { borderLeftWidth: 2, paddingLeft: Spacing[3], paddingVertical: Spacing[2] },
   end: { paddingHorizontal: Spacing[6], paddingBottom: Spacing[16], paddingTop: Spacing[4] },
   endMarker: { width: 24, height: 2, borderRadius: 1, marginBottom: Spacing[4], opacity: 0.8 },

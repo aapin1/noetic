@@ -93,6 +93,8 @@ export function KeystoneBridge({ data, color, background, onClose, onOpenItem }:
 
   return (
     <DetailShell typeLabel="CONVERGENCE" accent={color} background={background} onClose={onClose}>
+      {/* One continuous page: the bridge scrolls away with the text */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.page}>
       <View style={{ height: STAGE_H }}>
         <Svg width={SW} height={STAGE_H} style={StyleSheet.absoluteFill}>
           {clusters.map((cluster, ci) =>
@@ -138,7 +140,7 @@ export function KeystoneBridge({ data, color, background, onClose, onOpenItem }:
         ))}
       </View>
 
-      <ScrollView style={styles.footer} showsVerticalScrollIndicator={false} contentContainerStyle={styles.footerContent}>
+      <View style={styles.footer}>
         <Text variant="monoSmall" style={{ color: stageInk(0.42) }}>
           {data.sourceCount} sources · {data.captureCount} captures · one destination
         </Text>
@@ -160,6 +162,7 @@ export function KeystoneBridge({ data, color, background, onClose, onOpenItem }:
             </Text>
           </View>
         ) : null}
+      </View>
       </ScrollView>
     </DetailShell>
   );
@@ -256,22 +259,29 @@ function ClusterOverlay({
           />
         );
       })}
+      {/* The cluster is named by what it holds, not where it came from */}
       <View
         style={[
           styles.clusterLabel,
           { top: cluster.cy + 58 },
           align === 'left'
             ? { left: Math.max(Spacing[4], cluster.startX - 70) }
-            : { right: Math.max(Spacing[4], SW - cluster.startX - 70) },
+            : { right: Math.max(Spacing[4], SW - cluster.startX - 70), alignItems: 'flex-end' },
         ]}
         pointerEvents="none"
       >
-        <Text variant="monoSmall" numberOfLines={1} style={{ color: stageInk(0.55) }}>
-          {cluster.source}
+        <Text
+          variant="monoSmall"
+          numberOfLines={2}
+          style={{ color: stageInk(0.6), textAlign: align === 'left' ? 'left' : 'right' }}
+        >
+          {cluster.items[0]?.label}
         </Text>
-        <Text variant="monoSmall" style={{ color: stageInk(0.32) }}>
-          {cluster.items.length} {cluster.items.length === 1 ? 'capture' : 'captures'}
-        </Text>
+        {cluster.items.length > 1 ? (
+          <Text variant="monoSmall" style={{ color: stageInk(0.32) }}>
+            +{cluster.items.length - 1} more
+          </Text>
+        ) : null}
       </View>
     </Animated.View>
   );
@@ -293,9 +303,9 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   memberHit: { position: 'absolute', width: 40, height: 40, borderRadius: 20 },
-  clusterLabel: { position: 'absolute', width: 140 },
-  footer: { flex: 1 },
-  footerContent: { paddingHorizontal: Spacing[6], paddingTop: Spacing[5], paddingBottom: Spacing[12] },
+  clusterLabel: { position: 'absolute', width: 150 },
+  page: { paddingBottom: Spacing[12] },
+  footer: { paddingHorizontal: Spacing[6], paddingTop: Spacing[5] },
   signal: {
     marginTop: Spacing[3],
     borderLeftWidth: 2,

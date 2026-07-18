@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { ChevronLeftIcon } from 'lucide-react-native';
 import Animated, {
   Easing,
   FadeIn,
@@ -41,9 +42,9 @@ import type {
 // Mind is NOT a second Atlas. Atlas maps where your knowledge lives; Mind
 // reports the forces moving through it. Opening the tab lands on a calm
 // threshold — a slow-breathing mark and the list of instruments with
-// something to say — and choosing one glides into the full dossier, scrolled
-// to that instrument. Every surface sits on the same map background as
-// Atlas so the two tabs read as one space.
+// something to say. Choosing one opens THAT instrument alone on its own
+// screen (a proper ← returns); "see everything" browses the full dossier.
+// Every surface sits on the same map background as Atlas.
 // ─────────────────────────────────────────────────────────────────────────
 
 const ACCENT = {
@@ -54,6 +55,7 @@ const ACCENT = {
 } as const;
 
 type SectionKey = keyof typeof ACCENT;
+type ViewState = 'threshold' | 'all' | SectionKey;
 
 const SECTION_META: { key: SectionKey; name: string; whisper: string }[] = [
   { key: 'threads', name: 'threads', whisper: 'where your thinking is heading' },
@@ -78,11 +80,7 @@ export default function MindScreen() {
   const router = useRouter();
   const [infoVisible, setInfoVisible] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
-  const [phase, setPhase] = useState<'threshold' | 'stack'>('threshold');
-
-  const scrollRef = useRef<ScrollView>(null);
-  const sectionY = useRef<Partial<Record<SectionKey, number>>>({});
-  const pendingSection = useRef<SectionKey | null>(null);
+  const [view, setView] = useState<ViewState>('threshold');
 
   const { data, loading, error, refetch } = useApiQuery(() => api.memory.intelligence(), [], { cacheKey: 'memory.intelligence' });
   useFocusEffect(useCallback(() => { void refetch(); }, [refetch]));
@@ -120,25 +118,6 @@ export default function MindScreen() {
     router.navigate({ pathname: '/(tabs)', params: { selectIds: d.itemIds.join(',') } } as never);
   }, [router]);
 
-  const enterStack = useCallback((section: SectionKey | null) => {
-    pendingSection.current = section;
-    setPhase('stack');
-  }, []);
-
-  // Once the stack has mounted and measured, glide to the chosen instrument.
-  useEffect(() => {
-    if (phase !== 'stack' || !pendingSection.current) return;
-    const key = pendingSection.current;
-    const timer = setTimeout(() => {
-      const y = sectionY.current[key];
-      if (typeof y === 'number') {
-        scrollRef.current?.scrollTo({ y: Math.max(0, y - Spacing[4]), animated: true });
-      }
-      pendingSection.current = null;
-    }, 120);
-    return () => clearTimeout(timer);
-  }, [phase]);
-
   // Which selections open a dedicated full-screen visualization; the rest
   // (dormant, or data cached before the visualization fields existed) keep
   // the small explanation sheet.
@@ -146,6 +125,46 @@ export default function MindScreen() {
     selection?.type === 'contradiction' ||
     (selection?.type === 'thread' && (selection.d.timeline?.length ?? 0) >= 2) ||
     (selection?.type === 'convergence' && (selection.d.clusters?.length ?? 0) >= 2);
+
+  const renderSection = (key: SectionKey) => {
+    switch (key) {
+      case 'threads':
+        return intel.threadSyntheses.map((d) => (
+          <ThreadStrand
+            key={d.topicId}
+            data={d}
+            color={ACCENT.threads}
+            onPress={() => setSelection({ type: 'thread', d })}
+          />
+        ));
+      case 'contradictions':
+        return (
+          <FaultWall
+            cards={intel.contradictionCards}
+            color={ACCENT.contradictions}
+            onOpen={(card) => setSelection({ type: 'contradiction', d: card })}
+          />
+        );
+      case 'convergence':
+        return intel.convergenceSignals.map((d) => (
+          <ConfluenceRow
+            key={d.topicId}
+            data={d}
+            color={ACCENT.convergence}
+            onPress={() => setSelection({ type: 'convergence', d })}
+          />
+        ));
+      case 'dormant':
+        return intel.dormantThreads.map((d) => (
+          <EmberRow
+            key={d.topicId}
+            data={d}
+            color={ACCENT.dormant}
+            onPress={() => setSelection({ type: 'dormant', d })}
+          />
+        ));
+    }
+  };
 
   // ── Loading / error / empty — all on the Atlas map background ───────────
   if (loading && !data) {
@@ -175,7 +194,7 @@ export default function MindScreen() {
           <View style={styles.stateBlock}>
             <Text variant="serif" style={{ color: stageInk(0.92), textAlign: 'center' }}>Mind unavailable</Text>
             <Text variant="monoSmall" style={styles.stateBody}>{error}</Text>
-            <Pressable onPress={() => void refetch()} style={{ marginTop: Spacing[5] }}>
+            <Pressable onPress={() => void refetch()} style={{ marginTop: Spacing[5], alignSelf: 'center' }}>
               <Text variant="monoSmall" style={{ color: stageInk(0.85) }}>retry</Text>
             </Pressable>
           </View>
@@ -208,135 +227,90 @@ export default function MindScreen() {
     .map((s) => `${counts[s.key]} ${counts[s.key] === 1 ? s.name.replace(/s$/, '') : s.name}`)
     .join(' · ');
 
+  const currentMeta = view !== 'threshold' && view !== 'all'
+    ? SECTION_META.find((s) => s.key === view)
+    : null;
+
   return (
     <View style={[styles.root, { backgroundColor: c.mapBackground }]}>
       <SafeAreaView edges={['top']} style={styles.safe}>
-        <View style={styles.headerRow}>
-          <Text variant="wordmark" style={{ color: stageInk(0.92) }}>mind</Text>
-          <View style={styles.headerRight}>
-            {phase === 'stack' && (
-              <Pressable onPress={() => setPhase('threshold')} hitSlop={12} accessibilityLabel="Back to overview">
-                <Text variant="monoSmall" style={{ color: stageInk(0.5) }}>overview</Text>
+        {view === 'threshold' ? (
+          <>
+            <View style={styles.headerRow}>
+              <Text variant="wordmark" style={{ color: stageInk(0.92) }}>mind</Text>
+              <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About mind">
+                <Text style={{ color: stageInk(0.5), fontSize: 16 }}>ⓘ</Text>
               </Pressable>
-            )}
-            <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About mind">
-              <Text style={{ color: stageInk(0.5), fontSize: 16 }}>ⓘ</Text>
-            </Pressable>
-          </View>
-        </View>
+            </View>
+            <Animated.View
+              key="threshold"
+              entering={FadeIn.duration(300)}
+              exiting={FadeOut.duration(200)}
+              style={styles.threshold}
+            >
+              <BreathingMark color={stageInk(0.55)} />
+              <Text variant="serif" style={styles.thresholdTitle}>
+                A read of what your mind has been up to
+              </Text>
+              <Text variant="monoSmall" style={styles.thresholdPulse}>{pulse}</Text>
 
-        {phase === 'threshold' ? (
-          <Animated.View
-            key="threshold"
-            entering={FadeIn.duration(300)}
-            exiting={FadeOut.duration(200)}
-            style={styles.threshold}
-          >
-            <BreathingMark color={stageInk(0.55)} />
-            <Text variant="serif" style={styles.thresholdTitle}>a quiet read of where your head is</Text>
-            <Text variant="monoSmall" style={styles.thresholdPulse}>{pulse}</Text>
+              <View style={styles.thresholdList}>
+                {activeSections.map((s) => (
+                  <Pressable
+                    key={s.key}
+                    onPress={() => setView(s.key)}
+                    style={styles.thresholdRow}
+                    accessibilityLabel={`Open ${s.name}`}
+                  >
+                    <View style={[styles.thresholdTick, { backgroundColor: ACCENT[s.key] }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text variant="bodyMedium" style={{ color: stageInk(0.9) }}>{s.name}</Text>
+                      <Text variant="monoSmall" style={{ color: stageInk(0.4), marginTop: 1 }}>{s.whisper}</Text>
+                    </View>
+                    <Text variant="monoSmall" style={{ color: ACCENT[s.key] }}>{counts[s.key]}</Text>
+                  </Pressable>
+                ))}
+              </View>
 
-            <View style={styles.thresholdList}>
-              {activeSections.map((s) => (
-                <Pressable
-                  key={s.key}
-                  onPress={() => enterStack(s.key)}
-                  style={styles.thresholdRow}
-                  accessibilityLabel={`Open ${s.name}`}
-                >
-                  <View style={[styles.thresholdTick, { backgroundColor: ACCENT[s.key] }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text variant="bodyMedium" style={{ color: stageInk(0.9) }}>{s.name}</Text>
-                    <Text variant="monoSmall" style={{ color: stageInk(0.4), marginTop: 1 }}>{s.whisper}</Text>
-                  </View>
-                  <Text variant="monoSmall" style={{ color: ACCENT[s.key] }}>{counts[s.key]}</Text>
-                </Pressable>
-              ))}
+              <Pressable onPress={() => setView('all')} style={styles.seeAll} accessibilityLabel="See everything">
+                <Text variant="monoSmall" style={{ color: stageInk(0.5), letterSpacing: 1 }}>see everything ↓</Text>
+              </Pressable>
+            </Animated.View>
+          </>
+        ) : (
+          <Animated.View key={view} entering={FadeIn.duration(280)} style={styles.safe}>
+            <View style={styles.headerRow}>
+              <Pressable
+                onPress={() => setView('threshold')}
+                hitSlop={12}
+                style={styles.backBtn}
+                accessibilityLabel="Back to Mind overview"
+              >
+                <ChevronLeftIcon size={22} color={stageInk(0.9)} />
+              </Pressable>
+              <Text variant="monoSmall" style={{ color: stageInk(0.55), letterSpacing: 2 }}>
+                {view === 'all' ? 'everything' : currentMeta?.name}
+              </Text>
+              <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About mind">
+                <Text style={{ color: stageInk(0.5), fontSize: 16 }}>ⓘ</Text>
+              </Pressable>
             </View>
 
-            <Pressable onPress={() => enterStack(null)} style={styles.seeAll} accessibilityLabel="See everything">
-              <Text variant="monoSmall" style={{ color: stageInk(0.5), letterSpacing: 1 }}>see everything ↓</Text>
-            </Pressable>
-          </Animated.View>
-        ) : (
-          <Animated.View key="stack" entering={FadeIn.duration(300)} style={styles.safe}>
-            <Text variant="monoSmall" style={styles.pulseLine}>{pulse}</Text>
-            <ScrollView
-              ref={scrollRef}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.scroll}
-            >
-              {counts.threads > 0 && (
-                <View onLayout={(e) => { sectionY.current.threads = e.nativeEvent.layout.y; }}>
-                  <SectionHeader
-                    title="THREADS"
-                    whisper="where your thinking is heading"
-                    count={`${counts.threads}`}
-                    color={ACCENT.threads}
-                  />
-                  {intel.threadSyntheses.map((d) => (
-                    <ThreadStrand
-                      key={d.topicId}
-                      data={d}
-                      color={ACCENT.threads}
-                      onPress={() => setSelection({ type: 'thread', d })}
-                    />
-                  ))}
-                </View>
-              )}
-
-              {counts.contradictions > 0 && (
-                <View onLayout={(e) => { sectionY.current.contradictions = e.nativeEvent.layout.y; }}>
-                  <SectionHeader
-                    title="CONTRADICTIONS"
-                    whisper="where it disagrees with itself"
-                    count={`${counts.contradictions}`}
-                    color={ACCENT.contradictions}
-                  />
-                  <FaultWall
-                    cards={intel.contradictionCards}
-                    color={ACCENT.contradictions}
-                    onOpen={(card) => setSelection({ type: 'contradiction', d: card })}
-                  />
-                </View>
-              )}
-
-              {counts.convergence > 0 && (
-                <View onLayout={(e) => { sectionY.current.convergence = e.nativeEvent.layout.y; }}>
-                  <SectionHeader
-                    title="CONVERGENCE"
-                    whisper="different roads, one arrival"
-                    count={`${counts.convergence}`}
-                    color={ACCENT.convergence}
-                  />
-                  {intel.convergenceSignals.map((d) => (
-                    <ConfluenceRow
-                      key={d.topicId}
-                      data={d}
-                      color={ACCENT.convergence}
-                      onPress={() => setSelection({ type: 'convergence', d })}
-                    />
-                  ))}
-                </View>
-              )}
-
-              {counts.dormant > 0 && (
-                <View onLayout={(e) => { sectionY.current.dormant = e.nativeEvent.layout.y; }}>
-                  <SectionHeader
-                    title="DORMANT"
-                    whisper="gone quiet — worth reawakening?"
-                    count={`${counts.dormant}`}
-                    color={ACCENT.dormant}
-                  />
-                  {intel.dormantThreads.map((d) => (
-                    <EmberRow
-                      key={d.topicId}
-                      data={d}
-                      color={ACCENT.dormant}
-                      onPress={() => setSelection({ type: 'dormant', d })}
-                    />
-                  ))}
-                </View>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+              {view === 'all' ? (
+                activeSections.map((s) => (
+                  <View key={s.key}>
+                    <SectionHeader title={s.name.toUpperCase()} whisper={s.whisper} color={ACCENT[s.key]} />
+                    {renderSection(s.key)}
+                  </View>
+                ))
+              ) : (
+                <>
+                  <Text variant="monoSmall" style={styles.sectionWhisper}>
+                    {currentMeta?.whisper}
+                  </Text>
+                  {renderSection(view)}
+                </>
               )}
             </ScrollView>
           </Animated.View>
@@ -460,9 +434,9 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   headerRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing[6], paddingTop: Spacing[3],
+    paddingHorizontal: Spacing[6], paddingTop: Spacing[3], paddingBottom: Spacing[2],
   },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing[4] },
+  backBtn: { padding: Spacing[1], marginLeft: -Spacing[2] },
 
   stateBlock: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing[8], paddingBottom: Spacing[16] },
   stateBody: {
@@ -488,7 +462,12 @@ const styles = StyleSheet.create({
   thresholdTick: { width: 8, height: 22, borderRadius: 2 },
   seeAll: { alignSelf: 'center', marginTop: Spacing[10], padding: Spacing[2] },
 
-  pulseLine: { paddingHorizontal: Spacing[6], marginTop: 2, color: 'rgba(236,236,236,0.38)', letterSpacing: 1 },
+  sectionWhisper: {
+    color: 'rgba(236,236,236,0.4)',
+    paddingHorizontal: Spacing[6],
+    marginTop: Spacing[2],
+    marginBottom: Spacing[5],
+  },
   scroll: { paddingBottom: Platform.OS === 'ios' ? 110 : 92 },
 
   sheet: {
