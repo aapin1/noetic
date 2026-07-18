@@ -99,24 +99,35 @@ export default function MindScreen() {
     router.push(`/insight/${id}` as never);
   }, [router]);
 
-  const continueInCompanion = useCallback((d: ThreadSynthesis) => {
-    const prefill =
-      `Here's where I seem to have landed on ${d.topicName}: "${d.position}"\n\n` +
-      `The open question: ${d.openQuestion}\n\n` +
-      `My take: `;
+  const continueInCompanion = useCallback((itemIds: string[], contextLabel: string, prefill: string) => {
     router.push({
       pathname: '/companion',
       params: {
-        contextIds: d.itemIds.join(','),
-        contextLabels: d.topicName,
+        contextIds: itemIds.join(','),
+        contextLabels: contextLabel,
         prefill,
       },
     } as never);
   }, [router]);
 
-  const viewInAtlas = useCallback((d: ThreadSynthesis) => {
-    router.navigate({ pathname: '/(tabs)', params: { selectIds: d.itemIds.join(',') } } as never);
+  const viewInAtlas = useCallback((itemIds: string[]) => {
+    router.navigate({ pathname: '/(tabs)', params: { selectIds: itemIds.join(',') } } as never);
   }, [router]);
+
+  const contradictionItemIds = useCallback(
+    (d: ContradictionCard) => [
+      d.itemAId,
+      d.itemBId,
+      ...(d.sideA ?? []).map((n) => n.id),
+      ...(d.sideB ?? []).map((n) => n.id),
+    ],
+    [],
+  );
+
+  const convergenceItemIds = useCallback(
+    (d: ConvergenceSignal) => (d.clusters ?? []).flatMap((c) => c.items.map((n) => n.id)),
+    [],
+  );
 
   // Which selections open a dedicated full-screen visualization; the rest
   // (dormant, or data cached before the visualization fields existed) keep
@@ -306,9 +317,11 @@ export default function MindScreen() {
                 ))
               ) : (
                 <>
-                  <Text variant="monoSmall" style={styles.sectionWhisper}>
-                    {currentMeta?.whisper}
-                  </Text>
+                  {view === 'dormant' ? (
+                    <Text variant="monoSmall" style={styles.sectionWhisper}>
+                      {currentMeta?.whisper}
+                    </Text>
+                  ) : null}
                   {renderSection(view)}
                 </>
               )}
@@ -325,8 +338,14 @@ export default function MindScreen() {
           background={c.mapBackground}
           onClose={() => setSelection(null)}
           onOpenItem={openItem}
-          onContinueCompanion={() => continueInCompanion(selection.d)}
-          onViewAtlas={() => viewInAtlas(selection.d)}
+          onContinueCompanion={() => continueInCompanion(
+            selection.d.itemIds,
+            selection.d.topicName,
+            `Here's where I seem to have landed on ${selection.d.topicName}: "${selection.d.position}"\n\n` +
+              `The open question: ${selection.d.openQuestion}\n\n` +
+              `My take: `,
+          )}
+          onViewAtlas={() => viewInAtlas(selection.d.itemIds)}
         />
       )}
       {selection?.type === 'contradiction' && (
@@ -336,6 +355,14 @@ export default function MindScreen() {
           background={c.mapBackground}
           onClose={() => setSelection(null)}
           onOpenItem={openItem}
+          onContinueCompanion={() => continueInCompanion(
+            contradictionItemIds(selection.d),
+            `${selection.d.labelA} vs ${selection.d.labelB}`,
+            `Here's a tension I've been sitting with: "${selection.d.labelA}" versus "${selection.d.labelB}".\n\n` +
+              (selection.d.crux ? `The crux: ${selection.d.crux}\n\n` : '') +
+              `My take: `,
+          )}
+          onViewAtlas={() => viewInAtlas(contradictionItemIds(selection.d))}
         />
       )}
       {selection?.type === 'convergence' && (selection.d.clusters?.length ?? 0) >= 2 && (
@@ -345,6 +372,14 @@ export default function MindScreen() {
           background={c.mapBackground}
           onClose={() => setSelection(null)}
           onOpenItem={openItem}
+          onContinueCompanion={() => continueInCompanion(
+            convergenceItemIds(selection.d),
+            selection.d.topicName,
+            `Here's where different sources seem to be converging on ${selection.d.topicName}` +
+              (selection.d.arrival ? `: "${selection.d.arrival}"` : '') + `.\n\n` +
+              `My take: `,
+          )}
+          onViewAtlas={() => viewInAtlas(convergenceItemIds(selection.d))}
         />
       )}
 

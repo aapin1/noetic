@@ -327,8 +327,6 @@ export interface ThreadSynthesis {
   openQuestion: string;
   /** The position compressed to 3-6 words — the strand's direction label. */
   heading?: string | null;
-  /** One concrete act, doable this week, that advances or tests the position. */
-  nextMove?: string | null;
   /** Capture ids feeding this thread — used to deep-link into companion/Atlas. */
   itemIds: string[];
   /** Chronological (oldest first) captures along the TemporalSpine. Optional:

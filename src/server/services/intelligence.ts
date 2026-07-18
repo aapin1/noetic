@@ -89,8 +89,6 @@ export type ThreadSynthesis = {
   openQuestion: string;
   /** The position compressed to 3-6 words — the strand's direction label. */
   heading: string | null;
-  /** One concrete act, doable this week, that advances or tests the position. */
-  nextMove: string | null;
   /** Capture ids feeding this thread — used to deep-link into companion/Atlas. */
   itemIds: string[];
   /** Chronological (oldest first) captures along the TemporalSpine. */
@@ -477,7 +475,6 @@ export async function getPersonalIntelligence(args: {
         position: synthesis.position,
         openQuestion: synthesis.openQuestion,
         heading: synthesis.heading ?? null,
-        nextMove: synthesis.nextMove ?? null,
         itemIds: group.captures.slice(0, THREAD_ITEM_IDS_LIMIT).map((c) => c.id),
         timeline: threadChrono[i].map((c) => ({
           id: c.id,

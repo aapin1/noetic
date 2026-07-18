@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Dimensions, Pressable, StyleSheet, View } from 'react-native';
-import Svg, { Circle, Line, Path } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 import Animated, {
   Extrapolation,
   FadeIn,
@@ -28,15 +28,26 @@ const { width: SW, height: SH } = Dimensions.get('window');
 
 const TOP_PAD = 96; // room for the thread header before the first node
 const NODE_H = 72;
-const DRIFT_H = 132;
 const SWAY = SW * 0.2; // how far nodes swing off the center line
 // A drift box owns the bend's pocket: the 48% of the width the spine has not
 // yet crossed into at the top of the slot.
 const DRIFT_FAR_EDGE = SW * 0.52;
 
+// A drift box's height grows with its text so the note never gets clipped.
+const DRIFT_LABEL_H = 34; // "DRIFT" label + margin
+const DRIFT_LINE_H = 20;
+const DRIFT_CHARS_PER_LINE = 30; // approx chars that fit the drift column width
+const DRIFT_PAD_V = Spacing[2] * 2;
+const DRIFT_BUFFER = 14; // breathing room before the next row
+
+function estimateDriftHeight(text: string): number {
+  const lines = Math.max(1, Math.ceil(text.length / DRIFT_CHARS_PER_LINE));
+  return DRIFT_LABEL_H + lines * DRIFT_LINE_H + DRIFT_PAD_V + DRIFT_BUFFER;
+}
+
 type Row =
   | { kind: 'node'; y: number; x: number; index: number; id: string; label: string; capturedAt: string }
-  | { kind: 'drift'; y: number; text: string; side: 'left' | 'right'; anchorX: number };
+  | { kind: 'drift'; y: number; height: number; text: string; side: 'left' | 'right' };
 
 export interface TemporalSpineProps {
   data: ThreadSynthesis;
@@ -72,9 +83,10 @@ export function TemporalSpine({
       for (const note of driftNotes) {
         if (note.atIndex === i) {
           // The note sits in the bend's pocket — the side the spine is about
-          // to leave — with a leader line tying it to the line itself.
-          out.push({ kind: 'drift', y, text: note.text, side: onLeft ? 'right' : 'left', anchorX: x });
-          y += DRIFT_H;
+          // to leave, where the curve hasn't crossed into yet.
+          const height = estimateDriftHeight(note.text);
+          out.push({ kind: 'drift', y, height, text: note.text, side: onLeft ? 'right' : 'left' });
+          y += height;
         }
       }
     });
@@ -124,7 +136,7 @@ export function TemporalSpine({
         <View style={{ height: spineHeight }}>
           <Svg width={SW} height={spineHeight} style={StyleSheet.absoluteFill}>
             <Path d={path} fill="none" stroke={color} strokeOpacity={0.34} strokeWidth={1.6} />
-            {rows.map((row, i) =>
+            {rows.map((row) =>
               row.kind === 'node' ? (
                 <React.Fragment key={`dot-${row.id}`}>
                   <Circle
@@ -133,30 +145,17 @@ export function TemporalSpine({
                   />
                   <Circle cx={row.x} cy={row.y + NODE_H / 2} r={6} fill={color} fillOpacity={0.92} />
                 </React.Fragment>
-              ) : (
-                // Leader from the spine into the drift note's pocket
-                <Line
-                  key={`lead-${i}`}
-                  x1={row.anchorX}
-                  y1={row.y + 22}
-                  x2={row.side === 'left' ? SW - DRIFT_FAR_EDGE + 2 : DRIFT_FAR_EDGE - 2}
-                  y2={row.y + 22}
-                  stroke={color}
-                  strokeOpacity={0.35}
-                  strokeWidth={1}
-                  strokeDasharray="2 5"
-                />
-              ),
+              ) : null,
             )}
           </Svg>
 
           {rows.map((row, i) => {
             if (row.kind === 'drift') {
               return (
-                <FadeInBlock key={`d-${i}`} top={row.y} side={row.side} scrollY={scrollY}>
+                <FadeInBlock key={`d-${i}`} top={row.y} height={row.height} side={row.side} scrollY={scrollY}>
                   <View style={[styles.drift, { borderLeftColor: color }]}>
                     <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>DRIFT</Text>
-                    <Text variant="body" numberOfLines={3} style={{ color: stageInk(0.82), marginTop: Spacing[1] }}>
+                    <Text variant="body" style={{ color: stageInk(0.82), marginTop: Spacing[1] }}>
                       {row.text}
                     </Text>
                   </View>
@@ -219,14 +218,6 @@ export function TemporalSpine({
             <Text variant="body" style={{ color: stageInk(0.78), marginTop: Spacing[2] }}>
               {data.openQuestion}
             </Text>
-            {data.nextMove ? (
-              <View style={[styles.nextMove, { borderLeftColor: color }]}>
-                <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>SOMETHING TO EXPLORE</Text>
-                <Text variant="bodyMedium" style={{ color: stageInk(0.9), marginTop: 2 }}>
-                  {data.nextMove}
-                </Text>
-              </View>
-            ) : null}
             <View style={styles.ctaRow}>
               <Pressable onPress={onContinueCompanion} hitSlop={8}>
                 <Text variant="monoSmall" style={{ color: stageInk(0.6) }}>Continue in companion →</Text>
@@ -245,11 +236,13 @@ export function TemporalSpine({
 /** Fades content in as its position scrolls into the lower third of the view. */
 function FadeInBlock({
   top,
+  height,
   side,
   scrollY,
   children,
 }: {
   top: number;
+  height: number;
   side: 'left' | 'right';
   scrollY: SharedValue<number>;
   children: React.ReactNode;
@@ -265,7 +258,7 @@ function FadeInBlock({
     <Animated.View
       style={[
         styles.driftWrap,
-        { top },
+        { top, height },
         side === 'left'
           ? { left: Spacing[4], right: DRIFT_FAR_EDGE }
           : { right: Spacing[4], left: DRIFT_FAR_EDGE },
@@ -307,16 +300,10 @@ const styles = StyleSheet.create({
   },
   // Top-anchored: the box lives in the bend's pocket before the spine
   // crosses to its side of the screen.
-  driftWrap: { position: 'absolute', height: DRIFT_H, justifyContent: 'flex-start', paddingTop: 6 },
+  driftWrap: { position: 'absolute', justifyContent: 'flex-start', paddingTop: 6 },
   drift: { borderLeftWidth: 2, paddingLeft: Spacing[3], paddingVertical: Spacing[2] },
   end: { paddingHorizontal: Spacing[6], paddingBottom: Spacing[16], paddingTop: Spacing[4] },
   endMarker: { width: 24, height: 2, borderRadius: 1, marginBottom: Spacing[4], opacity: 0.8 },
-  nextMove: {
-    marginTop: Spacing[6],
-    borderLeftWidth: 2,
-    paddingLeft: Spacing[4],
-    paddingVertical: Spacing[1],
-  },
   ctaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

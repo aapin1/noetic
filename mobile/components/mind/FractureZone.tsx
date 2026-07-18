@@ -76,9 +76,19 @@ export interface FractureZoneProps {
   background: string;
   onClose: () => void;
   onOpenItem: (id: string) => void;
+  onContinueCompanion: () => void;
+  onViewAtlas: () => void;
 }
 
-export function FractureZone({ data, color, background, onClose, onOpenItem }: FractureZoneProps) {
+export function FractureZone({
+  data,
+  color,
+  background,
+  onClose,
+  onOpenItem,
+  onContinueCompanion,
+  onViewAtlas,
+}: FractureZoneProps) {
   const masses = useMemo<{ a: Mass; b: Mass }>(
     () => ({
       a: {
@@ -149,7 +159,6 @@ export function FractureZone({ data, color, background, onClose, onOpenItem }: F
       >
         <Text
           variant="bodyMedium"
-          numberOfLines={2}
           style={{ color: stageInk(0.85), textAlign: side === 'A' ? 'left' : 'right' }}
         >
           {mass.pole.label}
@@ -239,6 +248,14 @@ export function FractureZone({ data, color, background, onClose, onOpenItem }: F
             </Text>
           </View>
         ) : null}
+        <View style={styles.ctaRow}>
+          <Pressable onPress={onContinueCompanion} hitSlop={8}>
+            <Text variant="monoSmall" style={{ color: stageInk(0.6) }}>Continue in companion →</Text>
+          </Pressable>
+          <Pressable onPress={onViewAtlas} hitSlop={8}>
+            <Text variant="monoSmall" style={{ color: stageInk(0.6) }}>View in Atlas →</Text>
+          </Pressable>
+        </View>
       </View>
       </ScrollView>
     </DetailShell>
@@ -313,5 +330,13 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     paddingLeft: Spacing[4],
     paddingVertical: Spacing[1],
+  },
+  ctaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: Spacing[8],
+    paddingTop: Spacing[4],
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(236,236,236,0.14)',
   },
 });

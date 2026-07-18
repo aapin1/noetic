@@ -936,7 +936,6 @@ export async function generateThreadSynthesis(args: {
   position: string;
   openQuestion: string;
   heading?: string;
-  nextMove?: string;
   driftNotes?: ThreadDriftNote[];
 } | null> {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -962,9 +961,6 @@ export async function generateThreadSynthesis(args: {
     "- One question the user hasn't yet asked themselves but that follows naturally from this position.",
     "- Should feel generative — answerable with more thought or research.",
     "",
-    "NEXT_MOVE rules:",
-    "- ONE concrete thing worth exploring this week that would advance or stress-test the position: a specific named thing to read, a question worth writing a few lines on, a claim worth checking against a specific capture. Phrase it as an invitation ('worth reading…', 'you could…'), never as a command. Never vague 'reflect' or 'continue reading'.",
-    "",
     "DRIFT_NOTES rules:",
     "- 1-3 short observations of how the thinking MOVED across the sequence — a shift in angle, framing, or conviction between earlier and later captures.",
     "- Each note: {\"after\": <index of the capture it follows>, \"note\": \"...\"} — one sentence, max ~20 words, addressed as 'you'.",
@@ -972,7 +968,7 @@ export async function generateThreadSynthesis(args: {
     "",
     SPECIFICITY_RULES,
     "",
-    "Return strictly valid JSON (no markdown): {\"position\": \"...\", \"heading\": \"...\", \"open_question\": \"...\", \"next_move\": \"...\", \"drift_notes\": [{\"after\": 0, \"note\": \"...\"}]}",
+    "Return strictly valid JSON (no markdown): {\"position\": \"...\", \"heading\": \"...\", \"open_question\": \"...\", \"drift_notes\": [{\"after\": 0, \"note\": \"...\"}]}",
   ].join("\n");
 
   try {
@@ -1017,7 +1013,6 @@ export async function generateThreadSynthesis(args: {
       position?: unknown;
       open_question?: unknown;
       heading?: unknown;
-      next_move?: unknown;
       drift_notes?: unknown;
     };
     if (
@@ -1043,16 +1038,11 @@ export async function generateThreadSynthesis(args: {
       typeof parsed.heading === "string" && parsed.heading.trim().length > 0
         ? parsed.heading.trim()
         : undefined;
-    const nextMove =
-      typeof parsed.next_move === "string" && parsed.next_move.trim().length > 0
-        ? parsed.next_move.trim()
-        : undefined;
 
     return {
       position: parsed.position.trim(),
       openQuestion: parsed.open_question.trim(),
       ...(heading ? { heading } : {}),
-      ...(nextMove ? { nextMove } : {}),
       ...(driftNotes.length > 0 ? { driftNotes } : {}),
     };
   } catch {

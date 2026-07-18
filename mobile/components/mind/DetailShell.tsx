@@ -30,15 +30,15 @@ export function DetailShell({
     >
       <SafeAreaView edges={['top']} style={styles.safe}>
         <View style={styles.header}>
+          <Pressable onPress={onClose} hitSlop={12} accessibilityLabel="Close detail view">
+            <Text variant="monoSmall" style={{ color: stageInk(0.55) }}>close</Text>
+          </Pressable>
           <View style={styles.headLeft}>
             <View style={[styles.dot, { backgroundColor: accent }]} />
             <Text variant="monoSmall" style={{ color: accent, letterSpacing: 2 }}>
               {typeLabel}
             </Text>
           </View>
-          <Pressable onPress={onClose} hitSlop={12} accessibilityLabel="Close detail view">
-            <Text variant="monoSmall" style={{ color: stageInk(0.55) }}>close</Text>
-          </Pressable>
         </View>
         <Animated.View entering={FadeInDown.duration(340).delay(60)} style={styles.body}>
           {children}

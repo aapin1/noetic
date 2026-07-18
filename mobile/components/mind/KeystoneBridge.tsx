@@ -56,9 +56,19 @@ export interface KeystoneBridgeProps {
   background: string;
   onClose: () => void;
   onOpenItem: (id: string) => void;
+  onContinueCompanion: () => void;
+  onViewAtlas: () => void;
 }
 
-export function KeystoneBridge({ data, color, background, onClose, onOpenItem }: KeystoneBridgeProps) {
+export function KeystoneBridge({
+  data,
+  color,
+  background,
+  onClose,
+  onOpenItem,
+  onContinueCompanion,
+  onViewAtlas,
+}: KeystoneBridgeProps) {
   const clusters = useMemo<ClusterGeom[]>(() => {
     const [a, b] = data.clusters ?? [];
     if (!a || !b) return [];
@@ -123,7 +133,7 @@ export function KeystoneBridge({ data, color, background, onClose, onOpenItem }:
             collides with the web; the arrival idea headlines the footer. */}
         <Animated.View style={[styles.keyLabel, labelStyle]} pointerEvents="none">
           <View style={styles.keyChip}>
-            <Text variant="monoSmall" numberOfLines={1} style={{ color, letterSpacing: 2, textAlign: 'center' }}>
+            <Text variant="monoSmall" style={{ color, letterSpacing: 2, textAlign: 'center' }}>
               {data.topicName.toUpperCase()}
             </Text>
           </View>
@@ -162,6 +172,14 @@ export function KeystoneBridge({ data, color, background, onClose, onOpenItem }:
             </Text>
           </View>
         ) : null}
+        <View style={styles.ctaRow}>
+          <Pressable onPress={onContinueCompanion} hitSlop={8}>
+            <Text variant="monoSmall" style={{ color: stageInk(0.6) }}>Continue in companion →</Text>
+          </Pressable>
+          <Pressable onPress={onViewAtlas} hitSlop={8}>
+            <Text variant="monoSmall" style={{ color: stageInk(0.6) }}>View in Atlas →</Text>
+          </Pressable>
+        </View>
       </View>
       </ScrollView>
     </DetailShell>
@@ -290,8 +308,8 @@ function ClusterOverlay({
 const styles = StyleSheet.create({
   keyLabel: {
     position: 'absolute',
-    left: SW * 0.28,
-    right: SW * 0.28,
+    left: SW * 0.12,
+    right: SW * 0.12,
     top: KEY_Y + 24,
     alignItems: 'center',
   },
@@ -311,5 +329,13 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     paddingLeft: Spacing[4],
     paddingVertical: Spacing[1],
+  },
+  ctaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: Spacing[8],
+    paddingTop: Spacing[4],
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(236,236,236,0.14)',
   },
 });
