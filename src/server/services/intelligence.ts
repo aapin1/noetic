@@ -136,7 +136,9 @@ export type PersonalIntelligenceData = {
   dormantThreads: DormantThread[];
 };
 
-const INTEL_PAYLOAD_VERSION = 3;
+// v4: diversified card selection (item-capped contradictions, overlap-deduped
+// convergence). Bumped so cached pre-diversity payloads regenerate once.
+const INTEL_PAYLOAD_VERSION = 4;
 
 export function groupCapturesByTopic(captures: LoadedCapture[], minCount: number): TopicGroup[] {
   const map = new Map<string, TopicGroup>();
@@ -186,6 +188,27 @@ export function findConvergenceCandidates(topicGroups: TopicGroup[]): TopicGroup
     const sources = new Set(group.captures.map((c) => c.sourceName ?? "__unknown__"));
     return sources.size >= CONVERGENCE_SOURCE_MIN;
   });
+}
+
+/**
+ * Greedy de-duplication of topic groups that are really the same cluster of
+ * captures under two labels (e.g. "philosophy" and "consciousness" holding
+ * the same items). A group is skipped when it shares more than `maxOverlap`
+ * of its captures with an already-picked group — the reader should never see
+ * the same insight twice under different names.
+ */
+export function diversifyGroups(groups: TopicGroup[], limit: number, maxOverlap = 0.6): TopicGroup[] {
+  const picked: TopicGroup[] = [];
+  for (const group of groups) {
+    if (picked.length >= limit) break;
+    const ids = new Set(group.captures.map((c) => c.id));
+    const nearDuplicate = picked.some((p) => {
+      const shared = p.captures.filter((c) => ids.has(c.id)).length;
+      return shared / Math.min(p.captures.length, group.captures.length) > maxOverlap;
+    });
+    if (!nearDuplicate) picked.push(group);
+  }
+  return picked;
 }
 
 export async function getPersonalIntelligence(args: {
@@ -254,7 +277,7 @@ export async function getPersonalIntelligence(args: {
     },
   });
 
-  const convergenceCandidates = findConvergenceCandidates(allGroups).slice(0, CONVERGENCE_LIMIT);
+  const convergenceCandidates = diversifyGroups(findConvergenceCandidates(allGroups), CONVERGENCE_LIMIT);
 
   // Pairs already captured as hard CONTRADICTS edges — so the softer LLM
   // tension scan doesn't surface the same pair twice.
@@ -386,12 +409,19 @@ export async function getPersonalIntelligence(args: {
     .filter((c): c is ContradictionCard => c !== null);
 
   // Hard edges first, then softer topic tensions; dedupe by unordered pair.
+  // Each capture also appears in at most ONE card — a well-connected item
+  // (e.g. a storytelling essay that rubs against everything) would otherwise
+  // fill the whole wall with itself wearing different partners.
   const seenPairs = new Set<string>();
+  const usedItems = new Set<string>();
   const contradictionCards: ContradictionCard[] = [];
   for (const card of [...edgeCards, ...tensionCards]) {
     const key = [card.itemAId, card.itemBId].sort().join(":");
     if (seenPairs.has(key)) continue;
     seenPairs.add(key);
+    if (usedItems.has(card.itemAId) || usedItems.has(card.itemBId)) continue;
+    usedItems.add(card.itemAId);
+    usedItems.add(card.itemBId);
     contradictionCards.push(card);
     if (contradictionCards.length >= CONTRADICTION_CARD_LIMIT) break;
   }

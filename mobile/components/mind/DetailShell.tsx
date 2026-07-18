@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
 import { Spacing } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
 
@@ -22,7 +23,11 @@ export function DetailShell({
   children: React.ReactNode;
 }) {
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: background }]}>
+    <Animated.View
+      entering={FadeIn.duration(220)}
+      exiting={FadeOut.duration(160)}
+      style={[StyleSheet.absoluteFill, { backgroundColor: background }]}
+    >
       <SafeAreaView edges={['top']} style={styles.safe}>
         <View style={styles.header}>
           <View style={styles.headLeft}>
@@ -35,9 +40,11 @@ export function DetailShell({
             <Text variant="monoSmall" style={{ color: stageInk(0.55) }}>close</Text>
           </Pressable>
         </View>
-        <View style={styles.body}>{children}</View>
+        <Animated.View entering={FadeInDown.duration(340).delay(60)} style={styles.body}>
+          {children}
+        </Animated.View>
       </SafeAreaView>
-    </View>
+    </Animated.View>
   );
 }
 

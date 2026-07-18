@@ -217,6 +217,7 @@ import {
   groupCapturesByTopic,
   findDormantThreads,
   findConvergenceCandidates,
+  diversifyGroups,
   type LoadedCapture,
   type TopicGroup,
 } from "@/server/services/intelligence";
@@ -389,5 +390,62 @@ describe("findConvergenceCandidates", () => {
       ],
     }];
     expect(findConvergenceCandidates(groups)).toEqual([]);
+  });
+});
+
+// ── diversifyGroups ───────────────────────────────────────────────────────────
+
+describe("diversifyGroups", () => {
+  const topics = (id: string, name: string) => [{ topicId: id, name }];
+
+  it("skips a group whose captures mostly duplicate an already-picked group", () => {
+    const shared = [
+      makeCapture({ id: "c1", topics: topics("t1", "philosophy") }),
+      makeCapture({ id: "c2", topics: topics("t1", "philosophy") }),
+      makeCapture({ id: "c3", topics: topics("t1", "philosophy") }),
+    ];
+    const groups: TopicGroup[] = [
+      { topicId: "t1", topicName: "philosophy", captures: shared },
+      { topicId: "t2", topicName: "consciousness", captures: shared.slice(0, 2) },
+      {
+        topicId: "t3",
+        topicName: "economics",
+        captures: [
+          makeCapture({ id: "c9", topics: topics("t3", "economics") }),
+          makeCapture({ id: "c10", topics: topics("t3", "economics") }),
+        ],
+      },
+    ];
+    const picked = diversifyGroups(groups, 3);
+    expect(picked.map((g) => g.topicId)).toEqual(["t1", "t3"]);
+  });
+
+  it("keeps groups with light overlap and respects the limit", () => {
+    const groups: TopicGroup[] = [
+      {
+        topicId: "t1", topicName: "a",
+        captures: [
+          makeCapture({ id: "c1", topics: topics("t1", "a") }),
+          makeCapture({ id: "c2", topics: topics("t1", "a") }),
+          makeCapture({ id: "c3", topics: topics("t1", "a") }),
+        ],
+      },
+      {
+        topicId: "t2", topicName: "b",
+        captures: [
+          makeCapture({ id: "c3", topics: topics("t2", "b") }),
+          makeCapture({ id: "c4", topics: topics("t2", "b") }),
+          makeCapture({ id: "c5", topics: topics("t2", "b") }),
+        ],
+      },
+      {
+        topicId: "t3", topicName: "c",
+        captures: [
+          makeCapture({ id: "c6", topics: topics("t3", "c") }),
+          makeCapture({ id: "c7", topics: topics("t3", "c") }),
+        ],
+      },
+    ];
+    expect(diversifyGroups(groups, 2).map((g) => g.topicId)).toEqual(["t1", "t2"]);
   });
 });

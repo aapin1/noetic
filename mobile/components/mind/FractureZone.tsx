@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo } from 'react';
-import { Dimensions, Pressable, StyleSheet, View } from 'react-native';
-import Svg, { Circle, G, Path } from 'react-native-svg';
+import { Dimensions, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Svg, { Circle, G, Line, Path } from 'react-native-svg';
 import Animated, {
   Easing,
+  Extrapolation,
+  interpolate,
   useAnimatedProps,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { Spacing } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
@@ -29,6 +32,8 @@ const POLE_R = 30;
 
 const AnimatedG = Animated.createAnimatedComponent(G);
 const AnimatedPath = Animated.createAnimatedComponent(Path);
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const AnimatedLine = Animated.createAnimatedComponent(Line);
 
 function hashId(id: string): number {
   let h = 0;
@@ -101,14 +106,18 @@ export function FractureZone({ data, color, background, onClose, onOpenItem }: F
   }, [seed]);
 
   // The masses breathe toward the rift; the rift itself faintly shimmers.
+  // On mount each side's web populates: satellites travel out from their pole
+  // along drawing lines (the same character as the KeystoneBridge snap).
   const press = useSharedValue(0);
+  const pop = useSharedValue(0);
   useEffect(() => {
     press.value = withRepeat(
       withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.quad) }),
       -1,
       true,
     );
-  }, [press]);
+    pop.value = withTiming(1, { duration: 1150, easing: Easing.out(Easing.cubic) });
+  }, [press, pop]);
 
   const leftProps = useAnimatedProps(() => ({ x: press.value * 5 }));
   const rightProps = useAnimatedProps(() => ({ x: -press.value * 5 }));
@@ -116,16 +125,13 @@ export function FractureZone({ data, color, background, onClose, onOpenItem }: F
   const leftStyle = useAnimatedStyle(() => ({ transform: [{ translateX: press.value * 5 }] }));
   const rightStyle = useAnimatedStyle(() => ({ transform: [{ translateX: -press.value * 5 }] }));
 
-  const renderMass = (mass: Mass) => (
+  const renderMass = (mass: Mass, order: number) => (
     <>
       <Circle cx={mass.cx} cy={mass.cy} r={POLE_R + 22} fill={color} fillOpacity={0.07} />
       <Circle cx={mass.cx} cy={mass.cy} r={POLE_R} fill={color} fillOpacity={0.85} />
-      {mass.satellites.map((sat, i) => {
-        const o = SAT_OFFSETS[i];
-        return (
-          <Circle key={sat.id} cx={mass.cx + o.dx} cy={mass.cy + o.dy} r={9} fill={color} fillOpacity={0.4} />
-        );
-      })}
+      {mass.satellites.map((sat, i) => (
+        <SatelliteWeb key={sat.id} mass={mass} index={i} order={order + i} color={color} pop={pop} />
+      ))}
     </>
   );
 
@@ -156,10 +162,15 @@ export function FractureZone({ data, color, background, onClose, onOpenItem }: F
       </View>
       <Pressable
         onPress={() => onOpenItem(mass.pole.id)}
-        style={[styles.poleHit, { left: mass.cx - 44, top: mass.cy - 44 }]}
+        style={[styles.poleHit, { left: mass.cx - POLE_R, top: mass.cy - POLE_R }]}
         accessibilityLabel={`Open capture: ${mass.pole.label}`}
       >
-        <Text variant="monoSmall" style={{ color: background, fontWeight: '700' }}>{side}</Text>
+        <Text
+          variant="monoSmall"
+          style={{ color: background, fontWeight: '700', textAlign: 'center', includeFontPadding: false }}
+        >
+          {side}
+        </Text>
       </Pressable>
       {mass.satellites.map((sat, i) => {
         const o = SAT_OFFSETS[i];
@@ -190,8 +201,8 @@ export function FractureZone({ data, color, background, onClose, onOpenItem }: F
             strokeWidth={0.8}
             animatedProps={shimmerProps}
           />
-          <AnimatedG animatedProps={leftProps}>{renderMass(masses.a)}</AnimatedG>
-          <AnimatedG animatedProps={rightProps}>{renderMass(masses.b)}</AnimatedG>
+          <AnimatedG animatedProps={leftProps}>{renderMass(masses.a, 0)}</AnimatedG>
+          <AnimatedG animatedProps={rightProps}>{renderMass(masses.b, 3)}</AnimatedG>
         </Svg>
 
         <Animated.View style={[StyleSheet.absoluteFill, leftStyle]} pointerEvents="box-none">
@@ -202,33 +213,72 @@ export function FractureZone({ data, color, background, onClose, onOpenItem }: F
         </Animated.View>
       </View>
 
-      {/* The crux sits at the base of the rift; the crack runs into it. */}
-      <View style={styles.below}>
+      {/* The crux sits at the base of the rift; everything below scrolls. */}
+      <ScrollView style={styles.below} showsVerticalScrollIndicator={false} contentContainerStyle={styles.belowContent}>
         <View style={[styles.crux, { borderColor: color }]}>
           <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>THE CRUX</Text>
           <Text
             variant={data.crux ? 'h3' : 'body'}
-            numberOfLines={3}
             style={{ color: stageInk(0.94), marginTop: Spacing[2] }}
           >
             {data.crux ?? data.tension}
           </Text>
         </View>
         {data.crux ? (
-          <Text variant="body" numberOfLines={4} style={{ color: stageInk(0.75), marginTop: Spacing[4] }}>
+          <Text variant="body" style={{ color: stageInk(0.75), marginTop: Spacing[4] }}>
             {data.tension}
           </Text>
         ) : null}
         {data.test ? (
           <View style={[styles.testRow, { borderLeftColor: color }]}>
-            <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>SETTLE IT</Text>
-            <Text variant="bodyMedium" numberOfLines={3} style={{ color: stageInk(0.9), marginTop: 2 }}>
+            <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>ONE WAY TO SETTLE IT</Text>
+            <Text variant="bodyMedium" style={{ color: stageInk(0.9), marginTop: 2 }}>
               {data.test}
             </Text>
           </View>
         ) : null}
-      </View>
+      </ScrollView>
     </DetailShell>
+  );
+}
+
+/** A satellite travels out from its pole along a drawing web-line on mount. */
+function SatelliteWeb({
+  mass,
+  index,
+  order,
+  color,
+  pop,
+}: {
+  mass: Mass;
+  index: number;
+  order: number;
+  color: string;
+  pop: SharedValue<number>;
+}) {
+  const o = SAT_OFFSETS[index];
+  const lineProps = useAnimatedProps(() => {
+    const t = interpolate(pop.value, [order * 0.09, order * 0.09 + 0.55], [0, 1], Extrapolation.CLAMP);
+    return {
+      x2: mass.cx + o.dx * t,
+      y2: mass.cy + o.dy * t,
+      strokeOpacity: t * 0.28,
+    };
+  });
+  const dotProps = useAnimatedProps(() => {
+    const t = interpolate(pop.value, [order * 0.09, order * 0.09 + 0.55], [0, 1], Extrapolation.CLAMP);
+    return {
+      cx: mass.cx + o.dx * t,
+      cy: mass.cy + o.dy * t,
+      r: 9 * t,
+      fillOpacity: 0.4 * t,
+    };
+  });
+  return (
+    <>
+      <AnimatedLine x1={mass.cx} y1={mass.cy} stroke={color} strokeWidth={1} animatedProps={lineProps} />
+      <AnimatedCircle fill={color} animatedProps={dotProps} />
+    </>
   );
 }
 
@@ -236,15 +286,16 @@ const styles = StyleSheet.create({
   stage: { height: STAGE_H },
   poleHit: {
     position: 'absolute',
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: POLE_R * 2,
+    height: POLE_R * 2,
+    borderRadius: POLE_R,
     alignItems: 'center',
     justifyContent: 'center',
   },
   satHit: { position: 'absolute', width: 36, height: 36, borderRadius: 18 },
   poleLabel: { position: 'absolute' },
-  below: { flex: 1, paddingHorizontal: Spacing[6] },
+  below: { flex: 1 },
+  belowContent: { paddingHorizontal: Spacing[6], paddingBottom: Spacing[12] },
   crux: {
     alignSelf: 'center',
     width: SW * 0.8,

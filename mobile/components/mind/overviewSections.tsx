@@ -246,17 +246,6 @@ export function ConfluenceRow({
         <Circle cx={nodeX} cy={nodeY} r={11} fill={color} fillOpacity={0.14} />
         <Circle cx={nodeX} cy={nodeY} r={5.5} fill={color} fillOpacity={0.95} />
       </Svg>
-      {/* source names ride their streams */}
-      {clusters.slice(0, n).map((cl, i) => (
-        <Text
-          key={cl.source}
-          variant="monoSmall"
-          numberOfLines={1}
-          style={[styles.confSource, { top: startYs[i] - 6 }]}
-        >
-          {cl.source}
-        </Text>
-      ))}
       <View style={styles.confMeta}>
         <Text variant="bodyMedium" numberOfLines={1} style={{ color: stageInk(0.9) }}>
           {data.topicName}
@@ -266,7 +255,13 @@ export function ConfluenceRow({
             ⌾ {data.arrival}
           </Text>
         ) : null}
-        <Text variant="monoSmall" style={{ color: stageInk(0.35), marginTop: 2 }}>
+        {/* names stay off the streams — they were unreadable riding the lines */}
+        <Text variant="monoSmall" numberOfLines={1} style={{ color: stageInk(0.4), marginTop: 2 }}>
+          {clusters.length > 0
+            ? clusters.map((cl) => cl.source).join(' · ')
+            : `${data.sourceCount} sources`}
+        </Text>
+        <Text variant="monoSmall" style={{ color: stageInk(0.3), marginTop: 2 }}>
           {data.sourceCount} sources · {data.captureCount} captures
         </Text>
       </View>
@@ -344,12 +339,6 @@ const styles = StyleSheet.create({
   },
 
   confRow: { paddingHorizontal: PAD, marginBottom: Spacing[5], height: CONF_H },
-  confSource: {
-    position: 'absolute',
-    left: PAD + 20,
-    width: CONF_SVG_W - 40,
-    color: 'rgba(236,236,236,0.45)',
-  },
   confMeta: {
     position: 'absolute',
     left: PAD + CONF_SVG_W + Spacing[4],

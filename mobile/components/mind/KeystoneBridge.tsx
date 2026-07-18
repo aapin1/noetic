@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { Dimensions, Pressable, StyleSheet, View } from 'react-native';
+import { Dimensions, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
 import Animated, {
   Easing,
@@ -117,22 +117,14 @@ export function KeystoneBridge({ data, color, background, onClose, onOpenItem }:
           <AnimatedCircle cx={KEY_X} r={13} fill={color} animatedProps={keystoneProps} />
         </Svg>
 
-        {/* The keystone's name — the idea both paths arrive at */}
+        {/* The keystone's name — kept to one compact chip so it never
+            collides with the web; the arrival idea headlines the footer. */}
         <Animated.View style={[styles.keyLabel, labelStyle]} pointerEvents="none">
-          {data.arrival ? (
-            <>
-              <Text variant="monoSmall" style={{ color: stageInk(0.4), letterSpacing: 2, textAlign: 'center' }}>
-                {data.topicName.toUpperCase()}
-              </Text>
-              <Text variant="bodyMedium" numberOfLines={2} style={{ color, textAlign: 'center', marginTop: 2 }}>
-                {data.arrival}
-              </Text>
-            </>
-          ) : (
-            <Text variant="monoSmall" style={{ color, letterSpacing: 2, textAlign: 'center' }}>
+          <View style={styles.keyChip}>
+            <Text variant="monoSmall" numberOfLines={1} style={{ color, letterSpacing: 2, textAlign: 'center' }}>
               {data.topicName.toUpperCase()}
             </Text>
-          )}
+          </View>
         </Animated.View>
 
         {clusters.map((cluster, ci) => (
@@ -146,24 +138,29 @@ export function KeystoneBridge({ data, color, background, onClose, onOpenItem }:
         ))}
       </View>
 
-      <View style={styles.footer}>
+      <ScrollView style={styles.footer} showsVerticalScrollIndicator={false} contentContainerStyle={styles.footerContent}>
         <Text variant="monoSmall" style={{ color: stageInk(0.42) }}>
           {data.sourceCount} sources · {data.captureCount} captures · one destination
         </Text>
+        {data.arrival ? (
+          <Text variant="h3" style={{ color: stageInk(0.94), marginTop: Spacing[3] }}>
+            {data.arrival}
+          </Text>
+        ) : null}
         <View style={[styles.signal, { borderLeftColor: color }]}>
-          <Text variant="body" numberOfLines={4} style={{ color: stageInk(0.88) }}>
+          <Text variant="body" style={{ color: stageInk(0.88) }}>
             {data.signal}
           </Text>
         </View>
         {data.act ? (
           <View style={[styles.signal, { borderLeftColor: color, marginTop: Spacing[4] }]}>
             <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>WHERE THIS POINTS</Text>
-            <Text variant="bodyMedium" numberOfLines={3} style={{ color: stageInk(0.9), marginTop: 2 }}>
+            <Text variant="bodyMedium" style={{ color: stageInk(0.9), marginTop: 2 }}>
               {data.act}
             </Text>
           </View>
         ) : null}
-      </View>
+      </ScrollView>
     </DetailShell>
   );
 }
@@ -283,14 +280,22 @@ function ClusterOverlay({
 const styles = StyleSheet.create({
   keyLabel: {
     position: 'absolute',
-    left: Spacing[6],
-    right: Spacing[6],
-    top: KEY_Y + 26,
+    left: SW * 0.28,
+    right: SW * 0.28,
+    top: KEY_Y + 24,
     alignItems: 'center',
+  },
+  keyChip: {
+    backgroundColor: 'rgba(10,10,12,0.82)',
+    borderRadius: 999,
+    paddingHorizontal: Spacing[3],
+    paddingVertical: 3,
+    maxWidth: '100%',
   },
   memberHit: { position: 'absolute', width: 40, height: 40, borderRadius: 20 },
   clusterLabel: { position: 'absolute', width: 140 },
-  footer: { flex: 1, paddingHorizontal: Spacing[6], paddingTop: Spacing[6] },
+  footer: { flex: 1 },
+  footerContent: { paddingHorizontal: Spacing[6], paddingTop: Spacing[5], paddingBottom: Spacing[12] },
   signal: {
     marginTop: Spacing[3],
     borderLeftWidth: 2,

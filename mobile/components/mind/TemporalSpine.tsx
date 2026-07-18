@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Dimensions, Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import Animated, {
   Extrapolation,
+  FadeIn,
   interpolate,
   useAnimatedScrollHandler,
   useAnimatedStyle,
@@ -16,21 +17,23 @@ import { DetailShell, stageInk } from './DetailShell';
 
 // ─────────────────────────────────────────────────────────────────────────
 // TemporalSpine — the Threads detail view. A vertical spline runs down the
-// screen; captures sit on it in the order they were saved. Scrolling reveals
-// the AI's drift notes (how the thinking moved) at their point in the
-// sequence, and the spine resolves into the synthesized position at the end.
+// screen carrying bare, tappable points (one per capture, oldest first).
+// Tapping a point opens a small card beside the line with the capture's
+// title; the line itself stays clean. The AI's drift notes sit to the sides
+// of the spine, never on it, and the spine resolves into the synthesized
+// position at the end.
 // ─────────────────────────────────────────────────────────────────────────
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
-const TOP_PAD = 84; // room for the thread header before the first node
-const NODE_H = 96;
-const DRIFT_H = 118;
-const SWAY = SW * 0.16; // how far nodes swing off the center line
+const TOP_PAD = 96; // room for the thread header before the first node
+const NODE_H = 72;
+const DRIFT_H = 116;
+const SWAY = SW * 0.2; // how far nodes swing off the center line
 
 type Row =
   | { kind: 'node'; y: number; x: number; index: number; id: string; label: string; capturedAt: string }
-  | { kind: 'drift'; y: number; text: string };
+  | { kind: 'drift'; y: number; text: string; side: 'left' | 'right' };
 
 export interface TemporalSpineProps {
   data: ThreadSynthesis;
@@ -53,17 +56,20 @@ export function TemporalSpine({
 }: TemporalSpineProps) {
   const timeline = data.timeline ?? [];
   const driftNotes = data.driftNotes ?? [];
+  const [selected, setSelected] = useState<number | null>(null);
 
   const { rows, spineHeight, path } = useMemo(() => {
     const out: Row[] = [];
     let y = TOP_PAD;
     timeline.forEach((node, i) => {
-      const x = SW * 0.5 + (i % 2 === 0 ? -SWAY : SWAY);
+      const onLeft = i % 2 === 0;
+      const x = SW * 0.5 + (onLeft ? -SWAY : SWAY);
       out.push({ kind: 'node', y, x, index: i, id: node.id, label: node.label, capturedAt: node.capturedAt });
       y += NODE_H;
       for (const note of driftNotes) {
         if (note.atIndex === i) {
-          out.push({ kind: 'drift', y, text: note.text });
+          // The note sits opposite the node it follows, clear of the spine.
+          out.push({ kind: 'drift', y, text: note.text, side: onLeft ? 'right' : 'left' });
           y += DRIFT_H;
         }
       }
@@ -93,6 +99,9 @@ export function TemporalSpine({
     scrollY.value = e.contentOffset.y;
   });
 
+  const fmtDate = (iso: string) =>
+    new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
   return (
     <DetailShell typeLabel="THREAD" accent={color} background={background} onClose={onClose}>
       <Animated.ScrollView onScroll={onScroll} scrollEventThrottle={16} showsVerticalScrollIndicator={false}>
@@ -101,6 +110,9 @@ export function TemporalSpine({
           <Text variant="h2" style={{ color: stageInk(0.94) }}>{data.topicName}</Text>
           <Text variant="monoSmall" style={{ color: stageInk(0.42), marginTop: Spacing[1] }}>
             {data.captureCount} captures · oldest first
+          </Text>
+          <Text variant="monoSmall" style={{ color, marginTop: Spacing[1], opacity: 0.85 }}>
+            tap a point to see the capture
           </Text>
         </View>
 
@@ -111,27 +123,69 @@ export function TemporalSpine({
             {rows.map((row) =>
               row.kind === 'node' ? (
                 <React.Fragment key={`dot-${row.id}`}>
-                  <Circle cx={row.x} cy={row.y + NODE_H / 2} r={13} fill={color} fillOpacity={0.14} />
-                  <Circle cx={row.x} cy={row.y + NODE_H / 2} r={6} fill={color} fillOpacity={0.9} />
+                  <Circle
+                    cx={row.x} cy={row.y + NODE_H / 2} r={selected === row.index ? 15 : 12}
+                    fill={color} fillOpacity={selected === row.index ? 0.28 : 0.13}
+                  />
+                  <Circle cx={row.x} cy={row.y + NODE_H / 2} r={6} fill={color} fillOpacity={0.92} />
                 </React.Fragment>
               ) : null,
             )}
           </Svg>
 
-          {rows.map((row, i) =>
-            row.kind === 'node' ? (
-              <NodeRow key={`n-${row.id}`} row={row} color={color} onPress={() => onOpenItem(row.id)} />
-            ) : (
-              <FadeInBlock key={`d-${i}`} top={row.y} scrollY={scrollY}>
-                <View style={[styles.drift, { borderLeftColor: color }]}>
-                  <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>DRIFT</Text>
-                  <Text variant="body" numberOfLines={3} style={{ color: stageInk(0.82), marginTop: Spacing[1] }}>
-                    {row.text}
-                  </Text>
-                </View>
-              </FadeInBlock>
-            ),
-          )}
+          {rows.map((row, i) => {
+            if (row.kind === 'drift') {
+              return (
+                <FadeInBlock key={`d-${i}`} top={row.y} side={row.side} scrollY={scrollY}>
+                  <View style={[styles.drift, { borderLeftColor: color }]}>
+                    <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>DRIFT</Text>
+                    <Text variant="body" numberOfLines={4} style={{ color: stageInk(0.82), marginTop: Spacing[1] }}>
+                      {row.text}
+                    </Text>
+                  </View>
+                </FadeInBlock>
+              );
+            }
+            const onLeft = row.x < SW / 2;
+            return (
+              <React.Fragment key={`n-${row.id}`}>
+                {/* date whispers under the point */}
+                <Text
+                  variant="monoSmall"
+                  style={[styles.date, { left: row.x - 40, top: row.y + NODE_H / 2 + 16 }]}
+                >
+                  {fmtDate(row.capturedAt)}
+                </Text>
+                <Pressable
+                  onPress={() => setSelected((cur) => (cur === row.index ? null : row.index))}
+                  style={[styles.nodeHit, { left: row.x - 26, top: row.y + NODE_H / 2 - 26 }]}
+                  accessibilityLabel={`Show capture from ${fmtDate(row.capturedAt)}`}
+                />
+                {selected === row.index && (
+                  <Animated.View
+                    entering={FadeIn.duration(160)}
+                    style={[
+                      styles.nodeCard,
+                      { top: row.y - 6 },
+                      onLeft
+                        ? { left: row.x + 30, right: Spacing[4] }
+                        : { right: SW - row.x + 30, left: Spacing[4] },
+                    ]}
+                  >
+                    <Text variant="monoSmall" style={{ color: stageInk(0.4) }}>
+                      {fmtDate(row.capturedAt)}
+                    </Text>
+                    <Text variant="bodyMedium" numberOfLines={3} style={{ color: stageInk(0.92), marginTop: 2 }}>
+                      {row.label}
+                    </Text>
+                    <Pressable onPress={() => onOpenItem(row.id)} hitSlop={8} style={{ marginTop: Spacing[2] }}>
+                      <Text variant="monoSmall" style={{ color }}>open capture →</Text>
+                    </Pressable>
+                  </Animated.View>
+                )}
+              </React.Fragment>
+            );
+          })}
         </View>
 
         {/* Where the spine resolves: the position, then the open question */}
@@ -150,7 +204,7 @@ export function TemporalSpine({
             </Text>
             {data.nextMove ? (
               <View style={[styles.nextMove, { borderLeftColor: color }]}>
-                <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>NEXT MOVE</Text>
+                <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>SOMETHING TO EXPLORE</Text>
                 <Text variant="bodyMedium" style={{ color: stageInk(0.9), marginTop: 2 }}>
                   {data.nextMove}
                 </Text>
@@ -171,48 +225,15 @@ export function TemporalSpine({
   );
 }
 
-function NodeRow({
-  row,
-  color,
-  onPress,
-}: {
-  row: Extract<Row, { kind: 'node' }>;
-  color: string;
-  onPress: () => void;
-}) {
-  const onLeft = row.x < SW / 2; // dot on the left → text on the right
-  const date = new Date(row.capturedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        styles.nodeRow,
-        { top: row.y },
-        onLeft
-          ? { left: row.x + 26, right: Spacing[6], alignItems: 'flex-start' }
-          : { right: SW - row.x + 26, left: Spacing[6], alignItems: 'flex-end' },
-      ]}
-      accessibilityLabel={`Open capture: ${row.label}`}
-    >
-      <Text variant="monoSmall" style={{ color: stageInk(0.4) }}>{date}</Text>
-      <Text
-        variant="bodyMedium"
-        numberOfLines={2}
-        style={{ color: stageInk(0.88), marginTop: 2, textAlign: onLeft ? 'left' : 'right' }}
-      >
-        {row.label}
-      </Text>
-    </Pressable>
-  );
-}
-
 /** Fades content in as its position scrolls into the lower third of the view. */
 function FadeInBlock({
   top,
+  side,
   scrollY,
   children,
 }: {
   top: number;
+  side: 'left' | 'right';
   scrollY: SharedValue<number>;
   children: React.ReactNode;
 }) {
@@ -224,7 +245,14 @@ function FadeInBlock({
     return { opacity: t, transform: [{ translateY: (1 - t) * 14 }] };
   });
   return (
-    <Animated.View style={[styles.driftWrap, { top }, style]}>
+    <Animated.View
+      style={[
+        styles.driftWrap,
+        { top },
+        side === 'left' ? { left: Spacing[4], right: SW * 0.44 } : { right: Spacing[4], left: SW * 0.44 },
+        style,
+      ]}
+    >
       {children}
     </Animated.View>
   );
@@ -241,9 +269,25 @@ function FadeInSection({ scrollY, children }: { scrollY: SharedValue<number>; ch
 
 const styles = StyleSheet.create({
   head: { paddingHorizontal: Spacing[6], paddingTop: Spacing[2] },
-  nodeRow: { position: 'absolute', height: NODE_H, justifyContent: 'center' },
-  driftWrap: { position: 'absolute', left: Spacing[6], right: Spacing[6], height: DRIFT_H, justifyContent: 'center' },
-  drift: { borderLeftWidth: 2, paddingLeft: Spacing[4], paddingVertical: Spacing[2] },
+  date: {
+    position: 'absolute',
+    width: 80,
+    textAlign: 'center',
+    color: 'rgba(236,236,236,0.35)',
+  },
+  nodeHit: { position: 'absolute', width: 52, height: 52, borderRadius: 26 },
+  nodeCard: {
+    position: 'absolute',
+    backgroundColor: 'rgba(10,10,12,0.94)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(236,236,236,0.16)',
+    borderRadius: 12,
+    padding: Spacing[3],
+    zIndex: 5,
+    elevation: 5,
+  },
+  driftWrap: { position: 'absolute', height: DRIFT_H, justifyContent: 'center' },
+  drift: { borderLeftWidth: 2, paddingLeft: Spacing[3], paddingVertical: Spacing[2] },
   end: { paddingHorizontal: Spacing[6], paddingBottom: Spacing[16], paddingTop: Spacing[4] },
   endMarker: { width: 24, height: 2, borderRadius: 1, marginBottom: Spacing[4], opacity: 0.8 },
   nextMove: {
