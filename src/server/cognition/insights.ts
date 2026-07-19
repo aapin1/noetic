@@ -90,6 +90,25 @@ export function draftInsights(args: {
   const voice = STYLE_VOICE[args.style];
   const dominantTopic = args.topicNames[0];
 
+  // Unreadable source: say so, plainly, and say nothing else. A thin capture
+  // was embedded from its title alone (often just a hostname), so its
+  // "neighbors" are artifacts of that junk embedding — two unreadable
+  // paywalled links look near-identical to each other, which is how a fresh
+  // stub earned a straight-faced "you have repeatedly saved articles from
+  // nytimes.com" recurrence. Suppress every neighbor/pattern-derived draft
+  // until the user says what the content was, which reprocesses the capture
+  // and rebuilds real insights from real grounding.
+  if (args.contentThin) {
+    drafts.push({
+      type: InsightType.NOVELTY,
+      headline: "This source couldn't be read.",
+      body: "The page itself couldn't be extracted — a paywall, a robot wall, or an unsupported format — so this capture is grounded only in its title so far. Tell mneme what it was about (About this capture → edit), and its topics, connections, and insight will be rebuilt from your words.",
+      evidence: { contentThin: true },
+      strength: 1,
+    });
+    return drafts;
+  }
+
   if (args.isFirstCapture && !args.contentThin) {
     drafts.push({
       type: InsightType.NOVELTY,

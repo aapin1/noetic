@@ -29,6 +29,14 @@ const THREAD_SYNTHESIS_THRESHOLD = 3;
 const THREAD_SYNTHESIS_LIMIT = 4;
 const THREAD_ITEM_IDS_LIMIT = 12;
 
+/** A URL-shaped description is a stub row from a failed scrape (paywall,
+ * robot wall) — never treat the link itself as the capture's substance. */
+function descriptionIfReal(description: string | null | undefined): string | null {
+  const trimmed = description?.trim() ?? "";
+  if (!trimmed || /^https?:\/\//i.test(trimmed)) return null;
+  return trimmed;
+}
+
 export type LoadedCapture = {
   id: string;
   label: string;
@@ -240,7 +248,9 @@ export async function getPersonalIntelligence(args: {
     id: item.id,
     label: item.contentItem?.title ?? item.rawText?.slice(0, 80) ?? "Untitled capture",
     rawText: item.rawText,
-    gist: [item.rawText, item.userContext, item.summary, item.contentItem?.description]
+    // A URL-shaped description is a stub from a failed scrape — grounding an
+    // LLM on the link itself invites confabulation, so skip it.
+    gist: [item.rawText, item.userContext, item.summary, descriptionIfReal(item.contentItem?.description)]
       .find((part) => part && part.trim().length > 0) ?? "",
     keyIdea: item.keyIdea,
     capturedAt: item.capturedAt,
@@ -300,7 +310,7 @@ export async function getPersonalIntelligence(args: {
     keyIdea: string | null;
     contentItem: { description: string | null } | null;
   }): string {
-    return [item.rawText, item.userContext, item.summary, item.contentItem?.description, item.keyIdea]
+    return [item.rawText, item.userContext, item.summary, descriptionIfReal(item.contentItem?.description), item.keyIdea]
       .find((part) => part && part.trim().length > 0) ?? "";
   }
 

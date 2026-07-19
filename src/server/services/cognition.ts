@@ -507,6 +507,15 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     contentDescription = resolved.contentDescription;
     contentBodyText = resolved.bodyText;
     cleanedPromise = resolved.cleaned;
+    // A stub row (scrape failed: paywall, robot wall, dead page) carries the
+    // URL itself as its description. That is not content: letting it through
+    // marked the capture as non-thin, fed the URL into the embedding, and let
+    // the drafting layer build "insights" off a hostname. Treat it as absent
+    // so the thin-content path (suppressed boilerplate, ask-the-user
+    // fallback) fires exactly like any other unreadable source.
+    if (contentDescription && /^https?:\/\//i.test(contentDescription.trim())) {
+      contentDescription = undefined;
+    }
   }
 
   // For images, let a vision model extract the meaning (transcribed text or a

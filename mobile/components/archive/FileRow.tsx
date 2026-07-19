@@ -22,7 +22,7 @@ export function FileRow({ item, onPress }: { item: CaptureSummary; onPress: () =
       {thumbUrl ? (
         <Image source={{ uri: thumbUrl }} style={[styles.thumb, { borderColor: c.border }]} contentFit="cover" />
       ) : (
-        <View style={[styles.thumb, styles.thumbPlaceholder, { borderColor: c.border, backgroundColor: c.elevated }]}>
+        <View style={[styles.thumb, styles.thumbPlaceholder, { borderColor: c.border, backgroundColor: c.surface }]}>
           <FileTextIcon size={18} color={c.faint} />
         </View>
       )}

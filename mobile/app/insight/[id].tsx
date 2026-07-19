@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { InteractionManager, Linking, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeftIcon, ExternalLinkIcon, PencilIcon } from 'lucide-react-native';
@@ -49,6 +49,35 @@ export default function InsightDetailScreen() {
     setEditError('');
     setEditing(true);
   }, []);
+
+  // If nothing could be extracted from the source (no AI summary, no legacy
+  // description, and the user hasn't already given their own account), open
+  // the "what was this about?" editor immediately instead of leaving it as a
+  // quiet line the user has to notice a pencil icon to act on — this is the
+  // capture-time fail-safe's prompt, just moved here since capture no longer
+  // blocks on it. Guarded per capture id so cancelling doesn't reopen it.
+  const autoPromptedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!data || (data.kind !== 'LINK' && data.kind !== 'IMAGE')) return;
+    // A stub row (scrape failed entirely — paywall, robot wall, dead page)
+    // carries the URL itself as its description, so a URL-shaped description
+    // is "nothing extracted", not an excerpt. Same test the server applies
+    // when deriving the capture summary.
+    const desc = data.contentItem?.description?.trim() ?? '';
+    const legacyDesc =
+      desc.length > 0 && desc.length <= 400 && !/^https?:\/\//i.test(desc) ? desc : null;
+    const hasAbout = !!(data.userContext?.trim() || data.summary?.trim() || legacyDesc);
+    if (hasAbout || autoPromptedForRef.current === data.id) return;
+    autoPromptedForRef.current = data.id;
+    // Defer past the push transition: VoiceNoteButton mounts a real
+    // `useAudioRecorder` (constructs a native AudioRecorder), and opening
+    // straight into that mid-navigation is what crashed ("Calling the ...
+    // function has failed") when this screen is reached fresh off a capture.
+    // Landing on the editor a beat after the screen settles reads the same
+    // to the user but keeps native module setup off the transition.
+    const task = InteractionManager.runAfterInteractions(() => startEdit(''));
+    return () => task.cancel();
+  }, [data, startEdit]);
 
   const saveContext = useCallback(async () => {
     const text = contextDraft.trim();
@@ -142,11 +171,17 @@ export default function InsightDetailScreen() {
   // have a description. Fall back to it only when it's short — a real excerpt
   // is a sentence or two; a scraped transcript/body is long, so length-gating
   // keeps raw transcriptions from ever leaking through.
+  // A URL-shaped description is a stub from a failed scrape (paywall/robot
+  // wall) — never show the link itself as "what this is about".
+  const trimmedDescription = data.contentItem?.description?.trim() ?? '';
   const legacyDescription =
-    data.contentItem?.description && data.contentItem.description.length <= 400
-      ? data.contentItem.description
+    trimmedDescription.length > 0 && trimmedDescription.length <= 400
+      && !/^https?:\/\//i.test(trimmedDescription)
+      ? trimmedDescription
       : null;
-  const aboutText = data.userContext ?? data.summary ?? legacyDescription;
+  // Nullish-only fallthrough (??) would keep an empty string in place instead
+  // of falling through — treat blank strings as "nothing extracted" too.
+  const aboutText = data.userContext?.trim() || data.summary?.trim() || legacyDescription || null;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
@@ -272,6 +307,11 @@ export default function InsightDetailScreen() {
               </View>
             ) : editing ? (
               <View style={[styles.editBox, { borderColor: c.border }]}>
+                {!aboutText && (
+                  <Text variant="monoSmall" color="muted" style={{ marginBottom: Spacing[3] }}>
+                    We couldn't understand this source — nothing readable came through. Tell mneme what it was about, by typing or speaking.
+                  </Text>
+                )}
                 <TextInput
                   style={[styles.editInput, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
                   value={contextDraft}

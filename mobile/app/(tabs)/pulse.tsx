@@ -280,7 +280,7 @@ export default function PulseScreen() {
   const isEmpty = !loading && !error && friends.length === 0 && !searchQuery.trim();
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.canvas }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: c.border }]}>
         <Text variant="wordmark" color="primary">pulse</Text>
         <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About pulse">

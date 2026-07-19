@@ -31,6 +31,10 @@ export const FontFamily = {
 
 export type AppThemeColors = {
   background: string;
+  /** Page background for the list-heavy tabs (archive, pulse, you). In light
+   * mode this is a clearly-gray tone so those screens don't read as a single
+   * white sheet; in dark mode it equals `background`. */
+  canvas: string;
   surface: string;
   elevated: string;
   text: string;
@@ -52,6 +56,7 @@ export type AppThemeColors = {
 
 export const lightColors: AppThemeColors = {
   background: '#F5F4F0',
+  canvas: '#EBEAE6',
   surface: '#FFFFFF',
   elevated: '#EBEAE6',
   text: '#0A0A0A',
@@ -73,6 +78,7 @@ export const lightColors: AppThemeColors = {
 
 export const darkColors: AppThemeColors = {
   background: '#060606',
+  canvas: '#060606',
   surface: '#0E0E0E',
   elevated: '#141414',
   text: '#ECECEC',

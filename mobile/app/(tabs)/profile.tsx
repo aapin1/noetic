@@ -83,7 +83,7 @@ export default function YouScreen() {
   });
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.canvas }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: c.border }]}>
         <Text variant="wordmark">you</Text>
         <Pressable onPress={() => router.push('/settings')} accessibilityLabel="Settings">

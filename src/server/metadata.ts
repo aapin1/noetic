@@ -47,7 +47,11 @@ export function scoreContentConfidence(args: {
   const body = (args.bodyText ?? "").trim();
   if (body.length >= 800) return "rich";
   const desc = (args.description ?? "").trim();
-  if (body.length >= 150 || desc.length >= 150) return "partial";
+  // A URL-shaped description is a stub from a failed scrape (paywall, robot
+  // wall) — a long URL must not read as a "partial" excerpt, or the ask-the-
+  // user fallback never fires for exactly the captures that need it most.
+  const realDesc = /^https?:\/\//i.test(desc) ? "" : desc;
+  if (body.length >= 150 || realDesc.length >= 150) return "partial";
   return "thin";
 }
 

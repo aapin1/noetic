@@ -378,7 +378,7 @@ function Spectrum({ items }: { items: { name: string; count: number }[] }) {
 
   return (
     <View style={styles.spectrumWrap}>
-      <View style={[styles.spectrumBar, { backgroundColor: c.elevated }]}>
+      <View style={[styles.spectrumBar, { backgroundColor: c.surface }]}>
         {items.map((it, i) => (
           <View
             key={it.name}

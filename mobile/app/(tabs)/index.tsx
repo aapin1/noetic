@@ -314,6 +314,287 @@ const UNREADABLE_EXPLAINED_KEY = 'mneme_unreadable_source_explained';
 type LensMode = 'semantic' | 'temporal';
 type ToolMode = 'default' | 'discover' | 'search';
 type PositionMap = Record<string, { x: number; y: number }>;
+type Cam = { x: number; y: number; zoom: number };
+
+// ── Double-buffered world layer ───────────────────────────────────
+// One rendered "page" of the map: the world SVG rasterized at `cam`, plus
+// everything that must stay glued to that raster frame-for-frame — the
+// canvas-anchored ambient glow, the counter-scaled cluster-label overlay and
+// the new-node landing ring, all positioned against the same camera.
+//
+// Two of these are mounted at once. The FRONT buffer is visible; a re-commit
+// renders the new camera into the hidden BACK buffer, and only after the
+// native side has had a couple of frames to actually paint it does the map
+// flip the two opacities, advance renderedCam and re-express the live
+// transform — all in one JS task, so no visible frame can ever pair a raster
+// with the wrong transform.
+//
+// Why: the old scheme changed the visible SVG's viewBox in place and
+// corrected the wrapper transform in the same React commit, assuming both
+// hit the screen in the same frame. But re-rasterizing a ~3×-screen-area
+// SVG layer routinely takes longer than applying a layer transform, and the
+// bridge can flush the two updates in different native frames — so for a
+// split second the map showed the old raster under the new transform (or
+// vice versa): the whole graph "jumped all over the place", worse the more
+// nodes there were, then snapped back when the raster caught up. Painting
+// off-screen and swapping makes that class of tear structurally impossible.
+
+/** On-screen label font-size targets. Constant through the mid zooms, scaling
+ * down with the map when far out, SHRINKING (never looming) on the way in. */
+const domainScreenAt = (z: number) => (z <= 1 ? 16 * Math.min(1, z / 0.64) : 16 / Math.pow(z, 0.8));
+const topicScreenAt = (z: number) => (z < 0.71 ? 10 * (z / 0.71) : 10);
+
+// Sample points for the piecewise-linear counter-scale interpolation.
+const LABEL_SCALE_KS = [0.25, 0.4, 0.55, 0.7, 0.85, 1, 1.2, 1.5, 1.9, 2.4, 3, 4];
+
+type WorldClusterLabel = { topicId: string; name: string; kind: string; x: number; y: number };
+type LabelContainment = {
+  domainsWithSubtopics: Set<string>;
+  domainsBySubtopic: Map<string, Set<string>>;
+};
+
+const WorldBuffer = React.memo(function WorldBuffer({
+  cam,
+  opacity,
+  worldDefs,
+  worldBody,
+  ambientGlow,
+  lensMode,
+  clusterLabels,
+  labelContainment,
+  focusDimTopicId,
+  liveScale,
+  landingPos,
+  landingAnim,
+}: {
+  cam: Cam;
+  opacity: RNAnimated.Value;
+  worldDefs: React.ReactNode;
+  worldBody: React.ReactNode;
+  ambientGlow: React.ReactNode;
+  lensMode: LensMode;
+  clusterLabels: WorldClusterLabel[];
+  labelContainment: LabelContainment;
+  focusDimTopicId: string | null;
+  liveScale: RNAnimated.Value;
+  landingPos: { x: number; y: number } | null;
+  landingAnim: RNAnimated.Value;
+}) {
+  // The world SVG, rasterized at this buffer's camera. Overscan margin as
+  // before: the viewBox extends MARGIN past the screen on every side.
+  const svg = useMemo(() => (
+    <Svg
+      width={OS_W}
+      height={OS_H}
+      viewBox={`${cam.x - MARGIN_X / cam.zoom} ${cam.y - MARGIN_Y / cam.zoom} ${OS_W / cam.zoom} ${OS_H / cam.zoom}`}
+      style={MAP_WORLD_STYLE}
+    >
+      {worldDefs}
+      {worldBody}
+    </Svg>
+  ), [cam, worldDefs, worldBody]);
+
+  // Place the fixed-size ambient glow over the canvas rect at this camera.
+  // Uniform scale, so the aspect stays exactly CANVAS_W : CANVAS_H.
+  const glowStyle = useMemo(() => ({
+    position: 'absolute' as const,
+    left: (CANVAS_W / 2 - cam.x) * cam.zoom - GLOW_W / 2,
+    top: (CANVAS_H / 2 - cam.y) * cam.zoom - GLOW_H / 2,
+    width: GLOW_W,
+    height: GLOW_H,
+    transform: [{ scale: (CANVAS_W * cam.zoom) / GLOW_W }],
+  }), [cam]);
+
+  // Counter-scale for labels, rebuilt per zoom commit. The wrapper scales
+  // every child by k = z_live/z_committed; each label wants screenFont(zc·k)
+  // on screen, so its own scale must be screenFont(zc·k) / (screenFont(zc)·k).
+  const labelScales = useMemo(() => {
+    const domainBase = domainScreenAt(cam.zoom);
+    const topicBase = topicScreenAt(cam.zoom);
+    return {
+      domain: liveScale.interpolate({
+        inputRange: LABEL_SCALE_KS,
+        outputRange: LABEL_SCALE_KS.map((k) => domainScreenAt(cam.zoom * k) / (domainBase * k)),
+        extrapolate: 'clamp',
+      }),
+      topic: liveScale.interpolate({
+        inputRange: LABEL_SCALE_KS,
+        outputRange: LABEL_SCALE_KS.map((k) => topicScreenAt(cam.zoom * k) / (topicBase * k)),
+        extrapolate: 'clamp',
+      }),
+    };
+  }, [cam.zoom, liveScale]);
+
+  const labelSpecs = useMemo(() => {
+    if (lensMode !== 'semantic') return [];
+    const zoom = cam.zoom;
+    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+    const domainScreen = domainScreenAt(zoom);
+    const topicScreen = topicScreenAt(zoom);
+
+    type LabelCandidate = {
+      cl: WorldClusterLabel;
+      isDomain: boolean;
+      fontSize: number;      // screen units at the committed zoom
+      letterSpacing: number; // proportional, so tracking scales with the glyphs
+      opacity: number;
+      hw: number;            // world-space half box, for overlap tests
+      hh: number;
+    };
+
+    // Sub-topics earn their ink only once the user has zoomed into a region.
+    // Same ramp the hand-off below uses, so a domain fading out and its
+    // sub-topics fading in are two halves of one crossfade.
+    const subtopicOpacityAt = (z: number) => clamp01((z - 1.1) / 0.5) * 0.28;
+
+    const toCandidate = (cl: WorldClusterLabel, isDomain: boolean): LabelCandidate => {
+      const fontSize = isDomain ? domainScreen : topicScreen;
+      const worldFont = fontSize / zoom;
+      const letterSpacing = fontSize * (isDomain ? 0.25 : 0.3);
+      let opacity: number;
+      if (isDomain) {
+        // Domains carry the map's structure at a glance, so they sit a little
+        // heavier than the sub-topics that replace them further in.
+        if (zoom <= 1.0) {
+          opacity = Math.min(0.38, 0.20 + (1 - zoom) * 0.12);
+        } else if (labelContainment.domainsWithSubtopics.has(cl.topicId)) {
+          // A sub-topic label exists to take over this region — hand off.
+          opacity = Math.max(0, 0.20 * (1 - (zoom - 1.0) / 0.6));
+        } else {
+          // Nothing to hand off to: keep the label as the user zooms in. It
+          // shrinks smoothly and only fades away once genuinely small.
+          opacity = 0.20 * clamp01((domainScreen - 5) / 2);
+        }
+      } else {
+        opacity = subtopicOpacityAt(zoom);
+      }
+      // Mono uppercase: char advance ≈ 0.6·fontSize + letterSpacing.
+      const worldLs = worldFont * (isDomain ? 0.25 : 0.3);
+      return {
+        cl, isDomain, fontSize, letterSpacing, opacity,
+        hw: (cl.name.length * (worldFont * 0.6 + worldLs)) / 2,
+        hh: worldFont / 2,
+      };
+    };
+
+    // Priority order: domain labels first (already count-sorted within each
+    // kind — clusterLabels comes from the server sorted by member count).
+    const candidates = [
+      ...clusterLabels.filter((c) => c.kind === 'domain').map((c) => toCandidate(c, true)),
+      ...clusterLabels.filter((c) => c.kind === 'topic').map((c) => toCandidate(c, false)),
+    ];
+
+    // Greedy de-clutter: a label renders only when it does not overlap any
+    // higher-priority label already kept. The one sanctioned overlap is the
+    // zoom-in handoff: while a domain fades out past zoom 1, its own
+    // sub-topic label crossfades in over it.
+    const overlapping = (a: LabelCandidate, b: LabelCandidate) =>
+      Math.abs(a.cl.x - b.cl.x) < a.hw + b.hw && Math.abs(a.cl.y - b.cl.y) < a.hh + b.hh;
+    const kept: LabelCandidate[] = [];
+    for (const cand of candidates) {
+      if (cand.opacity <= 0.005) continue;
+      let blocked = false;
+      for (const k of kept) {
+        if (!overlapping(k, cand)) continue;
+        const handoff =
+          k.isDomain && !cand.isDomain && zoom > 1.0 &&
+          labelContainment.domainsBySubtopic.get(cand.cl.topicId)?.has(k.cl.topicId);
+        if (handoff) {
+          cand.opacity = Math.min(cand.opacity, subtopicOpacityAt(zoom));
+          if (cand.opacity <= 0.005) { blocked = true; break; }
+        } else {
+          blocked = true;
+          break;
+        }
+      }
+      if (!blocked) kept.push(cand);
+    }
+
+    return kept.map(({ cl, isDomain, fontSize, letterSpacing, opacity: labelOpacity }) => {
+      const dimmed = focusDimTopicId && cl.topicId !== focusDimTopicId;
+      return {
+        key: cl.topicId,
+        name: cl.name.toUpperCase(),
+        isDomain,
+        // Committed screen coordinates — the wrapper transform carries them
+        // to the live camera, exactly like the world SVG.
+        screenX: (cl.x - cam.x) * zoom,
+        screenY: (cl.y - cam.y) * zoom,
+        fontSize,
+        letterSpacing,
+        opacity: dimmed ? Math.min(0.08, labelOpacity) : labelOpacity,
+      };
+    });
+  }, [lensMode, clusterLabels, labelContainment, focusDimTopicId, cam]);
+
+  const landingRing = landingPos ? (() => {
+    const screenX = (landingPos.x - cam.x) * cam.zoom;
+    const screenY = (landingPos.y - cam.y) * cam.zoom;
+    const ringSize = 44;
+    const newNodeRingScale = landingAnim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0.5, 2.4, 3.8] });
+    const newNodeRingOpacity = landingAnim.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0, 0.55, 0] });
+    return (
+      <RNAnimated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          width: ringSize, height: ringSize,
+          borderRadius: ringSize / 2,
+          borderWidth: 1.5, borderColor: MAP_NODE,
+          left: screenX - ringSize / 2, top: screenY - ringSize / 2,
+          transform: [{ scale: newNodeRingScale }],
+          opacity: newNodeRingOpacity,
+        }}
+      />
+    );
+  })() : null;
+
+  return (
+    <RNAnimated.View
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, { overflow: 'visible', opacity }]}
+    >
+      {/* Canvas-anchored ambient glow, under the map. Rasterized once;
+          a commit only moves and scales this view. */}
+      <View style={glowStyle}>{ambientGlow}</View>
+      {svg}
+      {/* Cluster labels — native views that counter-scale continuously
+          against the live wrapper transform (smooth through pinches,
+          unlike text baked into the SVG raster). */}
+      {labelSpecs.map((l) => (
+        <RNAnimated.View
+          key={`cl-label-${l.key}`}
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: l.screenX - 150,
+            top: l.screenY - 20,
+            width: 300,
+            height: 40,
+            alignItems: 'center',
+            justifyContent: 'center',
+            transform: [{ scale: l.isDomain ? labelScales.domain : labelScales.topic }],
+          }}
+        >
+          <RNText
+            numberOfLines={1}
+            style={{
+              fontFamily: FontFamily.mono,
+              fontSize: l.fontSize,
+              letterSpacing: l.letterSpacing,
+              color: `rgba(236,236,236,${l.opacity.toFixed(3)})`,
+              textAlign: 'center',
+            }}
+          >
+            {l.name}
+          </RNText>
+        </RNAnimated.View>
+      ))}
+      {/* New node landing animation */}
+      {landingRing}
+    </RNAnimated.View>
+  );
+});
 
 // ── Layout helpers ─────────────────────────────────────────────────
 
@@ -1554,17 +1835,37 @@ export default function MapScreen() {
   const [lensMode, setLensMode] = useState<LensMode>('semantic');
 
   // ── Viewport: pan + zoom ──────────────────────────────────────
-  // Two-tier camera. The COMMITTED camera (vbPos/zoom React state) is what the
-  // SVG world and its touch targets are rendered against; it changes only when
-  // a gesture or camera animation settles. The LIVE camera (refs) moves every
-  // frame, expressed as a view transform on the map wrapper — one native style
-  // update per frame, zero React re-renders. Re-rendering the whole SVG tree
-  // per gesture frame is what made the map chunky as nodes accumulated.
+  // Two-tier camera, double-buffered rendering (see WorldBuffer). The
+  // COMMITTED camera is what a world buffer is rendered against; it changes
+  // only on a re-commit or when a gesture/animation settles. The LIVE camera
+  // (refs) moves every frame, expressed as a view transform on the map
+  // wrapper — one native style update per frame, zero React re-renders.
+  // Re-rendering the whole SVG tree per gesture frame is what made the map
+  // chunky as nodes accumulated.
   const savedVB = useRef({ x: INIT_VB_X, y: INIT_VB_Y });
-  const [vbPos, setVbPos] = useState({ x: INIT_VB_X, y: INIT_VB_Y });
 
   const savedZoom = useRef(0.4);
+  // Committed zoom as React state: drives the zoom-coupled world CONTENT
+  // (zoomFade steps, temporal captions) that both buffers share.
   const [zoom, setZoom] = useState(0.4);
+
+  // The two world buffers' committed cameras. bufCams[frontBufRef] is what is
+  // visible on screen; a re-commit renders into the OTHER (hidden) buffer and
+  // the swap effect below reveals it once painted.
+  const [bufCams, setBufCams] = useState<[Cam, Cam]>([
+    { x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 },
+    { x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 },
+  ]);
+  const frontBufRef = useRef(0);
+  const bufOpacity0 = useRef(new RNAnimated.Value(1)).current;
+  const bufOpacity1 = useRef(new RNAnimated.Value(0)).current;
+  // The swap in flight, if any: which buffer is being rendered off-screen and
+  // the camera it holds. `scheduled` guards the effect against re-runs.
+  const pendingSwapRef = useRef<{ buf: number; cam: Cam; scheduled: boolean } | null>(null);
+  // A commit requested while a swap was still in flight — latest wins, applied
+  // as soon as the current swap lands.
+  const queuedCamRef = useRef<Cam | null>(null);
+  const swapRafRef = useRef<number | null>(null);
 
   // The camera as of the last *settled* gesture/animation. The touch layer is
   // built against this, not the committed camera: hit targets are invisible
@@ -1574,14 +1875,10 @@ export default function MapScreen() {
   const [settledCam, setSettledCam] = useState({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
 
   const committedCam = useRef({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
-  // The camera the on-screen SVG was actually RENDERED with. committedCam is
-  // the latest *request* — commitRender updates it synchronously, but React
-  // paints the matching viewBox one or more frames later. Computing the live
-  // transform against the request during that gap moved the (still old) raster
-  // by the recommit delta: the whole map jumped out of place mid-gesture, then
-  // "fixed itself" when the new render landed. The transform must always be
-  // expressed against what is painted, so this ref only advances in the
-  // layout effect that runs once the new render has committed.
+  // The camera of the buffer that is VISIBLE right now. committedCam is the
+  // latest *request*; the live transform must always be expressed against
+  // what is actually on screen, so this ref only advances inside the buffer
+  // swap (or a programmatic setCamera jump), never at request time.
   const renderedCam = useRef({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
   const liveCam = useRef({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
   const liveTx = useRef(new RNAnimated.Value(0)).current;
@@ -1627,10 +1924,21 @@ export default function MapScreen() {
   // position from that baseline minus PanResponder's cumulative `gs.dx`, so
   // moving the baseline mid-gesture would re-apply the whole accumulated delta
   // on the next frame and lurch the map sideways.
+  //
+  // Renders into the HIDDEN buffer; the swap effect below reveals it once the
+  // native raster has painted. If a swap is already in flight the request is
+  // queued (latest wins) rather than re-rendering the buffer mid-paint.
   const commitRender = useCallback((ax: number, ay: number, z: number) => {
     committedCam.current = { x: ax, y: ay, zoom: z };
-    setVbPos({ x: ax, y: ay });
     setZoom(z);
+    const cam: Cam = { x: ax, y: ay, zoom: z };
+    if (pendingSwapRef.current) {
+      queuedCamRef.current = cam;
+      return;
+    }
+    const back = 1 - frontBufRef.current;
+    pendingSwapRef.current = { buf: back, cam, scheduled: false };
+    setBufCams((prev) => (back === 0 ? [cam, prev[1]] : [prev[0], cam]));
   }, []);
 
   // Commit at the end of a gesture/animation: re-render AND resync the
@@ -1732,29 +2040,63 @@ export default function MapScreen() {
   }, [commitRender]);
 
   // Move both tiers at once (programmatic, non-animated camera jumps). These
-  // land settled, so the touch layer follows immediately.
+  // land settled, so the touch layer follows immediately. A jump supersedes
+  // any swap in flight: render straight into the FRONT buffer — the one-frame
+  // in-place repaint is invisible inside a deliberate whole-view jump.
   const setCamera = useCallback((x: number, y: number, z: number) => {
+    if (swapRafRef.current !== null) {
+      cancelAnimationFrame(swapRafRef.current);
+      swapRafRef.current = null;
+    }
+    pendingSwapRef.current = null;
+    queuedCamRef.current = null;
+    const cam: Cam = { x, y, zoom: z };
     savedVB.current = { x, y };
     savedZoom.current = z;
-    liveCam.current = { x, y, zoom: z };
-    committedCam.current = { x, y, zoom: z };
-    setVbPos({ x, y });
+    liveCam.current = cam;
+    committedCam.current = cam;
+    renderedCam.current = cam;
+    const front = frontBufRef.current;
+    setBufCams((prev) => (front === 0 ? [cam, prev[1]] : [prev[0], cam]));
     setZoom(z);
-    setSettledCam({ x, y, zoom: z });
+    setSettledCam(cam);
     camVel.current = { x: 0, y: 0 };
-    lastLive.current = { x, y, zoom: z };
-  }, []);
+    lastLive.current = cam;
+    applyLiveCamera(x, y, z);
+  }, [applyLiveCamera]);
 
-  // After every committed render the world reflects vbPos/zoom — advance the
-  // rendered-camera baseline to match and re-derive the wrapper transform
-  // (identity once settled; still correct if an unrelated re-render lands
-  // mid-gesture). Between a commitRender call and this effect, gesture frames
-  // keep transforming against the OLD rendered camera — which is exactly what
-  // is still on screen.
+  // The buffer swap. Runs after React commits a new camera into the hidden
+  // buffer; gives the native side two frames to actually PAINT the new raster,
+  // then — in one JS task, so it flushes as one native update — flips the two
+  // opacities, advances renderedCam and re-expresses the live transform
+  // against the newly visible raster. Between the commitRender call and this
+  // swap, gesture frames keep transforming against the OLD rendered camera —
+  // which is exactly what is still on screen.
   useLayoutEffect(() => {
-    renderedCam.current = { x: vbPos.x, y: vbPos.y, zoom };
-    applyLiveCamera(liveCam.current.x, liveCam.current.y, liveCam.current.zoom);
-  });
+    const p = pendingSwapRef.current;
+    if (!p || p.scheduled) return;
+    p.scheduled = true;
+    swapRafRef.current = requestAnimationFrame(() => {
+      swapRafRef.current = requestAnimationFrame(() => {
+        swapRafRef.current = null;
+        const pending = pendingSwapRef.current;
+        if (!pending) return;
+        frontBufRef.current = pending.buf;
+        renderedCam.current = pending.cam;
+        (pending.buf === 0 ? bufOpacity0 : bufOpacity1).setValue(1);
+        (pending.buf === 0 ? bufOpacity1 : bufOpacity0).setValue(0);
+        applyLiveCamera(liveCam.current.x, liveCam.current.y, liveCam.current.zoom);
+        pendingSwapRef.current = null;
+        const queued = queuedCamRef.current;
+        queuedCamRef.current = null;
+        if (queued) commitRender(queued.x, queued.y, queued.zoom);
+      });
+    });
+  }, [bufCams, applyLiveCamera, commitRender, bufOpacity0, bufOpacity1]);
+
+  useEffect(() => () => {
+    if (swapRafRef.current !== null) cancelAnimationFrame(swapRafRef.current);
+  }, []);
 
   const resetView = useCallback(() => {
     setCamera(INIT_VB_X, INIT_VB_Y, 0.4);
@@ -2276,6 +2618,16 @@ export default function MapScreen() {
         if (momentumFrameRef.current !== null) {
           cancelAnimationFrame(momentumFrameRef.current);
           momentumFrameRef.current = null;
+        }
+        // Cancel any in-flight animateCamera flight (e.g. the fly-to-new-node
+        // after a capture, or a cluster-tap zoom). Its rAF loop keeps writing
+        // savedVB/savedZoom every frame regardless of touch state, so without
+        // this a manual drag starting mid-flight fights the animation — the
+        // camera visibly snaps back toward the flight's target, undoing the
+        // user's pan and reading as an unexpected "back" navigation.
+        if (animCancelRef.current) {
+          animCancelRef.current();
+          animCancelRef.current = null;
         }
         resetVelocity();
         const touches = evt.nativeEvent.touches;
@@ -2908,28 +3260,9 @@ export default function MapScreen() {
     return isRecentNode(node) ? RECENT_NODE_COLOR : MAP_NODE;
   }, [clusterColorMap, isRecentNode]);
 
-  const landingRing = newNodeId && pos[newNodeId] ? (() => {
-    const p = pos[newNodeId]!;
-    const screenX = (p.x - vbPos.x) * zoom;
-    const screenY = (p.y - vbPos.y) * zoom;
-    const ringSize = 44;
-    const newNodeRingScale = landingAnim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0.5, 2.4, 3.8] });
-    const newNodeRingOpacity = landingAnim.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0, 0.55, 0] });
-    return (
-      <RNAnimated.View
-        pointerEvents="none"
-        style={{
-          position: 'absolute',
-          width: ringSize, height: ringSize,
-          borderRadius: ringSize / 2,
-          borderWidth: 1.5, borderColor: MAP_NODE,
-          left: screenX - ringSize / 2, top: screenY - ringSize / 2,
-          transform: [{ scale: newNodeRingScale }],
-          opacity: newNodeRingOpacity,
-        }}
-      />
-    );
-  })() : null;
+  // World position of the just-captured node's landing ring. Drawn inside
+  // each world buffer so it stays glued to the raster through re-commits.
+  const landingPos = (newNodeId && pos[newNodeId]) || null;
 
   // ── Node opacity: terrain + focus + discovery + timeline ───────
   const getNodeOpacity = useCallback((node: GraphNode, baseOpacity: number, zoomFade: number) => {
@@ -3021,183 +3354,9 @@ export default function MapScreen() {
     </>
   ), [lensMode, clusterLabels, focusDimTopicId]);
 
-  // ── Cluster labels: screen-space overlay, natively counter-scaled ──────
-  // Labels live OUTSIDE the world SVG, as RN views inside the transformed
-  // wrapper. Inside the SVG their size was frozen into the raster between
-  // zoom commits: mid-pinch they scaled with the map (up to ~5× oversize once
-  // pinch recommits were deferred) and then SNAPPED to the recomputed size at
-  // the commit — the "chunky" label updates. As views, each label carries an
-  // Animated counter-scale derived from the live wrapper scale, so its
-  // on-screen size tracks the target curve CONTINUOUSLY through the gesture.
-
-  /** On-screen font size targets. Constant through the mid zooms, scaling
-   * down with the map when far out, SHRINKING (never looming) on the way in. */
-  const domainScreenAt = (z: number) => (z <= 1 ? 16 * Math.min(1, z / 0.64) : 16 / Math.pow(z, 0.8));
-  const topicScreenAt = (z: number) => (z < 0.71 ? 10 * (z / 0.71) : 10);
-
-  // Counter-scale nodes, rebuilt per zoom commit. The wrapper scales every
-  // child by k = z_live/z_committed; each label wants screenFont(zc·k) on
-  // screen, so its own scale must be screenFont(zc·k) / (screenFont(zc)·k).
-  // Piecewise-linear over enough samples to be visually indistinguishable
-  // from the true curve.
-  const labelScales = useMemo(() => {
-    const ks = [0.25, 0.4, 0.55, 0.7, 0.85, 1, 1.2, 1.5, 1.9, 2.4, 3, 4];
-    const domainBase = domainScreenAt(zoom);
-    const topicBase = topicScreenAt(zoom);
-    return {
-      domain: liveScale.interpolate({
-        inputRange: ks,
-        outputRange: ks.map((k) => domainScreenAt(zoom * k) / (domainBase * k)),
-        extrapolate: 'clamp',
-      }),
-      topic: liveScale.interpolate({
-        inputRange: ks,
-        outputRange: ks.map((k) => topicScreenAt(zoom * k) / (topicBase * k)),
-        extrapolate: 'clamp',
-      }),
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zoom, liveScale]);
-
-  const labelSpecs = useMemo(() => {
-    if (lensMode !== 'semantic') return [];
-    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
-    const domainScreen = domainScreenAt(zoom);
-    const topicScreen = topicScreenAt(zoom);
-
-    type LabelCandidate = {
-      cl: (typeof clusterLabels)[number];
-      isDomain: boolean;
-      fontSize: number;      // screen units at the committed zoom
-      letterSpacing: number; // proportional, so tracking scales with the glyphs
-      opacity: number;
-      hw: number;            // world-space half box, for overlap tests
-      hh: number;
-    };
-
-    // Sub-topics earn their ink only once the user has zoomed into a region.
-    // At a flat opacity they painted at every altitude, so a fully zoomed-out
-    // map showed every sub-topic at once — the clutter — and they competed with
-    // the domain labels that are meant to own that altitude. This is the same
-    // ramp the hand-off below uses, so a domain fading out and its sub-topics
-    // fading in are two halves of one crossfade.
-    const subtopicOpacityAt = (z: number) => clamp01((z - 1.1) / 0.5) * 0.28;
-
-    const toCandidate = (cl: (typeof clusterLabels)[number], isDomain: boolean): LabelCandidate => {
-      const fontSize = isDomain ? domainScreen : topicScreen;
-      const worldFont = fontSize / zoom;
-      const letterSpacing = fontSize * (isDomain ? 0.25 : 0.3);
-      let opacity: number;
-      if (isDomain) {
-        // Domains carry the map's structure at a glance, so they sit a little
-        // heavier than the sub-topics that replace them further in.
-        if (zoom <= 1.0) {
-          opacity = Math.min(0.38, 0.20 + (1 - zoom) * 0.12);
-        } else if (labelContainment.domainsWithSubtopics.has(cl.topicId)) {
-          // A sub-topic label exists to take over this region — hand off.
-          opacity = Math.max(0, 0.20 * (1 - (zoom - 1.0) / 0.6));
-        } else {
-          // Nothing to hand off to: keep the label as the user zooms in. It
-          // shrinks smoothly and only fades away once genuinely small.
-          opacity = 0.20 * clamp01((domainScreen - 5) / 2);
-        }
-      } else {
-        opacity = subtopicOpacityAt(zoom);
-      }
-      // Mono uppercase: char advance ≈ 0.6·fontSize + letterSpacing.
-      const worldLs = worldFont * (isDomain ? 0.25 : 0.3);
-      return {
-        cl, isDomain, fontSize, letterSpacing, opacity,
-        hw: (cl.name.length * (worldFont * 0.6 + worldLs)) / 2,
-        hh: worldFont / 2,
-      };
-    };
-
-    // Priority order: domain labels first (already count-sorted within each
-    // kind — clusterLabels comes from the server sorted by member count).
-    const candidates = [
-      ...clusterLabels.filter((c) => c.kind === 'domain').map((c) => toCandidate(c, true)),
-      ...clusterLabels.filter((c) => c.kind === 'topic').map((c) => toCandidate(c, false)),
-    ];
-
-    // Greedy de-clutter: a label renders only when it does not overlap any
-    // higher-priority label already kept — overlapping text is unreadable
-    // text, whatever the pair. The one sanctioned overlap is the zoom-in
-    // handoff: while a domain fades out past zoom 1, its own sub-topic label
-    // crossfades in over it.
-    const overlapping = (a: LabelCandidate, b: LabelCandidate) =>
-      Math.abs(a.cl.x - b.cl.x) < a.hw + b.hw && Math.abs(a.cl.y - b.cl.y) < a.hh + b.hh;
-    const kept: LabelCandidate[] = [];
-    for (const cand of candidates) {
-      if (cand.opacity <= 0.005) continue;
-      let blocked = false;
-      for (const k of kept) {
-        if (!overlapping(k, cand)) continue;
-        const handoff =
-          k.isDomain && !cand.isDomain && zoom > 1.0 &&
-          labelContainment.domainsBySubtopic.get(cand.cl.topicId)?.has(k.cl.topicId);
-        if (handoff) {
-          cand.opacity = Math.min(cand.opacity, subtopicOpacityAt(zoom));
-          if (cand.opacity <= 0.005) { blocked = true; break; }
-        } else {
-          blocked = true;
-          break;
-        }
-      }
-      if (!blocked) kept.push(cand);
-    }
-
-    return kept.map(({ cl, isDomain, fontSize, letterSpacing, opacity }) => {
-      const dimmed = focusDimTopicId && cl.topicId !== focusDimTopicId;
-      return {
-        key: cl.topicId,
-        name: cl.name.toUpperCase(),
-        isDomain,
-        // Committed screen coordinates — the wrapper transform carries them
-        // to the live camera, exactly like the world SVG.
-        screenX: (cl.x - vbPos.x) * zoom,
-        screenY: (cl.y - vbPos.y) * zoom,
-        fontSize,
-        letterSpacing,
-        opacity: dimmed ? Math.min(0.08, opacity) : opacity,
-      };
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lensMode, clusterLabels, labelContainment, focusDimTopicId, zoom, vbPos]);
-
-  const labelOverlay = useMemo(() => (
-    <>
-      {labelSpecs.map((l) => (
-        <RNAnimated.View
-          key={`cl-label-${l.key}`}
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            left: l.screenX - 150,
-            top: l.screenY - 20,
-            width: 300,
-            height: 40,
-            alignItems: 'center',
-            justifyContent: 'center',
-            transform: [{ scale: l.isDomain ? labelScales.domain : labelScales.topic }],
-          }}
-        >
-          <RNText
-            numberOfLines={1}
-            style={{
-              fontFamily: FontFamily.mono,
-              fontSize: l.fontSize,
-              letterSpacing: l.letterSpacing,
-              color: `rgba(236,236,236,${l.opacity.toFixed(3)})`,
-              textAlign: 'center',
-            }}
-          >
-            {l.name}
-          </RNText>
-        </RNAnimated.View>
-      ))}
-    </>
-  ), [labelSpecs, labelScales]);
+  // Cluster labels, ambient glow and the landing ring are rendered inside
+  // each WorldBuffer (see module scope), positioned against that buffer's
+  // committed camera so they can never detach from its raster.
 
   // World-anchored text that stays in the SVG: the temporal axis captions.
   const labelLayer = useMemo(() => {
@@ -3357,35 +3516,13 @@ export default function MapScreen() {
     </G>
   ), [haloLayer, labelLayer, graphLayer]);
 
-  // ── Map world (SVG) — memoized against the COMMITTED camera ────
-  // Render an OVERSCAN margin of real map beyond the viewport. An <Svg> clips
-  // to its own width/height, so a screen-sized one has nothing to show the
-  // instant the wrapper transform moves it. Offsetting the element by −MARGIN
-  // and widening the viewBox to match keeps the scale and the world→screen
-  // mapping identical — (world − vbPos)·zoom, exactly what the touch layer
-  // assumes — while giving pans and zoom-outs charted territory to reveal.
-  //
-  // A pan re-commit changes nothing here but the viewBox string; worldBody
-  // comes through by reference, so React reconciles one element, not the graph.
-  const mapWorld = useMemo(() => (
-    <Svg
-      width={OS_W}
-      height={OS_H}
-      viewBox={`${vbPos.x - MARGIN_X / zoom} ${vbPos.y - MARGIN_Y / zoom} ${OS_W / zoom} ${OS_H / zoom}`}
-      style={MAP_WORLD_STYLE}
-    >
-      {worldDefs}
-      {worldBody}
-    </Svg>
-  ), [vbPos, zoom, worldDefs, worldBody]);
-
   // ── Ambient glow — hoisted out of the re-rasterized layer ──────
   // A single smooth radial gradient anchored to the canvas. Drawn inside the
   // world SVG it was a full-area gradient fill re-rasterized on every commit,
   // the last area-proportional cost left in that layer. Its content is static,
   // so rasterize it once at a fixed size and let a plain View place and scale
-  // it: a commit now updates a layer transform instead of repainting a million
-  // pixels. Upscaling a smooth gradient is invisible.
+  // it (inside each WorldBuffer): a commit updates a layer transform instead
+  // of repainting a million pixels. Upscaling a smooth gradient is invisible.
   const ambientGlow = useMemo(() => (
     <Svg width={GLOW_W} height={GLOW_H}>
       <Defs>
@@ -3397,17 +3534,6 @@ export default function MapScreen() {
       <Rect width={GLOW_W} height={GLOW_H} fill="url(#ambientGlow)" />
     </Svg>
   ), []);
-
-  // Place the fixed-size glow over the canvas rect at the committed camera.
-  // Uniform scale, so the aspect stays exactly CANVAS_W : CANVAS_H.
-  const glowStyle = useMemo(() => ({
-    position: 'absolute' as const,
-    left: (CANVAS_W / 2 - vbPos.x) * zoom - GLOW_W / 2,
-    top: (CANVAS_H / 2 - vbPos.y) * zoom - GLOW_H / 2,
-    width: GLOW_W,
-    height: GLOW_H,
-    transform: [{ scale: (CANVAS_W * zoom) / GLOW_W }],
-  }), [vbPos, zoom]);
 
   // ── Touch layer — memoized against the SETTLED camera ──────────
   // Hit targets are positioned at settled screen coordinates; mid-gesture they
@@ -3554,16 +3680,37 @@ export default function MapScreen() {
               { transform: [{ translateX: liveTx }, { translateY: liveTy }, { scale: liveScale }] },
             ]}
           >
-            {/* Canvas-anchored ambient glow, under the map. Rasterized once;
-                a commit only moves and scales this view. */}
-            <View style={glowStyle} pointerEvents="none">{ambientGlow}</View>
-            {mapWorld}
-            {/* Cluster labels — native views that counter-scale continuously
-                against the live wrapper transform (smooth through pinches,
-                unlike text baked into the SVG raster). */}
-            {labelOverlay}
-            {/* New node landing animation */}
-            {landingRing}
+            {/* The two world buffers. Exactly one is visible at a time; a
+                re-commit paints the hidden one and the swap effect reveals it
+                once the native raster is ready — see WorldBuffer. */}
+            <WorldBuffer
+              cam={bufCams[0]}
+              opacity={bufOpacity0}
+              worldDefs={worldDefs}
+              worldBody={worldBody}
+              ambientGlow={ambientGlow}
+              lensMode={lensMode}
+              clusterLabels={clusterLabels}
+              labelContainment={labelContainment}
+              focusDimTopicId={focusDimTopicId}
+              liveScale={liveScale}
+              landingPos={landingPos}
+              landingAnim={landingAnim}
+            />
+            <WorldBuffer
+              cam={bufCams[1]}
+              opacity={bufOpacity1}
+              worldDefs={worldDefs}
+              worldBody={worldBody}
+              ambientGlow={ambientGlow}
+              lensMode={lensMode}
+              clusterLabels={clusterLabels}
+              labelContainment={labelContainment}
+              focusDimTopicId={focusDimTopicId}
+              liveScale={liveScale}
+              landingPos={landingPos}
+              landingAnim={landingAnim}
+            />
           </RNAnimated.View>
 
           {/* Node touch targets — deliberately OUTSIDE the transform. They are

@@ -16,7 +16,9 @@ export function FolderIcon({ size = 56 }: { size?: number }) {
       <Rect x={4} y={4} width={20} height={10} rx={3} fill={c.border} />
       <Path
         d="M2 12a4 4 0 0 1 4-4h11l4 4h21a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4Z"
-        fill={c.elevated}
+        // `surface`, not `elevated`: the archive sits on the gray canvas now,
+        // and an elevated fill matches it exactly in light mode.
+        fill={c.surface}
         stroke={c.border}
         strokeWidth={1.5}
         strokeLinejoin="round"

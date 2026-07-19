@@ -99,7 +99,7 @@ export default function ArchiveScreen() {
   const searchActive = searchQuery.trim().length > 0;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.canvas }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: c.border }]}>
         <Text variant="wordmark" color="primary">archive</Text>
         <View style={styles.headerRight}>

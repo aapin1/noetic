@@ -43,18 +43,25 @@ export default function RootLayout() {
           <AuthProvider>
             <TutorialProvider>
               <ThemedStatusBar />
-              <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
+              {/* gestureEnabled: false — navigation is fully button-driven
+                  (every card screen has an explicit back control). The iOS
+                  edge-swipe pop gesture fought every horizontal pan in the app:
+                  a leftward drag starting near the screen edge on the map (or
+                  any horizontally-scrolling surface) popped the route like a
+                  browser back-swipe. Modals re-enable it so swipe-down-to-
+                  dismiss (a vertical gesture, no conflict) keeps working. */}
+              <Stack screenOptions={{ headerShown: false, animation: 'fade', gestureEnabled: false }}>
                 <Stack.Screen name="index" />
                 <Stack.Screen name="(auth)" />
                 <Stack.Screen name="(onboarding)" />
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="insight/[id]" options={{ presentation: 'card' }} />
                 <Stack.Screen name="archive/[topicId]" options={{ presentation: 'card' }} />
-                <Stack.Screen name="profile/edit" options={{ presentation: 'modal' }} />
+                <Stack.Screen name="profile/edit" options={{ presentation: 'modal', gestureEnabled: true }} />
                 <Stack.Screen name="settings" options={{ presentation: 'card' }} />
-                <Stack.Screen name="plus" options={{ presentation: 'modal' }} />
-                <Stack.Screen name="share-recap" options={{ presentation: 'modal' }} />
-                <Stack.Screen name="shareintent" options={{ presentation: 'modal' }} />
+                <Stack.Screen name="plus" options={{ presentation: 'modal', gestureEnabled: true }} />
+                <Stack.Screen name="share-recap" options={{ presentation: 'modal', gestureEnabled: true }} />
+                <Stack.Screen name="shareintent" options={{ presentation: 'modal', gestureEnabled: true }} />
                 <Stack.Screen name="+not-found" />
               </Stack>
               <TutorialOverlay />
