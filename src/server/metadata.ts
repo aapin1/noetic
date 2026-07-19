@@ -111,6 +111,41 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   }
 }
 
+// Cap how much HTML enters the parsers. parseMetadataFromHtml runs three
+// full-document parses (cheerio, linkedom+Readability, the heuristic); on a
+// page that inlines megabytes of SVG/data (distill.pub) that is tens of
+// seconds of CPU — enough to blow the platform's request timeout and 502 the
+// whole capture. Meta tags live in <head> and the winning body extraction is
+// condensed to ~12KB regardless, so bytes past the cap can only add parse
+// time, never content. The read is also time-bounded: fetchWithTimeout only
+// bounds time-to-headers, so a slow multi-MB body stream previously held the
+// capture open with no limit at all.
+const HTML_BYTE_CAP = 2_500_000;
+const BODY_READ_TIMEOUT_MS = 10000;
+async function textCapped(res: Response, maxBytes = HTML_BYTE_CAP): Promise<string> {
+  if (!res.body) return res.text();
+  const reader = res.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  const readAll = (async () => {
+    while (total < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      chunks.push(Buffer.from(value));
+      total += value.byteLength;
+    }
+  })();
+  let timerId: ReturnType<typeof setTimeout> | undefined;
+  const timer = new Promise<void>((resolve) => { timerId = setTimeout(resolve, BODY_READ_TIMEOUT_MS); });
+  try {
+    await Promise.race([readAll, timer]);
+  } finally {
+    clearTimeout(timerId);
+    void reader.cancel().catch(() => {});
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 /**
  * Reads JSON-LD blocks for substantive content the visible DOM may not carry:
  * `articleBody` (many news sites embed the full article) and long-form
@@ -1137,7 +1172,7 @@ export async function fetchMetadata(
       metadata = await parsePdfMetadata(await plainResponse.arrayBuffer(), normalized);
       if (metadata) return { metadata, requiresManualInput: false };
     } else {
-      metadata = plainResponse?.ok ? parseMetadataFromHtml(await plainResponse.text(), normalized) : undefined;
+      metadata = plainResponse?.ok ? parseMetadataFromHtml(await textCapped(plainResponse), normalized) : undefined;
     }
   } catch {
     metadata = undefined;
@@ -1151,7 +1186,7 @@ export async function fetchMetadata(
           const pdf = await parsePdfMetadata(await browserResponse.arrayBuffer(), normalized);
           if (pdf) return { metadata: pdf, requiresManualInput: false };
         } else {
-          const retried = parseMetadataFromHtml(await browserResponse.text(), normalized);
+          const retried = parseMetadataFromHtml(await textCapped(browserResponse), normalized);
           const better =
             !metadata?.title ||
             (Boolean(retried.title) && (retried.bodyText?.length ?? 0) > (metadata.bodyText?.length ?? 0));
@@ -1177,7 +1212,7 @@ export async function fetchMetadata(
           12000,
         );
         if (res.ok) {
-          const retried = parseMetadataFromHtml(await res.text(), normalized);
+          const retried = parseMetadataFromHtml(await textCapped(res), normalized);
           const better =
             !metadata?.title ||
             (Boolean(retried.title) && (retried.bodyText?.length ?? 0) > (metadata.bodyText?.length ?? 0));

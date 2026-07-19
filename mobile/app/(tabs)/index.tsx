@@ -2076,22 +2076,31 @@ export default function MapScreen() {
     const p = pendingSwapRef.current;
     if (!p || p.scheduled) return;
     p.scheduled = true;
-    swapRafRef.current = requestAnimationFrame(() => {
-      swapRafRef.current = requestAnimationFrame(() => {
-        swapRafRef.current = null;
-        const pending = pendingSwapRef.current;
-        if (!pending) return;
-        frontBufRef.current = pending.buf;
-        renderedCam.current = pending.cam;
-        (pending.buf === 0 ? bufOpacity0 : bufOpacity1).setValue(1);
-        (pending.buf === 0 ? bufOpacity1 : bufOpacity0).setValue(0);
-        applyLiveCamera(liveCam.current.x, liveCam.current.y, liveCam.current.zoom);
-        pendingSwapRef.current = null;
-        const queued = queuedCamRef.current;
-        queuedCamRef.current = null;
-        if (queued) commitRender(queued.x, queued.y, queued.zoom);
-      });
-    });
+    // How long to let the hidden raster paint before revealing it. A wide
+    // (zoomed-out) camera has the whole graph in frame, so its raster paints
+    // slowest — revealing it on the normal schedule showed the buffer's
+    // PREVIOUS content for a frame or two: the residual flicker on big
+    // zoom-ins/outs around the fitted-camera altitude. Extra frames are
+    // invisible (the old raster stays up, consistent, merely a beat staler).
+    let remaining = p.cam.zoom < 0.8 ? 5 : 3;
+    const tick = () => {
+      if (pendingSwapRef.current !== p) { swapRafRef.current = null; return; }
+      if (--remaining > 0) {
+        swapRafRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      swapRafRef.current = null;
+      frontBufRef.current = p.buf;
+      renderedCam.current = p.cam;
+      (p.buf === 0 ? bufOpacity0 : bufOpacity1).setValue(1);
+      (p.buf === 0 ? bufOpacity1 : bufOpacity0).setValue(0);
+      applyLiveCamera(liveCam.current.x, liveCam.current.y, liveCam.current.zoom);
+      pendingSwapRef.current = null;
+      const queued = queuedCamRef.current;
+      queuedCamRef.current = null;
+      if (queued) commitRender(queued.x, queued.y, queued.zoom);
+    };
+    swapRafRef.current = requestAnimationFrame(tick);
   }, [bufCams, applyLiveCamera, commitRender, bufOpacity0, bufOpacity1]);
 
   useEffect(() => () => {
@@ -3305,10 +3314,17 @@ export default function MapScreen() {
   // rebuild every node element on each zoom commit (the fade is a prop of all
   // of them) — a JS-thread stall felt as a mid-pinch hitch. Stepping the fade
   // caps that at a handful of rebuilds across the whole band, invisibly.
-  const zoomFade = useMemo(() => {
-    const raw = Math.max(0.6, Math.min(1, (zoom - 0.15) / 0.75));
+  //
+  // Derived PER BUFFER (from that buffer's committed zoom, not the shared
+  // zoom state): a fade step must ride the buffer swap like any other world
+  // change. Keying both buffers on one shared fade made a step re-rasterize
+  // the VISIBLE buffer in place — at recenter-level zooms (the fade band is
+  // 0.6–0.9, exactly where a fit camera lands) that in-place repaint of the
+  // whole graph was the residual flicker on big zoom-ins/outs.
+  const zoomFadeFor = (z: number) => {
+    const raw = Math.max(0.6, Math.min(1, (z - 0.15) / 0.75));
     return Math.round(raw * 20) / 20;
-  }, [zoom]);
+  };
 
   // Gradients live at the <Svg> level; only the cluster set changes them.
   const worldDefs = useMemo(() => (
@@ -3392,8 +3408,10 @@ export default function MapScreen() {
 
   // Edges + nodes: the bulk of the SVG tree. Keyed on zoomFade, not zoom, so a
   // zoom commit outside the fade band keeps this element identity and React
-  // skips the whole subtree.
-  const graphLayer = useMemo(() => (
+  // skips the whole subtree. A builder rather than a memo because each buffer
+  // renders it at its own fade step (see below); outside the fade band both
+  // buffers share one element and nothing is built twice.
+  const buildGraphLayer = useCallback((zoomFade: number) => (
     <>
           {/* Edges */}
           {edges.map((e, i) => {
@@ -3505,16 +3523,39 @@ export default function MapScreen() {
   ), [
     edges, nodes, pos, nodeById, discoveryEdgeKeys, discoveryNodeIds,
     nodeMetrics, nodeColor, isRecentNode, hasSearch, highlightedIds,
-    getNodeOpacity, isEmpty, focusDimTopicId, zoomFade, edgeSalienceByKey,
+    getNodeOpacity, isEmpty, focusDimTopicId, edgeSalienceByKey,
   ]);
 
-  const worldBody = useMemo(() => (
+  // Per-buffer world bodies. Each buffer's graph is built at the fade step of
+  // ITS OWN committed zoom, so crossing the fade band re-renders the hidden
+  // buffer and swaps — never repainting the visible raster in place. The two
+  // fades are equal outside the band (and usually inside it too), so the
+  // second memo almost always reuses the first's element.
+  const fade0 = zoomFadeFor(bufCams[0].zoom);
+  const fade1 = zoomFadeFor(bufCams[1].zoom);
+  const graphLayer0 = useMemo(() => buildGraphLayer(fade0), [buildGraphLayer, fade0]);
+  const graphLayer1 = useMemo(
+    () => (fade1 === fade0 ? graphLayer0 : buildGraphLayer(fade1)),
+    [buildGraphLayer, fade1, fade0, graphLayer0],
+  );
+
+  const worldBody0 = useMemo(() => (
     <G>
       {haloLayer}
       {labelLayer}
-      {graphLayer}
+      {graphLayer0}
     </G>
-  ), [haloLayer, labelLayer, graphLayer]);
+  ), [haloLayer, labelLayer, graphLayer0]);
+  const worldBody1 = useMemo(
+    () => (graphLayer1 === graphLayer0 ? worldBody0 : (
+      <G>
+        {haloLayer}
+        {labelLayer}
+        {graphLayer1}
+      </G>
+    )),
+    [haloLayer, labelLayer, graphLayer0, graphLayer1, worldBody0],
+  );
 
   // ── Ambient glow — hoisted out of the re-rasterized layer ──────
   // A single smooth radial gradient anchored to the canvas. Drawn inside the
@@ -3687,7 +3728,7 @@ export default function MapScreen() {
               cam={bufCams[0]}
               opacity={bufOpacity0}
               worldDefs={worldDefs}
-              worldBody={worldBody}
+              worldBody={worldBody0}
               ambientGlow={ambientGlow}
               lensMode={lensMode}
               clusterLabels={clusterLabels}
@@ -3701,7 +3742,7 @@ export default function MapScreen() {
               cam={bufCams[1]}
               opacity={bufOpacity1}
               worldDefs={worldDefs}
-              worldBody={worldBody}
+              worldBody={worldBody1}
               ambientGlow={ambientGlow}
               lensMode={lensMode}
               clusterLabels={clusterLabels}

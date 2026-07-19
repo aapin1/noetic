@@ -85,6 +85,12 @@ export function draftInsights(args: {
    * NOVELTY boilerplate (which describes the app rather than the content) and
    * emit only insights grounded in real neighbor/pattern signal. */
   contentThin?: boolean;
+  /** Types of the user's most recent insights (newest first, ~6). Drives the
+   * repetition guard: volume/direction readings (TRAJECTORY, PATTERN) that
+   * already led the last few captures must clear a much higher bar to lead
+   * again, so a burst of saves gets varied insights instead of "your
+   * attention is shifting toward X" on every one. */
+  recentInsightTypes?: InsightType[];
 }): InsightDraft[] {
   const drafts: InsightDraft[] = [];
   const voice = STYLE_VOICE[args.style];
@@ -169,6 +175,17 @@ export function draftInsights(args: {
 
   const dominantCount = args.topicCounts.find((entry) => entry.name === dominantTopic);
 
+  // Repetition fatigue for the volume/direction readings. These derive from
+  // the whole account, not this capture, so every capture in a burst produces
+  // essentially the same one — the batch test run led ~30 of 57 captures with
+  // "your attention is shifting toward X". Once a type has led twice in the
+  // recent run it is fatigued: harder to trigger and heavily discounted, so
+  // concrete per-capture evidence (recur/reinforce/contradict) wins instead.
+  const repeatCount = (t: InsightType) =>
+    (args.recentInsightTypes ?? []).filter((x) => x === t).length;
+  const trajectoryFatigued = repeatCount(InsightType.TRAJECTORY) >= 2;
+  const patternFatigued = repeatCount(InsightType.PATTERN) >= 2;
+
   const patternDraft: InsightDraft | null = dominantCount && dominantCount.count >= 3
     ? {
       type: InsightType.PATTERN,
@@ -179,17 +196,21 @@ export function draftInsights(args: {
         topic: dominantCount.name,
         count: dominantCount.count,
       },
-      strength: Math.min(1, 0.4 + dominantCount.count / 12),
+      strength: Math.min(1, 0.4 + dominantCount.count / 12) * (patternFatigued ? 0.5 : 1),
     }
     : null;
 
-  const trajectoryDraft: InsightDraft | null = args.shift && Math.abs(args.shift.delta) >= 1
+  // Delta >= 2: a one-capture "shift" is noise — any two saves on a topic in
+  // a week read as a trajectory under the old >= 1 gate. Fatigue raises the
+  // bar further: only a genuinely large swing resurfaces the reading.
+  const trajectoryGate = trajectoryFatigued ? 4 : 2;
+  const trajectoryDraft: InsightDraft | null = args.shift && Math.abs(args.shift.delta) >= trajectoryGate
     ? {
       type: InsightType.TRAJECTORY,
       headline: args.shift.delta > 0 ? voice.trajectoryUp(args.shift.name) : voice.trajectoryDown(args.shift.name),
       body: `Your attention on ${args.shift.name} is ${args.shift.delta > 0 ? "rising" : "declining"}: ${args.shift.recentCount} captures in the recent window versus ${args.shift.priorCount} in the prior period (delta ${args.shift.delta > 0 ? "+" : ""}${args.shift.delta}). Trajectory shifts often precede a period of consolidation or a pivot. Whether this is deliberate or a drift is worth noticing.`,
       evidence: args.shift,
-      strength: Math.min(1, Math.abs(args.shift.delta) / 5 + 0.3),
+      strength: Math.min(1, Math.abs(args.shift.delta) / 5 + 0.3) * (trajectoryFatigued ? 0.5 : 1),
     }
     : null;
 
@@ -287,10 +308,15 @@ export function classifyEdgeSemantic(args: {
     return null;
   }
 
-  // Related in meaning but diverging stance → contradiction. Kept deliberately
-  // loose so everyday friction (not only stark polar opposites) forms an edge
-  // and surfaces in Mind's Contradictions region.
-  if (similarity >= 0.34 && polarityDelta >= 0.05) {
+  // Related in meaning but genuinely diverging stance → contradiction. All
+  // three signals are required: the old gate (similarity >= 0.34, delta >=
+  // 0.05, no topic requirement, checked before RECURS) read mild stylistic
+  // variance between loosely related items as "this weakens an earlier
+  // belief" — e.g. Hero's Journey contradicting an essay on doing great work.
+  // The band is capped below RECURS territory so near-identical content is
+  // recurrence, not contradiction; Mind's tension region also has the LLM
+  // topic-tension scan, so it doesn't rely on this heuristic alone.
+  if (similarity >= 0.40 && similarity < 0.62 && topicJaccard >= 0.15 && polarityDelta >= 0.12) {
     return MemoryEdgeType.CONTRADICTS;
   }
 

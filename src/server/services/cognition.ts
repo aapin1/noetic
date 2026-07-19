@@ -475,10 +475,19 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   const existingTopicsPromise = loadExistingTopicsByGeneral(db, payload.userId);
   const insightStylePromise = ensureUserPreference(db, payload.userId);
   const priorsPromise = loadPriorCaptures({ db, userId: payload.userId, limit: NEIGHBOR_SCAN });
+  // Types of the last few insights — drives draftInsights' repetition guard
+  // (a burst of saves must not lead every capture with the same trajectory
+  // reading). Indexed on (userId, createdAt); costs nothing next to the rest.
+  const recentInsightTypesPromise = db.insight.findMany({
+    where: { userId: payload.userId },
+    orderBy: { createdAt: "desc" },
+    take: 6,
+    select: { type: true },
+  });
   // If the capture aborts before these are awaited (extraction can throw), a
   // late rejection must not crash the process. Awaiting them below still
   // rethrows — this only marks the rejection as handled.
-  for (const p of [existingTopicsPromise, insightStylePromise, priorsPromise]) {
+  for (const p of [existingTopicsPromise, insightStylePromise, priorsPromise, recentInsightTypesPromise]) {
     void p.catch(() => {});
   }
 
@@ -606,13 +615,29 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
 
   if (payload.kind === CaptureKind.LINK) {
     // The cleaned excerpt is a 1-2 sentence gist; a bare URL (metadata scrape
-    // failed → stub) is not a summary, and neither is a long raw description
-    // (a transcript when the clean failed), so skip those and let the user's
-    // own account fill in instead.
-    captureSummary =
-      contentDescription && !/^https?:\/\//i.test(contentDescription) && contentDescription.length <= 400
-        ? contentDescription
-        : null;
+    // failed → stub) is not a summary, so skip it and let the user's own
+    // account fill in instead. A LONG description (a lead paragraph on big
+    // Wikipedia-style pages, or a transcript when the clean failed) is cut at
+    // its last full sentence inside the cap rather than dropped outright —
+    // hard-rejecting on length left real captures with no summary at all. If
+    // no sentence completes early enough it is a blob, not an excerpt: null.
+    captureSummary = null;
+    if (contentDescription && !/^https?:\/\//i.test(contentDescription)) {
+      if (contentDescription.length <= 400) {
+        captureSummary = contentDescription;
+      } else {
+        const head = contentDescription.slice(0, 400);
+        const lastSentenceEnd = Math.max(
+          head.lastIndexOf(". "),
+          head.lastIndexOf("! "),
+          head.lastIndexOf("? "),
+          head.lastIndexOf(".\n"),
+        );
+        if (lastSentenceEnd >= 120) {
+          captureSummary = head.slice(0, lastSentenceEnd + 1);
+        }
+      }
+    }
   }
 
   // "Thin" = we have essentially only a title (e.g. a YouTube video whose
@@ -668,6 +693,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     shift: trajectory,
     isFirstCapture,
     contentThin,
+    recentInsightTypes: (await recentInsightTypesPromise).map((row) => row.type),
   });
 
   // The insight rows are created from the local drafts immediately and
@@ -992,6 +1018,14 @@ export async function updateCaptureContext(args: {
     shift: trajectory,
     isFirstCapture: false,
     contentThin: false,
+    recentInsightTypes: (
+      await db.insight.findMany({
+        where: { userId: args.userId },
+        orderBy: { createdAt: "desc" },
+        take: 6,
+        select: { type: true },
+      })
+    ).map((row) => row.type),
   });
 
   const oldTopicIds = new Set(item.topics.map((row) => row.topicId));
