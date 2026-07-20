@@ -1447,3 +1447,76 @@ export async function generateCompanionResponse(args: {
     clearTimeout(timer);
   }
 }
+
+/**
+ * The "arc" for the terrain self-portrait: a short reflective synthesis of the
+ * pre-computed longitudinal metrics. Grounded ONLY in the numbers and topic
+ * names it is handed — no raw capture content — so it stays cheap and is cached
+ * (regenerated ~once per 25 captures). Returns null on any failure; the screen
+ * falls back to its deterministic chapters.
+ */
+export async function generateTerrainNarrative(args: {
+  spanDays: number;
+  captureCount: number;
+  driftDegrees: number | null;
+  driftBand: string | null;
+  towardField: string | null;
+  awayField: string | null;
+  spreadVerdict: string | null;
+  earlyFields: string[];
+  recentFields: string[];
+  enduring: string[];
+  emerged: string[];
+  faded: string[];
+  bridges: { a: string; b: string }[];
+}): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  const systemPrompt = [
+    "You are writing the closing 'arc' of a person's intellectual self-portrait, drawn from how their captured thinking has moved between an early era and a recent one.",
+    "You are given ONLY pre-computed measurements and topic names — treat them as ground truth and do not invent specifics beyond them.",
+    "",
+    "Write 2–3 sentences, addressing the user directly as 'you', lowercase-leaning, quietly observational — the tone of a perceptive reader of one's own notebooks, not a hype summary.",
+    "Say what actually MOVED and what HELD: name the enduring core (what stayed) alongside the drift (what changed), because the constancy is half the portrait. If a toward/away field or a widening/deepening verdict is given, let it shape the sentence rather than being listed.",
+    "Do not restate the raw numbers (no '17 degrees'); render them as meaning.",
+    "",
+    SPECIFICITY_RULES,
+    "",
+    'Return strictly valid JSON (no markdown): {"arc": "..."}',
+  ].join("\n");
+
+  try {
+    const response = await fetch(OPENAI_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+        temperature: 0.5,
+        max_tokens: 220,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: JSON.stringify(args) },
+        ],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = payload.choices?.[0]?.message?.content;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { arc?: unknown };
+    return typeof parsed.arc === "string" && parsed.arc.trim().length > 0 ? parsed.arc.trim() : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}

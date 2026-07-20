@@ -7,9 +7,12 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { LoadingDots } from '@/components/ui/LoadingDots';
+import { SponsoredCard } from '@/components/ui/SponsoredCard';
 import type { CaptureSummary } from '@/types/api';
 
 const PAGE_SIZE = 50;
+/** Slot one in-stream ad after roughly this many entries — deep enough to feel native. */
+const AD_AFTER_ENTRIES = 6;
 
 /** "November 1" — with the year appended once entries leave the current year. */
 function dayLabel(iso: string): string {
@@ -88,6 +91,19 @@ export function DiaryList({ refreshToken }: { refreshToken: number }) {
     return out;
   }, [items]);
 
+  // The group after which the single in-stream ad sits — the first group whose
+  // running entry count clears the threshold. −1 once the diary is too short to
+  // earn one, so a near-empty archive never leads with an ad.
+  const adAfterGroup = useMemo(() => {
+    if (!items || items.length < AD_AFTER_ENTRIES) return -1;
+    let cum = 0;
+    for (let i = 0; i < groups.length; i += 1) {
+      cum += groups[i].entries.length;
+      if (cum >= AD_AFTER_ENTRIES) return i;
+    }
+    return groups.length - 1;
+  }, [items, groups]);
+
   if (error && !items) {
     return (
       <Text variant="monoSmall" color="danger" style={styles.status}>{error}</Text>
@@ -114,7 +130,7 @@ export function DiaryList({ refreshToken }: { refreshToken: number }) {
 
   return (
     <View style={styles.wrap}>
-      {groups.map((group) => (
+      {groups.map((group, gi) => (
         <View key={group.label}>
           <Text variant="monoSmall" style={[styles.dayHeader, { color: c.faint }]}>
             {group.label.toUpperCase()}
@@ -132,6 +148,7 @@ export function DiaryList({ refreshToken }: { refreshToken: number }) {
               </Text>
             </Pressable>
           ))}
+          {gi === adAfterGroup ? <SponsoredCard /> : null}
         </View>
       ))}
       {!done && (

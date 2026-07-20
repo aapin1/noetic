@@ -17,6 +17,7 @@ import type {
   MemoryGraphResponse,
   MemoryTrendsResponse,
   OwnerProfile,
+  TerrainResponse,
   WrappedStats,
   PersonalIntelligenceResponse,
   PulseResponse,
@@ -304,6 +305,11 @@ export const api = {
     },
     intelligence() {
       return request<PersonalIntelligenceResponse>('/api/memory/intelligence');
+    },
+    terrain(): Promise<TerrainResponse> {
+      // Era labels are localized to the device clock, so the server needs the offset.
+      const tzOffsetMinutes = -new Date().getTimezoneOffset();
+      return request<TerrainResponse>(`/api/me/terrain?tzOffsetMinutes=${tzOffsetMinutes}`);
     },
   },
 

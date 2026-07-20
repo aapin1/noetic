@@ -20,10 +20,13 @@ import { Avatar } from '@/components/ui/Avatar';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { ScreenIntro } from '@/components/ui/ScreenIntro';
+import { SponsoredCard } from '@/components/ui/SponsoredCard';
 import { MiniMap } from '@/components/MiniMap';
 import type { PulseFriend, PulseLatestItem } from '@/types/api';
 
 const CARD_W = Dimensions.get('window').width - Spacing[6] * 2;
+/** Slot one in-stream ad after the 3rd friend card, once the feed is long enough. */
+const AD_AFTER_FRIEND_INDEX = 2;
 
 function LatestRow({ item }: { item: PulseLatestItem }) {
   const c = useThemeColors();
@@ -349,8 +352,13 @@ export default function PulseScreen() {
                   body="Follow a few people and their maps and latest logs will show up here. Use the search above to find them by handle."
                 />
               )}
-              {friends.map((friend) => (
-                <FriendCard key={friend.user.id} friend={friend} onUnfollow={handleUnfollow} />
+              {friends.map((friend, i) => (
+                <React.Fragment key={friend.user.id}>
+                  <FriendCard friend={friend} onUnfollow={handleUnfollow} />
+                  {i === AD_AFTER_FRIEND_INDEX && friends.length > AD_AFTER_FRIEND_INDEX + 1 ? (
+                    <SponsoredCard />
+                  ) : null}
+                </React.Fragment>
               ))}
             </>
           )}

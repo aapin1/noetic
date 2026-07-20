@@ -28,6 +28,8 @@ import * as Haptics from 'expo-haptics';
 import { ChevronRight, Image as ImageIcon, Link2, PenLine } from 'lucide-react-native';
 import { AccentList, Radius, Spacing, accentFor, hourAccent } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
+import { api } from '@/lib/api';
+import { useApiQuery } from '@/hooks/useApiQuery';
 import { Text } from '@/components/ui/Text';
 import { Avatar } from '@/components/ui/Avatar';
 import { Confetti } from '@/components/ui/Confetti';
@@ -51,7 +53,20 @@ import {
   topicsKicker,
 } from './copy';
 import type { ArchetypeFormat } from './copy';
-import type { ArcBucket, WrappedArcs, WrappedStats } from '@/types/api';
+import type { ArcBucket, TerrainResponse, WrappedArcs, WrappedStats } from '@/types/api';
+
+// The wrapped stack fills in as you log, rather than showing every card from
+// capture one. A card appears only when BOTH its data guard and its capture-count
+// gate pass. Kept ≤ 10 so the page feels alive within the first week; the hero
+// and social cards have no gate (you can always follow someone).
+const GATE_FIELDS = 3;
+const GATE_TOPICS = 3;
+const GATE_NEW_TOPICS = 5;
+const GATE_RHYTHM = 5;
+const GATE_ARCHETYPE = 5;
+const GATE_TIMELINE = 7;
+/** The flagship "terrain" self-portrait needs real history behind it. */
+const GATE_TERRAIN = 50;
 
 const ARCHETYPE_ICONS: Record<ArchetypeFormat, typeof Link2> = {
   link: Link2,
@@ -1136,7 +1151,11 @@ function Timeline({
   weekdays?: number[];
 }) {
   const c = useThemeColors();
-  const [range, setRange] = useState<RangeKey>(() => defaultRange(daysSinceFirst));
+  // Follow the data-driven default until the user picks a range themselves.
+  // Freezing the initial choice in state left an early user stuck on "24h" even
+  // after weeks of history had accrued — the card looked like it never updated.
+  const [manualRange, setManualRange] = useState<RangeKey | null>(null);
+  const range = manualRange ?? defaultRange(daysSinceFirst);
   const buckets = arcs[range];
   const max = Math.max(1, ...buckets.map((b) => b.count));
   const peak = buckets.reduce((best, b, i) => (b.count > buckets[best].count ? i : best), 0);
@@ -1145,7 +1164,7 @@ function Timeline({
   const select = (key: RangeKey) => {
     if (key === range) return;
     void Haptics.selectionAsync();
-    setRange(key);
+    setManualRange(key);
   };
 
   return (
@@ -1325,6 +1344,69 @@ function Social({ w, seed, accent }: { w: WrappedStats; seed: number; accent: st
   );
 }
 
+/* --------------------------------------------------------------- terrain --- */
+
+/** The headline for the terrain card — the drift, rendered as meaning. */
+function terrainHeadline(data: TerrainResponse): string {
+  if (data.driftBand && data.driftBand !== 'settled' && data.towardField) {
+    return `${data.driftBand} toward ${data.towardField}`;
+  }
+  if (data.driftBand === 'settled') return 'a mind holding its ground';
+  if (data.emerged.length > 0) return `new ground: ${data.emerged[0]}`;
+  return 'how your mind has moved';
+}
+
+/** Compact teaser: prefer the LLM arc, else a deterministic line about the core. */
+function terrainTeaser(data: TerrainResponse): string {
+  if (data.arc) return data.arc;
+  if (data.enduring.length > 0) {
+    return `${data.enduring[0]} has held steady while the ground around it shifted.`;
+  }
+  if (data.emerged.length > 0 && data.faded.length > 0) {
+    return `${data.faded[0]} gave way to ${data.emerged[0]}.`;
+  }
+  return `${data.captureCount} captures, ${data.earlyLabel} to ${data.recentLabel}.`;
+}
+
+/** The entry point that lives in the You stack; tapping opens the full screen. */
+function TerrainCardBody({ data, accent }: { data: TerrainResponse; accent: string }) {
+  const c = useThemeColors();
+  const router = useRouter();
+
+  return (
+    <Pressable
+      onPress={() => {
+        void Haptics.selectionAsync();
+        router.push('/terrain' as never);
+      }}
+      accessibilityRole="button"
+      accessibilityLabel="Open terrain — how your mind has moved over time"
+      style={({ pressed }) => (pressed ? { opacity: 0.7 } : undefined)}
+    >
+      <Text variant="serif" style={[styles.cardTitle, styles.overline]}>
+        terrain
+      </Text>
+      <Text variant="h3" style={styles.terrainHeadline}>
+        {terrainHeadline(data)}
+      </Text>
+      <Text variant="serif" color="secondary" numberOfLines={3} style={styles.terrainTeaser}>
+        {terrainTeaser(data)}
+      </Text>
+      <View style={[styles.terrainFoot, { borderTopColor: c.borderSubtle }]}>
+        <Text variant="monoSmall" color="faint">
+          {data.captureCount} captures · {data.earlyLabel} → {data.recentLabel}
+        </Text>
+        <View style={styles.terrainOpen}>
+          <Text variant="monoSmall" style={{ color: accent }}>
+            the long view
+          </Text>
+          <ChevronRight size={13} color={accent} strokeWidth={2.5} />
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
 /* ----------------------------------------------------------------- shell --- */
 
 export function WrappedSection({
@@ -1342,6 +1424,13 @@ export function WrappedSection({
   const [dialActive, setDialActive] = useState(false);
   const [streakActive, setStreakActive] = useState(false);
   const [confettiKey, setConfettiKey] = useState(0);
+
+  // Only fetched once you're past the terrain gate, so the extra (embedding-
+  // heavy, server-cached) endpoint never runs for lighter users.
+  const { data: terrain } = useApiQuery(() => api.memory.terrain(), [], {
+    cacheKey: 'memory.terrain',
+    skip: (stats?.totalCaptures ?? 0) < GATE_TERRAIN,
+  });
 
   if (!stats) return null;
   const w = stats;
@@ -1392,7 +1481,7 @@ export function WrappedSection({
         )}
       </RevealCard>
 
-      {w.topFields.length > 0 ? (
+      {w.topFields.length > 0 && w.totalCaptures >= GATE_FIELDS ? (
         <RevealCard {...cardProps}>
           <Text variant="serif" style={styles.cardTitle}>
             {fieldsTitle(seed)}
@@ -1401,7 +1490,7 @@ export function WrappedSection({
         </RevealCard>
       ) : null}
 
-      {w.topTopics.length > 0 ? (
+      {w.topTopics.length > 0 && w.totalCaptures >= GATE_TOPICS ? (
         <RevealCard {...cardProps} onReveal={() => setTopicsActive(true)}>
           <Text variant="serif" style={[styles.cardTitle, styles.overline]}>
             {topicsKicker(seed)}
@@ -1410,7 +1499,7 @@ export function WrappedSection({
         </RevealCard>
       ) : null}
 
-      {w.newTopicsThisMonth.length > 0 ? (
+      {w.newTopicsThisMonth.length > 0 && w.totalCaptures >= GATE_NEW_TOPICS ? (
         <RevealCard {...cardProps}>
           <Text variant="serif" style={styles.cardTitle}>
             {newTopicsTitle(seed)}
@@ -1419,7 +1508,7 @@ export function WrappedSection({
         </RevealCard>
       ) : null}
 
-      {hasRhythm ? (
+      {hasRhythm && w.totalCaptures >= GATE_RHYTHM ? (
         <RevealCard {...cardProps} onReveal={() => setDialActive(true)}>
           <View style={styles.rhythmHead}>
             <Text variant="h3" style={{ color: hourAccent(w.busiestHour!) }}>
@@ -1461,7 +1550,7 @@ export function WrappedSection({
         </RevealCard>
       ) : null}
 
-      {archetype ? (
+      {archetype && w.totalCaptures >= GATE_ARCHETYPE ? (
         <RevealCard {...cardProps}>
           <Text variant="serif" style={styles.cardTitle}>
             Your type
@@ -1484,7 +1573,7 @@ export function WrappedSection({
         </RevealCard>
       ) : null}
 
-      {w.totalCaptures > 0 && arcs.months.length > 0 ? (
+      {w.totalCaptures >= GATE_TIMELINE && arcs.months.length > 0 ? (
         <RevealCard {...cardProps}>
           <Timeline
             arcs={arcs}
@@ -1493,6 +1582,12 @@ export function WrappedSection({
             accent={accent}
             weekdays={hasRhythm ? w.weekdayHistogram : undefined}
           />
+        </RevealCard>
+      ) : null}
+
+      {w.totalCaptures >= GATE_TERRAIN && terrain?.unlocked ? (
+        <RevealCard {...cardProps}>
+          <TerrainCardBody data={terrain} accent={accent} />
         </RevealCard>
       ) : null}
 
@@ -1732,4 +1827,16 @@ const styles = StyleSheet.create({
   },
   friendText: { flex: 1, gap: 2 },
   friendCta: { marginTop: Spacing[2], alignSelf: 'flex-end' },
+
+  terrainHeadline: { marginBottom: Spacing[2] },
+  terrainTeaser: { lineHeight: 22 },
+  terrainFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: Spacing[4],
+    paddingTop: Spacing[3],
+    borderTopWidth: 1,
+  },
+  terrainOpen: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 });

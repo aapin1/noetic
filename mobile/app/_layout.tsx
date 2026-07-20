@@ -59,6 +59,7 @@ export default function RootLayout() {
                 <Stack.Screen name="archive/[topicId]" options={{ presentation: 'card' }} />
                 <Stack.Screen name="profile/edit" options={{ presentation: 'modal', gestureEnabled: true }} />
                 <Stack.Screen name="settings" options={{ presentation: 'card' }} />
+                <Stack.Screen name="terrain" options={{ presentation: 'card' }} />
                 <Stack.Screen name="plus" options={{ presentation: 'modal', gestureEnabled: true }} />
                 <Stack.Screen name="share-recap" options={{ presentation: 'modal', gestureEnabled: true }} />
                 <Stack.Screen name="shareintent" options={{ presentation: 'modal', gestureEnabled: true }} />

@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
+import { SponsoredCard } from '@/components/ui/SponsoredCard';
 
 export default function InsightDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -394,6 +395,9 @@ export default function InsightDetailScreen() {
             ))
           )}
         </View>
+
+        {/* After the read, never mid-content — renders nothing for Plus / no fill. */}
+        <SponsoredCard />
       </ScrollView>
     </SafeAreaView>
   );

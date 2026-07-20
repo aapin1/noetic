@@ -241,6 +241,54 @@ export interface WrappedArcs {
   months: ArcBucket[];
 }
 
+export interface TerrainField {
+  name: string;
+  /** Share of this era's field mentions, 0–1. */
+  share: number;
+}
+
+export interface TerrainBridge {
+  a: string;
+  b: string;
+}
+
+/**
+ * "terrain" — a longitudinal self-portrait unlocked at 50+ captures, comparing an
+ * early era to a recent one. Every field is computed server-side (deterministic
+ * math over embeddings/topics/edges/positions) except `arc`, one cached LLM line.
+ */
+export interface TerrainResponse {
+  unlocked: boolean;
+  captureCount: number;
+  eraSize: number;
+  earlyLabel: string;
+  recentLabel: string;
+
+  driftDegrees: number | null;
+  driftBand: 'settled' | 'a subtle drift' | 'a real turn' | 'a decisive shift' | null;
+  towardField: string | null;
+  awayField: string | null;
+
+  earlySpread: number | null;
+  recentSpread: number | null;
+  spreadVerdict: 'widening' | 'deepening' | 'steady' | null;
+
+  earlyFields: TerrainField[];
+  recentFields: TerrainField[];
+  enduring: string[];
+  emerged: string[];
+  faded: string[];
+
+  bridges: TerrainBridge[];
+  bridgeCount: number;
+
+  positionsStaked: number;
+  positionsChallenged: number;
+  positionsRevised: number;
+
+  arc: string | null;
+}
+
 /** Personal "Wrapped" stats over the owner's full capture history. */
 export interface WrappedStats {
   totalCaptures: number;

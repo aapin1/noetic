@@ -155,6 +155,7 @@ model User {
   socraticThreads     SocraticThread[]
   companionThread     CompanionThread?
   intelligenceCache   IntelligenceCache?
+  terrainCache        TerrainCache?
   usageCounters       UsageCounter[]
 }
 
@@ -750,6 +751,16 @@ model UsageCounter {
 }
 
 model IntelligenceCache {
+  userId    String   @id
+  version   Int
+  payload   Json
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Cached "terrain" self-portrait. `version` is a capture-count bucket (floor(count / 25)),
+/// so the payload — including its one LLM narrative — regenerates only every ~25 captures.
+model TerrainCache {
   userId    String   @id
   version   Int
   payload   Json
