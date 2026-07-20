@@ -13,6 +13,8 @@ const TERRAIN_TIGHTEN_AT = 100;
  * regenerates about once per 25 new captures — not per view, not per capture.
  */
 const CACHE_BUCKET = 25;
+/** Bumped when the payload shape changes so stale-shaped caches regenerate. */
+const TERRAIN_SCHEMA = 2;
 /** Below this many embedded captures per era, the semantic chapters are omitted. */
 const MIN_EMBEDDED_PER_ERA = 8;
 
@@ -34,6 +36,11 @@ export interface TerrainBridge {
   b: string;
 }
 
+export interface TerrainCount {
+  name: string;
+  count: number;
+}
+
 export interface TerrainResponse {
   unlocked: boolean;
   captureCount: number;
@@ -51,12 +58,21 @@ export interface TerrainResponse {
   earlySpread: number | null;
   recentSpread: number | null;
   spreadVerdict: "widening" | "deepening" | "steady" | null;
+  /** Signed % change in dispersion, recent vs early. +30 = 30% more scattered. */
+  spreadDeltaPct: number | null;
+  /** Distinct specific topics touched in each era — a concrete breadth measure. */
+  earlyDistinctTopics: number;
+  recentDistinctTopics: number;
 
   earlyFields: TerrainField[];
   recentFields: TerrainField[];
   enduring: string[];
   emerged: string[];
   faded: string[];
+
+  /** What/who you consume, across the whole history — most-frequent first. */
+  topSources: TerrainCount[];
+  topVoices: TerrainCount[];
 
   bridges: TerrainBridge[];
   bridgeCount: number;
@@ -82,11 +98,16 @@ const LOCKED = (captureCount: number): TerrainResponse => ({
   earlySpread: null,
   recentSpread: null,
   spreadVerdict: null,
+  spreadDeltaPct: null,
+  earlyDistinctTopics: 0,
+  recentDistinctTopics: 0,
   earlyFields: [],
   recentFields: [],
   enduring: [],
   emerged: [],
   faded: [],
+  topSources: [],
+  topVoices: [],
   bridges: [],
   bridgeCount: 0,
   positionsStaked: 0,
@@ -151,6 +172,21 @@ interface LoadedCapture {
   fields: string[]; // general topics
   specifics: string[]; // non-general topics
   primaryTopic: string | null; // first specific, else first field
+  source: string | null; // publisher / site
+  voice: string | null; // author / creator
+}
+
+function countN(names: (string | null | undefined)[], limit: number): TerrainCount[] {
+  const counts = new Map<string, number>();
+  for (const name of names) {
+    const n = name?.trim();
+    if (!n) continue;
+    counts.set(n, (counts.get(n) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
 }
 
 function topShares(mentions: string[], limit: number): TerrainField[] {
@@ -204,12 +240,13 @@ export async function getTerrain(
   const captureCount = await db.capturedItem.count({ where: { userId } });
   if (captureCount < TERRAIN_MIN_CAPTURES) return LOCKED(captureCount);
 
-  const bucket = Math.floor(captureCount / CACHE_BUCKET);
+  // Fold the schema into the version so a shape change invalidates old caches.
+  const cacheVersion = Math.floor(captureCount / CACHE_BUCKET) * 100 + TERRAIN_SCHEMA;
   // Best-effort read: if the cache table isn't there yet (pre-migration) or the
   // read fails, fall through and recompute rather than failing the request.
   try {
     const cached = await db.terrainCache.findUnique({ where: { userId } });
-    if (cached && cached.version === bucket) {
+    if (cached && cached.version === cacheVersion) {
       const payload = cached.payload as unknown as TerrainResponse;
       if (payload && payload.unlocked && payload.captureCount) return payload;
     }
@@ -222,8 +259,8 @@ export async function getTerrain(
   try {
     await db.terrainCache.upsert({
       where: { userId },
-      update: { version: bucket, payload: result as unknown as Prisma.InputJsonValue },
-      create: { userId, version: bucket, payload: result as unknown as Prisma.InputJsonValue },
+      update: { version: cacheVersion, payload: result as unknown as Prisma.InputJsonValue },
+      create: { userId, version: cacheVersion, payload: result as unknown as Prisma.InputJsonValue },
     });
   } catch {
     // Best-effort: a failed cache write must never fail the request.
@@ -245,6 +282,13 @@ async function computeTerrain(
       capturedAt: true,
       embedding: true,
       topics: { select: { topic: { select: { name: true } } } },
+      contentItem: {
+        select: {
+          siteName: true,
+          authorName: true,
+          source: { select: { name: true } },
+        },
+      },
     },
   });
 
@@ -261,6 +305,8 @@ async function computeTerrain(
       fields,
       specifics,
       primaryTopic: specifics[0] ?? fields[0] ?? null,
+      source: r.contentItem?.source?.name ?? r.contentItem?.siteName ?? null,
+      voice: r.contentItem?.authorName ?? null,
     };
   });
 
@@ -282,6 +328,7 @@ async function computeTerrain(
   let earlySpread: number | null = null;
   let recentSpread: number | null = null;
   let spreadVerdict: TerrainResponse["spreadVerdict"] = null;
+  let spreadDeltaPct: number | null = null;
 
   if (earlyVecs.length >= MIN_EMBEDDED_PER_ERA && recentVecs.length >= MIN_EMBEDDED_PER_ERA) {
     const earlyCentroid = centroid(earlyVecs)!;
@@ -328,7 +375,15 @@ async function computeTerrain(
     recentSpread = Math.round(rSpreadRaw * 1000);
     spreadVerdict =
       rSpreadRaw > eSpreadRaw * 1.1 ? "widening" : rSpreadRaw < eSpreadRaw * 0.9 ? "deepening" : "steady";
+    spreadDeltaPct = eSpreadRaw > 0 ? Math.round(((rSpreadRaw - eSpreadRaw) / eSpreadRaw) * 100) : null;
   }
+
+  const earlyDistinctTopics = new Set(early.flatMap((cap) => cap.specifics)).size;
+  const recentDistinctTopics = new Set(recent.flatMap((cap) => cap.specifics)).size;
+
+  // What/who you consume, across the whole history.
+  const topSources = countN(captures.map((cap) => cap.source), 5);
+  const topVoices = countN(captures.map((cap) => cap.voice), 5);
 
   // ── composition chapters (topic-based) ──
   const earlyFields = topShares(early.flatMap((c) => c.fields), 5);
@@ -411,11 +466,16 @@ async function computeTerrain(
     earlySpread,
     recentSpread,
     spreadVerdict,
+    spreadDeltaPct,
+    earlyDistinctTopics,
+    recentDistinctTopics,
     earlyFields,
     recentFields,
     enduring,
     emerged,
     faded,
+    topSources,
+    topVoices,
     bridges,
     bridgeCount,
     positionsStaked,
@@ -438,6 +498,8 @@ async function computeTerrain(
     emerged,
     faded,
     bridges,
+    topVoices: topVoices.map((v) => v.name),
+    spreadDeltaPct,
   });
 
   return base;

@@ -11,10 +11,15 @@ interface FakeCapture {
   capturedAt: Date;
   embedding: number[];
   topics: { topic: { name: string } }[];
+  contentItem: { siteName: string | null; authorName: string | null; source: { name: string } | null } | null;
 }
 
 function t(names: string[]): { topic: { name: string } }[] {
   return names.map((name) => ({ topic: { name } }));
+}
+
+function ci(source: string | null, author: string | null): FakeCapture["contentItem"] {
+  return { siteName: null, authorName: author, source: source ? { name: source } : null };
 }
 
 /**
@@ -27,11 +32,11 @@ function buildCaptures(): FakeCapture[] {
   for (let i = 0; i < 60; i += 1) {
     const capturedAt = new Date(base + i * 86_400_000);
     if (i < 20) {
-      out.push({ capturedAt, embedding: [1, 0, 0], topics: t(i < 3 ? ["philosophy", "ethics"] : ["philosophy", "stoicism"]) });
+      out.push({ capturedAt, embedding: [1, 0, 0], topics: t(i < 3 ? ["philosophy", "ethics"] : ["philosophy", "stoicism"]), contentItem: ci("Aeon", "Seneca") });
     } else if (i < 40) {
-      out.push({ capturedAt, embedding: [0.5, 0.5, 0], topics: t(["philosophy", "logic"]) });
+      out.push({ capturedAt, embedding: [0.5, 0.5, 0], topics: t(["philosophy", "logic"]), contentItem: ci("Aeon", null) });
     } else {
-      out.push({ capturedAt, embedding: [0, 1, 0], topics: t(i > 56 ? ["ai", "ethics"] : ["ai", "transformers"]) });
+      out.push({ capturedAt, embedding: [0, 1, 0], topics: t(i > 56 ? ["ai", "ethics"] : ["ai", "transformers"]), contentItem: ci("arXiv", "Karpathy") });
     }
   }
   return out;
@@ -97,5 +102,24 @@ describe("getTerrain", () => {
     expect(terrain.positionsStaked).toBe(2);
     expect(terrain.positionsChallenged).toBe(1);
     expect(terrain.positionsRevised).toBe(1);
+  });
+
+  it("aggregates the sources and voices you consume", async () => {
+    const terrain = await getTerrain("u1", {}, fakeDb(buildCaptures()));
+    const sources = terrain.topSources.map((s) => s.name);
+    const voices = terrain.topVoices.map((v) => v.name);
+    expect(sources).toContain("Aeon");
+    expect(sources).toContain("arXiv");
+    expect(voices).toContain("Seneca");
+    expect(voices).toContain("Karpathy");
+    // Aeon appears on 40 captures, arXiv on 20 — most-frequent first.
+    expect(terrain.topSources[0].name).toBe("Aeon");
+  });
+
+  it("reports distinct-topic breadth per era", async () => {
+    const terrain = await getTerrain("u1", {}, fakeDb(buildCaptures()));
+    // early specifics: stoicism, ethics; recent specifics: transformers, ethics.
+    expect(terrain.earlyDistinctTopics).toBe(2);
+    expect(terrain.recentDistinctTopics).toBe(2);
   });
 });

@@ -20,7 +20,7 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import Svg, { Circle, Line } from 'react-native-svg';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 // expo-router v57 dropped @react-navigation/* (now standard-navigation) and
 // re-exports the navigation hooks directly.
 import { useRouter, useIsFocused } from 'expo-router';
@@ -33,6 +33,7 @@ import { useApiQuery } from '@/hooks/useApiQuery';
 import { Text } from '@/components/ui/Text';
 import { Avatar } from '@/components/ui/Avatar';
 import { Confetti } from '@/components/ui/Confetti';
+import { SponsoredCard } from '@/components/ui/SponsoredCard';
 import {
   archetypeFor,
   currentStreakLine,
@@ -67,6 +68,8 @@ const GATE_ARCHETYPE = 5;
 const GATE_TIMELINE = 7;
 /** The flagship "terrain" self-portrait needs real history behind it. */
 const GATE_TERRAIN = 50;
+/** An in-stream ad after every Nth wrapped card (FREE only; never after the last). */
+const AD_EVERY = 3;
 
 const ARCHETYPE_ICONS: Record<ArchetypeFormat, typeof Link2> = {
   link: Link2,
@@ -1346,31 +1349,88 @@ function Social({ w, seed, accent }: { w: WrappedStats; seed: number; accent: st
 
 /* --------------------------------------------------------------- terrain --- */
 
-/** The headline for the terrain card — the drift, rendered as meaning. */
-function terrainHeadline(data: TerrainResponse): string {
+/** A short hook — the drift as meaning — kept to one line for the intro card. */
+function terrainHook(data: TerrainResponse): string {
   if (data.driftBand && data.driftBand !== 'settled' && data.towardField) {
-    return `${data.driftBand} toward ${data.towardField}`;
+    return `a mind moving toward ${data.towardField}`;
   }
+  if (data.spreadVerdict === 'widening') return 'a mind opening outward';
+  if (data.spreadVerdict === 'deepening') return 'a mind drilling deeper';
   if (data.driftBand === 'settled') return 'a mind holding its ground';
-  if (data.emerged.length > 0) return `new ground: ${data.emerged[0]}`;
-  return 'how your mind has moved';
+  return 'where your thinking has traveled';
 }
 
-/** Compact teaser: prefer the LLM arc, else a deterministic line about the core. */
-function terrainTeaser(data: TerrainResponse): string {
-  if (data.arc) return data.arc;
-  if (data.enduring.length > 0) {
-    return `${data.enduring[0]} has held steady while the ground around it shifted.`;
-  }
-  if (data.emerged.length > 0 && data.faded.length > 0) {
-    return `${data.faded[0]} gave way to ${data.emerged[0]}.`;
-  }
-  return `${data.captureCount} captures, ${data.earlyLabel} to ${data.recentLabel}.`;
-}
-
-/** The entry point that lives in the You stack; tapping opens the full screen. */
-function TerrainCardBody({ data, accent }: { data: TerrainResponse; accent: string }) {
+/**
+ * The intro glyph: a curved trail from a hollow "then" node to a filled "now"
+ * node, tinted by the accent — the journey as an image. The trail bows more the
+ * further the mind has drifted, and the scatter of faint marks fans wide when
+ * you're widening / draws in when you're deepening, so the picture is the data.
+ */
+function TerrainGlyph({ data, accent }: { data: TerrainResponse; accent: string }) {
   const c = useThemeColors();
+  const [w, setW] = useState(0);
+  const H = 120;
+
+  const rng = useMemo(() => makeRng(data.captureCount * 131 + (data.driftDegrees ?? 0)), [data]);
+
+  const geom = useMemo(() => {
+    if (w === 0) return null;
+    const x0 = 26;
+    const x1 = w - 26;
+    const midY = H / 2;
+    // Bow height grows with drift; capped so it never leaves the box.
+    const bow = Math.min(34, 6 + (data.driftDegrees ?? 8) * 0.9);
+    const cx = (x0 + x1) / 2;
+    const cy = midY - bow;
+    const path = `M ${x0} ${midY} Q ${cx} ${cy} ${x1} ${midY}`;
+
+    // Waypoints along the quadratic — the mind's steps between then and now.
+    const steps = 4;
+    const nodes: { x: number; y: number; r: number }[] = [];
+    for (let i = 1; i <= steps; i += 1) {
+      const t = i / (steps + 1);
+      const x = (1 - t) * (1 - t) * x0 + 2 * (1 - t) * t * cx + t * t * x1;
+      const y = (1 - t) * (1 - t) * midY + 2 * (1 - t) * t * cy + t * t * midY;
+      nodes.push({ x, y, r: 1.6 + t * 1.6 });
+    }
+
+    // Scatter: fans wide when widening, tight when deepening.
+    const spreadK = data.spreadVerdict === 'widening' ? 1 : data.spreadVerdict === 'deepening' ? 0.4 : 0.7;
+    const scatter: { x: number; y: number; r: number; o: number }[] = [];
+    for (let i = 0; i < 14; i += 1) {
+      const x = x0 + rng() * (x1 - x0);
+      const y = midY + (rng() * 2 - 1) * 40 * spreadK;
+      scatter.push({ x, y, r: 0.8 + rng() * 1.4, o: 0.12 + rng() * 0.16 });
+    }
+    return { x0, x1, midY, path, nodes, scatter };
+  }, [w, data, rng]);
+
+  return (
+    <View style={styles.terrainGlyphBox} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
+      {geom ? (
+        <Svg width={w} height={H}>
+          {geom.scatter.map((s, i) => (
+            <Circle key={`s${i}`} cx={s.x} cy={s.y} r={s.r} fill={c.text} opacity={s.o} />
+          ))}
+          <Path d={geom.path} stroke={accent} strokeWidth={1.5} strokeDasharray="1.5 4" strokeLinecap="round" fill="none" opacity={0.7} />
+          {geom.nodes.map((n, i) => (
+            <Circle key={`n${i}`} cx={n.x} cy={n.y} r={n.r} fill={accent} opacity={0.55} />
+          ))}
+          {/* then — hollow */}
+          <Circle cx={geom.x0} cy={geom.midY} r={7} fill={c.surface} stroke={c.faint} strokeWidth={1.5} />
+          {/* now — filled */}
+          <Circle cx={geom.x1} cy={geom.midY} r={8} fill={accent} />
+          <Circle cx={geom.x1} cy={geom.midY} r={14} fill={accent} opacity={0.14} />
+        </Svg>
+      ) : null}
+      <Text variant="monoSmall" color="faint" style={[styles.terrainGlyphTick, styles.terrainTickL]}>then</Text>
+      <Text variant="monoSmall" style={[styles.terrainGlyphTick, styles.terrainTickR, { color: accent }]}>now</Text>
+    </View>
+  );
+}
+
+/** The intro card in the You stack — visual-first, minimal text; opens the full screen. */
+function TerrainCardBody({ data, accent }: { data: TerrainResponse; accent: string }) {
   const router = useRouter();
 
   return (
@@ -1381,27 +1441,20 @@ function TerrainCardBody({ data, accent }: { data: TerrainResponse; accent: stri
       }}
       accessibilityRole="button"
       accessibilityLabel="Open terrain — how your mind has moved over time"
-      style={({ pressed }) => (pressed ? { opacity: 0.7 } : undefined)}
+      style={({ pressed }) => (pressed ? { opacity: 0.75 } : undefined)}
     >
-      <Text variant="serif" style={[styles.cardTitle, styles.overline]}>
-        terrain
+      <Text variant="serif" style={styles.cardTitle}>
+        Terrain
       </Text>
-      <Text variant="h3" style={styles.terrainHeadline}>
-        {terrainHeadline(data)}
+      <TerrainGlyph data={data} accent={accent} />
+      <Text variant="serif" color="secondary" numberOfLines={1} style={styles.terrainHook}>
+        {terrainHook(data)}
       </Text>
-      <Text variant="serif" color="secondary" numberOfLines={3} style={styles.terrainTeaser}>
-        {terrainTeaser(data)}
-      </Text>
-      <View style={[styles.terrainFoot, { borderTopColor: c.borderSubtle }]}>
-        <Text variant="monoSmall" color="faint">
-          {data.captureCount} captures · {data.earlyLabel} → {data.recentLabel}
+      <View style={styles.terrainOpen}>
+        <Text variant="monoSmall" style={{ color: accent }}>
+          the long view
         </Text>
-        <View style={styles.terrainOpen}>
-          <Text variant="monoSmall" style={{ color: accent }}>
-            the long view
-          </Text>
-          <ChevronRight size={13} color={accent} strokeWidth={2.5} />
-        </View>
+        <ChevronRight size={13} color={accent} strokeWidth={2.5} />
       </View>
     </Pressable>
   );
@@ -1455,60 +1508,77 @@ export function WrappedSection({
   // The current run has reached the all-time best, so the two are the same story.
   const streakOngoing = w.currentStreak >= 2 && w.currentStreak === w.longestStreak;
 
-  return (
-    <View
-      onLayout={(e) => {
-        sectionY.value = e.nativeEvent.layout.y;
-      }}
-      style={styles.section}
-    >
-      <Text variant="label" color="muted" style={styles.kicker}>
-        your mneme, wrapped
-      </Text>
+  // Build the visible cards in order, then interleave an ad after every Nth —
+  // counting only cards that actually render, so the ad cadence is stable no
+  // matter which sections are gated out.
+  const cards: { key: string; node: React.ReactNode }[] = [
+    {
+      key: 'hero',
+      node: (
+        <RevealCard {...cardProps} onReveal={revealHero} style={styles.hero}>
+          {w.totalCaptures === 0 ? (
+            <>
+              <Text variant="h2" style={styles.heroTitle}>
+                {emptyTitle(seed)}
+              </Text>
+              <Text variant="serif" color="secondary" style={styles.heroBody}>
+                {emptyBody(seed)}
+              </Text>
+            </>
+          ) : (
+            <Hero w={w} accent={accent} active={heroActive} onBurst={burst} />
+          )}
+        </RevealCard>
+      ),
+    },
+  ];
 
-      <RevealCard {...cardProps} onReveal={revealHero} style={styles.hero}>
-        {w.totalCaptures === 0 ? (
-          <>
-            <Text variant="h2" style={styles.heroTitle}>
-              {emptyTitle(seed)}
-            </Text>
-            <Text variant="serif" color="secondary" style={styles.heroBody}>
-              {emptyBody(seed)}
-            </Text>
-          </>
-        ) : (
-          <Hero w={w} accent={accent} active={heroActive} onBurst={burst} />
-        )}
-      </RevealCard>
-
-      {w.topFields.length > 0 && w.totalCaptures >= GATE_FIELDS ? (
+  if (w.topFields.length > 0 && w.totalCaptures >= GATE_FIELDS) {
+    cards.push({
+      key: 'fields',
+      node: (
         <RevealCard {...cardProps}>
           <Text variant="serif" style={styles.cardTitle}>
             {fieldsTitle(seed)}
           </Text>
           <Spectrum items={w.topFields} />
         </RevealCard>
-      ) : null}
+      ),
+    });
+  }
 
-      {w.topTopics.length > 0 && w.totalCaptures >= GATE_TOPICS ? (
+  if (w.topTopics.length > 0 && w.totalCaptures >= GATE_TOPICS) {
+    cards.push({
+      key: 'topics',
+      node: (
         <RevealCard {...cardProps} onReveal={() => setTopicsActive(true)}>
           <Text variant="serif" style={[styles.cardTitle, styles.overline]}>
             {topicsKicker(seed)}
           </Text>
           <TopicBubbles items={w.topTopics} accent={accent} seed={seed} active={topicsActive} />
         </RevealCard>
-      ) : null}
+      ),
+    });
+  }
 
-      {w.newTopicsThisMonth.length > 0 && w.totalCaptures >= GATE_NEW_TOPICS ? (
+  if (w.newTopicsThisMonth.length > 0 && w.totalCaptures >= GATE_NEW_TOPICS) {
+    cards.push({
+      key: 'newTopics',
+      node: (
         <RevealCard {...cardProps}>
           <Text variant="serif" style={styles.cardTitle}>
             {newTopicsTitle(seed)}
           </Text>
           <DiscoveryTimeline items={w.newTopicsThisMonth.slice(0, 6)} accent={accent} />
         </RevealCard>
-      ) : null}
+      ),
+    });
+  }
 
-      {hasRhythm && w.totalCaptures >= GATE_RHYTHM ? (
+  if (hasRhythm && w.totalCaptures >= GATE_RHYTHM) {
+    cards.push({
+      key: 'rhythm',
+      node: (
         <RevealCard {...cardProps} onReveal={() => setDialActive(true)}>
           <View style={styles.rhythmHead}>
             <Text variant="h3" style={{ color: hourAccent(w.busiestHour!) }}>
@@ -1520,9 +1590,14 @@ export function WrappedSection({
           </View>
           <ClockFace hours={w.hourHistogram} peakHour={w.busiestHour!} active={dialActive} />
         </RevealCard>
-      ) : null}
+      ),
+    });
+  }
 
-      {w.longestStreak >= 2 ? (
+  if (w.longestStreak >= 2) {
+    cards.push({
+      key: 'streak',
+      node: (
         <RevealCard {...cardProps} onReveal={() => setStreakActive(true)}>
           <View style={styles.streakHead}>
             <Text variant="hero" style={[styles.streakNumber, { color: accent }]}>
@@ -1548,9 +1623,14 @@ export function WrappedSection({
             </Text>
           ) : null}
         </RevealCard>
-      ) : null}
+      ),
+    });
+  }
 
-      {archetype && w.totalCaptures >= GATE_ARCHETYPE ? (
+  if (archetype && w.totalCaptures >= GATE_ARCHETYPE) {
+    cards.push({
+      key: 'archetype',
+      node: (
         <RevealCard {...cardProps}>
           <Text variant="serif" style={styles.cardTitle}>
             Your type
@@ -1571,9 +1651,14 @@ export function WrappedSection({
             </View>
           </View>
         </RevealCard>
-      ) : null}
+      ),
+    });
+  }
 
-      {w.totalCaptures >= GATE_TIMELINE && arcs.months.length > 0 ? (
+  if (w.totalCaptures >= GATE_TIMELINE && arcs.months.length > 0) {
+    cards.push({
+      key: 'timeline',
+      node: (
         <RevealCard {...cardProps}>
           <Timeline
             arcs={arcs}
@@ -1583,17 +1668,53 @@ export function WrappedSection({
             weekdays={hasRhythm ? w.weekdayHistogram : undefined}
           />
         </RevealCard>
-      ) : null}
+      ),
+    });
+  }
 
-      {w.totalCaptures >= GATE_TERRAIN && terrain?.unlocked ? (
+  if (w.totalCaptures >= GATE_TERRAIN && terrain?.unlocked) {
+    cards.push({
+      key: 'terrain',
+      node: (
         <RevealCard {...cardProps}>
           <TerrainCardBody data={terrain} accent={accent} />
         </RevealCard>
-      ) : null}
+      ),
+    });
+  }
 
+  cards.push({
+    key: 'social',
+    node: (
       <RevealCard {...cardProps}>
         <Social w={w} seed={seed} accent={accent} />
       </RevealCard>
+    ),
+  });
+
+  return (
+    <View
+      onLayout={(e) => {
+        sectionY.value = e.nativeEvent.layout.y;
+      }}
+      style={styles.section}
+    >
+      <Text variant="label" color="muted" style={styles.kicker}>
+        your mneme, wrapped
+      </Text>
+
+      {cards.map((card, i) => (
+        <React.Fragment key={card.key}>
+          {card.node}
+          {/* Ad after every Nth card, never after the last. The negative margin
+              cancels the section padding so the ad card lines up with the rest. */}
+          {(i + 1) % AD_EVERY === 0 && i < cards.length - 1 ? (
+            <View style={styles.adSlot}>
+              <SponsoredCard />
+            </View>
+          ) : null}
+        </React.Fragment>
+      ))}
 
       {/* Painted last and lifted above every card, so a burst is never trapped behind one. */}
       <View style={styles.confettiLayer} pointerEvents="none">
@@ -1828,15 +1949,17 @@ const styles = StyleSheet.create({
   friendText: { flex: 1, gap: 2 },
   friendCta: { marginTop: Spacing[2], alignSelf: 'flex-end' },
 
-  terrainHeadline: { marginBottom: Spacing[2] },
-  terrainTeaser: { lineHeight: 22 },
-  terrainFoot: {
+  adSlot: { marginHorizontal: -Spacing[6] },
+  terrainGlyphBox: { height: 120, marginTop: Spacing[3], justifyContent: 'center' },
+  terrainGlyphTick: { position: 'absolute', bottom: 6, fontSize: 10 },
+  terrainTickL: { left: 14 },
+  terrainTickR: { right: 14 },
+  terrainHook: { textAlign: 'center', marginTop: Spacing[2], fontSize: 16 },
+  terrainOpen: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: Spacing[4],
-    paddingTop: Spacing[3],
-    borderTopWidth: 1,
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: Spacing[3],
   },
-  terrainOpen: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 });

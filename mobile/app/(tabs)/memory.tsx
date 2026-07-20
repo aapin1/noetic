@@ -44,7 +44,7 @@ export default function ArchiveScreen() {
   const c = useThemeColors();
   const router = useRouter();
   const [infoVisible, setInfoVisible] = useState(false);
-  const [view, setView] = useState<ViewKey>('folders');
+  const [view, setView] = useState<ViewKey>('diary');
   const [sort, setSort] = useState<SortKey>('recent');
   // Bumped on pull-to-refresh so the diary re-reads its first page too.
   const [diaryRefreshToken, setDiaryRefreshToken] = useState(0);
@@ -151,7 +151,7 @@ export default function ArchiveScreen() {
       {!searchActive && folders && folders.length > 0 && (
         <View style={styles.sortRow}>
           {/* View toggle: topical folders vs the chronological diary. */}
-          {(['folders', 'diary'] as ViewKey[]).map((v) => {
+          {(['diary', 'folders'] as ViewKey[]).map((v) => {
             const selected = view === v;
             return (
               <Pressable

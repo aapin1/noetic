@@ -126,7 +126,12 @@ export function SponsoredCard() {
           <NativeMediaView style={styles.media} resizeMode="cover" />
         </View>
       </NativeAdView>
-      <Pressable onPress={() => router.push('/plus' as never)}>
+      <Pressable
+        onPress={() => router.push('/plus' as never)}
+        accessibilityRole="button"
+        accessibilityLabel="Remove ads with Mneme Plus"
+        hitSlop={10}
+      >
         <Text variant="mono" color="muted" style={styles.removeLink}>
           remove ads with mneme plus →
         </Text>
@@ -136,7 +141,9 @@ export function SponsoredCard() {
 }
 
 const styles = StyleSheet.create({
-  wrap: { paddingHorizontal: Spacing[6], marginTop: Spacing[6] },
+  // Symmetric vertical margin so the "mneme plus" link never crowds the card
+  // that follows the ad in any of the streams it appears in.
+  wrap: { paddingHorizontal: Spacing[6], marginTop: Spacing[6], marginBottom: Spacing[6] },
   card: {
     borderWidth: 1,
     borderRadius: Radius.lg,
@@ -161,5 +168,5 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing[1],
   },
   ctaText: { fontSize: 12 },
-  removeLink: { fontSize: 11, textAlign: 'center', marginTop: Spacing[2] },
+  removeLink: { fontSize: 11, textAlign: 'center', marginTop: Spacing[3] },
 });

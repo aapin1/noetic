@@ -252,10 +252,16 @@ export interface TerrainBridge {
   b: string;
 }
 
+export interface TerrainCount {
+  name: string;
+  count: number;
+}
+
 /**
  * "terrain" — a longitudinal self-portrait unlocked at 50+ captures, comparing an
  * early era to a recent one. Every field is computed server-side (deterministic
- * math over embeddings/topics/edges/positions) except `arc`, one cached LLM line.
+ * math over embeddings/topics/edges/positions/consumption) except `arc`, one
+ * cached LLM line.
  */
 export interface TerrainResponse {
   unlocked: boolean;
@@ -272,12 +278,18 @@ export interface TerrainResponse {
   earlySpread: number | null;
   recentSpread: number | null;
   spreadVerdict: 'widening' | 'deepening' | 'steady' | null;
+  spreadDeltaPct: number | null;
+  earlyDistinctTopics: number;
+  recentDistinctTopics: number;
 
   earlyFields: TerrainField[];
   recentFields: TerrainField[];
   enduring: string[];
   emerged: string[];
   faded: string[];
+
+  topSources: TerrainCount[];
+  topVoices: TerrainCount[];
 
   bridges: TerrainBridge[];
   bridgeCount: number;

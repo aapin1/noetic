@@ -18,7 +18,6 @@ import { EditableAvatar } from '@/components/profile/EditableAvatar';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { WrappedSection } from '@/components/wrapped/WrappedSection';
 import { ShareRecapEntry } from '@/components/share/ShareRecapEntry';
-import { SponsoredCard } from '@/components/ui/SponsoredCard';
 import type { OwnerProfile } from '@/types/api';
 
 export default function YouScreen() {
@@ -125,8 +124,8 @@ export default function YouScreen() {
           <WrappedSection scrollY={scrollY} stats={wrapped} />
         )}
 
-        <SponsoredCard />
-
+        {/* Ads are interleaved between the wrapped cards inside WrappedSection now,
+            rather than a single card stranded at the bottom of the page. */}
         <ShareRecapEntry />
 
         <View style={styles.editButtonWrap}>

@@ -1469,6 +1469,8 @@ export async function generateTerrainNarrative(args: {
   emerged: string[];
   faded: string[];
   bridges: { a: string; b: string }[];
+  topVoices?: string[];
+  spreadDeltaPct?: number | null;
 }): Promise<string | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;

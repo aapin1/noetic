@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { ArrowDownRight, ArrowUpRight, ChevronLeftIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
@@ -10,7 +11,7 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { EmptyState } from '@/components/ui/EmptyState';
-import type { TerrainField, TerrainResponse } from '@/types/api';
+import type { TerrainCount, TerrainResponse } from '@/types/api';
 
 export default function TerrainScreen() {
   const c = useThemeColors();
@@ -45,7 +46,7 @@ export default function TerrainScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <Text variant="serif" color="secondary" style={styles.lede}>
-            how your mind has moved — {data.captureCount} captures, {data.earlyLabel} to {data.recentLabel}.
+            {data.captureCount} captures, {data.earlyLabel} → {data.recentLabel}.
           </Text>
 
           {data.arc ? (
@@ -58,10 +59,10 @@ export default function TerrainScreen() {
           ) : null}
 
           <Distance data={data} accent={accent} />
-          <Spread data={data} accent={accent} />
-          <ThenNow data={data} />
-          <Composition data={data} accent={accent} />
+          <Range data={data} accent={accent} />
+          <Consumption data={data} accent={accent} />
           <Bridges data={data} accent={accent} />
+          <LeftBehind data={data} />
           <Convictions data={data} accent={accent} />
 
           <Text variant="monoSmall" color="faint" style={styles.footnote}>
@@ -75,28 +76,52 @@ export default function TerrainScreen() {
 
 /* ---------------------------------------------------------------- pieces --- */
 
-function Chapter({
-  kicker,
-  title,
-  children,
-}: {
-  kicker: string;
-  title?: string;
-  children: React.ReactNode;
-}) {
+function Chapter({ kicker, children }: { kicker: string; children: React.ReactNode }) {
   const c = useThemeColors();
   return (
     <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
       <Text variant="label" color="muted" style={styles.kicker}>
         {kicker}
       </Text>
-      {title ? (
-        <Text variant="h3" style={styles.cardTitle}>
-          {title}
-        </Text>
-      ) : null}
       {children}
     </View>
+  );
+}
+
+/** A pivot with a "then" ray and a "now" ray swept apart by the drift angle. */
+function DriftDial({ degrees, accent }: { degrees: number; accent: string }) {
+  const c = useThemeColors();
+  const W = 128;
+  const H = 92;
+  const cx = W / 2;
+  const cy = H - 12;
+  const R = 66;
+  const arcR = 26;
+  const shown = Math.max(0, Math.min(168, degrees));
+  const rad = (shown * Math.PI) / 180;
+
+  // "then" points straight up; "now" is rotated clockwise by the drift angle.
+  const thenPt = { x: cx, y: cy - R };
+  const nowPt = { x: cx + R * Math.sin(rad), y: cy - R * Math.cos(rad) };
+  const arcStart = { x: cx, y: cy - arcR };
+  const arcEnd = { x: cx + arcR * Math.sin(rad), y: cy - arcR * Math.cos(rad) };
+  const largeArc = shown > 180 ? 1 : 0;
+
+  return (
+    <Svg width={W} height={H}>
+      <Path
+        d={`M ${arcStart.x} ${arcStart.y} A ${arcR} ${arcR} 0 ${largeArc} 1 ${arcEnd.x} ${arcEnd.y}`}
+        stroke={accent}
+        strokeWidth={1.5}
+        fill="none"
+        opacity={0.5}
+      />
+      <Line x1={cx} y1={cy} x2={thenPt.x} y2={thenPt.y} stroke={c.faint} strokeWidth={2} strokeLinecap="round" />
+      <Line x1={cx} y1={cy} x2={nowPt.x} y2={nowPt.y} stroke={accent} strokeWidth={2.5} strokeLinecap="round" />
+      <Circle cx={thenPt.x} cy={thenPt.y} r={4} fill={c.surface} stroke={c.faint} strokeWidth={1.5} />
+      <Circle cx={nowPt.x} cy={nowPt.y} r={5} fill={accent} />
+      <Circle cx={cx} cy={cy} r={3} fill={c.text} />
+    </Svg>
   );
 }
 
@@ -107,12 +132,15 @@ function Distance({ data, accent }: { data: TerrainResponse; accent: string }) {
   return (
     <Chapter kicker="distance traveled">
       <View style={styles.distRow}>
-        <Text variant="hero" style={[styles.degrees, { color: accent }]}>
-          {data.driftDegrees}°
-        </Text>
-        <Text variant="serif" color="secondary" style={styles.distBand}>
-          your center of gravity has turned — {data.driftBand}.
-        </Text>
+        <DriftDial degrees={data.driftDegrees} accent={accent} />
+        <View style={styles.distText}>
+          <Text variant="hero" style={[styles.degrees, { color: accent }]}>
+            {data.driftDegrees}°
+          </Text>
+          <Text variant="serif" color="secondary" style={styles.distBand}>
+            your center of gravity has turned — {data.driftBand}.
+          </Text>
+        </View>
       </View>
       {data.towardField ? (
         <View style={[styles.vector, { borderTopColor: c.borderSubtle }]}>
@@ -134,160 +162,136 @@ function Distance({ data, accent }: { data: TerrainResponse; accent: string }) {
   );
 }
 
-function Spread({ data, accent }: { data: TerrainResponse; accent: string }) {
+/** A "deep ←→ wide" track with then/now markers, plus the % shift and subject counts. */
+function Range({ data, accent }: { data: TerrainResponse; accent: string }) {
   const c = useThemeColors();
-  if (data.spreadVerdict === null || data.earlySpread === null || data.recentSpread === null) {
-    return null;
+  const hasSpread = data.earlySpread !== null && data.recentSpread !== null;
+  const hasCounts = data.earlyDistinctTopics > 0 || data.recentDistinctTopics > 0;
+  if (!hasSpread && !hasCounts) return null;
+
+  const pct = data.spreadDeltaPct;
+  // Prefer the embedding verdict; if there weren't enough embeddings, fall back
+  // to the concrete count of distinct subjects per era.
+  const verdict =
+    data.spreadVerdict ??
+    (data.recentDistinctTopics > data.earlyDistinctTopics
+      ? 'widening'
+      : data.recentDistinctTopics < data.earlyDistinctTopics
+        ? 'deepening'
+        : 'steady');
+  const headline =
+    verdict === 'widening' ? 'opening outward' : verdict === 'deepening' ? 'drilling deeper' : 'holding its range';
+  const line =
+    verdict === 'widening'
+      ? `you’re reaching across ${pct !== null && pct > 0 ? `${pct}% ` : ''}more ground than you started on — more open to the unfamiliar.`
+      : verdict === 'deepening'
+        ? `you’ve drawn in ${pct !== null && pct < 0 ? `${Math.abs(pct)}% ` : ''}tighter — settling deeper into fewer, nicher subjects.`
+        : 'you range about as widely now as when you began.';
+
+  // Normalize the two spreads onto a shared 0–1 track with a little headroom.
+  let thenX = 0.5;
+  let nowX = 0.5;
+  if (hasSpread) {
+    const e = data.earlySpread!;
+    const r = data.recentSpread!;
+    const lo = Math.min(e, r) * 0.85;
+    const hi = Math.max(e, r) * 1.15 || 1;
+    const span = hi - lo || 1;
+    thenX = Math.max(0.04, Math.min(0.96, (e - lo) / span));
+    nowX = Math.max(0.04, Math.min(0.96, (r - lo) / span));
   }
-  const max = Math.max(1, data.earlySpread, data.recentSpread);
-  const verdictLine =
-    data.spreadVerdict === 'widening'
-      ? 'your attention is fanning outward — reaching across more ground than it used to.'
-      : data.spreadVerdict === 'deepening'
-        ? 'your attention is drawing inward — settling deeper into fewer things.'
-        : 'your range has held steady — neither scattering nor narrowing.';
 
   return (
-    <Chapter kicker="range" title={data.spreadVerdict === 'steady' ? 'holding steady' : data.spreadVerdict}>
-      <Text variant="serif" color="secondary" style={styles.body}>
-        {verdictLine}
+    <Chapter kicker="range">
+      <Text variant="h3" style={styles.rangeHeadline}>
+        {headline}
       </Text>
-      <View style={styles.spreadRow}>
-        <SpreadBar label="then" value={data.earlySpread} max={max} color={c.faint} />
-        <SpreadBar label="now" value={data.recentSpread} max={max} color={accent} />
-      </View>
+      <Text variant="serif" color="secondary" style={styles.body}>
+        {line}
+      </Text>
+
+      {hasSpread ? (
+        <View style={styles.rangeTrackWrap}>
+          <View style={[styles.rangeTrack, { backgroundColor: c.elevated }]}>
+            <View style={[styles.rangeMarker, { left: `${thenX * 100}%`, backgroundColor: c.surface, borderColor: c.faint }]} />
+            <View style={[styles.rangeMarkerNow, { left: `${nowX * 100}%`, backgroundColor: accent }]} />
+          </View>
+          <View style={styles.rangeEnds}>
+            <Text variant="monoSmall" color="faint">deep</Text>
+            <Text variant="monoSmall" color="faint">wide</Text>
+          </View>
+        </View>
+      ) : null}
+
+      {hasCounts ? (
+        <View style={[styles.rangeCounts, { borderTopColor: c.borderSubtle }]}>
+          <RangeCount value={data.earlyDistinctTopics} label="subjects then" color={c.faint} />
+          <Text variant="serif" color="faint" style={styles.rangeArrow}>→</Text>
+          <RangeCount value={data.recentDistinctTopics} label="subjects now" color={accent} />
+        </View>
+      ) : null}
     </Chapter>
   );
 }
 
-function SpreadBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
-  const c = useThemeColors();
+function RangeCount({ value, label, color }: { value: number; label: string; color: string }) {
   return (
-    <View style={styles.spreadCol}>
-      <View style={[styles.spreadTrack, { backgroundColor: c.elevated }]}>
-        <View style={[styles.spreadFill, { height: `${Math.round((value / max) * 100)}%`, backgroundColor: color }]} />
-      </View>
-      <Text variant="monoSmall" color="faint" style={styles.spreadLabel}>
+    <View style={styles.rangeCount}>
+      <Text variant="h2" style={{ color }}>
+        {value}
+      </Text>
+      <Text variant="monoSmall" color="faint">
         {label}
       </Text>
     </View>
   );
 }
 
-function ThenNow({ data }: { data: TerrainResponse }) {
-  if (data.earlyFields.length === 0 && data.recentFields.length === 0) return null;
+/** The reward: what and who you've been pouring hours into. */
+function Consumption({ data, accent }: { data: TerrainResponse; accent: string }) {
+  if (data.topVoices.length === 0 && data.topSources.length === 0) return null;
   return (
-    <Chapter kicker="then → now" title="the fields you live in">
-      <MiniSpectrum label={data.earlyLabel} items={data.earlyFields} />
-      <View style={{ height: Spacing[4] }} />
-      <MiniSpectrum label={data.recentLabel} items={data.recentFields} />
+    <Chapter kicker="what you consume">
+      {data.topVoices.length > 0 ? (
+        <BarList title="the voices you keep" items={data.topVoices} accent={accent} />
+      ) : null}
+      {data.topSources.length > 0 ? (
+        <View style={data.topVoices.length > 0 ? styles.barGap : undefined}>
+          <BarList title="where it comes from" items={data.topSources} accent={accent} />
+        </View>
+      ) : null}
     </Chapter>
   );
 }
 
-function MiniSpectrum({ label, items }: { label: string; items: TerrainField[] }) {
+function BarList({ title, items, accent }: { title: string; items: TerrainCount[]; accent: string }) {
   const c = useThemeColors();
-  if (items.length === 0) {
-    return (
-      <View>
-        <Text variant="monoSmall" color="faint" style={styles.spectrumLabel}>
-          {label}
-        </Text>
-        <Text variant="serif" color="faint">
-          —
-        </Text>
-      </View>
-    );
-  }
-  const total = items.reduce((sum, it) => sum + it.share, 0) || 1;
+  const max = Math.max(1, ...items.map((it) => it.count));
   return (
     <View>
-      <Text variant="monoSmall" color="faint" style={styles.spectrumLabel}>
-        {label}
-      </Text>
-      <View style={[styles.spectrumBar, { backgroundColor: c.elevated }]}>
-        {items.map((it, i) => (
-          <View key={it.name} style={{ flex: it.share, backgroundColor: AccentList[i % AccentList.length] }} />
-        ))}
-      </View>
-      <View style={styles.legend}>
-        {items.map((it, i) => (
-          <View key={it.name} style={styles.legendRow}>
-            <View style={[styles.swatch, { backgroundColor: AccentList[i % AccentList.length] }]} />
-            <Text variant="serif" numberOfLines={1} style={styles.legendName}>
-              {it.name}
-            </Text>
-            <Text variant="monoSmall" color="faint">
-              {Math.round((it.share / total) * 100)}%
-            </Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function Composition({ data, accent }: { data: TerrainResponse; accent: string }) {
-  if (data.enduring.length === 0 && data.emerged.length === 0 && data.faded.length === 0) return null;
-  return (
-    <Chapter kicker="what held, what changed">
-      {data.enduring.length > 0 ? (
-        <ChipGroup title="the enduring core" hint="present the whole way through" names={data.enduring} accent={accent} filled />
-      ) : null}
-      {data.emerged.length > 0 ? (
-        <ChipGroup title="new frontier" hint="ground you’ve only recently entered" names={data.emerged} accent={accent} />
-      ) : null}
-      {data.faded.length > 0 ? (
-        <ChipGroup title="left behind" hint="where you started but no longer go" names={data.faded} muted />
-      ) : null}
-    </Chapter>
-  );
-}
-
-function ChipGroup({
-  title,
-  hint,
-  names,
-  accent,
-  filled,
-  muted,
-}: {
-  title: string;
-  hint: string;
-  names: string[];
-  accent?: string;
-  filled?: boolean;
-  muted?: boolean;
-}) {
-  const c = useThemeColors();
-  return (
-    <View style={styles.chipGroup}>
-      <Text variant="serif" style={styles.chipTitle}>
+      <Text variant="serif" style={styles.barTitle}>
         {title}
       </Text>
-      <Text variant="monoSmall" color="faint" style={styles.chipHint}>
-        {hint}
-      </Text>
-      <View style={styles.chipWrap}>
-        {names.map((name) => (
-          <View
-            key={name}
-            style={[
-              styles.chip,
-              filled && accent
-                ? { backgroundColor: accent, borderColor: accent }
-                : { borderColor: muted ? c.borderSubtle : c.border },
-            ]}
-          >
-            <Text
-              variant="monoSmall"
-              style={{ color: filled ? '#fff' : muted ? c.faint : c.text, fontSize: 12 }}
-            >
-              {name}
+      {items.map((it, i) => (
+        <View key={it.name} style={styles.barRow}>
+          <View style={styles.barLabelWrap}>
+            <Text variant="serif" numberOfLines={1} style={styles.barLabel}>
+              {it.name}
             </Text>
           </View>
-        ))}
-      </View>
+          <View style={styles.barTrackWrap}>
+            <View
+              style={[
+                styles.barFill,
+                { width: `${Math.round((it.count / max) * 100)}%`, backgroundColor: i === 0 ? accent : c.faint, opacity: i === 0 ? 1 : 0.5 },
+              ]}
+            />
+          </View>
+          <Text variant="monoSmall" color="faint" style={styles.barCount}>
+            {it.count}
+          </Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -296,10 +300,10 @@ function Bridges({ data, accent }: { data: TerrainResponse; accent: string }) {
   const c = useThemeColors();
   if (data.bridges.length === 0) return null;
   return (
-    <Chapter
-      kicker="bridges formed"
-      title={data.bridgeCount === 1 ? 'a new connection' : `${data.bridgeCount} new connections`}
-    >
+    <Chapter kicker="bridges formed">
+      <Text variant="h3" style={styles.rangeHeadline}>
+        {data.bridgeCount === 1 ? 'a new connection' : `${data.bridgeCount} new connections`}
+      </Text>
       <Text variant="serif" color="secondary" style={styles.body}>
         threads you’ve recently drawn between things that used to sit apart.
       </Text>
@@ -314,6 +318,28 @@ function Bridges({ data, accent }: { data: TerrainResponse; accent: string }) {
             </Text>
             <Text variant="serif" numberOfLines={1} style={[styles.bridgeEnd, styles.bridgeRight]}>
               {b.b}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </Chapter>
+  );
+}
+
+/** Slim and a little poignant — the one composition slice nothing else surfaces. */
+function LeftBehind({ data }: { data: TerrainResponse }) {
+  const c = useThemeColors();
+  if (data.faded.length === 0) return null;
+  return (
+    <Chapter kicker="left behind">
+      <Text variant="serif" color="secondary" style={styles.body}>
+        where you started but no longer wander.
+      </Text>
+      <View style={styles.chipWrap}>
+        {data.faded.map((name) => (
+          <View key={name} style={[styles.chip, { borderColor: c.borderSubtle }]}>
+            <Text variant="monoSmall" style={{ color: c.faint, fontSize: 12 }}>
+              {name}
             </Text>
           </View>
         ))}
@@ -379,13 +405,13 @@ const styles = StyleSheet.create({
     padding: Spacing[5],
     marginBottom: Spacing[4],
   },
-  kicker: { marginBottom: Spacing[2] },
-  cardTitle: { marginBottom: Spacing[3], textTransform: 'lowercase' },
+  kicker: { marginBottom: Spacing[3] },
   body: { lineHeight: 23 },
 
   distRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[4] },
-  degrees: { fontSize: 56, lineHeight: 60 },
-  distBand: { flex: 1, lineHeight: 24 },
+  distText: { flex: 1 },
+  degrees: { fontSize: 48, lineHeight: 52 },
+  distBand: { lineHeight: 24, marginTop: Spacing[1] },
   vector: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -397,29 +423,49 @@ const styles = StyleSheet.create({
   vectorTight: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2], marginTop: Spacing[3] },
   vectorText: { fontSize: 16 },
 
-  spreadRow: { flexDirection: 'row', gap: Spacing[6], marginTop: Spacing[5], height: 90, alignItems: 'flex-end' },
-  spreadCol: { flex: 1, alignItems: 'center', gap: Spacing[2] },
-  spreadTrack: { width: 40, height: 70, borderRadius: Radius.sm, justifyContent: 'flex-end', overflow: 'hidden' },
-  spreadFill: { width: '100%', borderRadius: Radius.sm },
-  spreadLabel: {},
-
-  spectrumLabel: { marginBottom: Spacing[2] },
-  spectrumBar: { flexDirection: 'row', height: 10, borderRadius: Radius.full, overflow: 'hidden' },
-  legend: { marginTop: Spacing[3], gap: Spacing[2] },
-  legendRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
-  swatch: { width: 8, height: 8, borderRadius: 2 },
-  legendName: { flex: 1 },
-
-  chipGroup: { marginTop: Spacing[4] },
-  chipTitle: { fontSize: 16 },
-  chipHint: { marginTop: 2, marginBottom: Spacing[3] },
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[2] },
-  chip: {
-    borderWidth: 1,
+  rangeHeadline: { textTransform: 'lowercase', marginBottom: Spacing[2] },
+  rangeTrackWrap: { marginTop: Spacing[5] },
+  rangeTrack: {
+    height: 8,
     borderRadius: Radius.full,
-    paddingHorizontal: Spacing[3],
-    paddingVertical: 5,
+    justifyContent: 'center',
   },
+  rangeMarker: {
+    position: 'absolute',
+    width: 14,
+    height: 14,
+    borderRadius: Radius.full,
+    borderWidth: 1.5,
+    marginLeft: -7,
+  },
+  rangeMarkerNow: {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    borderRadius: Radius.full,
+    marginLeft: -8,
+  },
+  rangeEnds: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing[3] },
+  rangeCounts: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing[5],
+    marginTop: Spacing[5],
+    paddingTop: Spacing[4],
+    borderTopWidth: 1,
+  },
+  rangeCount: { alignItems: 'center', gap: 2 },
+  rangeArrow: { fontSize: 20 },
+
+  barTitle: { fontSize: 15, marginBottom: Spacing[3] },
+  barGap: { marginTop: Spacing[5] },
+  barRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3], marginBottom: Spacing[3] },
+  barLabelWrap: { width: '34%' },
+  barLabel: { fontSize: 14 },
+  barTrackWrap: { flex: 1 },
+  barFill: { height: 8, borderRadius: Radius.full, minWidth: 4 },
+  barCount: { width: 24, textAlign: 'right' },
 
   bridgeList: { marginTop: Spacing[4] },
   bridgeRow: {
@@ -431,6 +477,14 @@ const styles = StyleSheet.create({
   },
   bridgeEnd: { flex: 1, fontSize: 15 },
   bridgeRight: { textAlign: 'right' },
+
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[2], marginTop: Spacing[4] },
+  chip: {
+    borderWidth: 1,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing[3],
+    paddingVertical: 5,
+  },
 
   convRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing[2] },
   convStat: { flex: 1, alignItems: 'center', gap: 2 },
