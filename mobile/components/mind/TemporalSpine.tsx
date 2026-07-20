@@ -74,16 +74,48 @@ export function TemporalSpine({
 
   const { rows, spineHeight, path } = useMemo(() => {
     const out: Row[] = [];
+    // Spine waypoints (node centers + bend "shoulders"). The path is drawn
+    // through these; only `kind: 'node'` rows carry a dot.
+    const spinePts: { x: number; y: number }[] = [];
+    const lastIndex = timeline.length - 1;
     let y = TOP_PAD;
     timeline.forEach((node, i) => {
       const onLeft = i % 2 === 0;
       const x = SW * 0.5 + (onLeft ? -SWAY : SWAY);
+      const cy = y + NODE_H / 2;
       out.push({ kind: 'node', y, x, index: i, id: node.id, label: node.label, capturedAt: node.capturedAt });
+      spinePts.push({ x, y: cy });
       y += NODE_H;
-      for (const note of driftNotes) {
-        if (note.atIndex === i) {
-          // The note sits in the bend's pocket — the side the spine is about
-          // to leave, where the curve hasn't crossed into yet.
+
+      const notes = driftNotes.filter((n) => n.atIndex === i);
+      if (notes.length === 0) return;
+
+      if (i < lastIndex) {
+        // A drift lives beside a STRAIGHT run of the spine, with the bend to
+        // the next node completed just ABOVE it. Concentrate that bend into a
+        // short shoulder, then run the spine straight down at the next node's
+        // x while the note fills the pocket the spine just vacated — so the box
+        // always has clear space to grow downward, never landing on the line.
+        const nextOnLeft = (i + 1) % 2 === 0;
+        const nextX = SW * 0.5 + (nextOnLeft ? -SWAY : SWAY);
+        const shoulderY = y + NODE_H / 2; // bend ends here, straight run begins
+        spinePts.push({ x: nextX, y: shoulderY });
+
+        let dy = shoulderY;
+        for (const note of notes) {
+          const height = estimateDriftHeight(note.text);
+          // Vacated side: the spine has moved to nextX, so node i's own side
+          // is now open.
+          out.push({ kind: 'drift', y: dy, height, text: note.text, side: onLeft ? 'left' : 'right' });
+          dy += height;
+        }
+        // Next node's center sits at the bottom of the straight run, so the
+        // straight segment (shoulder → next node) runs the full drift height.
+        y = dy - NODE_H / 2;
+      } else {
+        // Drift after the last node: the spine ends here, so there is no line
+        // below to avoid — keep it opposite the node and stack downward.
+        for (const note of notes) {
           const height = estimateDriftHeight(note.text);
           out.push({ kind: 'drift', y, height, text: note.text, side: onLeft ? 'right' : 'left' });
           y += height;
@@ -91,19 +123,17 @@ export function TemporalSpine({
       }
     });
 
-    // Smooth S-curve through the node centers: vertical tangents at each node
-    // so the spline flows down rather than zig-zagging.
-    const nodes = out.filter((r): r is Extract<Row, { kind: 'node' }> => r.kind === 'node');
+    // Smooth S-curve through the waypoints: vertical tangents at each point so
+    // the spline flows down rather than zig-zagging. A shoulder→next-node pair
+    // shares an x, making that stretch a clean vertical line beside the drift.
     let d = '';
-    nodes.forEach((n, i) => {
-      const cy = n.y + NODE_H / 2;
+    spinePts.forEach((n, i) => {
       if (i === 0) {
-        d = `M${n.x},${cy}`;
+        d = `M${n.x},${n.y}`;
       } else {
-        const prev = nodes[i - 1];
-        const py = prev.y + NODE_H / 2;
-        const mid = (py + cy) / 2;
-        d += ` C${prev.x},${mid} ${n.x},${mid} ${n.x},${cy}`;
+        const prev = spinePts[i - 1];
+        const mid = (prev.y + n.y) / 2;
+        d += ` C${prev.x},${mid} ${n.x},${mid} ${n.x},${n.y}`;
       }
     });
 

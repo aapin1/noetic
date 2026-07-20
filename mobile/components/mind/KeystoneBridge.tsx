@@ -144,6 +144,10 @@ export function KeystoneBridge({
             key={`c-${ci}`}
             cluster={cluster}
             align={ci === 0 ? 'left' : 'right'}
+            // Upper cluster labels above its blobs, lower cluster below — both
+            // away from the centered keystone chip, so a node name can never
+            // land on top of the topic name between them.
+            place={ci === 0 ? 'above' : 'below'}
             pull={pull}
             onOpenItem={onOpenItem}
           />
@@ -249,11 +253,13 @@ function TensionLine({
 function ClusterOverlay({
   cluster,
   align,
+  place,
   pull,
   onOpenItem,
 }: {
   cluster: ClusterGeom;
   align: 'left' | 'right';
+  place: 'above' | 'below';
   pull: SharedValue<number>;
   onOpenItem: (id: string) => void;
 }) {
@@ -277,11 +283,15 @@ function ClusterOverlay({
           />
         );
       })}
-      {/* The cluster is named by what it holds, not where it came from */}
+      {/* The cluster is named by what it holds, not where it came from.
+          Below the lower cluster, above the upper one (bottom-anchored so it
+          stays snug regardless of line count) — always clear of the keystone. */}
       <View
         style={[
           styles.clusterLabel,
-          { top: cluster.cy + 58 },
+          place === 'below'
+            ? { top: cluster.cy + 58 }
+            : { bottom: STAGE_H - (cluster.cy - 51) },
           align === 'left'
             ? { left: Math.max(Spacing[4], cluster.startX - 70) }
             : { right: Math.max(Spacing[4], SW - cluster.startX - 70), alignItems: 'flex-end' },

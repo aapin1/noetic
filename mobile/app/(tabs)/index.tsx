@@ -264,6 +264,14 @@ const GLOW_H = (GLOW_W * CANVAS_H) / CANVAS_W;
 // Static: the world SVG is always offset by exactly the overscan margin.
 const MAP_WORLD_STYLE = { position: 'absolute' as const, left: -MARGIN_X, top: -MARGIN_Y };
 
+// Zoom fade → node/raster dimming as you pull back, floored so points stay
+// readable when fully zoomed out and pinned at 1 once you are zoomed in. Applied
+// as a NATIVE VIEW opacity over the raster (not baked into the SVG), so it
+// composites the cached layer on the GPU — no re-rasterization, no per-frame
+// JS, and identical across both buffers so a swap never pops. Continuous (not
+// stepped): nothing rebuilds, so there is no rebuild cost to amortize.
+const fadeForZoom = (z: number) => Math.max(0.6, Math.min(1, (z - 0.15) / 0.75));
+
 // Muted on purpose. The rest of the map is near-monochrome, so saturated hues
 // read as the loudest thing on screen rather than as a quiet grouping cue —
 // these are the original hues pulled ~35% toward their own luma and dimmed
@@ -364,6 +372,7 @@ const WorldBuffer = React.memo(function WorldBuffer({
   labelContainment,
   focusDimTopicId,
   liveScale,
+  fade,
   landingPos,
   landingAnim,
 }: {
@@ -377,6 +386,7 @@ const WorldBuffer = React.memo(function WorldBuffer({
   labelContainment: LabelContainment;
   focusDimTopicId: string | null;
   liveScale: RNAnimated.Value;
+  fade: RNAnimated.Value;
   landingPos: { x: number; y: number } | null;
   landingAnim: RNAnimated.Value;
 }) {
@@ -557,7 +567,11 @@ const WorldBuffer = React.memo(function WorldBuffer({
       {/* Canvas-anchored ambient glow, under the map. Rasterized once;
           a commit only moves and scales this view. */}
       <View style={glowStyle}>{ambientGlow}</View>
-      {svg}
+      {/* The raster, dimmed by the live zoom fade at the View layer (GPU
+          composite of the cached SVG — never a re-rasterization). */}
+      <RNAnimated.View style={[StyleSheet.absoluteFill, { overflow: 'visible', opacity: fade }]}>
+        {svg}
+      </RNAnimated.View>
       {/* Cluster labels — native views that counter-scale continuously
           against the live wrapper transform (smooth through pinches,
           unlike text baked into the SVG raster). */}
@@ -1845,8 +1859,8 @@ export default function MapScreen() {
   const savedVB = useRef({ x: INIT_VB_X, y: INIT_VB_Y });
 
   const savedZoom = useRef(0.4);
-  // Committed zoom as React state: drives the zoom-coupled world CONTENT
-  // (zoomFade steps, temporal captions) that both buffers share.
+  // Committed zoom as React state: drives the few zoom-coupled bits still in the
+  // shared world body (the temporal-axis caption font size).
   const [zoom, setZoom] = useState(0.4);
 
   // The two world buffers' committed cameras. bufCams[frontBufRef] is what is
@@ -1884,6 +1898,11 @@ export default function MapScreen() {
   const liveTx = useRef(new RNAnimated.Value(0)).current;
   const liveTy = useRef(new RNAnimated.Value(0)).current;
   const liveScale = useRef(new RNAnimated.Value(1)).current;
+  // Node/raster fade as a native View opacity over the world layer, driven by
+  // the LIVE zoom (like liveScale). It never touches the raster, so it neither
+  // re-rasterizes the visible buffer as you cross the fade band nor pops at a
+  // swap — both buffers composite the same fade.
+  const liveFade = useRef(new RNAnimated.Value(fadeForZoom(0.4))).current;
   // Non-null while a pinch is in flight. Gestures write it; maybeRecommit
   // reads it to defer crispness re-rasterizations until the pinch settles.
   const pinchStartRef = useRef<{ dist: number; zoom: number } | null>(null);
@@ -1907,7 +1926,8 @@ export default function MapScreen() {
     liveTx.setValue((c.x - x) * z + (wrapperSize.current.w / 2) * (k - 1));
     liveTy.setValue((c.y - y) * z + (wrapperSize.current.h / 2) * (k - 1));
     liveScale.setValue(k);
-  }, [liveTx, liveTy, liveScale]);
+    liveFade.setValue(fadeForZoom(z));
+  }, [liveTx, liveTy, liveScale, liveFade]);
 
   // Smoothed live-camera velocity in screen px/frame, used to aim the raster.
   const camVel = useRef({ x: 0, y: 0 });
@@ -3265,23 +3285,25 @@ export default function MapScreen() {
   const landingPos = (newNodeId && pos[newNodeId]) || null;
 
   // ── Node opacity: terrain + focus + discovery + timeline ───────
-  const getNodeOpacity = useCallback((node: GraphNode, baseOpacity: number, zoomFade: number) => {
+  // No zoom fade here — that is a native View opacity over the whole raster
+  // (see liveFade), so it must not be baked per node.
+  const getNodeOpacity = useCallback((node: GraphNode, baseOpacity: number) => {
     // Search dimming
     if (hasSearch && !highlightedIds.has(node.id)) {
-      return baseOpacity * 0.10 * zoomFade;
+      return baseOpacity * 0.10;
     }
     // Timeline cutoff (temporal lens)
     if (lensMode === 'temporal') {
       const ts = nodeTimestamps.get(node.id) ?? 0;
       if (ts > timelineCutoffMs) {
-        return baseOpacity * 0.08 * zoomFade;
+        return baseOpacity * 0.08;
       }
     }
     // Focus dimming (interim only — a live sub-map has no non-members)
     if (focusDimTopicId && !node.topics.some((t) => t.topicId === focusDimTopicId)) {
-      return baseOpacity * 0.06 * zoomFade;
+      return baseOpacity * 0.06;
     }
-    return baseOpacity * zoomFade;
+    return baseOpacity;
   }, [hasSearch, highlightedIds, lensMode, nodeTimestamps, timelineCutoffMs, focusDimTopicId]);
 
   // ── Map world body — everything drawn in world coordinates ─────
@@ -3295,20 +3317,12 @@ export default function MapScreen() {
   // Filling it here too meant re-rasterizing a Pattern and a gradient across
   // the whole overscanned area on every commit — a duplicate backdrop, and
   // the bulk of the per-commit cost.
-  // Nodes stay visible at every zoom level — never fade to zero. Only a gentle
-  // dimming as you pull back, floored so points (and their colour) remain
-  // clearly readable when fully zoomed out. Hoisted out of the node loop: it
-  // is a plain function of zoom, and it is CONSTANT outside 0.6 < zoom < 0.9,
-  // so keying the graph on it (rather than on zoom) means a pinch that stays
-  // zoomed in rebuilds no nodes at all.
-  // Quantized to 0.05 steps: inside the 0.6–0.9 fade band a pinch used to
-  // rebuild every node element on each zoom commit (the fade is a prop of all
-  // of them) — a JS-thread stall felt as a mid-pinch hitch. Stepping the fade
-  // caps that at a handful of rebuilds across the whole band, invisibly.
-  const zoomFade = useMemo(() => {
-    const raw = Math.max(0.6, Math.min(1, (zoom - 0.15) / 0.75));
-    return Math.round(raw * 20) / 20;
-  }, [zoom]);
+  // Nodes stay visible at every zoom level — never fade to zero. The gentle
+  // dimming as you pull back is a native View opacity over the raster
+  // (fadeForZoom / liveFade), NOT baked into the SVG — so the graph raster is
+  // fully zoom-independent: only a pan (viewBox) or a structural change rebuilds
+  // it, the visible buffer never repaints in place on a zoom commit, and the
+  // fade rides the GPU continuously instead of stepping through re-rasters.
 
   // Gradients live at the <Svg> level; only the cluster set changes them.
   const worldDefs = useMemo(() => (
@@ -3390,9 +3404,10 @@ export default function MapScreen() {
     );
   }, [zoom, lensMode, nodes.length]);
 
-  // Edges + nodes: the bulk of the SVG tree. Keyed on zoomFade, not zoom, so a
-  // zoom commit outside the fade band keeps this element identity and React
-  // skips the whole subtree.
+  // Edges + nodes: the bulk of the SVG tree. Independent of zoom entirely — the
+  // zoom fade is a native View opacity (liveFade), not this element — so a zoom
+  // commit keeps its identity and React skips the whole subtree; only a pan
+  // (viewBox) or a structural change touches it.
   const graphLayer = useMemo(() => (
     <>
           {/* Edges */}
@@ -3442,7 +3457,7 @@ export default function MapScreen() {
             const isHighlighted = hasSearch && highlightedIds.has(node.id);
             const isDiscoverySelected = discoveryNodeIds.includes(node.id);
 
-            const finalOpacity = getNodeOpacity(node, baseOpacity, zoomFade);
+            const finalOpacity = getNodeOpacity(node, baseOpacity);
 
             // One gradient disc replaces the two flat ones. Much tighter than
             // the old 5.5x outer ring — the falloff lives in the gradient's
@@ -3456,7 +3471,7 @@ export default function MapScreen() {
                 <Circle
                   cx={p.x} cy={p.y} r={glowR}
                   fill={`url(#${nodeGlowId(color)})`}
-                  fillOpacity={finalOpacity === 0 ? 0 : glowOp * zoomFade}
+                  fillOpacity={glowOp}
                 />
                 <Circle
                   cx={p.x} cy={p.y}
@@ -3471,7 +3486,7 @@ export default function MapScreen() {
                     fill="none"
                     stroke="#7EC8A0"
                     strokeWidth={0.8}
-                    strokeOpacity={0.6 * zoomFade}
+                    strokeOpacity={0.6}
                   />
                 )}
                 {/* Subtle pulse ring for recent nodes */}
@@ -3481,7 +3496,7 @@ export default function MapScreen() {
                     fill="none"
                     stroke={color}
                     strokeWidth={0.5}
-                    strokeOpacity={0.3 * zoomFade}
+                    strokeOpacity={0.3}
                   />
                 )}
               </G>
@@ -3505,7 +3520,7 @@ export default function MapScreen() {
   ), [
     edges, nodes, pos, nodeById, discoveryEdgeKeys, discoveryNodeIds,
     nodeMetrics, nodeColor, isRecentNode, hasSearch, highlightedIds,
-    getNodeOpacity, isEmpty, focusDimTopicId, zoomFade, edgeSalienceByKey,
+    getNodeOpacity, isEmpty, focusDimTopicId, edgeSalienceByKey,
   ]);
 
   const worldBody = useMemo(() => (
@@ -3694,6 +3709,7 @@ export default function MapScreen() {
               labelContainment={labelContainment}
               focusDimTopicId={focusDimTopicId}
               liveScale={liveScale}
+              fade={liveFade}
               landingPos={landingPos}
               landingAnim={landingAnim}
             />
@@ -3708,6 +3724,7 @@ export default function MapScreen() {
               labelContainment={labelContainment}
               focusDimTopicId={focusDimTopicId}
               liveScale={liveScale}
+              fade={liveFade}
               landingPos={landingPos}
               landingAnim={landingAnim}
             />
