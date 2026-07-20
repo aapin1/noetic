@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Animated as RNAnimated,
   Dimensions,
@@ -213,6 +212,12 @@ const OS_H = SH + MARGIN_Y * 2;
 // edge. Headroom for one fast frame (a finger tops out near ~50px/frame), so
 // motion can never jump the remaining margin between two checks.
 const RECOMMIT_SLACK = 64;
+
+// Frames of paint budget a freshly-committed back buffer gets before the swap
+// reveals it. Three (~50ms) rather than two: a dense graph's raster can take
+// longer than two frames to paint, and revealing it early flashes a
+// half-painted buffer (the zoom flicker). See the buffer-swap effect.
+const SWAP_PAINT_FRAMES = 3;
 
 // Anchor the raster AHEAD of the camera, along its direction of travel. A
 // centred anchor wastes half the overscan behind you, so a fast pan burns
@@ -1204,29 +1209,30 @@ function Toolbar({
   // then to the untargeted companion. Only the affordance changed.
   const router = useRouter();
   const { topicId } = useSocratic();
-  const [companionLoading, setCompanionLoading] = useState(false);
   const companionTarget = useTutorialTarget(TUTORIAL_TARGET.companionFab);
 
-  const openCompanion = async () => {
-    if (companionLoading) return;
+  // Resolve the fallback theme AHEAD of the tap so opening the companion never
+  // blocks on a network round-trip. Without an active topic, the tap used to
+  // await trends() before it could even navigate — the multi-second open.
+  const fallbackTopicRef = useRef<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api.memory.trends()
+      .then((t) => { if (alive) fallbackTopicRef.current = t.themes[0]?.topicId ?? null; })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const openCompanion = () => {
     companionTarget.press();
-    let tid = topicId;
-    if (!tid) {
-      setCompanionLoading(true);
-      try {
-        const trends = await api.memory.trends();
-        tid = trends.themes[0]?.topicId ?? null;
-      } catch {
-        tid = null;
-      } finally {
-        setCompanionLoading(false);
-      }
-    }
-    if (!tid) {
+    const tid = topicId ?? fallbackTopicRef.current;
+    if (tid) {
+      router.push({ pathname: '/socratic/[topicId]' as never, params: { topicId: tid } });
+    } else {
+      // Prefetch hasn't landed (or there's no theme yet) — open the untargeted
+      // companion immediately rather than stalling the tap on the network.
       router.push('/companion' as never);
-      return;
     }
-    router.push({ pathname: '/socratic/[topicId]' as never, params: { topicId: tid } });
   };
 
   return (
@@ -1274,15 +1280,12 @@ function Toolbar({
       <Pressable
         ref={companionTarget.isActive ? companionTarget.ref : undefined}
         onLayout={companionTarget.isActive ? companionTarget.onLayout : undefined}
-        onPress={() => void openCompanion()}
-        disabled={companionLoading}
+        onPress={openCompanion}
         style={tb.btn}
         accessibilityLabel="Open Socratic dialogue"
         accessibilityRole="button"
       >
-        {companionLoading
-          ? <ActivityIndicator size="small" color={c.muted} />
-          : <MessageCircleIcon size={17} color={c.muted} strokeWidth={1.5} />}
+        <MessageCircleIcon size={17} color={c.muted} strokeWidth={1.5} />
       </Pressable>
     </View>
   );
@@ -2096,22 +2099,30 @@ export default function MapScreen() {
     const p = pendingSwapRef.current;
     if (!p || p.scheduled) return;
     p.scheduled = true;
-    swapRafRef.current = requestAnimationFrame(() => {
-      swapRafRef.current = requestAnimationFrame(() => {
-        swapRafRef.current = null;
-        const pending = pendingSwapRef.current;
-        if (!pending) return;
-        frontBufRef.current = pending.buf;
-        renderedCam.current = pending.cam;
-        (pending.buf === 0 ? bufOpacity0 : bufOpacity1).setValue(1);
-        (pending.buf === 0 ? bufOpacity1 : bufOpacity0).setValue(0);
-        applyLiveCamera(liveCam.current.x, liveCam.current.y, liveCam.current.zoom);
-        pendingSwapRef.current = null;
-        const queued = queuedCamRef.current;
-        queuedCamRef.current = null;
-        if (queued) commitRender(queued.x, queued.y, queued.zoom);
-      });
-    });
+    // Give the back buffer SWAP_PAINT_FRAMES of paint budget before revealing
+    // it. It starts painting the frame after React commits its new camera; on a
+    // dense graph that raster can span more than two frames, so revealing it too
+    // early flashed a half-painted buffer — the flicker on a zoom, worst when
+    // zoomed out (more of the graph in view = a heavier raster). The extra frame
+    // only delays when the crisp raster refreshes; the visible buffer keeps
+    // transforming in real time throughout, so it costs no responsiveness.
+    let budget = SWAP_PAINT_FRAMES;
+    const reveal = () => {
+      if (--budget > 0) { swapRafRef.current = requestAnimationFrame(reveal); return; }
+      swapRafRef.current = null;
+      const pending = pendingSwapRef.current;
+      if (!pending) return;
+      frontBufRef.current = pending.buf;
+      renderedCam.current = pending.cam;
+      (pending.buf === 0 ? bufOpacity0 : bufOpacity1).setValue(1);
+      (pending.buf === 0 ? bufOpacity1 : bufOpacity0).setValue(0);
+      applyLiveCamera(liveCam.current.x, liveCam.current.y, liveCam.current.zoom);
+      pendingSwapRef.current = null;
+      const queued = queuedCamRef.current;
+      queuedCamRef.current = null;
+      if (queued) commitRender(queued.x, queued.y, queued.zoom);
+    };
+    swapRafRef.current = requestAnimationFrame(reveal);
   }, [bufCams, applyLiveCamera, commitRender, bufOpacity0, bufOpacity1]);
 
   useEffect(() => () => {
@@ -2539,7 +2550,7 @@ export default function MapScreen() {
     const flightY = clampVBY((minY + maxY) / 2 - flightH2 / 2, flightH2);
     commitRender(flightX, flightY, flightZoom);
 
-    const startTime = Date.now();
+    let startTime = 0;
     let frameId: number;
     let cancelled = false;
     const easeInOutCubic = (t: number) =>
@@ -2562,7 +2573,20 @@ export default function MapScreen() {
       if (t < 1) { frameId = requestAnimationFrame(frame); }
       else commitCamera();
     };
-    frameId = requestAnimationFrame(frame);
+    // Let the wide flight raster paint (and its buffer swap settle) before the
+    // camera starts moving — otherwise the first frames of the ease fight the
+    // native paint of that raster, the stutter at the very start of a fly-to
+    // (worst on the "atlas →" reveal right after a capture). The map holds on
+    // the start camera for these frames; the ease opens slow, so the brief hold
+    // before motion is invisible.
+    let hold = SWAP_PAINT_FRAMES;
+    const kick = () => {
+      if (cancelled) return;
+      if (--hold > 0) { frameId = requestAnimationFrame(kick); return; }
+      startTime = Date.now();
+      frameId = requestAnimationFrame(frame);
+    };
+    frameId = requestAnimationFrame(kick);
     animCancelRef.current = () => { cancelled = true; cancelAnimationFrame(frameId); commitCamera(); };
   }, [applyLiveCamera, commitCamera, commitRender]);
 
@@ -2797,6 +2821,12 @@ export default function MapScreen() {
   // ── Node selection ────────────────────────────────────────────
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [deletingNode, setDeletingNode] = useState(false);
+  // Read inside the touch layer's onPress via a ref so selecting a node does
+  // NOT rebuild every on-screen hit target (the targets are identical whether
+  // or not a node is selected). Selecting used to rebuild the whole touchLayer
+  // before the drawer could animate — that was the ~1s tap latency.
+  const selectedNodeRef = useRef<GraphNode | null>(null);
+  useEffect(() => { selectedNodeRef.current = selectedNode; }, [selectedNode]);
 
   // Permanent delete: the row and everything derived from it (insights,
   // connections, topic links) are removed server-side, then the graph is
@@ -3605,12 +3635,19 @@ export default function MapScreen() {
               if (toolMode === 'discover') {
                 toggleDiscoveryNode(node.id);
               } else {
-                if (selectedNode?.id === node.id) {
+                if (selectedNodeRef.current?.id === node.id) {
                   closeDrawer();
                 } else {
                   setSelectedNode(node);
                   setDrawerCluster(null);
                   openDrawer(null);
+                  // Warm the insight screen while the drawer is open, so a tap
+                  // on "view insight →" opens instantly from cache instead of
+                  // waiting on the fetch. Harmless for the tutorial demo node —
+                  // it has no server insight and the drawer hides that action.
+                  if (node.id !== TUTORIAL_DEMO_NODE.id) {
+                    void prefetchQuery(`capture:${node.id}`, () => api.captures.get(node.id));
+                  }
                 }
                 if (isTutorialNode) nodeTarget.press();
               }
@@ -3638,7 +3675,7 @@ export default function MapScreen() {
     </View>
   ), [
     toolMode, edges, pos, settledCam, nodes, nodeTarget,
-    selectedNode, toggleDiscoveryEdge, toggleDiscoveryNode, closeDrawer,
+    toggleDiscoveryEdge, toggleDiscoveryNode, closeDrawer,
     openDrawer, lensMode, clusterLabels, handleClusterTap,
   ]);
 
