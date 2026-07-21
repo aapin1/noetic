@@ -241,11 +241,28 @@ export async function recordDurableHit(
  * identifier-keyed limit that a spoofed IP can't dodge.
  */
 export function clientIp(request: Request): string {
+  return knownClientIp(request) ?? "unknown";
+}
+
+/**
+ * The client address, or null when no proxy header identifies one.
+ *
+ * The distinction matters for limiting an *unauthenticated* route. Falling back
+ * to a single shared bucket would mean that if the proxy header ever went
+ * missing, every caller in the world would contend for one limit — turning a
+ * misconfiguration into a self-inflicted outage that is strictly worse than not
+ * limiting the route at all. Callers that can't key on a real address should
+ * skip the limit rather than lump everyone together.
+ *
+ * The auth routes deliberately use `clientIp` and accept the lumping: they are
+ * low-volume, and over-limiting sign-in attempts is the safe direction to err.
+ */
+export function knownClientIp(request: Request): string | null {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
     const first = forwarded.split(",")[0]?.trim();
     if (first) return first;
   }
 
-  return request.headers.get("x-real-ip")?.trim() || "unknown";
+  return request.headers.get("x-real-ip")?.trim() || null;
 }

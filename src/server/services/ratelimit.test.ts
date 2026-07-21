@@ -6,6 +6,7 @@ import {
   clientIp,
   enforceDurableRateLimit,
   enforceRateLimit,
+  knownClientIp,
   recordDurableHit,
   resetRateLimits,
   trackedKeyCount,
@@ -185,8 +186,28 @@ describe("clientIp", () => {
   });
 
   it("degrades to a constant when no proxy header is present", () => {
-    // Everyone shares one bucket rather than each request inventing its own —
-    // erring toward over-limiting, never under.
+    // The auth routes accept this lumping: over-limiting sign-in attempts errs
+    // in the safe direction.
     expect(clientIp(requestWith({}))).toBe("unknown");
+  });
+});
+
+describe("knownClientIp", () => {
+  function requestWith(headers: Record<string, string>) {
+    return new Request("http://localhost/api/thing", { headers });
+  }
+
+  it("reports the address when a proxy header identifies one", () => {
+    expect(knownClientIp(requestWith({ "x-forwarded-for": "203.0.113.9, 10.0.0.1" })))
+      .toBe("203.0.113.9");
+    expect(knownClientIp(requestWith({ "x-real-ip": "198.51.100.7" }))).toBe("198.51.100.7");
+  });
+
+  // Lumping every caller into one bucket would turn a missing header into a
+  // global outage — strictly worse than leaving the route unlimited, which is
+  // where it stands today.
+  it("reports null rather than a shared bucket when no header identifies one", () => {
+    expect(knownClientIp(requestWith({}))).toBeNull();
+    expect(knownClientIp(requestWith({ "x-forwarded-for": "" }))).toBeNull();
   });
 });
