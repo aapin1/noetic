@@ -77,6 +77,21 @@ describe("handleRoute", () => {
       expect(logged).toContain("ECONNREFUSED");
     });
 
+    // Next throws these to signal control flow (dynamic rendering, redirect,
+    // notFound). Turning them into a 500 both breaks the signal and logs a
+    // stack trace for every dynamic route on every build.
+    it("lets a framework signal propagate instead of reporting it", async () => {
+      const signal = Object.assign(new Error("Dynamic server usage: headers"), {
+        digest: "DYNAMIC_SERVER_USAGE",
+      });
+
+      await expect(handleRoute(async () => {
+        throw signal;
+      })).rejects.toBe(signal);
+
+      expect(console.error).not.toHaveBeenCalled();
+    });
+
     it("handles a thrown non-Error without crashing", async () => {
       const response = await handleRoute(async () => {
         throw "just a string";

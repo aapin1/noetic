@@ -120,6 +120,24 @@ function newRequestId() {
   return randomBytes(6).toString("hex");
 }
 
+/**
+ * Next signals control flow by throwing: `DynamicServerError` when a route reads
+ * `request.headers` during the build's static-render probe, and the same pattern
+ * for redirect/notFound. They all carry a `digest` string.
+ *
+ * These must propagate. Swallowing them into a 500 turns a build-time probe into
+ * a logged "unhandled error" with a stack trace for every dynamic route, which
+ * is both alarming and exactly the kind of noise that hides a real failure.
+ */
+function isFrameworkSignal(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "digest" in error &&
+    typeof (error as { digest?: unknown }).digest === "string"
+  );
+}
+
 export async function handleRoute<T>(handler: () => Promise<T>, status = 200) {
   try {
     const data = await handler();
@@ -141,6 +159,10 @@ export async function handleRoute<T>(handler: () => Promise<T>, status = 200) {
 
     if (error instanceof ZodError) {
       return apiFailure("VALIDATION_ERROR", "Request validation failed", 422, error.flatten());
+    }
+
+    if (isFrameworkSignal(error)) {
+      throw error;
     }
 
     const requestId = newRequestId();
