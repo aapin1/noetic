@@ -8,6 +8,7 @@ beforeEach(() => {
 });
 
 interface FakeCapture {
+  id: string;
   capturedAt: Date;
   embedding: number[];
   topics: { topic: { name: string } }[];
@@ -31,22 +32,43 @@ function buildCaptures(): FakeCapture[] {
   const base = Date.parse("2026-01-01T12:00:00Z");
   for (let i = 0; i < 60; i += 1) {
     const capturedAt = new Date(base + i * 86_400_000);
+    const id = `c${i}`;
     if (i < 20) {
-      out.push({ capturedAt, embedding: [1, 0, 0], topics: t(i < 3 ? ["philosophy", "ethics"] : ["philosophy", "stoicism"]), contentItem: ci("Aeon", "Seneca") });
+      out.push({ id, capturedAt, embedding: [1, 0, 0], topics: t(i < 3 ? ["philosophy", "ethics"] : ["philosophy", "stoicism"]), contentItem: ci("Aeon", "Seneca") });
     } else if (i < 40) {
-      out.push({ capturedAt, embedding: [0.5, 0.5, 0], topics: t(["philosophy", "logic"]), contentItem: ci("Aeon", null) });
+      out.push({ id, capturedAt, embedding: [0.5, 0.5, 0], topics: t(["philosophy", "logic"]), contentItem: ci("Aeon", null) });
     } else {
-      out.push({ capturedAt, embedding: [0, 1, 0], topics: t(i > 56 ? ["ai", "ethics"] : ["ai", "transformers"]), contentItem: ci("arXiv", "Karpathy") });
+      out.push({ id, capturedAt, embedding: [0, 1, 0], topics: t(i > 56 ? ["ai", "ethics"] : ["ai", "transformers"]), contentItem: ci("arXiv", "Karpathy") });
     }
   }
   return out;
 }
 
-function fakeDb(captures: FakeCapture[]): DbClient {
+/**
+ * Terrain reads in two phases — the light history first, then embeddings in
+ * bounded pages — so the fake has to answer both. `embeddingPages` records the
+ * page sizes actually requested, which is what pins the memory bound.
+ */
+function fakeDb(captures: FakeCapture[], embeddingPages: number[] = []): DbClient {
+  const byId = new Map(captures.map((c) => [c.id, c]));
+
   return {
     capturedItem: {
       count: async () => captures.length,
-      findMany: async () => captures,
+      findMany: async (args?: {
+        select?: Record<string, unknown>;
+        where?: { id?: { in?: string[] } };
+      }) => {
+        const wantedIds = args?.where?.id?.in;
+        if (args?.select?.embedding && wantedIds) {
+          embeddingPages.push(wantedIds.length);
+          return wantedIds
+            .map((id) => byId.get(id))
+            .filter((c): c is FakeCapture => Boolean(c))
+            .map((c) => ({ id: c.id, embedding: c.embedding }));
+        }
+        return captures;
+      },
     },
     terrainCache: {
       findUnique: async () => null,
@@ -121,5 +143,110 @@ describe("getTerrain", () => {
     // early specifics: stoicism, ethics; recent specifics: transformers, ethics.
     expect(terrain.earlyDistinctTopics).toBe(2);
     expect(terrain.recentDistinctTopics).toBe(2);
+  });
+
+  // The streamed dispersion uses a closed form rather than measuring each
+  // vector against the centroid directly. This checks it against the naive
+  // definition it replaced, on vectors that actually vary within an era.
+  describe("era spread", () => {
+    const EARLY_VECS = [
+      [1, 0, 0],
+      [0.9, 0.3, 0],
+      [0.8, 0.6, 0],
+      [2, 0.1, 0], // deliberately not unit length
+    ];
+    const RECENT_VECS = [
+      [0, 1, 0],
+      [0.2, 0.95, 0],
+    ];
+
+    function spreadFixture(): FakeCapture[] {
+      const base = Date.parse("2026-01-01T12:00:00Z");
+      return Array.from({ length: 60 }, (_, i) => {
+        const embedding =
+          i < 20 ? EARLY_VECS[i % EARLY_VECS.length]!
+          : i < 40 ? [0.5, 0.5, 0]
+          : RECENT_VECS[i % RECENT_VECS.length]!;
+        return {
+          id: `c${i}`,
+          capturedAt: new Date(base + i * 86_400_000),
+          embedding,
+          topics: t(i < 20 ? ["philosophy", "stoicism"] : i < 40 ? ["philosophy", "logic"] : ["ai", "transformers"]),
+          contentItem: ci("Aeon", "Seneca"),
+        };
+      });
+    }
+
+    /** The definition being replaced: mean cosine distance to the centroid. */
+    function naiveSpread(vectors: number[][]): number {
+      const dim = vectors[0]!.length;
+      const center = new Array<number>(dim).fill(0);
+      for (const v of vectors) for (let i = 0; i < dim; i += 1) center[i] += v[i]!;
+      for (let i = 0; i < dim; i += 1) center[i] /= vectors.length;
+
+      const dot = (a: number[], b: number[]) => a.reduce((s, x, i) => s + x * b[i]!, 0);
+      const norm = (a: number[]) => Math.sqrt(dot(a, a));
+
+      let total = 0;
+      for (const v of vectors) total += 1 - dot(v, center) / (norm(v) * norm(center));
+      return total / vectors.length;
+    }
+
+    it("matches the direct mean-cosine-distance definition", async () => {
+      const terrain = await getTerrain("u1", {}, fakeDb(spreadFixture()));
+
+      // Era size is a third of 60 below the tighten threshold, so 20 captures
+      // each, cycling through the vectors above.
+      const early = Array.from({ length: 20 }, (_, i) => EARLY_VECS[i % EARLY_VECS.length]!);
+      const recent = Array.from({ length: 20 }, (_, i) => RECENT_VECS[(i + 40) % RECENT_VECS.length]!);
+
+      expect(terrain.earlySpread).toBe(Math.round(naiveSpread(early) * 1000));
+      expect(terrain.recentSpread).toBe(Math.round(naiveSpread(recent) * 1000));
+      // Guard against the assertion passing because both sides are zero.
+      expect(terrain.earlySpread!).toBeGreaterThan(0);
+    });
+  });
+
+  describe("embedding memory bound", () => {
+    /** A long history — the case where loading every vector at once is an OOM. */
+    function longHistory(count: number): FakeCapture[] {
+      const base = Date.parse("2026-01-01T12:00:00Z");
+      return Array.from({ length: count }, (_, i) => ({
+        id: `c${i}`,
+        capturedAt: new Date(base + i * 86_400_000),
+        embedding: i < count / 2 ? [1, 0, 0] : [0, 1, 0],
+        topics: t(i < count / 2 ? ["philosophy", "stoicism"] : ["ai", "transformers"]),
+        contentItem: ci("Aeon", "Seneca"),
+      }));
+    }
+
+    it("never asks for more than one page of embeddings at a time", async () => {
+      const pages: number[] = [];
+      await getTerrain("u1", {}, fakeDb(longHistory(1000), pages));
+
+      expect(pages.length).toBeGreaterThan(1);
+      expect(Math.max(...pages)).toBeLessThanOrEqual(200);
+    });
+
+    // Dispersion has a closed form over a running Σ v/|v| (see
+    // RunningCentroid.dispersionAbout), so each vector is read exactly once —
+    // no second pass over the eras.
+    it("reads every embedding exactly once", async () => {
+      const pages: number[] = [];
+      await getTerrain("u1", {}, fakeDb(longHistory(1000), pages));
+
+      const total = pages.reduce((sum, size) => sum + size, 0);
+      expect(total).toBe(1000);
+    });
+
+    it("produces the same drift reading whether or not paging kicks in", async () => {
+      // 60 captures fits in a single page; 1000 forces many. The measured drift
+      // is a property of the data, so it must not depend on how it was read.
+      const small = await getTerrain("u1", {}, fakeDb(longHistory(60)));
+      const large = await getTerrain("u1", {}, fakeDb(longHistory(1000)));
+
+      expect(small.driftDegrees).toBe(90);
+      expect(large.driftDegrees).toBe(90);
+    });
   });
 });

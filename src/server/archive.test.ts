@@ -42,9 +42,12 @@ function fakeDb(config: {
 }): DbClient {
   return {
     capturedItem: {
-      findMany: vi.fn(async (args: { select?: unknown }) => {
-        if (args?.select) return config.listSelectResult ?? [];
-        return config.detailFindManyResult ?? [];
+      // Both queries use a narrow `select` now (neither may pull the embedding),
+      // so they are told apart by what they ask for: only the folder-detail read
+      // needs each capture's lead insight.
+      findMany: vi.fn(async (args: { select?: Record<string, unknown> }) => {
+        const isDetailQuery = Boolean(args?.select?.insights);
+        return (isDetailQuery ? config.detailFindManyResult : config.listSelectResult) ?? [];
       }),
     },
     topic: {

@@ -2,7 +2,7 @@ import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/server/db";
 import { isGeneralTopic } from "@/server/cognition/generalTopics";
-import { withLeadInsight, type CaptureListItem } from "@/server/services/cognition";
+import { captureSummarySelect, withLeadInsight, type CaptureListItem } from "@/server/services/cognition";
 
 const UNCATEGORIZED_ID = "uncategorized";
 
@@ -34,10 +34,17 @@ type FolderAgg = {
   latestActivity: Date;
 };
 
-const CAPTURE_DETAIL_INCLUDE = {
-  contentItem: { include: { source: true, contentType: true } },
-  topics: { include: { topic: true } },
-  insights: { orderBy: { strength: "desc" as const }, take: 1 },
+// Narrow select rather than `include`: an include drags every scalar, which
+// here means the 1536-float embedding on each capture and the full scraped
+// article body on each linked ContentItem — neither of which the archive
+// renders. See `captureSummarySelect`.
+const CAPTURE_DETAIL_SELECT = {
+  ...captureSummarySelect,
+  insights: {
+    select: { id: true, type: true, headline: true },
+    orderBy: { strength: "desc" as const },
+    take: 1,
+  },
 };
 
 type TopicRow = { weight: number; topic: { id: string; name: string; slug: string } };
@@ -172,7 +179,7 @@ export async function getArchiveFolder(args: {
     const items = await db.capturedItem.findMany({
       where: { userId: args.userId, topics: { none: {} } },
       orderBy: { capturedAt: "desc" },
-      include: CAPTURE_DETAIL_INCLUDE,
+      select: CAPTURE_DETAIL_SELECT,
     });
     return {
       topicId: UNCATEGORIZED_ID,
@@ -198,7 +205,7 @@ export async function getArchiveFolder(args: {
   const items = await db.capturedItem.findMany({
     where: { userId: args.userId, topics: { some: { topicId: topic.id } } },
     orderBy: { capturedAt: "desc" },
-    include: CAPTURE_DETAIL_INCLUDE,
+    select: CAPTURE_DETAIL_SELECT,
   });
 
   if (kind === "specific") {

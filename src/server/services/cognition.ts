@@ -89,18 +89,56 @@ export type CapturedItemSummary = {
   mediaUrl: string | null;
 };
 
+/**
+ * Exactly the columns `serializeCapturedItem` reads — and deliberately no more.
+ *
+ * This is a `select`, not an `include`, because Prisma's `include` returns every
+ * scalar on the row. Two of those are enormous and never displayed:
+ * `CapturedItem.embedding` is 1536 floats (~25KB per row once serialized) and
+ * `ContentItem.bodyText` is the full scraped article. Reading a page of 80
+ * captures through `include` moved ~2MB over the wire to render titles; the
+ * archive read a user's entire history that way, with no page limit at all.
+ *
+ * Anything that genuinely needs the embedding (the layout resolver, neighbour
+ * scoring, terrain) asks for it explicitly, so the cost is visible at the call
+ * site instead of riding along invisibly with every query.
+ */
+export const captureSummarySelect = {
+  id: true,
+  kind: true,
+  capturedAt: true,
+  rawText: true,
+  caption: true,
+  mediaUrl: true,
+  reaction: true,
+  userContext: true,
+  summary: true,
+  keyIdea: true,
+  userTitle: true,
+  contentItem: {
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      canonicalUrl: true,
+      siteName: true,
+      imageUrl: true,
+      authorName: true,
+      source: { select: { name: true } },
+      contentType: { select: { name: true } },
+    },
+  },
+  topics: {
+    select: {
+      topicId: true,
+      weight: true,
+      topic: { select: { id: true, name: true, slug: true } },
+    },
+  },
+} satisfies Prisma.CapturedItemSelect;
+
 export type CaptureWithRelations = Prisma.CapturedItemGetPayload<{
-  include: {
-    contentItem: {
-      include: {
-        source: true;
-        contentType: true;
-      };
-    };
-    topics: {
-      include: { topic: true };
-    };
-  };
+  select: typeof captureSummarySelect;
 }>;
 
 function captureTitle(item: CaptureWithRelations): string {
@@ -766,12 +804,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
 
     const fullItem = await tx.capturedItem.findUniqueOrThrow({
       where: { id: created.id },
-      include: {
-        contentItem: {
-          include: { source: true, contentType: true },
-        },
-        topics: { include: { topic: true } },
-      },
+      select: captureSummarySelect,
     });
 
     const relatedRecords = neighborInfo.neighbors.length > 0
@@ -779,10 +812,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
         where: {
           id: { in: neighborInfo.neighbors.map((neighbor) => neighbor.capturedItemId) },
         },
-        include: {
-          contentItem: { include: { source: true, contentType: true } },
-          topics: { include: { topic: true } },
-        },
+        select: captureSummarySelect,
       })
       : [];
 
@@ -934,8 +964,15 @@ export async function updateCaptureContext(args: {
   const db = args.db ?? prisma;
   const item = await db.capturedItem.findUnique({
     where: { id: args.capturedItemId },
-    include: {
-      contentItem: true,
+    select: {
+      id: true,
+      userId: true,
+      rawText: true,
+      caption: true,
+      reaction: true,
+      // bodyText IS wanted here — reprocessing re-derives topics and insights
+      // from the full source text. The embedding is not: it gets recomputed.
+      contentItem: { select: { title: true, description: true, bodyText: true } },
       topics: { select: { topicId: true } },
     },
   });
@@ -1214,29 +1251,39 @@ export async function getCapture(args: { userId: string; capturedItemId: string;
   const db = args.db ?? prisma;
   const item = await db.capturedItem.findUnique({
     where: { id: args.capturedItemId },
-    include: {
-      contentItem: { include: { source: true, contentType: true } },
-      topics: { include: { topic: true } },
-      insights: { orderBy: { createdAt: "asc" } },
+    // Opening one capture also loads every neighbour on both sides of the graph.
+    // Through `include` each of those carried its own embedding and article
+    // body, so a well-connected node cost hundreds of KB to render a list of
+    // related titles.
+    select: {
+      ...captureSummarySelect,
+      userId: true,
+      insights: {
+        select: {
+          id: true,
+          type: true,
+          headline: true,
+          body: true,
+          strength: true,
+          evidence: true,
+        },
+        orderBy: { createdAt: "asc" },
+      },
       edgesFrom: {
-        include: {
-          toItem: {
-            include: {
-              contentItem: { include: { source: true, contentType: true } },
-              topics: { include: { topic: true } },
-            },
-          },
+        select: {
+          toItemId: true,
+          type: true,
+          weight: true,
+          toItem: { select: captureSummarySelect },
         },
         orderBy: { weight: "desc" },
       },
       edgesTo: {
-        include: {
-          fromItem: {
-            include: {
-              contentItem: { include: { source: true, contentType: true } },
-              topics: { include: { topic: true } },
-            },
-          },
+        select: {
+          fromItemId: true,
+          type: true,
+          weight: true,
+          fromItem: { select: captureSummarySelect },
         },
         orderBy: { weight: "desc" },
       },
@@ -1326,10 +1373,10 @@ export async function listCaptures(args: { userId: string; limit?: number; query
     },
     orderBy: [{ capturedAt: "desc" }, { id: "desc" }],
     take: limit,
-    include: {
-      contentItem: { include: { source: true, contentType: true } },
-      topics: { include: { topic: true } },
+    select: {
+      ...captureSummarySelect,
       insights: {
+        select: { id: true, type: true, headline: true },
         orderBy: { strength: "desc" },
         take: 1,
       },

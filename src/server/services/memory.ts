@@ -469,8 +469,12 @@ export async function getMemoryTrends(args: {
         capturedAt: { gte: priorCutoff },
       },
       orderBy: { capturedAt: "asc" },
-      include: {
-        topics: { include: { topic: true } },
+      // Trends reads nothing but timestamps and topic names. Via `include` this
+      // pulled every scalar — including the 1536-float embedding — for every
+      // capture in a 30-to-90-day window, with no limit.
+      select: {
+        capturedAt: true,
+        topics: { select: { topicId: true, topic: { select: { name: true } } } },
       },
     }),
     db.cognitiveEvent.findMany({

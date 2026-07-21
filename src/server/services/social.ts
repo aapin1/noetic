@@ -244,9 +244,21 @@ export async function getFeed(args: {
     where,
     orderBy: { capturedAt: "desc" },
     take: limit + 1,
-    include: {
+    // Narrow select: the feed shows a title, a gist and topic names, but
+    // `include` was shipping each capture's embedding along with them.
+    select: {
+      id: true,
+      kind: true,
+      capturedAt: true,
+      rawText: true,
+      caption: true,
+      summary: true,
+      keyIdea: true,
+      reaction: true,
+      userTitle: true,
+      userId: true,
       contentItem: { select: { title: true } },
-      topics: { include: { topic: { select: { name: true } } } },
+      topics: { select: { topicId: true, topic: { select: { name: true } } } },
       user: {
         select: {
           id: true,

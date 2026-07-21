@@ -237,9 +237,25 @@ export async function getPersonalIntelligence(args: {
       where: { userId: args.userId },
       orderBy: { capturedAt: "desc" },
       take: CAPTURE_SCAN_LIMIT,
-      include: {
-        contentItem: { include: { source: true } },
-        topics: { include: { topic: true } },
+      // Exactly the fields the projection below reads. Via `include` this was
+      // ~5MB of embeddings and scraped article bodies per request, and it runs
+      // before the cache check, so even a cache HIT paid for it.
+      select: {
+        id: true,
+        rawText: true,
+        userContext: true,
+        summary: true,
+        keyIdea: true,
+        capturedAt: true,
+        contentItem: {
+          select: {
+            title: true,
+            description: true,
+            siteName: true,
+            source: { select: { name: true } },
+          },
+        },
+        topics: { select: { topicId: true, topic: { select: { name: true } } } },
       },
     }),
   ]);

@@ -118,19 +118,6 @@ const LOCKED = (captureCount: number): TerrainResponse => ({
 
 // ── vector helpers ──────────────────────────────────────────────────────────
 
-function centroid(vectors: number[][]): number[] | null {
-  if (vectors.length === 0) return null;
-  const dim = vectors[0].length;
-  if (dim === 0) return null;
-  const sum = new Array<number>(dim).fill(0);
-  for (const v of vectors) {
-    if (v.length !== dim) continue;
-    for (let i = 0; i < dim; i += 1) sum[i] += v[i];
-  }
-  for (let i = 0; i < dim; i += 1) sum[i] /= vectors.length;
-  return sum;
-}
-
 function dot(a: number[], b: number[]): number {
   let s = 0;
   const n = Math.min(a.length, b.length);
@@ -156,19 +143,100 @@ function sub(a: number[], b: number[]): number[] {
   return out;
 }
 
-/** Mean cosine distance of each vector to the group centroid — how scattered the group is. */
-function dispersion(vectors: number[][], center: number[]): number {
-  if (vectors.length === 0) return 0;
-  let total = 0;
-  for (const v of vectors) total += 1 - cosSim(v, center);
-  return total / vectors.length;
+/**
+ * A running centroid: sums vectors as they arrive instead of holding them all.
+ *
+ * Terrain's every use of the embeddings is an aggregate — era centroids, field
+ * centroids, dispersions — so nothing here ever needs the full set resident.
+ * That matters because this runs over a user's ENTIRE history: at 3,000 captures
+ * the vectors alone are ~37MB, which on a small instance is an out-of-memory
+ * crash rather than a slow request.
+ *
+ * Divides by every vector offered (matching the previous `centroid` over a
+ * length-filtered array) while summing only dimension-matched ones.
+ */
+class RunningCentroid {
+  private sum: number[] | null = null;
+  /** Σ v/|v| — see `dispersionAbout`. */
+  private unitSum: number[] | null = null;
+  private offered = 0;
+
+  add(vector: number[]) {
+    if (vector.length === 0) return;
+    this.offered += 1;
+    if (!this.sum) {
+      this.sum = new Array<number>(vector.length).fill(0);
+      this.unitSum = new Array<number>(vector.length).fill(0);
+    }
+    if (vector.length !== this.sum.length) return;
+
+    const magnitude = norm(vector);
+    for (let i = 0; i < vector.length; i += 1) {
+      this.sum[i] += vector[i];
+      if (magnitude > 0) this.unitSum![i] += vector[i] / magnitude;
+    }
+  }
+
+  get count() {
+    return this.offered;
+  }
+
+  mean(): number[] | null {
+    if (!this.sum || this.offered === 0) return null;
+    return this.sum.map((value) => value / this.offered);
+  }
+
+  /**
+   * Mean cosine distance of everything added, about `center` — the same number
+   * the old two-pass `dispersion(vectors, center)` produced.
+   *
+   * Derivation, which is why no second read of the vectors is needed:
+   *
+   *   mean cos(v, c) = (1/N) Σ (v·c)/(|v||c|)
+   *                  = (1/(N|c|)) · (Σ v/|v|) · c
+   *
+   * so the running Σ v/|v| above is sufficient once the centroid is known.
+   * Re-reading half the user's history to get this cost more than the whole
+   * first pass did.
+   */
+  dispersionAbout(center: number[]): number {
+    if (!this.unitSum || this.offered === 0) return 0;
+    const centerNorm = norm(center);
+    if (centerNorm === 0) return 0;
+    return 1 - dot(this.unitSum, center) / (this.offered * centerNorm);
+  }
+}
+
+/** How many embeddings to hold in memory at once while streaming. */
+const EMBEDDING_PAGE = 200;
+
+/**
+ * Reads embeddings for `ids` a page at a time, handing each to `visit`.
+ *
+ * The page is the only thing resident, so peak memory is bounded by
+ * EMBEDDING_PAGE regardless of how much history the user has.
+ */
+async function forEachEmbedding(
+  db: DbClient,
+  ids: string[],
+  visit: (id: string, embedding: number[]) => void,
+): Promise<void> {
+  for (let offset = 0; offset < ids.length; offset += EMBEDDING_PAGE) {
+    const rows = await db.capturedItem.findMany({
+      where: { id: { in: ids.slice(offset, offset + EMBEDDING_PAGE) } },
+      select: { id: true, embedding: true },
+    });
+    for (const row of rows) {
+      if (row.embedding && row.embedding.length > 0) visit(row.id, row.embedding);
+    }
+  }
 }
 
 // ── the loaded shape ────────────────────────────────────────────────────────
 
 interface LoadedCapture {
+  id: string;
   ms: number;
-  embedding: number[];
   fields: string[]; // general topics
   specifics: string[]; // non-general topics
   primaryTopic: string | null; // first specific, else first field
@@ -278,9 +346,11 @@ async function computeTerrain(
   const rows = await db.capturedItem.findMany({
     where: { userId },
     orderBy: { capturedAt: "asc" },
+    // No embedding here: it is fetched in bounded pages further down, because
+    // this query has no limit — it is the user's whole history by design.
     select: {
+      id: true,
       capturedAt: true,
-      embedding: true,
       topics: { select: { topic: { select: { name: true } } } },
       contentItem: {
         select: {
@@ -300,8 +370,8 @@ async function computeTerrain(
       (isGeneralTopic(name) ? fields : specifics).push(name);
     }
     return {
+      id: r.id,
       ms: new Date(r.capturedAt).getTime() + tzShiftMs,
-      embedding: r.embedding ?? [],
       fields,
       specifics,
       primaryTopic: specifics[0] ?? fields[0] ?? null,
@@ -317,9 +387,31 @@ async function computeTerrain(
   const recent = captures.slice(n - eraSize);
 
   // ── semantic chapters (embedding-based) ──
-  const earlyVecs = early.map((c) => c.embedding).filter((v) => v.length > 0);
-  const recentVecs = recent.map((c) => c.embedding).filter((v) => v.length > 0);
-  const allVecs = captures.map((c) => c.embedding).filter((v) => v.length > 0);
+  // Streamed in pages: every use below is an aggregate, so the vectors are
+  // summed as they arrive and never all held at once.
+  const earlyIds = new Set(early.map((c) => c.id));
+  const recentIds = new Set(recent.map((c) => c.id));
+  const fieldsById = new Map(captures.map((c) => [c.id, c.fields] as const));
+
+  const earlyCentroidAcc = new RunningCentroid();
+  const recentCentroidAcc = new RunningCentroid();
+  const overallAcc = new RunningCentroid();
+  const fieldAccs = new Map<string, RunningCentroid>();
+
+  await forEachEmbedding(db, captures.map((c) => c.id), (id, embedding) => {
+    overallAcc.add(embedding);
+    if (earlyIds.has(id)) earlyCentroidAcc.add(embedding);
+    if (recentIds.has(id)) recentCentroidAcc.add(embedding);
+
+    for (const field of new Set(fieldsById.get(id) ?? [])) {
+      let acc = fieldAccs.get(field);
+      if (!acc) {
+        acc = new RunningCentroid();
+        fieldAccs.set(field, acc);
+      }
+      acc.add(embedding);
+    }
+  });
 
   let driftDegrees: number | null = null;
   let driftBand: TerrainResponse["driftBand"] = null;
@@ -330,10 +422,13 @@ async function computeTerrain(
   let spreadVerdict: TerrainResponse["spreadVerdict"] = null;
   let spreadDeltaPct: number | null = null;
 
-  if (earlyVecs.length >= MIN_EMBEDDED_PER_ERA && recentVecs.length >= MIN_EMBEDDED_PER_ERA) {
-    const earlyCentroid = centroid(earlyVecs)!;
-    const recentCentroid = centroid(recentVecs)!;
-    const overall = centroid(allVecs)!;
+  if (
+    earlyCentroidAcc.count >= MIN_EMBEDDED_PER_ERA &&
+    recentCentroidAcc.count >= MIN_EMBEDDED_PER_ERA
+  ) {
+    const earlyCentroid = earlyCentroidAcc.mean()!;
+    const recentCentroid = recentCentroidAcc.mean()!;
+    const overall = overallAcc.mean()!;
 
     const cos = cosSim(earlyCentroid, recentCentroid);
     driftDegrees = Math.round((Math.acos(cos) * 180) / Math.PI);
@@ -343,21 +438,11 @@ async function computeTerrain(
 
     // Which field the movement points toward / away from: align each field's
     // capture-centroid (relative to the overall centre) with the drift vector.
-    const fieldVecs = new Map<string, number[][]>();
-    for (const cap of captures) {
-      if (cap.embedding.length === 0) continue;
-      for (const f of new Set(cap.fields)) {
-        const arr = fieldVecs.get(f) ?? [];
-        arr.push(cap.embedding);
-        fieldVecs.set(f, arr);
-      }
-    }
     let bestAlign = -Infinity;
     let worstAlign = Infinity;
-    for (const [name, vecs] of fieldVecs) {
-      if (vecs.length < 3) continue;
-      const fc = centroid(vecs)!;
-      const align = cosSim(sub(fc, overall), driftVec);
+    for (const [name, acc] of fieldAccs) {
+      if (acc.count < 3) continue;
+      const align = cosSim(sub(acc.mean()!, overall), driftVec);
       if (align > bestAlign) {
         bestAlign = align;
         towardField = name;
@@ -369,8 +454,8 @@ async function computeTerrain(
     }
     if (towardField === awayField) awayField = null;
 
-    const eSpreadRaw = dispersion(earlyVecs, earlyCentroid);
-    const rSpreadRaw = dispersion(recentVecs, recentCentroid);
+    const eSpreadRaw = earlyCentroidAcc.dispersionAbout(earlyCentroid);
+    const rSpreadRaw = recentCentroidAcc.dispersionAbout(recentCentroid);
     earlySpread = Math.round(eSpreadRaw * 1000);
     recentSpread = Math.round(rSpreadRaw * 1000);
     spreadVerdict =
