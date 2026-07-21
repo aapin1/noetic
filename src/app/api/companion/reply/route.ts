@@ -10,14 +10,17 @@ export async function POST(request: Request) {
   return handleRoute(async () => {
     const userId = await requireRequestUserId(request);
     enforceRateLimit(userId, "companion", 10, 60_000);
-    await consumeUsageOrThrow(userId, "companion_message");
     const input = await parseJson(request, companionReplySchema);
-    return companionReplies.run(() =>
-      addCompanionReply({
+    // Quota is consumed INSIDE the slot, never before it: a request turned away
+    // by admission control does no work, so it must not cost the user one of
+    // their daily companion messages.
+    return companionReplies.run(async () => {
+      await consumeUsageOrThrow(userId, "companion_message");
+      return addCompanionReply({
         userId,
         content: input.content,
         contextItemIds: input.contextItemIds,
-      }),
-    );
+      });
+    });
   }, 201);
 }

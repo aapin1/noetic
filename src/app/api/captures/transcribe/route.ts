@@ -14,11 +14,14 @@ export async function POST(request: Request) {
     const userId = await requireRequestUserId(request);
     enforceRateLimit(userId, "transcribe", 20, 5 * 60_000);
     assertBodyWithinLimit(request, MAX_BODY_BYTES);
-    await consumeUsageOrThrow(userId, "voice_transcription");
     const input = await parseJson(request, captureTranscribeSchema);
-    const text = await transcription.run(() =>
-      transcribeAudio({ base64: input.audioBase64, mimeType: input.mimeType }),
-    );
+    // Quota is consumed INSIDE the slot, never before it: a request turned away
+    // by admission control does no work, so it must not cost the user one of
+    // their monthly voice notes.
+    const text = await transcription.run(async () => {
+      await consumeUsageOrThrow(userId, "voice_transcription");
+      return transcribeAudio({ base64: input.audioBase64, mimeType: input.mimeType });
+    });
 
     if (!text) {
       throw new AppError("TRANSCRIPTION_FAILED", "Could not transcribe that recording — try typing instead.", 422);
