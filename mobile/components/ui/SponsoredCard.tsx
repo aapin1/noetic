@@ -10,6 +10,16 @@ import { useEntitlements } from '@/hooks/useEntitlements';
 // module.
 import type { NativeAd as NativeAdInstance } from 'react-native-google-mobile-ads';
 
+/**
+ * Every failure in the ad path is deliberately silent in production — a
+ * missing ad must never disturb the screen. That makes "no ads anywhere"
+ * impossible to diagnose, so in dev each boundary reports itself. Grep the
+ * Metro console for [ads] to see exactly which layer gave up.
+ */
+const adLog = (...args: unknown[]) => {
+  if (__DEV__) console.log('[ads]', ...args);
+};
+
 // The ad SDK is a native module: in a dev client built before it was added,
 // the import throws — the card just renders nothing until the next native
 // build, keeping the JS bundle loadable everywhere.
@@ -17,8 +27,10 @@ type AdsModule = typeof import('react-native-google-mobile-ads');
 let ads: AdsModule | null = null;
 try {
   ads = require('react-native-google-mobile-ads');
-} catch {
+  adLog('native module loaded');
+} catch (e) {
   ads = null;
+  adLog('native module MISSING — this dev client was built without it. Rebuild:', e);
 }
 
 let initialized = false;
@@ -37,8 +49,10 @@ async function initAds(): Promise<boolean> {
     }
     await ads.default().initialize();
     initialized = true;
+    adLog('SDK initialized');
     return true;
-  } catch {
+  } catch (e) {
+    adLog('SDK initialize FAILED:', e);
     return false;
   }
 }
@@ -55,10 +69,24 @@ async function initAds(): Promise<boolean> {
 export function SponsoredCard({ tone = 'auto' }: { tone?: 'auto' | 'dark' } = {}) {
   const c = useThemeColors();
   const router = useRouter();
-  const { plan } = useEntitlements();
+  const { plan, loading } = useEntitlements();
   const [nativeAd, setNativeAd] = useState<NativeAdInstance | null>(null);
 
-  const showAds = plan === 'FREE' && ads !== null;
+  // Fail OPEN: ads are the app's default state, so only a confirmed PLUS plan
+  // removes them. Requiring plan === 'FREE' meant any entitlements hiccup — a
+  // slow cold backend, a 500, a signed-out blip — silently disabled every ad
+  // in the app with nothing on screen to say so.
+  //
+  // `plan !== null || !loading` is what keeps that from flickering: a known
+  // plan (even a stale cached one) counts as settled, so a background
+  // revalidate can't briefly flip this false and tear down a loaded ad, and a
+  // failed first load still ends up showing ads once it stops loading.
+  const settled = plan !== null || !loading;
+  const showAds = settled && plan !== 'PLUS' && ads !== null;
+
+  useEffect(() => {
+    adLog('gate:', { plan, loading, settled, showAds, hasModule: ads !== null });
+  }, [plan, loading, settled, showAds]);
 
   useEffect(() => {
     if (!showAds || !ads) return;
@@ -67,12 +95,14 @@ export function SponsoredCard({ tone = 'auto' }: { tone?: 'auto' | 'dark' } = {}
 
     void (async () => {
       if (!(await initAds()) || disposed) return;
+      const adUnitId = process.env.EXPO_PUBLIC_ADMOB_NATIVE_UNIT_ID ?? ads!.TestIds.NATIVE;
       try {
-        const adUnitId = process.env.EXPO_PUBLIC_ADMOB_NATIVE_UNIT_ID ?? ads!.TestIds.NATIVE;
         loaded = await ads!.NativeAd.createForAdRequest(adUnitId);
+        adLog('ad loaded from', adUnitId);
         if (disposed) loaded.destroy();
         else setNativeAd(loaded);
-      } catch {
+      } catch (e) {
+        adLog('ad request FAILED for', adUnitId, '-', e);
         // no fill / request error — stay invisible
       }
     })();
