@@ -44,10 +44,15 @@ export default function InsightDetailScreen() {
   const [contextDraft, setContextDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState('');
+  // Whether opening the editor should grab focus (pop the keyboard). True for
+  // an explicit tap on the pencil; false when the editor auto-opens below so
+  // the box just sits there until the user taps in to start typing.
+  const [focusEdit, setFocusEdit] = useState(false);
 
-  const startEdit = useCallback((current: string) => {
+  const startEdit = useCallback((current: string, focus = true) => {
     setContextDraft(current);
     setEditError('');
+    setFocusEdit(focus);
     setEditing(true);
   }, []);
 
@@ -76,7 +81,7 @@ export default function InsightDetailScreen() {
     // function has failed") when this screen is reached fresh off a capture.
     // Landing on the editor a beat after the screen settles reads the same
     // to the user but keeps native module setup off the transition.
-    const task = InteractionManager.runAfterInteractions(() => startEdit(''));
+    const task = InteractionManager.runAfterInteractions(() => startEdit('', false));
     return () => task.cancel();
   }, [data, startEdit]);
 
@@ -320,7 +325,7 @@ export default function InsightDetailScreen() {
                   placeholder="what was this actually about, in your own words?"
                   placeholderTextColor={c.muted}
                   multiline
-                  autoFocus
+                  autoFocus={focusEdit}
                 />
                 {!!editError && (
                   <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[2] }}>{editError}</Text>

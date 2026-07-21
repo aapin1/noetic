@@ -26,7 +26,13 @@ export function VoiceNoteButton({ onText, onError }: Props) {
 
   useEffect(() => () => {
     // Unmount during a recording: release the mic without transcribing.
-    if (recorder.isRecording) recorder.stop().catch(() => {});
+    // By the time this cleanup runs the native recorder's shared object may
+    // already be released — reading `isRecording` (or calling `stop`) then
+    // throws "Unable to find the native shared object", so guard the whole
+    // thing rather than let it surface as a red-box error on back-out.
+    try {
+      if (recorder.isRecording) recorder.stop().catch(() => {});
+    } catch {}
   }, [recorder]);
 
   const start = useCallback(async () => {
