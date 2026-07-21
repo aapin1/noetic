@@ -31,8 +31,8 @@ hold because user count is small:
 - Rewriting the capture pipeline to be asynchronous. Capture returns the fully enriched
   item and mobile renders it directly; changing that contract is the single most likely way
   to break working functionality. Explicitly out of scope.
-- Per-user node-count scaling (the `embedding`-column work). That is the *next* piece of
-  work and is tracked separately.
+- Per-user node-count scaling (the `embedding`-column work) — delivered as phase 2, see the
+  section at the end of this document.
 - Changing the Render plan. That is a billing decision; this spec only makes multi-instance
   operation *correct*, and recommends the change.
 
@@ -212,3 +212,75 @@ two pre-existing limits keep their current values exactly.
 
 §6 is the only change that trades a (small, bounded, mitigated) correctness property for
 performance, and is documented above.
+
+---
+
+# Phase 2 — thousands of captures per user
+
+## The defect
+
+`CapturedItem.embedding` is a 1536-float column. Measured against the test database, one row
+fetched via Prisma's `include` serializes to **25.6 KB**; the same row through a narrow
+`select` is **52 bytes**. `ContentItem.bodyText` (the full scraped article) rides along the
+same way.
+
+Prisma's `include` returns every scalar on the row, so nearly every read path was paying
+this. Nothing displays either column.
+
+## What changed
+
+**One shared select.** `captureSummarySelect` in `cognition.ts` lists exactly the columns
+`serializeCapturedItem` reads. `CaptureWithRelations` is now derived from it. Applied to the
+archive folder reads, `listCaptures`, `getCapture` (which also loads every neighbour on both
+sides of the graph), the capture-creation response, the social feed, intelligence and trends.
+
+Note that switching the type from an `include` payload to a `select` payload produced **no**
+compiler errors, because a superset structurally satisfies a subset — the call sites had to
+be converted deliberately, one at a time. The compiler only helps once a site is converted,
+which is how the missing `id` on the reprocess path was caught.
+
+**Terrain streams.** It reads the user's entire history by design (the feature is early-era
+vs recent-era), so a limit would change what it means. Instead, since every use of the
+vectors is an aggregate, they are fetched in bounded pages and summed on arrival.
+
+Dispersion needs a centroid that isn't known until the pass finishes, which naively means a
+second read of half the history — that cost more than the whole first pass. It has a closed
+form instead:
+
+```
+mean cos(v, c) = (1/N) Σ (v·c)/(|v||c|) = ((Σ v/|v|) · c) / (N·|c|)
+```
+
+so accumulating `Σ v/|v|` alongside the raw sum gives it exactly, in one pass. A test checks
+the closed form against the naive definition on vectors that vary within an era, including a
+non-unit-length one.
+
+## Measured
+
+Same seeded user, 3,000 captures, before → after:
+
+| path | before | after |
+|---|---|---|
+| memory/trends | 2276 ms, 162.9 MB | 58 ms, 7.2 MB |
+| archive/folder | 1484 ms, 97.1 MB | 38 ms, 5.7 MB |
+| intelligence | 204 ms, 19.2 MB | 9 ms, 1.1 MB |
+| listCaptures(80) | 87 ms, 7.9 MB | 5 ms, 0.5 MB |
+| terrain (cold) | 2956 ms, 131.1 MB | 2947 ms, 18.5 MB |
+
+`memory/trends` at 163 MB on a 512 MB instance is an out-of-memory crash with two or three
+concurrent users, not a slow request. That is the headline.
+
+## Known remaining limits
+
+- **Terrain cold compute is still ~2.9s** at 3,000 captures — bounded in memory now, but the
+  time is inherent to reading and folding every vector. It is cached per 25 captures, so it
+  is rare. Making it incremental (persisting running sums) is the next step if it matters.
+- **`getMemoryGraph` is unchanged**: capped at 200 nodes, ~335ms, dominated by the SMACOF
+  layout. Bounded, but the map remains a sliding window over the most recent 200 captures,
+  so coordinates are not globally coherent across a large history. That is a product
+  question, not a performance one.
+- **Archive folder reads are still unbounded in row count** — now cheap (38ms/5.7MB at
+  3,000) but linear. Pagination would change the API and require mobile work.
+- **Neighbour search still scans the most recent 80 captures** (`NEIGHBOR_SCAN`). At
+  thousands of nodes, connections stop forming against older material. Fixing this properly
+  means pgvector and an ANN index.
