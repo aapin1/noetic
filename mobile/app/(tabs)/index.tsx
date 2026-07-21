@@ -153,6 +153,13 @@ const INIT_VB_Y = MAP_PAD + (LAYOUT_H - SH) / 2;
 
 const ZOOM_MIN = 0.22;
 const ZOOM_MAX = 5.0;
+// Below this zoom, per-node glow discs (radial-gradient fills) are dropped from
+// the raster. Zoomed out, every node is in the viewBox at once and those
+// hundreds of overlapping gradients are what make the buffer too slow to paint
+// within the swap budget — the zoom flicker. They're barely visible that far
+// out anyway; zoomed in past this, react-native-svg clips to the viewBox so
+// only a handful remain and the glows are cheap again. See graphLayer.
+const GLOW_ZOOM = 1.4;
 const SCRUBBER_H = 80;
 
 // ── Chrome-safe framing zone ──────────────────────────────────────
@@ -213,11 +220,35 @@ const OS_H = SH + MARGIN_Y * 2;
 // motion can never jump the remaining margin between two checks.
 const RECOMMIT_SLACK = 64;
 
-// Frames of paint budget a freshly-committed back buffer gets before the swap
-// reveals it. Three (~50ms) rather than two: a dense graph's raster can take
-// longer than two frames to paint, and revealing it early flashes a
-// half-painted buffer (the zoom flicker). See the buffer-swap effect.
-const SWAP_PAINT_FRAMES = 3;
+// Raster paint cost scales with how much graph is in the viewBox, which grows
+// sharply as you zoom out (the whole map is in frame at once). Both knobs below
+// interpolate on that: heaviest at the zoomed-out floor, lightest at/ past 1:1.
+function zoomWeight(z: number): number {
+  // 0 at the zoomed-out floor (heaviest raster), 1 at/past 1:1 (lightest).
+  return Math.max(0, Math.min(1, (z - ZOOM_MIN) / (1 - ZOOM_MIN)));
+}
+
+// Frames the fly-to holds on its start camera before moving, so the wide flight
+// raster has painted first (see animateCamera). A heavier start raster needs a
+// touch longer; the ease opens slow, so the hold is invisible either way.
+const SWAP_PAINT_FRAMES_MIN = 3;
+const SWAP_PAINT_FRAMES_MAX = 6;
+function swapPaintFrames(z: number): number {
+  return Math.round(SWAP_PAINT_FRAMES_MAX + (SWAP_PAINT_FRAMES_MIN - SWAP_PAINT_FRAMES_MAX) * zoomWeight(z));
+}
+
+// Duration of the buffer-swap crossfade. The outgoing buffer stays dominant
+// early in the fade, masking the incoming raster until it has painted, so the
+// fade replaces the old fixed "reveal after N frames" guess: it both hides the
+// paint latency and smooths the crisp refresh, with nothing to time exactly. A
+// heavier (zoomed-out) raster fades slower, buying more real time to paint and
+// keeping the outgoing layer opaque longer; zoomed in it snaps so a fast pan's
+// commit pipeline stays lean.
+const SWAP_FADE_MS_MIN = 55;
+const SWAP_FADE_MS_MAX = 130;
+function swapFadeMs(z: number): number {
+  return Math.round(SWAP_FADE_MS_MAX + (SWAP_FADE_MS_MIN - SWAP_FADE_MS_MAX) * zoomWeight(z));
+}
 
 // Anchor the raster AHEAD of the camera, along its direction of travel. A
 // centred anchor wastes half the overscan behind you, so a fast pan burns
@@ -376,6 +407,8 @@ const WorldBuffer = React.memo(function WorldBuffer({
   clusterLabels,
   labelContainment,
   focusDimTopicId,
+  liveTx,
+  liveTy,
   liveScale,
   fade,
   landingPos,
@@ -390,6 +423,11 @@ const WorldBuffer = React.memo(function WorldBuffer({
   clusterLabels: WorldClusterLabel[];
   labelContainment: LabelContainment;
   focusDimTopicId: string | null;
+  // This buffer's OWN live transform, expressed against its OWN committed
+  // camera — so it renders the live camera correctly whether it is the visible
+  // buffer or the hidden one. That is what makes the swap crossfade seamless.
+  liveTx: RNAnimated.Value;
+  liveTy: RNAnimated.Value;
   liveScale: RNAnimated.Value;
   fade: RNAnimated.Value;
   landingPos: { x: number; y: number } | null;
@@ -440,7 +478,7 @@ const WorldBuffer = React.memo(function WorldBuffer({
     };
   }, [cam.zoom, liveScale]);
 
-  const labelSpecs = useMemo(() => {
+  const keptLabels = useMemo(() => {
     if (lensMode !== 'semantic') return [];
     const zoom = cam.zoom;
     const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -525,13 +563,24 @@ const WorldBuffer = React.memo(function WorldBuffer({
       if (!blocked) kept.push(cand);
     }
 
-    return kept.map(({ cl, isDomain, fontSize, letterSpacing, opacity: labelOpacity }) => {
+    return kept;
+    // De-clutter is O(labels²) but depends only on ZOOM (overlap is tested in
+    // world space) — not on pan. Keying it on cam.zoom alone means a fast pan,
+    // which fires a commit every few frames at constant zoom, reuses this result
+    // instead of re-running the whole overlap sweep each time. That is the JS
+    // cost that made fast panning chunky; the cheap per-commit screen mapping is
+    // split out below.
+  }, [lensMode, clusterLabels, labelContainment, cam.zoom]);
+
+  const labelSpecs = useMemo(() => {
+    const zoom = cam.zoom;
+    return keptLabels.map(({ cl, isDomain, fontSize, letterSpacing, opacity: labelOpacity }) => {
       const dimmed = focusDimTopicId && cl.topicId !== focusDimTopicId;
       return {
         key: cl.topicId,
         name: cl.name.toUpperCase(),
         isDomain,
-        // Committed screen coordinates — the wrapper transform carries them
+        // Committed screen coordinates — the buffer transform carries them
         // to the live camera, exactly like the world SVG.
         screenX: (cl.x - cam.x) * zoom,
         screenY: (cl.y - cam.y) * zoom,
@@ -540,7 +589,7 @@ const WorldBuffer = React.memo(function WorldBuffer({
         opacity: dimmed ? Math.min(0.08, labelOpacity) : labelOpacity,
       };
     });
-  }, [lensMode, clusterLabels, labelContainment, focusDimTopicId, cam]);
+  }, [keptLabels, focusDimTopicId, cam.x, cam.y, cam.zoom]);
 
   const landingRing = landingPos ? (() => {
     const screenX = (landingPos.x - cam.x) * cam.zoom;
@@ -567,7 +616,16 @@ const WorldBuffer = React.memo(function WorldBuffer({
   return (
     <RNAnimated.View
       pointerEvents="none"
-      style={[StyleSheet.absoluteFill, { overflow: 'visible', opacity }]}
+      style={[
+        StyleSheet.absoluteFill,
+        {
+          overflow: 'visible',
+          opacity,
+          // Per-buffer live transform: carries this buffer's raster (and its
+          // glow/labels, all in committed-screen coords) to the live camera.
+          transform: [{ translateX: liveTx }, { translateY: liveTy }, { scale: liveScale }],
+        },
+      ]}
     >
       {/* Canvas-anchored ambient glow, under the map. Rasterized once;
           a commit only moves and scales this view. */}
@@ -1873,16 +1931,28 @@ export default function MapScreen() {
     { x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 },
     { x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 },
   ]);
+  // Ref mirror of bufCams: applyLiveCamera runs on the gesture frame and needs
+  // each buffer's committed camera synchronously, before React commits state.
+  const bufCamsRef = useRef(bufCams);
   const frontBufRef = useRef(0);
+  // Per-buffer layer opacity. The world buffers are TRANSPARENT overlays (ink on
+  // clear), so the swap is a complementary cross-dissolve — incoming 0→1 while
+  // outgoing 1→0. The outgoing layer stays dominant through the first half of
+  // the fade, masking the incoming raster until it has painted; ending the
+  // outgoing at 0 keeps the stale generation from bleeding through the incoming
+  // layer's clear areas. Because both buffers hold nearly the same (aligned)
+  // content, the dissolve is near-identity — no visible flip, no coverage gap.
   const bufOpacity0 = useRef(new RNAnimated.Value(1)).current;
   const bufOpacity1 = useRef(new RNAnimated.Value(0)).current;
+  const bufOpacity = useRef([bufOpacity0, bufOpacity1] as const).current;
   // The swap in flight, if any: which buffer is being rendered off-screen and
   // the camera it holds. `scheduled` guards the effect against re-runs.
   const pendingSwapRef = useRef<{ buf: number; cam: Cam; scheduled: boolean } | null>(null);
   // A commit requested while a swap was still in flight — latest wins, applied
   // as soon as the current swap lands.
   const queuedCamRef = useRef<Cam | null>(null);
-  const swapRafRef = useRef<number | null>(null);
+  // The running crossfade animation, kept so a jump (setCamera) can stop it.
+  const swapAnimRef = useRef<RNAnimated.CompositeAnimation | null>(null);
 
   // The camera as of the last *settled* gesture/animation. The touch layer is
   // built against this, not the committed camera: hit targets are invisible
@@ -1892,19 +1962,23 @@ export default function MapScreen() {
   const [settledCam, setSettledCam] = useState({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
 
   const committedCam = useRef({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
-  // The camera of the buffer that is VISIBLE right now. committedCam is the
-  // latest *request*; the live transform must always be expressed against
-  // what is actually on screen, so this ref only advances inside the buffer
-  // swap (or a programmatic setCamera jump), never at request time.
+  // The camera of the buffer that is VISIBLE right now — bookkeeping for which
+  // generation is on screen. The live transforms are expressed per buffer
+  // (below), so this no longer feeds the hot path; it advances at the swap.
   const renderedCam = useRef({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
   const liveCam = useRef({ x: INIT_VB_X, y: INIT_VB_Y, zoom: 0.4 });
-  const liveTx = useRef(new RNAnimated.Value(0)).current;
-  const liveTy = useRef(new RNAnimated.Value(0)).current;
-  const liveScale = useRef(new RNAnimated.Value(1)).current;
+  // Per-buffer live transforms: [buffer0, buffer1]. Each expresses the live
+  // camera against THAT buffer's committed camera, so both buffers are always
+  // correctly positioned — the hidden one included — and the swap crossfade
+  // stays pixel-aligned. liveScaleN also drives that buffer's label counter-
+  // scale, so labels stay right on the incoming buffer through the fade.
+  const liveTx = useRef([new RNAnimated.Value(0), new RNAnimated.Value(0)] as const).current;
+  const liveTy = useRef([new RNAnimated.Value(0), new RNAnimated.Value(0)] as const).current;
+  const liveScale = useRef([new RNAnimated.Value(1), new RNAnimated.Value(1)] as const).current;
   // Node/raster fade as a native View opacity over the world layer, driven by
-  // the LIVE zoom (like liveScale). It never touches the raster, so it neither
-  // re-rasterizes the visible buffer as you cross the fade band nor pops at a
-  // swap — both buffers composite the same fade.
+  // the LIVE zoom. It never touches the raster, so it neither re-rasterizes the
+  // visible buffer as you cross the fade band nor pops at a swap — both buffers
+  // composite the same fade.
   const liveFade = useRef(new RNAnimated.Value(fadeForZoom(0.4))).current;
   // Non-null while a pinch is in flight. Gestures write it; maybeRecommit
   // reads it to defer crispness re-rasterizations until the pinch settles.
@@ -1917,18 +1991,24 @@ export default function MapScreen() {
   // "correct" itself on commit.
   const wrapperSize = useRef({ w: SW, h: SH });
 
-  // Express the live camera as a transform of the RENDERED (painted) world.
+  // Express the live camera as a transform of each buffer's PAINTED world.
   // screen = (world − live)·z_live must equal scale-about-view-centre (RN's
   // transform origin) plus translate of the rendered world, which solves
-  // to k = z_live/z_rendered, t = (rendered − live)·z_live, with the usual
-  // centre-origin compensation C·(k−1).
+  // to k = z_live/z_buffer, t = (buffer − live)·z_live, with the usual
+  // centre-origin compensation C·(k−1). Computed per buffer against its own
+  // committed camera, so both buffers track the live camera at once — the swap
+  // is then a pure crossfade between two already-aligned layers.
   const applyLiveCamera = useCallback((x: number, y: number, z: number) => {
     liveCam.current = { x, y, zoom: z };
-    const c = renderedCam.current;
-    const k = z / c.zoom;
-    liveTx.setValue((c.x - x) * z + (wrapperSize.current.w / 2) * (k - 1));
-    liveTy.setValue((c.y - y) * z + (wrapperSize.current.h / 2) * (k - 1));
-    liveScale.setValue(k);
+    const cx = wrapperSize.current.w / 2;
+    const cy = wrapperSize.current.h / 2;
+    for (let i = 0; i < 2; i++) {
+      const c = bufCamsRef.current[i];
+      const k = z / c.zoom;
+      liveTx[i].setValue((c.x - x) * z + cx * (k - 1));
+      liveTy[i].setValue((c.y - y) * z + cy * (k - 1));
+      liveScale[i].setValue(k);
+    }
     liveFade.setValue(fadeForZoom(z));
   }, [liveTx, liveTy, liveScale, liveFade]);
 
@@ -1961,8 +2041,20 @@ export default function MapScreen() {
     }
     const back = 1 - frontBufRef.current;
     pendingSwapRef.current = { buf: back, cam, scheduled: false };
-    setBufCams((prev) => (back === 0 ? [cam, prev[1]] : [prev[0], cam]));
-  }, []);
+    const next: [Cam, Cam] = back === 0 ? [cam, bufCamsRef.current[1]] : [bufCamsRef.current[0], cam];
+    // Sync the ref before the state commit: the very next gesture frame's
+    // applyLiveCamera must transform the back buffer against its NEW camera.
+    bufCamsRef.current = next;
+    setBufCams(next);
+    // The back buffer's committed camera just changed, so its per-buffer
+    // transform is now stale (still expressed against the OLD camera). Mid-
+    // gesture the next frame's applyLiveCamera would fix it before the dissolve
+    // reveals the buffer — but a settle on finger-up (and a queued commit
+    // applied on the dissolve's finish) has no next frame. Re-express against
+    // the live camera NOW, or the freshly committed buffer is revealed carrying
+    // the previous generation's transform and the map teleports on release.
+    applyLiveCamera(liveCam.current.x, liveCam.current.y, liveCam.current.zoom);
+  }, [applyLiveCamera]);
 
   // Commit at the end of a gesture/animation: re-render AND resync the
   // baseline, so the next gesture starts from where the camera actually is.
@@ -2067,10 +2159,7 @@ export default function MapScreen() {
   // any swap in flight: render straight into the FRONT buffer — the one-frame
   // in-place repaint is invisible inside a deliberate whole-view jump.
   const setCamera = useCallback((x: number, y: number, z: number) => {
-    if (swapRafRef.current !== null) {
-      cancelAnimationFrame(swapRafRef.current);
-      swapRafRef.current = null;
-    }
+    if (swapAnimRef.current) { swapAnimRef.current.stop(); swapAnimRef.current = null; }
     pendingSwapRef.current = null;
     queuedCamRef.current = null;
     const cam: Cam = { x, y, zoom: z };
@@ -2080,53 +2169,60 @@ export default function MapScreen() {
     committedCam.current = cam;
     renderedCam.current = cam;
     const front = frontBufRef.current;
-    setBufCams((prev) => (front === 0 ? [cam, prev[1]] : [prev[0], cam]));
+    const next: [Cam, Cam] = front === 0 ? [cam, bufCamsRef.current[1]] : [bufCamsRef.current[0], cam];
+    bufCamsRef.current = next;
+    setBufCams(next);
+    // Snap opacities to show only the front buffer, completing any interrupted
+    // dissolve in place.
+    bufOpacity[front].setValue(1);
+    bufOpacity[1 - front].setValue(0);
     setZoom(z);
     setSettledCam(cam);
     camVel.current = { x: 0, y: 0 };
     lastLive.current = cam;
     applyLiveCamera(x, y, z);
-  }, [applyLiveCamera]);
+  }, [applyLiveCamera, bufOpacity]);
 
-  // The buffer swap. Runs after React commits a new camera into the hidden
-  // buffer; gives the native side two frames to actually PAINT the new raster,
-  // then — in one JS task, so it flushes as one native update — flips the two
-  // opacities, advances renderedCam and re-expresses the live transform
-  // against the newly visible raster. Between the commitRender call and this
-  // swap, gesture frames keep transforming against the OLD rendered camera —
-  // which is exactly what is still on screen.
+  // The buffer swap — a cross-dissolve, not an instant flip. Both buffers
+  // already render the live camera (per-buffer transforms), so revealing the
+  // freshly committed one is purely a complementary opacity move: incoming 0→1,
+  // outgoing 1→0. Dissolving, rather than flipping, means the still-dominant
+  // outgoing content masks the incoming raster while it paints (no stale flash)
+  // and smooths the crisp refresh (no pop). During a fast pan the outgoing layer
+  // also keeps its coverage on screen through the fade, backstopping territory
+  // the pan has outrun — so the map stops appearing in chunks.
   useLayoutEffect(() => {
     const p = pendingSwapRef.current;
     if (!p || p.scheduled) return;
     p.scheduled = true;
-    // Give the back buffer SWAP_PAINT_FRAMES of paint budget before revealing
-    // it. It starts painting the frame after React commits its new camera; on a
-    // dense graph that raster can span more than two frames, so revealing it too
-    // early flashed a half-painted buffer — the flicker on a zoom, worst when
-    // zoomed out (more of the graph in view = a heavier raster). The extra frame
-    // only delays when the crisp raster refreshes; the visible buffer keeps
-    // transforming in real time throughout, so it costs no responsiveness.
-    let budget = SWAP_PAINT_FRAMES;
-    const reveal = () => {
-      if (--budget > 0) { swapRafRef.current = requestAnimationFrame(reveal); return; }
-      swapRafRef.current = null;
-      const pending = pendingSwapRef.current;
-      if (!pending) return;
-      frontBufRef.current = pending.buf;
-      renderedCam.current = pending.cam;
-      (pending.buf === 0 ? bufOpacity0 : bufOpacity1).setValue(1);
-      (pending.buf === 0 ? bufOpacity1 : bufOpacity0).setValue(0);
-      applyLiveCamera(liveCam.current.x, liveCam.current.y, liveCam.current.zoom);
+    if (swapAnimRef.current) swapAnimRef.current.stop();
+    // Advance the visible-generation bookkeeping to the incoming buffer up
+    // front; the dissolve itself carries the pixels across.
+    frontBufRef.current = p.buf;
+    renderedCam.current = p.cam;
+    const out = 1 - p.buf;
+    // Duration scales with raster weight so a heavy zoomed-out raster gets more
+    // masked time to paint. JS-driven to match the setValue-driven transforms on
+    // the same views — mixing a native-driven prop with JS-driven props on one
+    // view is the kind of subtle conflict this hot path can't afford.
+    const duration = swapFadeMs(p.cam.zoom);
+    const anim = RNAnimated.parallel([
+      RNAnimated.timing(bufOpacity[p.buf], { toValue: 1, duration, easing: Easing.linear, useNativeDriver: false }),
+      RNAnimated.timing(bufOpacity[out], { toValue: 0, duration, easing: Easing.linear, useNativeDriver: false }),
+    ]);
+    swapAnimRef.current = anim;
+    anim.start(({ finished }) => {
+      if (!finished || pendingSwapRef.current !== p) return;
+      swapAnimRef.current = null;
       pendingSwapRef.current = null;
       const queued = queuedCamRef.current;
       queuedCamRef.current = null;
       if (queued) commitRender(queued.x, queued.y, queued.zoom);
-    };
-    swapRafRef.current = requestAnimationFrame(reveal);
-  }, [bufCams, applyLiveCamera, commitRender, bufOpacity0, bufOpacity1]);
+    });
+  }, [bufCams, commitRender, bufOpacity]);
 
   useEffect(() => () => {
-    if (swapRafRef.current !== null) cancelAnimationFrame(swapRafRef.current);
+    if (swapAnimRef.current) swapAnimRef.current.stop();
   }, []);
 
   const resetView = useCallback(() => {
@@ -2579,7 +2675,7 @@ export default function MapScreen() {
     // (worst on the "atlas →" reveal right after a capture). The map holds on
     // the start camera for these frames; the ease opens slow, so the brief hold
     // before motion is invisible.
-    let hold = SWAP_PAINT_FRAMES;
+    let hold = swapPaintFrames(startZ);
     const kick = () => {
       if (cancelled) return;
       if (--hold > 0) { frameId = requestAnimationFrame(kick); return; }
@@ -2610,21 +2706,11 @@ export default function MapScreen() {
     centerOnNodes(semanticPos);
   }, [nodes.length, semanticPos, centerOnNodes]);
 
-  // Auto-recenter when the Atlas tab gains focus — and ONLY then. This callback
-  // MUST keep a stable identity: useFocusEffect re-invokes it on every identity
-  // change while the screen is focused, and centerOnNodes is rebuilt each frame
-  // of a node ease-in (it closes over the tweened positions). Depending on it
-  // directly snapped the camera to the in-flight layout's bounding box ~60x a
-  // second, fighting the fly-to-the-new-node animation — the map shook for the
-  // length of the ease, then "fixed itself" when the tween stopped.
-  const centerOnNodesRef = useRef(centerOnNodes);
-  useEffect(() => { centerOnNodesRef.current = centerOnNodes; }, [centerOnNodes]);
-  const nodeCountRef = useRef(0);
-  useEffect(() => { nodeCountRef.current = nodes.length; }, [nodes.length]);
-
-  useFocusEffect(useCallback(() => {
-    if (nodeCountRef.current > 0) centerOnNodesRef.current();
-  }, []));
+  // Re-opening the Atlas tab intentionally does NOT re-frame the map: the screen
+  // stays mounted across tab switches, so the camera refs survive, and the user
+  // gets back exactly the pan/zoom they left — not a forced recenter. First-ever
+  // framing is still done by the initial-load effect above; the recenter FAB
+  // remains the explicit way to refit everything.
 
   // Fly the camera to fit whichever map is live: a topic's sub-map once it
   // arrives, or the overview again when focus is cleared. While the sub-map
@@ -3434,10 +3520,16 @@ export default function MapScreen() {
     );
   }, [zoom, lensMode, nodes.length]);
 
-  // Edges + nodes: the bulk of the SVG tree. Independent of zoom entirely — the
-  // zoom fade is a native View opacity (liveFade), not this element — so a zoom
-  // commit keeps its identity and React skips the whole subtree; only a pan
-  // (viewBox) or a structural change touches it.
+  // Whether per-node glow discs are in the raster (see GLOW_ZOOM). A boolean, so
+  // this only flips graphLayer's identity when the camera crosses the threshold
+  // — NOT on every zoom commit — keeping the base graph zoom-independent below
+  // and above the line.
+  const nodeGlowsOn = zoom >= GLOW_ZOOM;
+
+  // Edges + nodes: the bulk of the SVG tree. Rebuilt only on structural changes
+  // or when crossing GLOW_ZOOM; a pan (viewBox) or a plain zoom commit keeps its
+  // identity and React skips the whole subtree. Discovery selection is NOT here
+  // — it lives in discoveryLayer so a multi-select tap never rebuilds this.
   const graphLayer = useMemo(() => (
     <>
           {/* Edges */}
@@ -3446,17 +3538,13 @@ export default function MapScreen() {
             const b = pos[e.toItemId];
             if (!a || !b) return null;
 
-            const key = edgeKey(e.fromItemId, e.toItemId);
-            const isSelectedEdge = discoveryEdgeKeys.includes(key);
-
             // Salience maps the strong-few / weak-many split onto both opacity
             // and width: strong connections stay crisp, the long tail recedes.
-            // Undefined means past EDGE_MAX_RANK for both endpoints — skip it,
-            // unless the user explicitly selected it in discovery mode.
-            const salience = edgeSalienceByKey.get(key);
-            if (salience === undefined && !isSelectedEdge) return null;
-            let edgeOpacity = EDGE_MIN_OPACITY + (salience ?? 0) * (EDGE_MAX_OPACITY - EDGE_MIN_OPACITY);
-            const edgeWidth = EDGE_MIN_WIDTH + (salience ?? 0) * (EDGE_MAX_WIDTH - EDGE_MIN_WIDTH);
+            // Undefined means past EDGE_MAX_RANK for both endpoints — skip it.
+            const salience = edgeSalienceByKey.get(edgeKey(e.fromItemId, e.toItemId));
+            if (salience === undefined) return null;
+            let edgeOpacity = EDGE_MIN_OPACITY + salience * (EDGE_MAX_OPACITY - EDGE_MIN_OPACITY);
+            const edgeWidth = EDGE_MIN_WIDTH + salience * (EDGE_MAX_WIDTH - EDGE_MIN_WIDTH);
             if (focusDimTopicId) {
               const fromNode = nodeById.get(e.fromItemId);
               const toNode = nodeById.get(e.toItemId);
@@ -3469,9 +3557,9 @@ export default function MapScreen() {
               <Line
                 key={`e${i}`}
                 x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                stroke={isSelectedEdge ? DISCOVERY_ACCENT : MAP_LINE}
-                strokeWidth={isSelectedEdge ? 2.4 : edgeWidth}
-                strokeOpacity={isSelectedEdge ? 0.95 : edgeOpacity}
+                stroke={MAP_LINE}
+                strokeWidth={edgeWidth}
+                strokeOpacity={edgeOpacity}
               />
             );
           })}
@@ -3485,42 +3573,33 @@ export default function MapScreen() {
             const recent = isRecentNode(node);
 
             const isHighlighted = hasSearch && highlightedIds.has(node.id);
-            const isDiscoverySelected = discoveryNodeIds.includes(node.id);
-
             const finalOpacity = getNodeOpacity(node, baseOpacity);
 
             // One gradient disc replaces the two flat ones. Much tighter than
             // the old 5.5x outer ring — the falloff lives in the gradient's
             // stops now, so it can be small and still read as a halo instead of
-            // needing reach to look soft.
-            const glowR = isHighlighted || isDiscoverySelected ? baseR * 5 : baseR * 3;
-            const glowOp = (isHighlighted || isDiscoverySelected) ? 0.42 : 0.13;
+            // needing reach to look soft. Dropped below GLOW_ZOOM (a searched
+            // node keeps its glow so it stays findable) — see GLOW_ZOOM.
+            const glowR = isHighlighted ? baseR * 5 : baseR * 3;
+            const glowOp = isHighlighted ? 0.42 : 0.13;
 
             return (
               <G key={node.id}>
-                <Circle
-                  cx={p.x} cy={p.y} r={glowR}
-                  fill={`url(#${nodeGlowId(color)})`}
-                  fillOpacity={glowOp}
-                />
-                <Circle
-                  cx={p.x} cy={p.y}
-                  r={(isHighlighted || isDiscoverySelected) ? baseR * 1.7 : baseR}
-                  fill={(isHighlighted || isDiscoverySelected || recent) ? color : MAP_NODE}
-                  fillOpacity={finalOpacity}
-                />
-                {/* Subtle ring around discovery selected nodes */}
-                {isDiscoverySelected && (
+                {(nodeGlowsOn || isHighlighted) && (
                   <Circle
-                    cx={p.x} cy={p.y} r={baseR * 2.2}
-                    fill="none"
-                    stroke="#7EC8A0"
-                    strokeWidth={0.8}
-                    strokeOpacity={0.6}
+                    cx={p.x} cy={p.y} r={glowR}
+                    fill={`url(#${nodeGlowId(color)})`}
+                    fillOpacity={glowOp}
                   />
                 )}
+                <Circle
+                  cx={p.x} cy={p.y}
+                  r={isHighlighted ? baseR * 1.7 : baseR}
+                  fill={(isHighlighted || recent) ? color : MAP_NODE}
+                  fillOpacity={finalOpacity}
+                />
                 {/* Subtle pulse ring for recent nodes */}
-                {recent && !isDiscoverySelected && (
+                {recent && (
                   <Circle
                     cx={p.x} cy={p.y} r={baseR * 1.6}
                     fill="none"
@@ -3548,18 +3627,63 @@ export default function MapScreen() {
           ))}
     </>
   ), [
-    edges, nodes, pos, nodeById, discoveryEdgeKeys, discoveryNodeIds,
+    edges, nodes, pos, nodeById,
     nodeMetrics, nodeColor, isRecentNode, hasSearch, highlightedIds,
-    getNodeOpacity, isEmpty, focusDimTopicId, edgeSalienceByKey,
+    getNodeOpacity, isEmpty, focusDimTopicId, edgeSalienceByKey, nodeGlowsOn,
   ]);
+
+  // Discovery (multi-select) highlights — the selected edges and nodes, drawn
+  // ON TOP of the base graph in their own tiny layer. Kept out of graphLayer so
+  // toggling a selection rebuilds only this handful of elements instead of the
+  // whole graph (the old ~1s multi-select lag was that full rebuild). The base
+  // graph still draws the selected node underneath in its resting state; these
+  // brighter marks sit over it.
+  const discoveryLayer = useMemo(() => {
+    if (discoveryNodeIds.length === 0 && discoveryEdgeKeys.length === 0) return null;
+    const selEdges = new Set(discoveryEdgeKeys);
+    const selNodes = new Set(discoveryNodeIds);
+    return (
+      <>
+        {edges.map((e, i) => {
+          if (!selEdges.has(edgeKey(e.fromItemId, e.toItemId))) return null;
+          const a = pos[e.fromItemId];
+          const b = pos[e.toItemId];
+          if (!a || !b) return null;
+          return (
+            <Line
+              key={`de${i}`}
+              x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+              stroke={DISCOVERY_ACCENT} strokeWidth={2.4} strokeOpacity={0.95}
+            />
+          );
+        })}
+        {nodes.map((node) => {
+          if (!selNodes.has(node.id)) return null;
+          const p = pos[node.id];
+          if (!p) return null;
+          const { r: baseR, baseOpacity } = nodeMetrics.get(node.id) ?? { r: 4, baseOpacity: 0.8 };
+          const color = nodeColor(node);
+          const finalOpacity = getNodeOpacity(node, baseOpacity);
+          return (
+            <G key={`dn-${node.id}`}>
+              <Circle cx={p.x} cy={p.y} r={baseR * 5} fill={`url(#${nodeGlowId(color)})`} fillOpacity={0.42} />
+              <Circle cx={p.x} cy={p.y} r={baseR * 1.7} fill={color} fillOpacity={finalOpacity} />
+              <Circle cx={p.x} cy={p.y} r={baseR * 2.2} fill="none" stroke="#7EC8A0" strokeWidth={0.8} strokeOpacity={0.6} />
+            </G>
+          );
+        })}
+      </>
+    );
+  }, [discoveryNodeIds, discoveryEdgeKeys, edges, nodes, pos, nodeMetrics, nodeColor, getNodeOpacity]);
 
   const worldBody = useMemo(() => (
     <G>
       {haloLayer}
       {labelLayer}
       {graphLayer}
+      {discoveryLayer}
     </G>
-  ), [haloLayer, labelLayer, graphLayer]);
+  ), [haloLayer, labelLayer, graphLayer, discoveryLayer]);
 
   // ── Ambient glow — hoisted out of the re-rasterized layer ──────
   // A single smooth radial gradient anchored to the canvas. Drawn inside the
@@ -3722,19 +3846,15 @@ export default function MapScreen() {
         }}
       >
         <View style={[StyleSheet.absoluteFill, { overflow: 'visible' }]} {...mapPan.panHandlers}>
-          <RNAnimated.View
-            style={[
-              StyleSheet.absoluteFill,
-              // The world SVG extends OVERSCAN beyond this view on every side;
-              // it must not be clipped back to the viewport, or the overscan
-              // buys nothing. (Screen edges still clip at the root.)
-              { overflow: 'visible' },
-              { transform: [{ translateX: liveTx }, { translateY: liveTy }, { scale: liveScale }] },
-            ]}
-          >
-            {/* The two world buffers. Exactly one is visible at a time; a
-                re-commit paints the hidden one and the swap effect reveals it
-                once the native raster is ready — see WorldBuffer. */}
+          {/* Plain container: the live transform is now applied PER BUFFER
+              (each against its own camera) inside WorldBuffer, so the swap is a
+              clean crossfade between two already-aligned layers. The world SVG
+              extends OVERSCAN beyond this view; it must not clip (screen edges
+              still clip at the root). */}
+          <View style={[StyleSheet.absoluteFill, { overflow: 'visible' }]}>
+            {/* The two world buffers. Buffer 0 is the always-opaque bottom
+                layer; buffer 1 is the top layer whose opacity the swap fades. A
+                re-commit paints the hidden one and the crossfade reveals it. */}
             <WorldBuffer
               cam={bufCams[0]}
               opacity={bufOpacity0}
@@ -3745,7 +3865,9 @@ export default function MapScreen() {
               clusterLabels={clusterLabels}
               labelContainment={labelContainment}
               focusDimTopicId={focusDimTopicId}
-              liveScale={liveScale}
+              liveTx={liveTx[0]}
+              liveTy={liveTy[0]}
+              liveScale={liveScale[0]}
               fade={liveFade}
               landingPos={landingPos}
               landingAnim={landingAnim}
@@ -3760,12 +3882,14 @@ export default function MapScreen() {
               clusterLabels={clusterLabels}
               labelContainment={labelContainment}
               focusDimTopicId={focusDimTopicId}
-              liveScale={liveScale}
+              liveTx={liveTx[1]}
+              liveTy={liveTy[1]}
+              liveScale={liveScale[1]}
               fade={liveFade}
               landingPos={landingPos}
               landingAnim={landingAnim}
             />
-          </RNAnimated.View>
+          </View>
 
           {/* Node touch targets — deliberately OUTSIDE the transform. They are
               built against the settled camera, so when the map is at rest the
