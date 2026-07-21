@@ -33,11 +33,34 @@ try {
   adLog('native module MISSING — this dev client was built without it. Rebuild:', e);
 }
 
+/**
+ * Our own native unit — the same one the preview/production EAS profiles set,
+ * so local dev exercises the unit that actually ships.
+ *
+ * It is deliberately NOT Google's demo unit: demo units are served by
+ * publisher pub-3940256099942544, and once an account has an app-ads.txt that
+ * doesn't authorize that publisher, every demo request comes back "No ad to
+ * show". Our unit paired with a registered test device (below) is the path
+ * Google actually recommends, and it can't silently rot the same way.
+ */
+const NATIVE_AD_UNIT_ID =
+  process.env.EXPO_PUBLIC_ADMOB_NATIVE_UNIT_ID ?? 'ca-app-pub-3892528257283491/6139860918';
+
 let initialized = false;
 async function initAds(): Promise<boolean> {
   if (!ads) return false;
   if (initialized) return true;
   try {
+    if (__DEV__) {
+      // A real unit must never serve a live ad to a dev build — that's
+      // invalid traffic. Simulators the SDK registers itself; a physical
+      // device needs its id, which the native log prints on first request.
+      const device = process.env.EXPO_PUBLIC_ADMOB_TEST_DEVICE_ID;
+      await ads.default().setRequestConfiguration({
+        testDeviceIdentifiers: ['EMULATOR', ...(device ? [device] : [])],
+      });
+      adLog('test-device config set', device ? `(+${device})` : '(simulator only)');
+    }
     // ATT first: consent decides whether Google may serve personalized ads
     // (which pay several times more than contextual ones).
     try {
@@ -95,7 +118,7 @@ export function SponsoredCard({ tone = 'auto' }: { tone?: 'auto' | 'dark' } = {}
 
     void (async () => {
       if (!(await initAds()) || disposed) return;
-      const adUnitId = process.env.EXPO_PUBLIC_ADMOB_NATIVE_UNIT_ID ?? ads!.TestIds.NATIVE;
+      const adUnitId = NATIVE_AD_UNIT_ID;
       try {
         loaded = await ads!.NativeAd.createForAdRequest(adUnitId);
         adLog('ad loaded from', adUnitId);
