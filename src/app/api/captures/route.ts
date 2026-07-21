@@ -2,26 +2,32 @@ import { CaptureKind } from "@prisma/client";
 import { handleRoute, parseJson, parseSearchParams } from "@/lib/api";
 import { requireRequestUserId } from "@/lib/auth";
 import { captureListSchema, captureSchema } from "@/server/contracts";
+import { capturePipeline } from "@/server/services/admission";
 import { captureItem, listCaptures } from "@/server/services/cognition";
 import { checkCaptureAgainstPositions } from "@/server/services/positions";
-import { enforceRateLimit } from "@/server/services/usage";
+import { enforceRateLimit } from "@/server/services/ratelimit";
 
 export async function POST(request: Request) {
   return handleRoute(async () => {
     const userId = await requireRequestUserId(request);
     enforceRateLimit(userId, "capture", 30, 5 * 60_000);
     const input = await parseJson(request, captureSchema);
-    const capture = await captureItem({
-      userId,
-      kind: input.kind as CaptureKind,
-      url: input.url,
-      text: input.text,
-      caption: input.caption,
-      mediaUrl: input.mediaUrl,
-      reaction: input.reaction,
-      userContext: input.userContext,
-      topicHints: input.topicHints,
-    });
+    // Bounded concurrency: the pipeline is several LLM round-trips plus
+    // synchronous CPU, and without a ceiling one burst of captures stalls every
+    // other request on the instance — cheap ones included.
+    const capture = await capturePipeline.run(() =>
+      captureItem({
+        userId,
+        kind: input.kind as CaptureKind,
+        url: input.url,
+        text: input.text,
+        caption: input.caption,
+        mediaUrl: input.mediaUrl,
+        reaction: input.reaction,
+        userContext: input.userContext,
+        topicHints: input.topicHints,
+      }),
+    );
     // Position tension runs in the background: the challenge row it persists
     // is surfaced by the positions screens, and no client reads it from this
     // response — so blocking the commit on an extra LLM round-trip only added

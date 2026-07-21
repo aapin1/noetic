@@ -750,6 +750,26 @@ model UsageCounter {
   @@unique([userId, kind, period])
 }
 
+/// Abuse counters for the security-critical unauthenticated routes (sign-in,
+/// registration). These deliberately live in the database rather than in
+/// process memory: they must survive a restart and must hold across every
+/// instance, or the limit is only as strong as the weakest box an attacker can
+/// get routed to. Volume is low (failed sign-ins), so the write costs nothing.
+///
+/// `key` is the scope being limited — "auth_token:ip:1.2.3.4" or
+/// "auth_token:id:someone@example.com". `window` is the truncated start of the
+/// fixed window, so a row is one bucket. Expired rows are swept opportunistically
+/// on write; nothing external needs to clean this table.
+model RateLimitCounter {
+  key       String
+  window    DateTime
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@id([key, window])
+  @@index([window])
+}
+
 model IntelligenceCache {
   userId    String   @id
   version   Int

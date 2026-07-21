@@ -6,6 +6,7 @@ import type { DbClient } from "@/server/db";
 import { fetchMetadata, isPdfContentUrl, scoreContentConfidence, sourceSlug, type ContentConfidence } from "@/server/metadata";
 import { cleanContentMetadata } from "@/server/cognition/llm";
 import { upsertTopics } from "@/server/topics";
+import { assertPublicHttpUrl } from "@/server/ssrf";
 import { normalizeUrl } from "@/server/url";
 
 async function ensureContentSource(db: DbClient, name?: string, domain?: string) {
@@ -96,6 +97,12 @@ type IngestOpts = {
 export type CleanedContentFields = { title: string; description: string | null };
 
 export async function ingestUrl(url: string, db: DbClient = prisma, opts: IngestOpts = {}) {
+  // Before anything else: this is the single point where a user-supplied URL
+  // becomes a server-side fetch. Both the fresh-scrape path below and the
+  // body-backfill retry on an existing row reach the network, so the check
+  // belongs here rather than at either branch.
+  await assertPublicHttpUrl(url);
+
   const normalizedUrl = normalizeUrl(url);
   const existing = await db.contentItem.findUnique({
     where: { canonicalUrl: normalizedUrl },

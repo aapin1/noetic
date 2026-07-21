@@ -130,23 +130,7 @@ export async function getUsageSummary(userId: string, db: DbClient = prisma) {
   }));
 }
 
-// Per-user request rate limiting for the expensive routes. In-memory sliding
-// window — the backend runs as a single always-on Render instance, so no
-// shared store is needed; a restart resetting windows is harmless.
-const rateWindows = new Map<string, number[]>();
-
-export function enforceRateLimit(
-  userId: string,
-  route: string,
-  limit: number,
-  windowMs: number,
-): void {
-  const key = `${route}:${userId}`;
-  const now = Date.now();
-  const hits = (rateWindows.get(key) ?? []).filter((t) => now - t < windowMs);
-  if (hits.length >= limit) {
-    throw new AppError("RATE_LIMIT", "You're going a little fast — try again in a minute.", 429);
-  }
-  hits.push(now);
-  rateWindows.set(key, hits);
-}
+// Request rate limiting moved to `./ratelimit` — it is an abuse ceiling, not a
+// monetization cap, and it now has a durable backend for the auth routes.
+// Re-exported so existing importers keep working.
+export { enforceRateLimit } from "./ratelimit";

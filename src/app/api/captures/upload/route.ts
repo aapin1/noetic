@@ -1,11 +1,17 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { AppError, handleRoute, parseJson } from "@/lib/api";
+import { AppError, assertBodyWithinLimit, handleRoute, parseJson } from "@/lib/api";
 import { requireRequestUserId } from "@/lib/auth";
 import { getEnv } from "@/lib/env";
 import { captureUploadSchema } from "@/server/contracts";
+import { enforceRateLimit } from "@/server/services/ratelimit";
 import { isR2Configured, putCaptureImage } from "@/server/storage";
+
+// Headroom over the schema's 21,000,000-char base64 cap, so the JSON envelope
+// and a data-URL prefix still fit. The per-type byte limits after decoding are
+// the real product rule; this only stops a hostile body being buffered at all.
+const MAX_BODY_BYTES = 24 * 1024 * 1024;
 
 const EXT_BY_MIME = (mime: string): string =>
   mime.includes("png") ? "png"
@@ -42,6 +48,8 @@ function decodeUploadPayload(imageBase64: string, mimeType?: string): { buffer: 
 export async function POST(request: Request) {
   return handleRoute(async () => {
     const userId = await requireRequestUserId(request);
+    enforceRateLimit(userId, "upload", 40, 5 * 60_000);
+    assertBodyWithinLimit(request, MAX_BODY_BYTES);
     const input = await parseJson(request, captureUploadSchema);
     const { buffer, ext } = decodeUploadPayload(input.imageBase64, input.mimeType);
 

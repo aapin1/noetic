@@ -6,7 +6,18 @@ services:
     name: mneme-backend
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: starter # always-on; use "standard" to scale up
+    # always-on; use "standard" to scale up.
+    #
+    # The app is safe to run on more than one instance: the only process-local
+    # state is the in-memory rate limiter (an abuse ceiling — worst case is that
+    # N instances allow N times the limit), while the security-critical auth
+    # counters live in Postgres precisely so they hold across instances. Raising
+    # `plan`, or adding `numInstances`, needs no code change.
+    #
+    # Reach for it when p95 latency climbs under normal load: one 0.5-CPU
+    # instance is a single event loop, and the capture pipeline is the heaviest
+    # thing on it.
+    plan: starter
     region: oregon
     healthCheckPath: /api/health
     autoDeploy: true

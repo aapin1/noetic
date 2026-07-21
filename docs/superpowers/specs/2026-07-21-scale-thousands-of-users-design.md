@@ -111,6 +111,31 @@ compare, socratic reply, content ingest, notifications send, and the social writ
   change, it is already non-enumerating.
 - RevenueCat webhook: constant-time comparison of the shared secret.
 
+## §3b — Server-side request forgery (found during implementation)
+
+`POST /api/content/ingest` was **unauthenticated** and made the server fetch a URL of
+the caller's choosing. `z.string().url()` validates syntax, not destination, so
+`http://169.254.169.254/` (cloud metadata) and `http://127.0.0.1:5432/` were both accepted.
+This is also an open scraping proxy that spends our Supadata credits.
+
+Two fixes:
+
+- The route now requires a signed-in user and is rate limited. The mobile client has always
+  sent its token here, so this is not a client-visible change.
+- New `src/server/ssrf.ts`: `assertPublicHttpUrl` enforces an http(s) allow-list, rejects
+  private/loopback/link-local IP literals, and **resolves the hostname** and rejects if any
+  resolved address is private — checking hostname text alone is defeated by an
+  attacker-controlled domain with an A record pointing inside our network. Applied at the
+  top of `ingestUrl`, the single point where a user-supplied URL becomes a fetch.
+
+Residual risk, accepted and recorded: a *public* host that HTTP-redirects to a private
+address is still followed, because `fetch` resolves redirects internally. Closing that means
+`redirect: "manual"` and a re-check per hop, which changes fetch behaviour for every
+legitimate site that redirects — too much risk for this pass.
+
+`/api/search` stays unauthenticated (it backs public discovery) and is rate limited by
+source address instead.
+
 ## §4 — Body-size admission
 
 `assertBodyWithinLimit(request, maxBytes)` in `src/lib/api.ts`, checking `Content-Length`
@@ -171,6 +196,13 @@ New unit tests, colocated per existing convention (`src/server/**/*.test.ts`):
 
 Regression gate: `npm run test:unit` (193 tests green at baseline) and
 `npm run test:integration` both pass.
+
+## Deployment
+
+`RateLimitCounter` is a new model, so **`npm run db:push` must run against production before
+(or with) the deploy**. The durable limiter fails open if the table is missing, so deploying
+the code first degrades to "auth routes unlimited" rather than erroring — but that is the
+window the limiter exists to close, so keep it short.
 
 ## Rollout risk
 

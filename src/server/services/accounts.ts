@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { InsightStyle, Visibility } from "@prisma/client";
 import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
-import { createApiToken, createPasswordHash } from "@/lib/auth";
+import { createApiToken, createPasswordHash, forgetUser } from "@/lib/auth";
 import type { DbClient, RootDbClient } from "@/server/db";
 import { upsertTopics } from "@/server/topics";
 import { applyTopicWeights, incrementTasteProfileVersion, recordActivityEvent } from "@/server/services/activity";
@@ -260,5 +260,8 @@ export async function deleteAccount(args: { userId: string; db?: RootDbClient })
     throw new AppError("USER_NOT_FOUND", "Account not found", 404);
   }
   await db.user.delete({ where: { id: args.userId } });
+  // Drop the account-liveness cache entry so a device token for this user stops
+  // authenticating immediately rather than at the end of its TTL.
+  forgetUser(args.userId);
   return { deleted: true as const };
 }

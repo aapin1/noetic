@@ -116,6 +116,57 @@ export async function verifyApiToken(token: string) {
   }
 }
 
+/**
+ * Short-lived cache of "this user id exists", so the liveness check below costs
+ * one query per user per minute instead of one per request.
+ *
+ * Only positive results are cached. A miss must stay a miss: caching "absent"
+ * would keep a freshly registered user locked out for the TTL.
+ *
+ * `forgetUser` is called from the account-deletion path, so an in-app delete
+ * invalidates immediately and the ghost-account behaviour described below still
+ * cannot happen. The TTL only bounds out-of-band deletion — manual DB surgery
+ * or a database reset — which is precisely the case where a stale minute is
+ * harmless.
+ */
+const USER_EXISTS_TTL_MS = 60_000;
+const MAX_CACHED_USERS = 50_000;
+const knownUsers = new Map<string, number>();
+
+function rememberUser(userId: string) {
+  // Re-insert to move the key to the back: Map iteration is insertion-ordered,
+  // which makes the eviction below least-recently-seen.
+  knownUsers.delete(userId);
+  knownUsers.set(userId, Date.now() + USER_EXISTS_TTL_MS);
+
+  if (knownUsers.size > MAX_CACHED_USERS) {
+    const oldest = knownUsers.keys().next();
+    if (!oldest.done) knownUsers.delete(oldest.value);
+  }
+}
+
+function userIsKnown(userId: string): boolean {
+  const expiresAt = knownUsers.get(userId);
+  if (expiresAt === undefined) return false;
+
+  if (expiresAt <= Date.now()) {
+    knownUsers.delete(userId);
+    return false;
+  }
+
+  return true;
+}
+
+/** Invalidate a cached account. Call whenever a user row is removed. */
+export function forgetUser(userId: string) {
+  knownUsers.delete(userId);
+}
+
+/** Test seam: drop every cached account. */
+export function resetUserCache() {
+  knownUsers.clear();
+}
+
 export async function getRequestUserId(request: Request) {
   const authorization = request.headers.get("authorization");
 
@@ -129,12 +180,17 @@ export async function getRequestUserId(request: Request) {
       // stale device token must NOT authenticate; otherwise it silently "signs
       // in" to a ghost account and drops the user into onboarding. Confirm the
       // account is real before trusting the token.
+      if (userIsKnown(userId)) return userId;
+
       const user = await prisma.user.findUnique({
         where: { id: userId },
         select: { id: true },
       });
 
-      return user ? userId : null;
+      if (!user) return null;
+
+      rememberUser(userId);
+      return userId;
     }
   }
 

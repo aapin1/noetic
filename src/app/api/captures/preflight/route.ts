@@ -3,11 +3,13 @@ import { requireRequestUserId } from "@/lib/auth";
 import { capturePreflightSchema } from "@/server/contracts";
 import { preflightUrl } from "@/server/services/content";
 import { isPaidTranscriptHost } from "@/server/metadata";
+import { enforceRateLimit } from "@/server/services/ratelimit";
 import { hasUsageRemaining } from "@/server/services/usage";
 
 export async function POST(request: Request) {
   return handleRoute(async () => {
     const userId = await requireRequestUserId(request);
+    enforceRateLimit(userId, "preflight", 60, 5 * 60_000);
     const input = await parseJson(request, capturePreflightSchema);
     // Peek, never consume: quota is only burned by the capture itself, but the
     // preflight ingest must not spend Supadata credits for an over-cap user.

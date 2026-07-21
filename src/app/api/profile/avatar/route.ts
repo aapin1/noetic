@@ -1,13 +1,17 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { AppError, handleRoute, parseJson } from "@/lib/api";
+import { AppError, assertBodyWithinLimit, handleRoute, parseJson } from "@/lib/api";
 import { requireRequestUserId } from "@/lib/auth";
 import { getEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { avatarUploadSchema } from "@/server/contracts";
 import { getOwnerProfile } from "@/server/services/profile";
+import { enforceRateLimit } from "@/server/services/ratelimit";
 import { isR2Configured, putCaptureImage } from "@/server/storage";
+
+/** Headroom over the schema's 8,000,000-char base64 cap for the JSON envelope. */
+const MAX_BODY_BYTES = 10 * 1024 * 1024;
 
 const EXT_BY_MIME = (mime: string): string =>
   mime.includes("png") ? "png"
@@ -33,6 +37,8 @@ function decodeUploadPayload(imageBase64: string, mimeType?: string): { buffer: 
 export async function POST(request: Request) {
   return handleRoute(async () => {
     const userId = await requireRequestUserId(request);
+    enforceRateLimit(userId, "avatar", 20, 5 * 60_000);
+    assertBodyWithinLimit(request, MAX_BODY_BYTES);
     const input = await parseJson(request, avatarUploadSchema);
 
     let avatarUrl: string | null = null;
