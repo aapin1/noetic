@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { FolderGrid } from '@/components/archive/FolderGrid';
 import { FileList } from '@/components/archive/FileList';
+import { SponsoredCard } from '@/components/ui/SponsoredCard';
 
 export default function ArchiveFolderScreen() {
   const { topicId } = useLocalSearchParams<{ topicId: string }>();
@@ -55,6 +56,10 @@ export default function ArchiveFolderScreen() {
   }
 
   const isEmpty = data.subfolders.length === 0 && data.entries.length === 0;
+  // The seam between the subfolder grid and the file list is the one place an
+  // ad reads as a divider rather than an interruption. With no grid there is
+  // no seam, so it goes under the list instead of on top of the folder.
+  const adAtSeam = !isEmpty && data.subfolders.length > 0;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
@@ -87,7 +92,11 @@ export default function ArchiveFolderScreen() {
           </View>
         )}
 
+        {adAtSeam ? <SponsoredCard /> : null}
+
         <FileList entries={data.entries} />
+
+        {!isEmpty && !adAtSeam ? <SponsoredCard /> : null}
       </ScrollView>
     </SafeAreaView>
   );

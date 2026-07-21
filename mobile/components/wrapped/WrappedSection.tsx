@@ -68,8 +68,14 @@ const GATE_ARCHETYPE = 5;
 const GATE_TIMELINE = 7;
 /** The flagship "terrain" self-portrait needs real history behind it. */
 const GATE_TERRAIN = 50;
-/** An in-stream ad after every Nth wrapped card (FREE only; never after the last). */
+/**
+ * An in-stream ad above every Nth wrapped card (FREE only; never after the
+ * last). The cadence is phased so the first ad lands above card 3 rather than
+ * card 4 — most accounts have their later cards gated out, so starting a card
+ * later meant the whole stream showed exactly one ad, at the very bottom.
+ */
 const AD_EVERY = 3;
+const AD_PHASE = 2;
 
 const ARCHETYPE_ICONS: Record<ArchetypeFormat, typeof Link2> = {
   link: Link2,
@@ -1706,9 +1712,9 @@ export function WrappedSection({
       {cards.map((card, i) => (
         <React.Fragment key={card.key}>
           {card.node}
-          {/* Ad after every Nth card, never after the last. The negative margin
+          {/* Ad above every Nth card, never after the last. The negative margin
               cancels the section padding so the ad card lines up with the rest. */}
-          {(i + 1) % AD_EVERY === 0 && i < cards.length - 1 ? (
+          {(i + AD_PHASE) % AD_EVERY === 0 && i < cards.length - 1 ? (
             <View style={styles.adSlot}>
               <SponsoredCard />
             </View>

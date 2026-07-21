@@ -12,12 +12,20 @@ import type { CaptureSummary } from '@/types/api';
 
 const PAGE_SIZE = 50;
 /**
- * Ads sit between day headers: one after the most recent day (index 0), then on
- * every third day after that — always with a following day, so an ad never
+ * How many ad slots the diary will ever mount. Each slot is its own ad
+ * request, so an uncapped every-other-day cadence would fire dozens of them on
+ * a long history — slow, and AdMob starts no-filling a unit hit that hard.
+ * Four covers the stretch anyone actually scrolls in one sitting.
+ */
+const MAX_DIARY_ADS = 4;
+/**
+ * Ads sit between day headers: one after the most recent day (index 0), then
+ * every other day after that — always with a following day, so an ad never
  * dangles at the very end of the diary.
  */
 function showAdAfterDay(groupIndex: number, groupCount: number): boolean {
-  return groupIndex % 3 === 0 && groupIndex < groupCount - 1;
+  if (groupIndex % 2 !== 0 || groupIndex >= groupCount - 1) return false;
+  return groupIndex / 2 < MAX_DIARY_ADS;
 }
 
 /** "November 1" — with the year appended once entries leave the current year. */

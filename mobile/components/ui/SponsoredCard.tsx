@@ -47,8 +47,12 @@ async function initAds(): Promise<boolean> {
  * A single Mneme-styled native ad. Renders nothing for Plus members, while
  * the ad loads, or when no fill/SDK is available — the screen never shows a
  * placeholder or shifts layout for a missing ad.
+ *
+ * `tone="dark"` is for the surfaces that stay dark in both themes (Mind's
+ * stage, the Atlas map background), where the themed surface color would
+ * otherwise punch a bright rectangle into the canvas.
  */
-export function SponsoredCard() {
+export function SponsoredCard({ tone = 'auto' }: { tone?: 'auto' | 'dark' } = {}) {
   const c = useThemeColors();
   const router = useRouter();
   const { plan } = useEntitlements();
@@ -83,12 +87,20 @@ export function SponsoredCard() {
 
   const { NativeAdView, NativeAsset, NativeAssetType, NativeMediaView } = ads;
 
+  const dark = tone === 'dark';
+  const surface = dark ? 'rgba(255,255,255,0.05)' : c.surface;
+  const border = dark ? 'rgba(236,236,236,0.14)' : c.border;
+  // On a dark stage the themed text colors go near-black, so drive the ad's
+  // copy off the same light ink the rest of that stage uses.
+  const ink = dark ? { color: 'rgba(236,236,236,0.92)' } : undefined;
+  const inkMuted = dark ? { color: 'rgba(236,236,236,0.45)' } : undefined;
+
   return (
     <View style={styles.wrap}>
       <NativeAdView nativeAd={nativeAd}>
-        <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
+        <View style={[styles.card, { backgroundColor: surface, borderColor: border }]}>
           <View style={styles.topRow}>
-            <Text variant="mono" color="muted" style={styles.sponsored}>
+            <Text variant="mono" color="muted" style={[styles.sponsored, inkMuted]}>
               sponsored
             </Text>
           </View>
@@ -100,11 +112,11 @@ export function SponsoredCard() {
             ) : null}
             <View style={styles.textCol}>
               <NativeAsset assetType={NativeAssetType.HEADLINE}>
-                <Text variant="body">{nativeAd.headline ?? ''}</Text>
+                <Text variant="body" style={ink}>{nativeAd.headline ?? ''}</Text>
               </NativeAsset>
               {nativeAd.body ? (
                 <NativeAsset assetType={NativeAssetType.BODY}>
-                  <Text variant="caption" color="secondary" numberOfLines={2}>
+                  <Text variant="caption" color="secondary" numberOfLines={2} style={inkMuted}>
                     {nativeAd.body}
                   </Text>
                 </NativeAsset>
@@ -112,8 +124,8 @@ export function SponsoredCard() {
             </View>
             {nativeAd.callToAction ? (
               <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
-                <View style={[styles.cta, { borderColor: c.border }]}>
-                  <Text variant="mono" style={styles.ctaText}>
+                <View style={[styles.cta, { borderColor: border }]}>
+                  <Text variant="mono" style={[styles.ctaText, ink]}>
                     {nativeAd.callToAction}
                   </Text>
                 </View>
@@ -132,7 +144,7 @@ export function SponsoredCard() {
         accessibilityLabel="Remove ads with Mneme Plus"
         hitSlop={10}
       >
-        <Text variant="mono" color="muted" style={styles.removeLink}>
+        <Text variant="mono" color="muted" style={[styles.removeLink, inkMuted]}>
           remove ads with mneme plus →
         </Text>
       </Pressable>

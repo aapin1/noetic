@@ -25,8 +25,12 @@ import { MiniMap } from '@/components/MiniMap';
 import type { PulseFriend, PulseLatestItem } from '@/types/api';
 
 const CARD_W = Dimensions.get('window').width - Spacing[6] * 2;
-/** Slot one in-stream ad after the 3rd friend card, once the feed is long enough. */
-const AD_AFTER_FRIEND_INDEX = 2;
+/**
+ * Slot one in-stream ad after the 1st friend card. It used to sit after the
+ * 3rd, which meant anyone following fewer than four people never saw it — and
+ * most people follow two or three.
+ */
+const AD_AFTER_FRIEND_INDEX = 0;
 
 function LatestRow({ item }: { item: PulseLatestItem }) {
   const c = useThemeColors();

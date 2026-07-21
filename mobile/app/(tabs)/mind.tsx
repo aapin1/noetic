@@ -19,6 +19,7 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
+import { SponsoredCard } from '@/components/ui/SponsoredCard';
 import { TemporalSpine } from '@/components/mind/TemporalSpine';
 import { FractureZone } from '@/components/mind/FractureZone';
 import { KeystoneBridge } from '@/components/mind/KeystoneBridge';
@@ -325,6 +326,10 @@ export default function MindScreen() {
                   {renderSection(view)}
                 </>
               )}
+
+              {/* Past the end of the instrument, so it never sits between two
+                  readings. Dark tone: Mind's stage stays dark in both themes. */}
+              <SponsoredCard tone="dark" />
             </ScrollView>
           </Animated.View>
         )}

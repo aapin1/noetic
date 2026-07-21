@@ -379,6 +379,10 @@ export default function InsightDetailScreen() {
           ))}
         </View>
 
+        {/* Between the read and the onward links, not after everything: at the
+            very bottom it sat below the last tappable row and was never seen. */}
+        <SponsoredCard />
+
         <View style={styles.section}>
           <Text variant="h3">Connected memory</Text>
           {data.related.length === 0 ? (
@@ -400,9 +404,6 @@ export default function InsightDetailScreen() {
             ))
           )}
         </View>
-
-        {/* After the read, never mid-content — renders nothing for Plus / no fill. */}
-        <SponsoredCard />
       </ScrollView>
     </SafeAreaView>
   );
