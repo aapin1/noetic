@@ -9,12 +9,24 @@ export const TERRAIN_MIN_CAPTURES = 50;
 /** At/above this the eras tighten to the outer quarters so the contrast sharpens. */
 const TERRAIN_TIGHTEN_AT = 100;
 /**
- * The cache is versioned by this bucket, so the payload (and its single LLM call)
- * regenerates about once per 25 new captures — not per view, not per capture.
+ * The cache is versioned by this bucket, so the whole-history recompute runs
+ * about once per 10 new captures rather than per view. It used to be 25, which
+ * froze the portrait — including the parts that are cheap facts (convictions,
+ * top voices, bridges) — for a long stretch of real activity. It can be this
+ * low now because a recompute no longer implies an LLM call (see ARC below)
+ * and never happens in the user's critical path (see the revalidation below).
  */
-const CACHE_BUCKET = 25;
+const CACHE_BUCKET = 10;
+/**
+ * Even without new captures the portrait moves: positions get staked and
+ * revised, and the eras age. Past this the cache is refreshed in the background
+ * on the next read. A day is deliberately long — the capture-driven half is
+ * already handled by CACHE_BUCKET, and this pass is a scan of the user's whole
+ * history, so it should only catch what nothing else would.
+ */
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 /** Bumped when the payload shape changes so stale-shaped caches regenerate. */
-const TERRAIN_SCHEMA = 2;
+const TERRAIN_SCHEMA = 3;
 /** Below this many embedded captures per era, the semantic chapters are omitted. */
 const MIN_EMBEDDED_PER_ERA = 8;
 
@@ -298,6 +310,36 @@ function driftBandFor(deg: number): TerrainResponse["driftBand"] {
 
 // ── main ────────────────────────────────────────────────────────────────────
 
+/** FNV-1a content address for the narrative's inputs. Not security-sensitive. */
+function fingerprint(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+/** The stored shape: the response plus the address of the narrative inside it. */
+interface StoredTerrain {
+  v: TerrainResponse;
+  arcKey: string | null;
+}
+
+function readStored(payload: unknown): StoredTerrain | null {
+  const raw = payload as (StoredTerrain & TerrainResponse) | null;
+  if (!raw) return null;
+  if (raw.v && typeof raw.v === "object") {
+    return raw.v.unlocked ? { v: raw.v, arcKey: raw.arcKey ?? null } : null;
+  }
+  // A row written before the narrative was addressed separately.
+  return raw.unlocked && raw.captureCount ? { v: raw as TerrainResponse, arcKey: null } : null;
+}
+
+/** Users with a background recompute already in flight, so a burst of reads
+ * (or a client retry loop) never starts the whole-history scan twice. */
+const revalidating = new Set<string>();
+
 export async function getTerrain(
   userId: string,
   options: { tzOffsetMinutes?: number } = {},
@@ -312,23 +354,58 @@ export async function getTerrain(
   const cacheVersion = Math.floor(captureCount / CACHE_BUCKET) * 100 + TERRAIN_SCHEMA;
   // Best-effort read: if the cache table isn't there yet (pre-migration) or the
   // read fails, fall through and recompute rather than failing the request.
+  let stored: StoredTerrain | null = null;
+  let storedVersion: number | null = null;
+  let storedAt: Date | null = null;
   try {
     const cached = await db.terrainCache.findUnique({ where: { userId } });
-    if (cached && cached.version === cacheVersion) {
-      const payload = cached.payload as unknown as TerrainResponse;
-      if (payload && payload.unlocked && payload.captureCount) return payload;
+    if (cached) {
+      stored = readStored(cached.payload);
+      storedVersion = cached.version;
+      storedAt = cached.updatedAt;
     }
   } catch {
     // no cache available — recompute
   }
 
-  const result = await computeTerrain(userId, tzShiftMs, captureCount, db);
+  if (stored) {
+    const fresh =
+      storedVersion === cacheVersion &&
+      storedAt !== null &&
+      Date.now() - storedAt.getTime() < CACHE_TTL_MS;
+    if (fresh) return stored.v;
+
+    // Stale but usable: hand it back now and rebuild behind the request. This
+    // is a scan of the user's entire history — it must never be something the
+    // You page sits and waits on.
+    if (!revalidating.has(userId)) {
+      revalidating.add(userId);
+      void refreshTerrain(userId, tzShiftMs, captureCount, cacheVersion, stored, db)
+        .catch((err) => console.error("[terrain] background refresh failed", err))
+        .finally(() => revalidating.delete(userId));
+    }
+    return stored.v;
+  }
+
+  return refreshTerrain(userId, tzShiftMs, captureCount, cacheVersion, null, db);
+}
+
+async function refreshTerrain(
+  userId: string,
+  tzShiftMs: number,
+  captureCount: number,
+  cacheVersion: number,
+  previous: StoredTerrain | null,
+  db: DbClient,
+): Promise<TerrainResponse> {
+  const { result, arcKey } = await computeTerrain(userId, tzShiftMs, captureCount, previous, db);
 
   try {
+    const payload = { v: result, arcKey } as unknown as Prisma.InputJsonValue;
     await db.terrainCache.upsert({
       where: { userId },
-      update: { version: cacheVersion, payload: result as unknown as Prisma.InputJsonValue },
-      create: { userId, version: cacheVersion, payload: result as unknown as Prisma.InputJsonValue },
+      update: { version: cacheVersion, payload },
+      create: { userId, version: cacheVersion, payload },
     });
   } catch {
     // Best-effort: a failed cache write must never fail the request.
@@ -341,8 +418,9 @@ async function computeTerrain(
   userId: string,
   tzShiftMs: number,
   captureCount: number,
+  previous: StoredTerrain | null,
   db: DbClient,
-): Promise<TerrainResponse> {
+): Promise<{ result: TerrainResponse; arcKey: string | null }> {
   const rows = await db.capturedItem.findMany({
     where: { userId },
     orderBy: { capturedAt: "asc" },
@@ -569,7 +647,7 @@ async function computeTerrain(
     arc: null,
   };
 
-  base.arc = await generateTerrainNarrative({
+  const narrativeInput = {
     spanDays: Math.max(1, Math.round((recent[recent.length - 1].ms - early[0].ms) / DAY_MS)),
     captureCount,
     driftDegrees,
@@ -585,7 +663,18 @@ async function computeTerrain(
     bridges,
     topVoices: topVoices.map((v) => v.name),
     spreadDeltaPct,
-  });
+  };
 
-  return base;
+  // The narrative is addressed by what it was written from, so a recompute only
+  // re-bills the LLM when the reading it describes has actually moved. That is
+  // what lets the rest of the portrait refresh often and cheaply: crossing a
+  // capture bucket no longer implies paying for prose that would come back
+  // saying the same thing.
+  const arcKey = fingerprint(JSON.stringify(narrativeInput));
+  base.arc =
+    previous && previous.arcKey === arcKey && previous.v.arc
+      ? previous.v.arc
+      : await generateTerrainNarrative(narrativeInput);
+
+  return { result: base, arcKey };
 }

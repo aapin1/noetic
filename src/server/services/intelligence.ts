@@ -28,6 +28,19 @@ const TOPIC_TENSION_SCAN = 4;
 const THREAD_SYNTHESIS_THRESHOLD = 3;
 const THREAD_SYNTHESIS_LIMIT = 4;
 const THREAD_ITEM_IDS_LIMIT = 12;
+/**
+ * Candidate topics are ranked by recency-weighted activity rather than raw
+ * capture count. Ranking by count alone froze Mind: once a topic had built up
+ * the biggest pile it held its slot forever, so the same threads / tensions /
+ * convergences were reported no matter how much new material landed elsewhere.
+ * With a 30-day half-life a topic you've been feeding this month outranks one
+ * you left behind last year, and Mind moves as your attention does.
+ */
+const ACTIVITY_HALF_LIFE_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Cached LLM entries kept between runs — enough to cover topics that drop out
+ * of the shortlist for a while and come back without re-billing. */
+const ENTRY_CACHE_LIMIT = 160;
 
 /** A URL-shaped description is a stub row from a failed scrape (paywall,
  * robot wall) — never treat the link itself as the capture's substance. */
@@ -134,7 +147,8 @@ export type DormantThread = {
 };
 
 export type PersonalIntelligenceData = {
-  /** Bumped whenever the payload shape changes so stale caches regenerate. */
+  /** Bumped whenever the response shape changes, so a client holding an older
+   * payload can tell which fields it can rely on. */
   payloadVersion: number;
   contradictionCards: ContradictionCard[];
   threadSyntheses: ThreadSynthesis[];
@@ -142,9 +156,111 @@ export type PersonalIntelligenceData = {
   dormantThreads: DormantThread[];
 };
 
-// v4: diversified card selection (item-capped contradictions, overlap-deduped
-// convergence). Bumped so cached pre-diversity payloads regenerate once.
-const INTEL_PAYLOAD_VERSION = 4;
+// v5: per-entry content-addressed cache + activity-ranked candidates.
+const INTEL_PAYLOAD_VERSION = 5;
+
+// ── per-entry LLM cache ─────────────────────────────────────────────────────
+// Mind used to cache one monolithic payload keyed on tasteProfileVersion, which
+// bumps on every capture. So a single new capture threw away every synthesis
+// and the next Mind open re-billed ~16 LLM calls — expensive, slow, and it made
+// the whole picture hostage to one section changing.
+//
+// Instead each LLM result is stored under a hash of the exact prompt input that
+// produced it. A capture landing in one topic changes only that topic's inputs,
+// so only its entries regenerate (~3 calls) and everything else is reused
+// verbatim. Fresher AND cheaper, because freshness now costs only what actually
+// moved.
+
+const INTEL_CACHE_SCHEMA = 1;
+
+type CacheEntry = { v: unknown; t: number };
+type IntelCacheFile = { schema: number; entries: Record<string, CacheEntry> };
+
+/** FNV-1a — a short, stable content address. Not security-sensitive. */
+function fingerprint(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+function readCacheFile(payload: unknown): Record<string, CacheEntry> {
+  const file = payload as IntelCacheFile | null;
+  if (!file || file.schema !== INTEL_CACHE_SCHEMA || typeof file.entries !== "object" || !file.entries) {
+    return {};
+  }
+  return file.entries;
+}
+
+/**
+ * Resolves LLM results against the cache, keyed by their own input.
+ * A null result (no API key, a failed call) is never cached — it must be free
+ * to succeed on the next open rather than being frozen in as "nothing here".
+ */
+class EntryStore {
+  private readonly existing: Record<string, CacheEntry>;
+  private readonly touched = new Map<string, CacheEntry>();
+  private produced = 0;
+
+  constructor(existing: Record<string, CacheEntry>) {
+    this.existing = existing;
+  }
+
+  async resolve<T>(prefix: string, input: unknown, produce: () => Promise<T | null>): Promise<T | null> {
+    const key = `${prefix}:${fingerprint(JSON.stringify(input))}`;
+    const hit = this.existing[key];
+    if (hit) {
+      this.touched.set(key, { v: hit.v, t: Date.now() });
+      return hit.v as T;
+    }
+    const value = await produce();
+    if (value !== null && value !== undefined) {
+      this.touched.set(key, { v: value, t: Date.now() });
+      this.produced += 1;
+    }
+    return value;
+  }
+
+  /** True when this run generated something the cache doesn't already hold. */
+  get isDirty() {
+    return this.produced > 0;
+  }
+
+  /** Everything used this run, plus the most recently used of the rest. */
+  toFile(): IntelCacheFile {
+    const merged: Record<string, CacheEntry> = {};
+    const carryOver = Object.entries(this.existing)
+      .filter(([key]) => !this.touched.has(key))
+      .sort((a, b) => (b[1]?.t ?? 0) - (a[1]?.t ?? 0))
+      .slice(0, Math.max(0, ENTRY_CACHE_LIMIT - this.touched.size));
+    for (const [key, entry] of carryOver) merged[key] = entry;
+    for (const [key, entry] of this.touched) merged[key] = entry;
+    return { schema: INTEL_CACHE_SCHEMA, entries: merged };
+  }
+}
+
+/**
+ * Recency-weighted weight of a topic group: each capture contributes 1 when
+ * fresh, decaying by half every {@link ACTIVITY_HALF_LIFE_DAYS}.
+ */
+export function activityScore(group: TopicGroup, now: Date): number {
+  let score = 0;
+  for (const capture of group.captures) {
+    const ageDays = Math.max(0, (now.getTime() - capture.capturedAt.getTime()) / DAY_MS);
+    score += Math.pow(0.5, ageDays / ACTIVITY_HALF_LIFE_DAYS);
+  }
+  return score;
+}
+
+/** Most-alive topics first, breaking ties on raw size. */
+export function rankByActivity(groups: TopicGroup[], now: Date): TopicGroup[] {
+  return [...groups]
+    .map((group) => ({ group, score: activityScore(group, now) }))
+    .sort((a, b) => b.score - a.score || b.group.captures.length - a.group.captures.length)
+    .map((entry) => entry.group);
+}
 
 export function groupCapturesByTopic(captures: LoadedCapture[], minCount: number): TopicGroup[] {
   const map = new Map<string, TopicGroup>();
@@ -223,10 +339,11 @@ export async function getPersonalIntelligence(args: {
 }): Promise<PersonalIntelligenceData> {
   const db = args.db ?? prisma;
 
-  // The LLM-derived sections only change when the memory graph does, so they
-  // are cached against tasteProfileVersion (bumped on every capture add/edit/
-  // delete). Dormant threads depend on the passage of time, not the graph, so
-  // they are recomputed from the DB on every request — no LLM involved.
+  // Everything structural (which topics qualify, the timelines, the clusters,
+  // the satellites, dormancy) is rebuilt from the DB on every request — it is
+  // pure queries, so it is always current. Only the LLM prose is cached, and
+  // that is cached per entry against its own input (see EntryStore), so a new
+  // capture refreshes exactly the sections it touches.
   const [user, cached, rawCaptures] = await Promise.all([
     db.user.findUnique({
       where: { id: args.userId },
@@ -274,22 +391,17 @@ export async function getPersonalIntelligence(args: {
     topics: item.topics.map((row) => ({ topicId: row.topicId, name: row.topic.name })),
   }));
 
-  const allGroups = groupCapturesByTopic(captures, 2);
-  const threadCandidates = allGroups.filter((g) => g.captures.length >= THREAD_SYNTHESIS_THRESHOLD);
-
   const now = new Date();
+  const allGroups = groupCapturesByTopic(captures, 2);
   const dormantThreads = findDormantThreads(allGroups, now);
+  // Ranked by living activity, not lifetime size — otherwise the same handful
+  // of long-established topics hold every slot forever.
+  const activeGroups = rankByActivity(allGroups, now);
+  const threadCandidates = activeGroups
+    .filter((g) => g.captures.length >= THREAD_SYNTHESIS_THRESHOLD)
+    .slice(0, THREAD_SYNTHESIS_LIMIT);
 
-  if (user && cached && cached.version === user.tasteProfileVersion) {
-    const payload = cached.payload as unknown as PersonalIntelligenceData;
-    if (
-      payload &&
-      Array.isArray(payload.contradictionCards) &&
-      payload.payloadVersion === INTEL_PAYLOAD_VERSION
-    ) {
-      return { ...payload, dormantThreads };
-    }
-  }
+  const store = new EntryStore(readCacheFile(cached?.payload));
 
   const contradictEdges = await db.memoryEdge.findMany({
     where: { userId: args.userId, type: MemoryEdgeType.CONTRADICTS },
@@ -301,7 +413,7 @@ export async function getPersonalIntelligence(args: {
     },
   });
 
-  const convergenceCandidates = diversifyGroups(findConvergenceCandidates(allGroups), CONVERGENCE_LIMIT);
+  const convergenceCandidates = diversifyGroups(findConvergenceCandidates(activeGroups), CONVERGENCE_LIMIT);
 
   // Pairs already captured as hard CONTRADICTS edges — so the softer LLM
   // tension scan doesn't surface the same pair twice.
@@ -311,7 +423,7 @@ export async function getPersonalIntelligence(args: {
       `${e.toItemId}:${e.fromItemId}`,
     ]),
   );
-  const tensionGroups = allGroups
+  const tensionGroups = activeGroups
     .filter((g) => g.captures.length >= TOPIC_TENSION_MIN)
     .slice(0, TOPIC_TENSION_SCAN);
 
@@ -332,60 +444,52 @@ export async function getPersonalIntelligence(args: {
 
   // The spine is chronological: the 10 most recent captures per thread, oldest
   // first, so the LLM's drift notes index into the same order the UI renders.
-  const threadChrono = threadCandidates.slice(0, THREAD_SYNTHESIS_LIMIT).map((group) =>
+  const threadChrono = threadCandidates.map((group) =>
     [...group.captures]
       .sort((a, b) => a.capturedAt.getTime() - b.capturedAt.getTime())
       .slice(-10),
   );
 
+  // Each prompt is built first, then resolved through the store: the built
+  // input IS the cache key, so a result can only be reused when the exact
+  // material behind it is unchanged.
+  const contradictionInputs = contradictEdges.map((edge) => ({
+    labelA: edgeItemLabel(edge.fromItem),
+    textA: edgeItemText(edge.fromItem),
+    labelB: edgeItemLabel(edge.toItem),
+    textB: edgeItemText(edge.toItem),
+  }));
+  const threadInputs = threadCandidates.map((group, i) => ({
+    topicName: group.topicName,
+    captures: threadChrono[i].map((c) => ({
+      label: c.label,
+      keyIdea: c.keyIdea,
+      text: c.gist,
+      capturedAt: c.capturedAt.toISOString().slice(0, 10),
+    })),
+  }));
+  const convergenceInputs = convergenceCandidates.map((group) => ({
+    topicName: group.topicName,
+    captures: group.captures.slice(0, 8).map((c) => ({
+      label: c.label,
+      source: c.sourceName,
+      keyIdea: c.keyIdea,
+    })),
+  }));
+  const tensionInputs = tensionGroups.map((group) => ({
+    topicName: group.topicName,
+    captures: group.captures.slice(0, 8).map((c) => ({
+      label: c.label,
+      keyIdea: c.keyIdea,
+      text: c.gist,
+    })),
+  }));
+
   const [cardTensions, syntheses, convergenceTexts, topicTensions] = await Promise.all([
-    Promise.all(
-      contradictEdges.map((edge) =>
-        generateContradictionTension({
-          labelA: edgeItemLabel(edge.fromItem),
-          textA: edgeItemText(edge.fromItem),
-          labelB: edgeItemLabel(edge.toItem),
-          textB: edgeItemText(edge.toItem),
-        }),
-      ),
-    ),
-    Promise.all(
-      threadCandidates.slice(0, THREAD_SYNTHESIS_LIMIT).map((group, i) =>
-        generateThreadSynthesis({
-          topicName: group.topicName,
-          captures: threadChrono[i].map((c) => ({
-            label: c.label,
-            keyIdea: c.keyIdea,
-            text: c.gist,
-            capturedAt: c.capturedAt.toISOString().slice(0, 10),
-          })),
-        }),
-      ),
-    ),
-    Promise.all(
-      convergenceCandidates.map((group) =>
-        generateConvergenceSignal({
-          topicName: group.topicName,
-          captures: group.captures.slice(0, 8).map((c) => ({
-            label: c.label,
-            source: c.sourceName,
-            keyIdea: c.keyIdea,
-          })),
-        }),
-      ),
-    ),
-    Promise.all(
-      tensionGroups.map((group) =>
-        generateTopicTension({
-          topicName: group.topicName,
-          captures: group.captures.slice(0, 8).map((c) => ({
-            label: c.label,
-            keyIdea: c.keyIdea,
-            text: c.gist,
-          })),
-        }),
-      ),
-    ),
+    Promise.all(contradictionInputs.map((input) => store.resolve("con", input, () => generateContradictionTension(input)))),
+    Promise.all(threadInputs.map((input) => store.resolve("thr", input, () => generateThreadSynthesis(input)))),
+    Promise.all(convergenceInputs.map((input) => store.resolve("cnv", input, () => generateConvergenceSignal(input)))),
+    Promise.all(tensionInputs.map((input) => store.resolve("ten", input, () => generateTopicTension(input)))),
   ]);
 
   const edgeCards: ContradictionCard[] = contradictEdges
@@ -490,7 +594,6 @@ export async function getPersonalIntelligence(args: {
   }
 
   const threadSyntheses: ThreadSynthesis[] = threadCandidates
-    .slice(0, THREAD_SYNTHESIS_LIMIT)
     .map((group, i) => {
       const synthesis = syntheses[i];
       if (!synthesis) return null;
@@ -548,20 +651,16 @@ export async function getPersonalIntelligence(args: {
     dormantThreads,
   };
 
-  if (user) {
+  // Only written when this run actually generated something new — a fully warm
+  // open costs zero LLM calls and zero writes.
+  if (user && store.isDirty) {
+    const file = store.toFile() as unknown as Prisma.InputJsonValue;
     // Best-effort: a failed cache write must never fail the request.
     try {
       await db.intelligenceCache.upsert({
         where: { userId: args.userId },
-        update: {
-          version: user.tasteProfileVersion,
-          payload: result as unknown as Prisma.InputJsonValue,
-        },
-        create: {
-          userId: args.userId,
-          version: user.tasteProfileVersion,
-          payload: result as unknown as Prisma.InputJsonValue,
-        },
+        update: { version: user.tasteProfileVersion, payload: file },
+        create: { userId: args.userId, version: user.tasteProfileVersion, payload: file },
       });
     } catch {
       // ignore

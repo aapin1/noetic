@@ -732,10 +732,6 @@ model CompanionMessage {
   @@index([threadId, createdAt])
 }
 
-/// Cached LLM-derived Mind intelligence (contradictions, syntheses,
-/// convergence). Keyed on the tasteProfileVersion it was computed at, so it
-/// regenerates only when the memory graph actually changes — not on every
-/// Mind open. Time-sensitive parts (dormant threads) are always recomputed.
 model UsageCounter {
   id        String   @id @default(cuid())
   userId    String
@@ -770,6 +766,13 @@ model RateLimitCounter {
   @@index([window])
 }
 
+/// Cached LLM prose for Mind (contradictions, syntheses, convergence).
+/// `payload` is a map of entries, each keyed by a hash of the exact prompt
+/// input that produced it, so a capture landing in one topic only regenerates
+/// that topic's entries. Everything structural — which topics qualify, the
+/// timelines, the clusters, dormancy — is rebuilt from the graph on every read
+/// and is never cached here. `version` records the tasteProfileVersion of the
+/// last write; it is informational, not a cache key.
 model IntelligenceCache {
   userId    String   @id
   version   Int

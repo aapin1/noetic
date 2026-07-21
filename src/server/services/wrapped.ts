@@ -166,7 +166,17 @@ function buildArcs(localMsList: number[], nowLocalMs: number): WrappedArcs {
   return { hours, days, weeks, months };
 }
 
-function computeStreaks(localDayIndices: number[]): { current: number; longest: number } {
+/**
+ * `todayIdx` is the caller's local day. A streak is only "current" while it is
+ * still alive — the run has to reach today, or yesterday (today isn't over, so
+ * not having captured yet doesn't break it). Without that anchor the run ending
+ * at the LAST active day was reported forever: skip a week and the card still
+ * claimed the streak you had before the gap.
+ */
+export function computeStreaks(
+  localDayIndices: number[],
+  todayIdx: number,
+): { current: number; longest: number } {
   const dayIndices = [...new Set(localDayIndices)].sort((a, b) => a - b);
   if (dayIndices.length === 0) {
     return { current: 0, longest: 0 };
@@ -181,7 +191,13 @@ function computeStreaks(localDayIndices: number[]): { current: number; longest: 
     prev = day;
   }
 
-  // Current streak = consecutive days ending at the most recent active day.
+  const lastActive = dayIndices[dayIndices.length - 1];
+  if (lastActive < todayIdx - 1) {
+    return { current: 0, longest };
+  }
+
+  // Current streak = consecutive days ending at the most recent active day,
+  // which the guard above has established is today or yesterday.
   let current = 0;
   prev = null;
   for (let i = dayIndices.length - 1; i >= 0; i -= 1) {
@@ -344,7 +360,10 @@ export async function getWrappedStats(
   const busiestWeekdayIdx = weekdayHistogram.indexOf(Math.max(...weekdayHistogram));
   const busiestHour = hourHistogram.indexOf(Math.max(...hourHistogram));
 
-  const { current, longest } = computeStreaks(localMsList.map((ms) => Math.floor(ms / DAY_MS)));
+  const { current, longest } = computeStreaks(
+    localMsList.map((ms) => Math.floor(ms / DAY_MS)),
+    Math.floor(nowLocalMs / DAY_MS),
+  );
 
   return {
     totalCaptures: captures.length,

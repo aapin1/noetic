@@ -32,9 +32,10 @@ const SWAY = SW * 0.2; // how far nodes swing off the center line
 // A drift box owns the half of the width the spine stays out of while it
 // passes the note.
 const DRIFT_FAR_EDGE = SW * 0.52;
-// Passing a drift, the spine holds its side and bows away from the note — one
-// continuous arc, apex at the middle of the run.
-const BOW_MAX = SW * 0.11;
+// Passing a drift, the spine holds its side and swings out around the note as
+// a true circular arc. This is the arc's sagitta — how far out it reaches at
+// its widest. Deep enough to read as round rather than as a wobble.
+const BOW_MAX = SW * 0.17;
 
 // A drift box's height grows with its text so the note never gets clipped.
 const DRIFT_LABEL_H = 34; // "DRIFT" label + margin
@@ -77,9 +78,10 @@ export function TemporalSpine({
 
   const { rows, spineHeight, path } = useMemo(() => {
     const out: Row[] = [];
-    // Spine waypoints (node centers + bend "shoulders"). The path is drawn
-    // through these; only `kind: 'node'` rows carry a dot.
-    const spinePts: { x: number; y: number }[] = [];
+    // Spine waypoints. The path is drawn through these; only `kind: 'node'`
+    // rows carry a dot. `bow` means the run from this point to the next is a
+    // circular arc with that signed sagitta (negative swings left).
+    const spinePts: { x: number; y: number; bow?: number }[] = [];
     const lastIndex = timeline.length - 1;
     let y = TOP_PAD;
     // Nodes normally alternate sides; a drift holds the side (see below), so
@@ -99,14 +101,13 @@ export function TemporalSpine({
       }
 
       if (i < lastIndex) {
-        // Crossing to the other side across a drift is what made this stretch
-        // read as bend-straight-bend: the whole crossing had to be crammed in
-        // above the note. So don't cross here. The next node keeps this side
-        // and the spine bows outward, away from the note, through the middle of
-        // the run — a single arc (vertical tangent at the apex, so no corner),
-        // over exactly the same height as before. The note gets the whole
-        // opposite half, top to bottom. Alternation resumes at the next node.
-        const start = y + NODE_H / 2; // note's top; the run's apex is mid-note
+        // The spine does not cross sides at a drift — crossing forced the whole
+        // sweep into the gap above the note, which read as a kink. Instead the
+        // next node keeps this side and the spine swings out around the note as
+        // one circular arc, over exactly the same height as before. The note
+        // gets the whole opposite half, top to bottom. Alternation resumes at
+        // the next node.
+        const start = y + NODE_H / 2; // note's top; the arc is widest mid-note
 
         let dy = start;
         for (const note of notes) {
@@ -114,8 +115,8 @@ export function TemporalSpine({
           out.push({ kind: 'drift', y: dy, height, text: note.text, side: onLeft ? 'right' : 'left' });
           dy += height;
         }
-        const bow = Math.min((dy - cy) * 0.14, BOW_MAX);
-        spinePts.push({ x: x + (onLeft ? -bow : bow), y: (cy + dy) / 2 });
+        const bow = Math.min((dy - cy) * 0.26, BOW_MAX);
+        spinePts[spinePts.length - 1].bow = onLeft ? -bow : bow;
         y = dy - NODE_H / 2;
       } else {
         // Drift after the last node: the spine ends here, so there is no line
@@ -128,18 +129,73 @@ export function TemporalSpine({
       }
     });
 
-    // Smooth S-curve through the waypoints: vertical tangents at each point so
-    // the spline flows down rather than zig-zagging. A shoulder→next-node pair
-    // shares an x, making that stretch a clean vertical line beside the drift.
+    // Between plain waypoints the spline runs vertical-to-vertical, reading as
+    // a smooth S rather than a zig-zag. A bowed run is different: it is a real
+    // circular arc.
+    //
+    // A bump whose ends are both vertical CANNOT be one curve — it has to lean
+    // out, come back, and lean out again, which is the out-in-out the eye
+    // picks up. A circular arc has no inflection at all, but its ends are
+    // necessarily tilted off vertical. So the arc dictates the travel direction
+    // at the nodes it touches, and the neighbouring segments are built from
+    // those directions instead of assuming vertical — the tilt is absorbed by
+    // the runs above and below, leaving no corner anywhere.
+    const tangents = spinePts.map(() => ({ x: 0, y: 1 })); // vertical by default
+    const arcSegments = new Map<number, string>();
+
+    spinePts.forEach((p, i) => {
+      const next = spinePts[i + 1];
+      if (!p.bow || !next) return;
+      const L = next.y - p.y; // chord: the two nodes share an x, so it's vertical
+      const s = Math.abs(p.bow);
+      const dir = Math.sign(p.bow); // -1 swings left, +1 right
+      const r = (L * L / 4 + s * s) / (2 * s); // radius from chord and sagitta
+      const cx = p.x - dir * (r - s); // centre sits opposite the swing
+      const cy = (p.y + next.y) / 2;
+      const half = Math.asin(Math.min(1, L / 2 / r)); // half the swept angle
+      const a0 = dir < 0 ? Math.PI + half : -half;
+      const sweep = dir * 2 * half;
+
+      // Travel direction along the arc, used to blend the adjoining runs.
+      const at = (a: number) => {
+        const t = { x: -Math.sin(a) * Math.sign(sweep), y: Math.cos(a) * Math.sign(sweep) };
+        const m = Math.hypot(t.x, t.y);
+        return { x: t.x / m, y: t.y / m };
+      };
+      tangents[i] = at(a0);
+      tangents[i + 1] = at(a0 + sweep);
+
+      // Two cubics per arc, at the exact circular control-arm ratio.
+      const step = sweep / 2;
+      const k = (4 / 3) * Math.tan(step / 4);
+      let seg = '';
+      for (let h = 0; h < 2; h++) {
+        const a = a0 + step * h;
+        const b = a + step;
+        const p0 = { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+        const p3 = { x: cx + r * Math.cos(b), y: cy + r * Math.sin(b) };
+        const c1 = { x: p0.x - k * r * Math.sin(a), y: p0.y + k * r * Math.cos(a) };
+        const c2 = { x: p3.x + k * r * Math.sin(b), y: p3.y - k * r * Math.cos(b) };
+        seg += ` C${c1.x},${c1.y} ${c2.x},${c2.y} ${p3.x},${p3.y}`;
+      }
+      arcSegments.set(i, seg);
+    });
+
     let d = '';
     spinePts.forEach((n, i) => {
       if (i === 0) {
         d = `M${n.x},${n.y}`;
-      } else {
-        const prev = spinePts[i - 1];
-        const mid = (prev.y + n.y) / 2;
-        d += ` C${prev.x},${mid} ${n.x},${mid} ${n.x},${n.y}`;
+        return;
       }
+      const arc = arcSegments.get(i - 1);
+      if (arc) {
+        d += arc;
+        return;
+      }
+      const prev = spinePts[i - 1];
+      const reach = (n.y - prev.y) / 2;
+      d += ` C${prev.x + tangents[i - 1].x * reach},${prev.y + tangents[i - 1].y * reach}` +
+        ` ${n.x - tangents[i].x * reach},${n.y - tangents[i].y * reach} ${n.x},${n.y}`;
     });
 
     return { rows: out, spineHeight: y + Spacing[6], path: d };

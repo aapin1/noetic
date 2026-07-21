@@ -90,6 +90,34 @@ describe("getWrappedStats local-clock derivations", () => {
     expect(eastern.currentStreak).toBe(2);
   });
 
+  it("keeps the streak alive when the last capture was yesterday", async () => {
+    const yesterday = new Date("2026-07-08T17:00:00Z"); // Jul 8, 1pm in UTC-4
+    const dayBefore = new Date("2026-07-07T17:00:00Z");
+
+    const stats = await getWrappedStats(
+      "user_1",
+      { tzOffsetMinutes: -240 },
+      fakeDb([dayBefore, yesterday]),
+    );
+
+    expect(stats.currentStreak).toBe(2);
+  });
+
+  it("ends the current streak once a day has been missed", async () => {
+    // A clean three-day run that stopped five days ago. The record stands; the
+    // streak does not.
+    const run = [
+      new Date("2026-07-01T17:00:00Z"),
+      new Date("2026-07-02T17:00:00Z"),
+      new Date("2026-07-03T17:00:00Z"),
+    ];
+
+    const stats = await getWrappedStats("user_1", { tzOffsetMinutes: -240 }, fakeDb(run));
+
+    expect(stats.longestStreak).toBe(3);
+    expect(stats.currentStreak).toBe(0);
+  });
+
   it("ignores an out-of-range timezone offset instead of skewing the buckets", async () => {
     const stats = await getWrappedStats("user_1", { tzOffsetMinutes: Number.NaN }, fakeDb([THIS_AFTERNOON]));
 

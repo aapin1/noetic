@@ -1117,7 +1117,15 @@ function StreakStrip({
   const c = useThemeColors();
   const progress = useDrawIn(active, 900);
   const max = Math.max(1, ...days.map((d) => d.count));
-  const liveFrom = days.length - currentStreak;
+  // The live run is read off the strip itself rather than counted back from the
+  // end: a streak that reached yesterday (today's dot still empty) would
+  // otherwise light the wrong dots by one.
+  const liveFrom = (() => {
+    if (currentStreak <= 0) return days.length;
+    let end = days.length - 1;
+    while (end >= 0 && days[end].count === 0) end -= 1;
+    return Math.max(0, end - currentStreak + 1);
+  })();
   const lead = progress * (days.length + 6);
 
   return (
@@ -1526,10 +1534,20 @@ export function WrappedSection({
 
   // Only fetched once you're past the terrain gate, so the extra (embedding-
   // heavy, server-cached) endpoint never runs for lighter users.
-  const { data: terrain } = useApiQuery(() => api.memory.terrain(), [], {
+  const { data: terrain, refetch: refetchTerrain } = useApiQuery(() => api.memory.terrain(), [], {
     cacheKey: 'memory.terrain',
     skip: (stats?.totalCaptures ?? 0) < GATE_TERRAIN,
   });
+
+  // This tab stays mounted, so without a focus re-read the terrain fetched
+  // once per app launch and never moved. The server serves it from cache and
+  // rebuilds behind the response, so re-reading on focus is what actually
+  // brings the refreshed portrait down.
+  const focused = useIsFocused();
+  const terrainGated = (stats?.totalCaptures ?? 0) < GATE_TERRAIN;
+  useEffect(() => {
+    if (focused && !terrainGated) void refetchTerrain();
+  }, [focused, terrainGated, refetchTerrain]);
 
   if (!stats) return null;
   const w = stats;
