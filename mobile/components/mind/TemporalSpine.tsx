@@ -29,9 +29,12 @@ const { width: SW, height: SH } = Dimensions.get('window');
 const TOP_PAD = 96; // room for the thread header before the first node
 const NODE_H = 72;
 const SWAY = SW * 0.2; // how far nodes swing off the center line
-// A drift box owns the bend's pocket: the 48% of the width the spine has not
-// yet crossed into at the top of the slot.
+// A drift box owns the half of the width the spine stays out of while it
+// passes the note.
 const DRIFT_FAR_EDGE = SW * 0.52;
+// Passing a drift, the spine holds its side and bows away from the note — one
+// continuous arc, apex at the middle of the run.
+const BOW_MAX = SW * 0.11;
 
 // A drift box's height grows with its text so the note never gets clipped.
 const DRIFT_LABEL_H = 34; // "DRIFT" label + margin
@@ -79,8 +82,10 @@ export function TemporalSpine({
     const spinePts: { x: number; y: number }[] = [];
     const lastIndex = timeline.length - 1;
     let y = TOP_PAD;
+    // Nodes normally alternate sides; a drift holds the side (see below), so
+    // the side is carried rather than derived from the index.
+    let onLeft = true;
     timeline.forEach((node, i) => {
-      const onLeft = i % 2 === 0;
       const x = SW * 0.5 + (onLeft ? -SWAY : SWAY);
       const cy = y + NODE_H / 2;
       out.push({ kind: 'node', y, x, index: i, id: node.id, label: node.label, capturedAt: node.capturedAt });
@@ -88,29 +93,29 @@ export function TemporalSpine({
       y += NODE_H;
 
       const notes = driftNotes.filter((n) => n.atIndex === i);
-      if (notes.length === 0) return;
+      if (notes.length === 0) {
+        onLeft = !onLeft;
+        return;
+      }
 
       if (i < lastIndex) {
-        // A drift lives beside a STRAIGHT run of the spine, with the bend to
-        // the next node completed just ABOVE it. Concentrate that bend into a
-        // short shoulder, then run the spine straight down at the next node's
-        // x while the note fills the pocket the spine just vacated — so the box
-        // always has clear space to grow downward, never landing on the line.
-        const nextOnLeft = (i + 1) % 2 === 0;
-        const nextX = SW * 0.5 + (nextOnLeft ? -SWAY : SWAY);
-        const shoulderY = y + NODE_H / 2; // bend ends here, straight run begins
-        spinePts.push({ x: nextX, y: shoulderY });
+        // Crossing to the other side across a drift is what made this stretch
+        // read as bend-straight-bend: the whole crossing had to be crammed in
+        // above the note. So don't cross here. The next node keeps this side
+        // and the spine bows outward, away from the note, through the middle of
+        // the run — a single arc (vertical tangent at the apex, so no corner),
+        // over exactly the same height as before. The note gets the whole
+        // opposite half, top to bottom. Alternation resumes at the next node.
+        const start = y + NODE_H / 2; // note's top; the run's apex is mid-note
 
-        let dy = shoulderY;
+        let dy = start;
         for (const note of notes) {
           const height = estimateDriftHeight(note.text);
-          // Vacated side: the spine has moved to nextX, so node i's own side
-          // is now open.
-          out.push({ kind: 'drift', y: dy, height, text: note.text, side: onLeft ? 'left' : 'right' });
+          out.push({ kind: 'drift', y: dy, height, text: note.text, side: onLeft ? 'right' : 'left' });
           dy += height;
         }
-        // Next node's center sits at the bottom of the straight run, so the
-        // straight segment (shoulder → next node) runs the full drift height.
+        const bow = Math.min((dy - cy) * 0.14, BOW_MAX);
+        spinePts.push({ x: x + (onLeft ? -bow : bow), y: (cy + dy) / 2 });
         y = dy - NODE_H / 2;
       } else {
         // Drift after the last node: the spine ends here, so there is no line

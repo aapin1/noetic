@@ -519,6 +519,13 @@ export interface PulseMapNode {
   topics: { topicId: string; name: string }[];
 }
 
+export interface PulseMapEdge {
+  from: string;
+  to: string;
+  type: 'RECURS' | 'REINFORCES' | 'CONTRADICTS' | 'EVOLVES_FROM' | 'RELATED';
+  weight: number;
+}
+
 export interface PulseMapCluster {
   topicId: string;
   name: string;
@@ -546,7 +553,7 @@ export interface PulseFriend {
   captureCount: number;
   /** What they're getting into lately, or null when nothing is picking up. */
   rising: { topicId: string; name: string } | null;
-  map: { nodes: PulseMapNode[]; clusters: PulseMapCluster[] };
+  map: { nodes: PulseMapNode[]; edges: PulseMapEdge[]; clusters: PulseMapCluster[] };
   latest: PulseLatestItem[];
 }
 

@@ -384,6 +384,12 @@ export async function searchProfiles(args: { userId: string; query: string; db?:
 }
 
 const PULSE_LATEST_COUNT = 4;
+/**
+ * The minimap draws the strongest connections between the nodes it shows. The
+ * edges come free (getMemoryGraph already fetched them), so this cap is purely
+ * about payload size and keeping the thumbnail from turning into a hairball.
+ */
+const PULSE_MAP_EDGES = 80;
 
 /**
  * The pulse: for every person the viewer follows, a small version of their
@@ -460,6 +466,15 @@ export async function getPulse(args: { userId: string; db?: DbClient }) {
             kind: node.kind,
             topics: node.topics,
           })),
+          edges: [...graph.edges]
+            .sort((a, b) => b.weight - a.weight)
+            .slice(0, PULSE_MAP_EDGES)
+            .map((edge) => ({
+              from: edge.fromItemId,
+              to: edge.toItemId,
+              type: edge.type,
+              weight: edge.weight,
+            })),
           clusters: graph.clusters.map((cluster) => ({
             topicId: cluster.topicId,
             name: cluster.name,

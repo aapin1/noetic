@@ -77,6 +77,43 @@ const GATE_TERRAIN = 50;
 const AD_EVERY = 3;
 const AD_PHASE = 2;
 
+/**
+ * Rolled once when the app process starts, so the wrapped stack is laid out
+ * differently each time you open Mneme but never re-orders under you while
+ * you're scrolling it.
+ */
+const SESSION_SEED = Math.floor(Math.random() * 0xffffffff);
+
+/** xorshift-ish string hash → [0,1). */
+function hash01(key: string): number {
+  let h = SESSION_SEED ^ 0x9e3779b9;
+  for (let i = 0; i < key.length; i += 1) {
+    h = Math.imul(h ^ key.charCodeAt(i), 0x85ebca6b);
+    h ^= h >>> 13;
+  }
+  return ((h >>> 0) % 100000) / 100000;
+}
+
+/**
+ * How far a card may drift from its authored slot, in card widths. 1.5 keeps
+ * neighbours swapping and the odd card jumping two places — the stack reads
+ * fresh without the narrative (counts → fields → topics → habits) scrambling.
+ */
+const DRIFT = 1.5;
+
+/** Reorders the middle of the stack; the hero and the closer stay put. */
+function spiced<T extends { key: string }>(cards: T[]): T[] {
+  if (cards.length <= 3) return cards;
+  const first = cards[0];
+  const last = cards[cards.length - 1];
+  const middle = cards
+    .slice(1, -1)
+    .map((card, i) => ({ card, at: i + (hash01(card.key) * 2 - 1) * DRIFT }))
+    .sort((a, b) => a.at - b.at)
+    .map((x) => x.card);
+  return [first, ...middle, last];
+}
+
 const ARCHETYPE_ICONS: Record<ArchetypeFormat, typeof Link2> = {
   link: Link2,
   text: PenLine,
@@ -201,7 +238,10 @@ function RevealCard({
         cardY.value = e.nativeEvent.layout.y;
         measured.value = 1;
       }}
-      style={[styles.card, { borderColor: c.border, backgroundColor: c.surface }, style, anim]}
+      // No fill: the cards sit directly on the page tint, the same way the
+      // archive rows and pulse cards do. A white surface made this tab read as
+      // a different app.
+      style={[styles.card, { borderColor: c.border }, style, anim]}
     >
       {children}
     </Animated.View>
@@ -402,7 +442,7 @@ function Spectrum({ items }: { items: { name: string; count: number }[] }) {
 
   return (
     <View style={styles.spectrumWrap}>
-      <View style={[styles.spectrumBar, { backgroundColor: c.surface }]}>
+      <View style={[styles.spectrumBar, { backgroundColor: c.elevated }]}>
         {items.map((it, i) => (
           <View
             key={it.name}
@@ -859,7 +899,7 @@ function ScrollRightHint({
   const anim = useAnimatedStyle(() => ({ opacity: 1 - progress.value }));
 
   return (
-    <Animated.View style={[styles.tlHint, { backgroundColor: c.surface, borderColor: accent }, anim]}>
+    <Animated.View style={[styles.tlHint, { backgroundColor: c.canvas, borderColor: accent }, anim]}>
       <Pressable
         onPress={onPress}
         hitSlop={8}
@@ -934,7 +974,7 @@ function DiscoveryTimeline({ items, accent }: { items: string[]; accent: string 
                     styles.tlDot,
                     newest
                       ? { backgroundColor: accent }
-                      : { backgroundColor: c.surface, borderWidth: 1.5, borderColor: accent },
+                      : { backgroundColor: c.canvas, borderWidth: 1.5, borderColor: accent },
                   ]}
                 />
                 <View
@@ -1423,7 +1463,7 @@ function TerrainGlyph({ data, accent }: { data: TerrainResponse; accent: string 
             <Circle key={`n${i}`} cx={n.x} cy={n.y} r={n.r} fill={accent} opacity={0.55} />
           ))}
           {/* then — hollow */}
-          <Circle cx={geom.x0} cy={geom.midY} r={7} fill={c.surface} stroke={c.faint} strokeWidth={1.5} />
+          <Circle cx={geom.x0} cy={geom.midY} r={7} fill={c.canvas} stroke={c.faint} strokeWidth={1.5} />
           {/* now — filled */}
           <Circle cx={geom.x1} cy={geom.midY} r={8} fill={accent} />
           <Circle cx={geom.x1} cy={geom.midY} r={14} fill={accent} opacity={0.14} />
@@ -1514,7 +1554,8 @@ export function WrappedSection({
   // The current run has reached the all-time best, so the two are the same story.
   const streakOngoing = w.currentStreak >= 2 && w.currentStreak === w.longestStreak;
 
-  // Build the visible cards in order, then interleave an ad after every Nth —
+  // Build the visible cards in their authored order (`spiced` nudges them
+  // around at render), then interleave an ad after every Nth —
   // counting only cards that actually render, so the ad cadence is stable no
   // matter which sections are gated out.
   const cards: { key: string; node: React.ReactNode }[] = [
@@ -1709,7 +1750,7 @@ export function WrappedSection({
         your mneme, wrapped
       </Text>
 
-      {cards.map((card, i) => (
+      {spiced(cards).map((card, i) => (
         <React.Fragment key={card.key}>
           {card.node}
           {/* Ad above every Nth card, never after the last. The negative margin

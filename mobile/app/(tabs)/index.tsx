@@ -983,7 +983,7 @@ function StepOne({
       <View ref={nextTarget.ref} onLayout={nextTarget.onLayout}>
         {mode === 'image' ? (
           <View style={[sh.inputBox, { borderColor: c.border }]}>
-            <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>IMAGE_</Text>
+            <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>IMAGE</Text>
             {imageUri ? (
               <Image source={{ uri: imageUri }} style={sh.thumb} contentFit="cover" />
             ) : (
@@ -1006,7 +1006,7 @@ function StepOne({
         ) : (
           <View style={[sh.inputBox, { borderColor: c.border }]}>
             <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>
-              {mode === 'link' ? 'URL_' : 'THOUGHT_'}
+              {mode === 'link' ? 'URL' : 'THOUGHT'}
             </Text>
             <TextInput
               style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}

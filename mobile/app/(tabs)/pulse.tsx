@@ -100,7 +100,12 @@ function FriendCard({
 
       {map.nodes.length > 0 ? (
         <View style={styles.mapWrap}>
-          <MiniMap nodes={map.nodes} clusters={map.clusters} width={CARD_W - Spacing[5] * 2} />
+          <MiniMap
+            nodes={map.nodes}
+            edges={map.edges}
+            clusters={map.clusters}
+            width={CARD_W - Spacing[5] * 2}
+          />
           {!!topRegions && (
             <Text variant="monoSmall" style={[styles.regions, { color: c.faint }]} numberOfLines={1}>
               {topRegions}

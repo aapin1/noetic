@@ -27,7 +27,7 @@ export function ShareRecapEntry() {
         accessibilityLabel="Share what you've been up to"
         style={({ pressed }) => [
           styles.card,
-          { borderColor: c.border, backgroundColor: c.surface },
+          { borderColor: c.border },
           pressed && { opacity: 0.75 },
         ]}
       >
