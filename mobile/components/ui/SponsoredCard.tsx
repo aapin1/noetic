@@ -33,19 +33,6 @@ try {
   adLog('native module MISSING — this dev client was built without it. Rebuild:', e);
 }
 
-/**
- * Our own native unit — the same one the preview/production EAS profiles set,
- * so local dev exercises the unit that actually ships.
- *
- * It is deliberately NOT Google's demo unit: demo units are served by
- * publisher pub-3940256099942544, and once an account has an app-ads.txt that
- * doesn't authorize that publisher, every demo request comes back "No ad to
- * show". Our unit paired with a registered test device (below) is the path
- * Google actually recommends, and it can't silently rot the same way.
- */
-const NATIVE_AD_UNIT_ID =
-  process.env.EXPO_PUBLIC_ADMOB_NATIVE_UNIT_ID ?? 'ca-app-pub-3892528257283491/6139860918';
-
 let initialized = false;
 async function initAds(): Promise<boolean> {
   if (!ads) return false;
@@ -118,7 +105,10 @@ export function SponsoredCard({ tone = 'auto' }: { tone?: 'auto' | 'dark' } = {}
 
     void (async () => {
       if (!(await initAds()) || disposed) return;
-      const adUnitId = NATIVE_AD_UNIT_ID;
+      // Dev stays on the demo unit: it costs nothing, carries no
+      // invalid-traffic risk, and starts filling the moment the AdMob account
+      // is approved. Real units only ever ship via the EAS env var.
+      const adUnitId = process.env.EXPO_PUBLIC_ADMOB_NATIVE_UNIT_ID ?? ads!.TestIds.NATIVE;
       try {
         loaded = await ads!.NativeAd.createForAdRequest(adUnitId);
         adLog('ad loaded from', adUnitId);
