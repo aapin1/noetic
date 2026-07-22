@@ -50,9 +50,18 @@ async function loadTopicsForUser(db: DbClient, userId: string, limit = 100): Pro
 /** Rows of (item, topic) scanned to learn which general field each specific
  * label lives under. Bounded so classification cost stays flat as the map grows. */
 const EXISTING_TOPIC_SCAN = 1000;
-/** Labels offered per general field. Stops one dominant field from crowding
- * every other field out of the classifier's prompt budget. */
-const LABELS_PER_GENERAL = 8;
+/**
+ * Labels offered per general field. Stops one dominant field from crowding
+ * every other field out of the classifier's prompt budget.
+ *
+ * Labels are ranked by how much the user uses them, so this is also the depth
+ * at which an existing thread can still be JOINED: below the cut, a capture on
+ * the same subject can't see the label and coins a near-duplicate instead —
+ * which is how a thread stops growing. The classifier's overall budget is 40
+ * labels, so for anyone concentrated in one or two fields this cap was the
+ * binding one, not the budget.
+ */
+const LABELS_PER_GENERAL = 14;
 
 /**
  * The user's specific sub-topics, grouped by the general field they actually

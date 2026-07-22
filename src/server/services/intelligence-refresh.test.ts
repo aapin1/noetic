@@ -4,6 +4,7 @@ import {
   activityScore,
   getPersonalIntelligence,
   groupCapturesByTopic,
+  preferSpecific,
   rankByActivity,
   type LoadedCapture,
 } from "@/server/services/intelligence";
@@ -118,6 +119,32 @@ describe("activity ranking", () => {
     // By raw count "settled" wins 20–4, which is exactly how the same topics
     // used to hold every Mind slot forever.
     expect(ranked[0].topicId).toBe("current");
+  });
+});
+
+describe("preferSpecific", () => {
+  it("keeps coarse fields from taking slots a specific topic could hold", () => {
+    // Every capture is filed under a general field, so "philosophy" is always
+    // the biggest and freshest group — it used to win every slot forever.
+    const captures = [
+      ...Array.from({ length: 30 }, (_, i) => capture(`g${i}`, "philosophy", daysAgo(i % 10))),
+      ...Array.from({ length: 5 }, (_, i) => capture(`s${i}`, "stoicism", daysAgo(i))),
+      ...Array.from({ length: 4 }, (_, i) => capture(`v${i}`, "virtue ethics", daysAgo(i))),
+    ];
+    const ranked = rankByActivity(groupCapturesByTopic(captures, 2), NOW);
+
+    expect(ranked[0].topicId).toBe("philosophy");
+    expect(preferSpecific(ranked, 2).map((g) => g.topicId)).toEqual(["stoicism", "virtue ethics"]);
+  });
+
+  it("falls back to fields when there aren't enough specific topics", () => {
+    const captures = [
+      ...Array.from({ length: 6 }, (_, i) => capture(`g${i}`, "philosophy", daysAgo(i))),
+      ...Array.from({ length: 3 }, (_, i) => capture(`s${i}`, "stoicism", daysAgo(i))),
+    ];
+    const ranked = rankByActivity(groupCapturesByTopic(captures, 2), NOW);
+
+    expect(preferSpecific(ranked, 4).map((g) => g.topicId)).toEqual(["stoicism", "philosophy"]);
   });
 });
 

@@ -7,6 +7,7 @@ import {
   generateConvergenceSignal,
   generateTopicTension,
 } from "@/server/cognition/llm";
+import { isGeneralTopic } from "@/server/cognition/generalTopics";
 
 // Thresholds are deliberately low so insights start surfacing within the
 // first handful of captures and keep refreshing as new ones land. Mind is a
@@ -16,17 +17,20 @@ const DORMANT_ACTIVE_MIN = 2;
 const DORMANT_SILENT_DAYS = 14;
 const DORMANT_LIMIT = 4;
 const CONVERGENCE_SOURCE_MIN = 2;
-const CONVERGENCE_LIMIT = 3;
+const CONVERGENCE_LIMIT = 5;
 const CAPTURE_SCAN_LIMIT = 200;
-const CONTRADICTION_EDGE_LIMIT = 5;
-const CONTRADICTION_CARD_LIMIT = 6;
+const CONTRADICTION_EDGE_LIMIT = 6;
+const CONTRADICTION_CARD_LIMIT = 8;
 // Topics with at least this many captures are scanned by the LLM for internal
 // tension (friction / ambivalence / competing intuitions), not just the hard
 // polarity-based CONTRADICTS edges.
 const TOPIC_TENSION_MIN = 3;
-const TOPIC_TENSION_SCAN = 4;
+const TOPIC_TENSION_SCAN = 6;
 const THREAD_SYNTHESIS_THRESHOLD = 3;
-const THREAD_SYNTHESIS_LIMIT = 4;
+// Room for new instruments to APPEAR rather than having to evict an existing
+// one. The qualifying thresholds above are unchanged — a thread still needs
+// real material behind it; there are simply more slots for the ones that earn it.
+const THREAD_SYNTHESIS_LIMIT = 6;
 const THREAD_ITEM_IDS_LIMIT = 12;
 /**
  * Candidate topics are ranked by recency-weighted activity rather than raw
@@ -262,6 +266,66 @@ export function rankByActivity(groups: TopicGroup[], now: Date): TopicGroup[] {
     .map((entry) => entry.group);
 }
 
+/**
+ * Specific sub-topics first, coarse fields only as fill.
+ *
+ * Every capture is filed under one of 26 general fields, so the general groups
+ * are always the biggest AND the most recently fed — they won every slot on any
+ * size- or activity-based ranking, forever. That is why Mind never moved: its
+ * threads were "philosophy" and "technology", and another philosophy capture
+ * just made an unchanging group marginally bigger.
+ *
+ * Specifics ("stoicism", "attention mechanisms") are where thinking actually
+ * develops, there are far more of them, and they turn over as you read — so new
+ * threads and convergences genuinely appear. Fields still fill any spare slots,
+ * which keeps a young account from having an empty Mind.
+ */
+export function preferSpecific(groups: TopicGroup[], limit: number): TopicGroup[] {
+  const specific = groups.filter((g) => !isGeneralTopic(g.topicName));
+  if (specific.length >= limit) return specific.slice(0, limit);
+  return [...specific, ...groups.filter((g) => isGeneralTopic(g.topicName))].slice(0, limit);
+}
+
+// ── background warming ──────────────────────────────────────────────────────
+
+/** Long enough that a burst of captures (a share-sheet session, a batch of
+ * links) collapses into one rebuild instead of one per item. */
+const WARM_DELAY_MS = 45_000;
+const warmTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * Rebuilds the changed parts of a user's Mind shortly after a capture, so the
+ * new material is already woven in by the time they open the tab rather than
+ * being generated while they wait on it.
+ *
+ * Deliberately conditional on the user already having an intelligence cache
+ * row — i.e. having opened Mind at least once. Someone who never looks at Mind
+ * never pays for this. For someone who does, it is not extra spend: it is the
+ * same delta they would have been billed for on open, moved off their critical
+ * path. Repeated calls debounce, so a run of captures costs one rebuild.
+ */
+export function scheduleIntelligenceWarm(userId: string, db?: DbClient): void {
+  const existing = warmTimers.get(userId);
+  if (existing) clearTimeout(existing);
+
+  const timer = setTimeout(() => {
+    warmTimers.delete(userId);
+    void (async () => {
+      const client = db ?? prisma;
+      const seen = await client.intelligenceCache.findUnique({
+        where: { userId },
+        select: { userId: true },
+      });
+      if (!seen) return;
+      await getPersonalIntelligence({ userId, db: client });
+    })().catch((err) => console.error("[intelligence] background warm failed", err));
+  }, WARM_DELAY_MS);
+
+  // Never hold the process open just to warm a cache.
+  (timer as { unref?: () => void }).unref?.();
+  warmTimers.set(userId, timer);
+}
+
 export function groupCapturesByTopic(captures: LoadedCapture[], minCount: number): TopicGroup[] {
   const map = new Map<string, TopicGroup>();
   for (const capture of captures) {
@@ -393,13 +457,19 @@ export async function getPersonalIntelligence(args: {
 
   const now = new Date();
   const allGroups = groupCapturesByTopic(captures, 2);
-  const dormantThreads = findDormantThreads(allGroups, now);
   // Ranked by living activity, not lifetime size — otherwise the same handful
   // of long-established topics hold every slot forever.
   const activeGroups = rankByActivity(allGroups, now);
-  const threadCandidates = activeGroups
-    .filter((g) => g.captures.length >= THREAD_SYNTHESIS_THRESHOLD)
-    .slice(0, THREAD_SYNTHESIS_LIMIT);
+  // A coarse field can't go dormant while you keep reading anything nearby, so
+  // dormancy is only meaningful for the specific threads you actually dropped.
+  const dormantThreads = findDormantThreads(
+    activeGroups.filter((g) => !isGeneralTopic(g.topicName)),
+    now,
+  );
+  const threadCandidates = preferSpecific(
+    activeGroups.filter((g) => g.captures.length >= THREAD_SYNTHESIS_THRESHOLD),
+    THREAD_SYNTHESIS_LIMIT,
+  );
 
   const store = new EntryStore(readCacheFile(cached?.payload));
 
@@ -413,7 +483,10 @@ export async function getPersonalIntelligence(args: {
     },
   });
 
-  const convergenceCandidates = diversifyGroups(findConvergenceCandidates(activeGroups), CONVERGENCE_LIMIT);
+  const convergenceCandidates = diversifyGroups(
+    preferSpecific(findConvergenceCandidates(activeGroups), CONVERGENCE_LIMIT * 2),
+    CONVERGENCE_LIMIT,
+  );
 
   // Pairs already captured as hard CONTRADICTS edges — so the softer LLM
   // tension scan doesn't surface the same pair twice.
@@ -423,9 +496,10 @@ export async function getPersonalIntelligence(args: {
       `${e.toItemId}:${e.fromItemId}`,
     ]),
   );
-  const tensionGroups = activeGroups
-    .filter((g) => g.captures.length >= TOPIC_TENSION_MIN)
-    .slice(0, TOPIC_TENSION_SCAN);
+  const tensionGroups = preferSpecific(
+    activeGroups.filter((g) => g.captures.length >= TOPIC_TENSION_MIN),
+    TOPIC_TENSION_SCAN,
+  );
 
   function edgeItemLabel(item: { rawText: string | null; contentItem: { title: string } | null }): string {
     return item.contentItem?.title ?? item.rawText?.slice(0, 80) ?? "Untitled capture";

@@ -42,6 +42,7 @@ import { cosineSim } from "@/server/cognition/layout";
 import { describeImage, embedText, polishInsights, type Recommendation } from "@/server/cognition/llm";
 import { isPaidTranscriptHost, scoreContentConfidence } from "@/server/metadata";
 import { applyTopicWeights, incrementTasteProfileVersion } from "@/server/services/activity";
+import { scheduleIntelligenceWarm } from "@/server/services/intelligence";
 
 const NEIGHBOR_LIMIT = 6;
 const NEIGHBOR_SCAN = 80;
@@ -905,6 +906,10 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     }
 
     await incrementTasteProfileVersion(db, payload.userId);
+
+    // Weave this capture into Mind behind the scenes, so opening the tab shows
+    // it already threaded in rather than generating it while the user waits.
+    scheduleIntelligenceWarm(payload.userId);
   })().catch((err) => console.error("[capture] background bookkeeping failed", err));
 
   // Background: sharpen the draft insights with the LLM after the response is

@@ -37,6 +37,7 @@ import { SponsoredCard } from '@/components/ui/SponsoredCard';
 import {
   archetypeFor,
   currentStreakLine,
+  dormantStreakLine,
   emptyBody,
   emptyTitle,
   fieldsTitle,
@@ -134,7 +135,14 @@ function clamp(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v;
 }
 
-/** Counts to `value`, resuming from whatever is already on screen. */
+/**
+ * Counts to `value`, resuming from whatever is already on screen.
+ *
+ * The duration scales with the distance left to travel. Landing a fresh count
+ * after the first run has finished (you saved something, came back, and the
+ * revalidation added one) used to replay the full 900ms for a single digit,
+ * which read as the number hanging and then lurching.
+ */
 function useCountUp(value: number, active: boolean): number {
   const [display, setDisplay] = useState(0);
   const fromRef = useRef(0);
@@ -145,7 +153,7 @@ function useCountUp(value: number, active: boolean): number {
     if (from === value) return;
     let raf = 0;
     const start = Date.now();
-    const dur = 900;
+    const dur = clamp(Math.abs(value - from) * 45, 260, 900);
     const tick = () => {
       const t = Math.min(1, (Date.now() - start) / dur);
       const eased = 1 - Math.pow(1 - t, 3);
@@ -1519,9 +1527,14 @@ function TerrainCardBody({ data, accent }: { data: TerrainResponse; accent: stri
 export function WrappedSection({
   scrollY,
   stats,
+  settled,
 }: {
   scrollY: SharedValue<number>;
   stats: WrappedStats | null;
+  /** False while a revalidation is in flight. The hero counts to a NUMBER — it
+   * must not start counting toward a stale one, or you watch it run to the old
+   * total, stall, and then tick up again when the real answer lands. */
+  settled: boolean;
 }) {
   const { height: screenH } = useWindowDimensions();
   const sectionY = useSharedValue(0);
@@ -1549,6 +1562,17 @@ export function WrappedSection({
     if (focused && !terrainGated) void refetchTerrain();
   }, [focused, terrainGated, refetchTerrain]);
 
+  // The hero only animates once the number it is counting to is the real one.
+  const heroReady = heroActive && settled;
+  const burstable = heroReady && (stats?.totalCaptures ?? 0) > 0;
+  const burstedRef = useRef(false);
+  useEffect(() => {
+    if (!burstable || burstedRef.current) return;
+    burstedRef.current = true;
+    setConfettiKey((k) => k + 1);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [burstable]);
+
   if (!stats) return null;
   const w = stats;
   const arcs = w.arcs ?? EMPTY_ARCS;
@@ -1560,17 +1584,13 @@ export function WrappedSection({
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
-  const revealHero = () => {
-    setHeroActive(true);
-    if (w.totalCaptures > 0) burst();
-  };
-
   const cardProps = { scrollY, sectionY, screenH };
   const archetype = archetypeFor(w.formats[0]?.name, seed);
   const hasRhythm =
     w.busiestHour !== null && w.busiestDayOfWeek !== null && w.hourHistogram?.length === 24;
-  // The current run has reached the all-time best, so the two are the same story.
-  const streakOngoing = w.currentStreak >= 2 && w.currentStreak === w.longestStreak;
+  // A run of 1 is not a streak — it's just today. Below 2 the card falls back to
+  // reporting the record, explicitly labelled as one.
+  const streakLive = w.currentStreak >= 2;
 
   // Build the visible cards in their authored order (`spiced` nudges them
   // around at render), then interleave an ad after every Nth —
@@ -1580,7 +1600,7 @@ export function WrappedSection({
     {
       key: 'hero',
       node: (
-        <RevealCard {...cardProps} onReveal={revealHero} style={styles.hero}>
+        <RevealCard {...cardProps} onReveal={() => setHeroActive(true)} style={styles.hero}>
           {w.totalCaptures === 0 ? (
             <>
               <Text variant="h2" style={styles.heroTitle}>
@@ -1591,7 +1611,7 @@ export function WrappedSection({
               </Text>
             </>
           ) : (
-            <Hero w={w} accent={accent} active={heroActive} onBurst={burst} />
+            <Hero w={w} accent={accent} active={heroReady} onBurst={burst} />
           )}
         </RevealCard>
       ),
@@ -1666,13 +1686,19 @@ export function WrappedSection({
         <RevealCard {...cardProps} onReveal={() => setStreakActive(true)}>
           <View style={styles.streakHead}>
             <Text variant="hero" style={[styles.streakNumber, { color: accent }]}>
-              {w.longestStreak}
+              {streakLive ? w.currentStreak : w.longestStreak}
             </Text>
-            {/* When the current run is the record, the live framing IS the headline,
-                so we never state the same count on a second line below. */}
-            <Text variant="serif" color="secondary" style={styles.streakLine}>
-              {streakOngoing ? currentStreakLine(w.currentStreak) : longestStreakLine(w.longestStreak)}
-            </Text>
+            <View style={styles.streakHeadText}>
+              {/* The number is meaningless without saying which streak it IS.
+                  Leading with the all-time record and describing it in the
+                  present tense claimed a run that had already lapsed. */}
+              <Text variant="monoSmall" color="faint" style={styles.streakCaption}>
+                {streakLive ? 'days in a row, right now' : 'days — your longest run'}
+              </Text>
+              <Text variant="serif" color="secondary" style={styles.streakLine}>
+                {streakLive ? currentStreakLine(w.currentStreak) : longestStreakLine(w.longestStreak)}
+              </Text>
+            </View>
           </View>
           {arcs.days.length > 0 ? (
             <StreakStrip
@@ -1682,11 +1708,13 @@ export function WrappedSection({
               active={streakActive}
             />
           ) : null}
-          {!streakOngoing && w.currentStreak >= 2 ? (
-            <Text variant="monoSmall" color="faint" style={styles.currentStreak}>
-              {currentStreakLine(w.currentStreak)}
-            </Text>
-          ) : null}
+          <Text variant="monoSmall" color="faint" style={styles.currentStreak}>
+            {streakLive
+              ? w.longestStreak > w.currentStreak
+                ? `Your longest run is ${w.longestStreak} days.`
+                : 'That is your best run yet.'
+              : dormantStreakLine(w.currentStreak)}
+          </Text>
         </RevealCard>
       ),
     });
@@ -1936,8 +1964,10 @@ const styles = StyleSheet.create({
   weekBar: { width: 14, borderRadius: 2 },
 
   streakHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing[4] },
+  streakHeadText: { flex: 1 },
   streakNumber: { fontSize: 52, lineHeight: 56 },
-  streakLine: { flex: 1, lineHeight: 24 },
+  streakCaption: { marginBottom: Spacing[1] },
+  streakLine: { lineHeight: 24 },
   streakStrip: {
     flexDirection: 'row',
     justifyContent: 'space-between',

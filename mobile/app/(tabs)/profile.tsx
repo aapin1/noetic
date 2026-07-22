@@ -121,7 +121,7 @@ export default function YouScreen() {
             message={['counting your captures…', 'dusting the shelves…', 'adding it all up…']}
           />
         ) : (
-          <WrappedSection scrollY={scrollY} stats={wrapped} />
+          <WrappedSection scrollY={scrollY} stats={wrapped} settled={!wrappedLoading} />
         )}
 
         {/* Ads are interleaved between the wrapped cards inside WrappedSection now,

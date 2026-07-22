@@ -237,26 +237,30 @@ export function rhythmLine(hour: number, weekday: string): string {
 
 /* --------------------------------------------------------------- streak ---- */
 
-const STREAK_BANDS: { min: number; lines: readonly string[] }[] = [
+// Every line is a function of the actual count. Spelling the number into the
+// copy ("Seven days. The rare kind of consistent.") made the band MINIMUM the
+// thing the card said out loud, so a 10-day record was captioned "seven days"
+// right underneath a big 10.
+const STREAK_BANDS: { min: number; lines: readonly ((n: number) => string)[] }[] = [
   {
     min: 30,
-    lines: ['A month without missing. Genuinely absurd.', 'Thirty days. Who hurt you.'],
+    lines: [(n) => `${n} days without missing. Genuinely absurd.`, (n) => `${n} days. Who hurt you.`],
   },
   {
     min: 14,
-    lines: ['Two weeks straight. That streak has a personality.', 'Fourteen days of showing up.'],
+    lines: [(n) => `${n} days straight. That streak has a personality.`, (n) => `${n} days of showing up.`],
   },
   {
     min: 7,
-    lines: ['A full week, unbroken.', 'Seven days. The rare kind of consistent.'],
+    lines: [(n) => `${n} days, unbroken.`, (n) => `${n} days. The rare kind of consistent.`],
   },
   {
     min: 4,
-    lines: ['Most habits die before day four. Yours did not.', 'Four days is where it gets real.'],
+    lines: [(n) => `Most habits die before day four. Yours made ${n}.`, (n) => `${n} days is where it gets real.`],
   },
   {
     min: 2,
-    lines: ['Two days in a row counts, and we are counting it.', 'A tiny streak is still a streak.'],
+    lines: [(n) => `${n} days in a row counts, and we are counting it.`, (n) => `A ${n}-day streak is still a streak.`],
   },
 ];
 
@@ -269,11 +273,19 @@ const CURRENT_STREAK_LINES: readonly ((n: number) => string)[] = [
 export function longestStreakLine(longest: number): string {
   const band = STREAK_BANDS.find((b) => longest >= b.min);
   if (!band) return '';
-  return pick(band.lines, 'streak', band.min, longest);
+  return pick(band.lines, 'streak', band.min, longest)(longest);
 }
 
 export function currentStreakLine(current: number): string {
   return pick(CURRENT_STREAK_LINES, 'current-streak', current)(current);
+}
+
+/** Where the user stands today when no run is live — stated plainly, so the
+ * record above it can never be mistaken for something still going. */
+export function dormantStreakLine(current: number): string {
+  return current === 1
+    ? 'Today is day one of the next one.'
+    : 'Nothing running right now. One save starts the next.';
 }
 
 /* ------------------------------------------------------------ archetype ---- */
