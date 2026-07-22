@@ -18,7 +18,7 @@ export type ProxySession = {
     init?: { method?: string; headers?: Record<string, string>; body?: string; redirect?: RequestRedirect },
     timeoutMs?: number,
   ) => Promise<Response>;
-  /** Release proxy sockets. Call after all response bodies are consumed. */
+  /** Release proxy sockets. Safe to call with response bodies still unread. */
   close: () => Promise<void>;
 };
 
@@ -64,6 +64,16 @@ export function createProxySession(): ProxySession {
         clearTimeout(timer);
       }
     },
-    close: () => agent.close(),
+    // destroy(), not close(): a graceful close waits for every response body
+    // from this agent to be consumed, and the extraction ladder deliberately
+    // abandons bodies it can't use (`if (!res.ok) return undefined`, and
+    // textCapped's byte/time caps). Each of those sits inside a
+    // `finally { await session.close() }`, so the graceful form left
+    // fetchMetadata pending FOREVER rather than merely slow — a capture that
+    // never returned. Barely reachable from a residential IP, routine from a
+    // datacenter one, which is why it only showed up deployed. close() is
+    // always called when the session's work is already done, so forcibly
+    // dropping the sockets discards nothing a caller still wants.
+    close: () => agent.destroy(),
   };
 }
