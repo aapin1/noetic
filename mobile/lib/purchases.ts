@@ -89,26 +89,6 @@ export async function restorePurchases(): Promise<CustomerInfo | null> {
   return purchasesModule!.default.restorePurchases();
 }
 
-/**
- * Remote-configured RevenueCat paywall. Returns true when the user ended up
- * entitled (purchased or restored), false when they dismissed it, and null
- * when no paywall could be shown (SDK missing, none configured in the
- * dashboard) — callers then fall back to the in-app package list.
- */
-export async function presentPaywall(): Promise<boolean | null> {
-  if (!purchasesUiModule || !(await configurePurchases())) return null;
-  try {
-    const RevenueCatUI = purchasesUiModule.default;
-    const { PAYWALL_RESULT } = purchasesUiModule;
-    const result = await RevenueCatUI.presentPaywall();
-    if (result === PAYWALL_RESULT.PURCHASED || result === PAYWALL_RESULT.RESTORED) return true;
-    if (result === PAYWALL_RESULT.CANCELLED) return false;
-    return null; // NOT_PRESENTED / ERROR — no usable remote paywall
-  } catch {
-    return null;
-  }
-}
-
 /** RevenueCat Customer Center: cancel, refund, change plan — Apple-compliant
  * subscription management without building any of it. */
 export async function presentCustomerCenter(): Promise<boolean> {

@@ -12,7 +12,6 @@ import { useEntitlements } from '@/hooks/useEntitlements';
 import {
   getCurrentPackages,
   isProEntitled,
-  presentPaywall,
   purchasePackage,
   restorePurchases,
 } from '@/lib/purchases';
@@ -79,16 +78,8 @@ export default function PlusScreen() {
 
   useEffect(() => {
     void (async () => {
-      // Remote-configured paywall first: designable in the RevenueCat
-      // dashboard without an app update. Falls back to the in-app package
-      // list when none is configured (e.g. test store, fresh setup).
-      const paywall = await presentPaywall();
-      if (paywall === true) {
-        void finishPurchase();
-        return;
-      }
-      // Dismissed or unavailable: stay on this screen — it still shows the
-      // package list, usage meters, and restore.
+      // This screen is the paywall. Load the packages straight into the
+      // in-app plan list — no remote RevenueCat paywall in front of it.
       const pkgs = await getCurrentPackages();
       setPackages(pkgs);
       setAvailable(pkgs.length > 0);
@@ -96,8 +87,7 @@ export default function PlusScreen() {
       const preferred = pkgs.find((p) => p.packageType === 'ANNUAL') ?? pkgs[0];
       setSelectedId(preferred?.identifier ?? null);
     })();
-    // Intentionally once on mount — re-presenting the paywall on re-render
-    // would trap the user.
+    // Intentionally once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
