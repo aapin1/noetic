@@ -14,6 +14,14 @@ import { FolderGrid } from '@/components/archive/FolderGrid';
 import { FileList } from '@/components/archive/FileList';
 import { SponsoredCard } from '@/components/ui/SponsoredCard';
 
+/** Stable per-folder parity: true for ~half of folder ids, so an ad lands on
+ *  roughly every other folder rather than every one. */
+function folderShowsAd(topicId: string): boolean {
+  let sum = 0;
+  for (let i = 0; i < topicId.length; i++) sum += topicId.charCodeAt(i);
+  return sum % 2 === 0;
+}
+
 export default function ArchiveFolderScreen() {
   const { topicId } = useLocalSearchParams<{ topicId: string }>();
   const c = useThemeColors();
@@ -56,10 +64,14 @@ export default function ArchiveFolderScreen() {
   }
 
   const isEmpty = data.subfolders.length === 0 && data.entries.length === 0;
+  // Only about every other folder carries an ad — a stable hash of the folder
+  // id decides, so the same folder is always consistent (no flicker on refresh)
+  // and browsing subfolders doesn't hit an ad on every single screen.
+  const adForThisFolder = !isEmpty && folderShowsAd(topicId);
   // The seam between the subfolder grid and the file list is the one place an
   // ad reads as a divider rather than an interruption. With no grid there is
   // no seam, so it goes under the list instead of on top of the folder.
-  const adAtSeam = !isEmpty && data.subfolders.length > 0;
+  const adAtSeam = adForThisFolder && data.subfolders.length > 0;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
@@ -96,7 +108,7 @@ export default function ArchiveFolderScreen() {
 
         <FileList entries={data.entries} />
 
-        {!isEmpty && !adAtSeam ? <SponsoredCard /> : null}
+        {adForThisFolder && !adAtSeam ? <SponsoredCard /> : null}
       </ScrollView>
     </SafeAreaView>
   );

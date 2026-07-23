@@ -20,12 +20,12 @@ const PAGE_SIZE = 50;
 const MAX_DIARY_ADS = 4;
 /**
  * Ads sit between day headers: one after the most recent day (index 0), then
- * every other day after that — always with a following day, so an ad never
+ * every fourth day after that — always with a following day, so an ad never
  * dangles at the very end of the diary.
  */
 function showAdAfterDay(groupIndex: number, groupCount: number): boolean {
-  if (groupIndex % 2 !== 0 || groupIndex >= groupCount - 1) return false;
-  return groupIndex / 2 < MAX_DIARY_ADS;
+  if (groupIndex % 4 !== 0 || groupIndex >= groupCount - 1) return false;
+  return groupIndex / 4 < MAX_DIARY_ADS;
 }
 
 /** "November 1" — with the year appended once entries leave the current year. */

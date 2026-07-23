@@ -70,12 +70,14 @@ const GATE_TIMELINE = 7;
 const GATE_TERRAIN = 50;
 /**
  * An in-stream ad above every Nth wrapped card (FREE only; never after the
- * last). The cadence is phased so the first ad lands above card 3 rather than
- * card 4 — most accounts have their later cards gated out, so starting a card
- * later meant the whole stream showed exactly one ad, at the very bottom.
+ * last). The cadence is phased so the first ad lands above card 3 — most
+ * accounts have their later cards gated out, so starting later meant the whole
+ * stream showed exactly one ad, at the very bottom. AD_PHASE keeps that first
+ * ad at card 3 no matter how wide AD_EVERY is, so widening the cadence thins
+ * out the later ads without stripping the ad from lighter accounts entirely.
  */
-const AD_EVERY = 3;
-const AD_PHASE = 2;
+const AD_EVERY = 5;
+const AD_PHASE = 4;
 
 /**
  * Rolled once when the app process starts, so the wrapped stack is laid out
@@ -1553,6 +1555,9 @@ export function WrappedSection({
   if (!stats) return null;
   const w = stats;
   const arcs = w.arcs ?? EMPTY_ARCS;
+  // Payloads cached before the `newTopics` → `recentNewTopics` rename lack this
+  // field, so a stale cache hydrates it as undefined. Default like `arcs` above.
+  const recentNewTopics = w.recentNewTopics ?? [];
   const seed = w.totalCaptures * 31 + w.distinctTopics;
   const accent = accentFor(seed);
 
@@ -1623,7 +1628,7 @@ export function WrappedSection({
     });
   }
 
-  if (w.recentNewTopics.length > 0 && w.totalCaptures >= GATE_NEW_TOPICS) {
+  if (recentNewTopics.length > 0 && w.totalCaptures >= GATE_NEW_TOPICS) {
     cards.push({
       key: 'newTopics',
       node: (
@@ -1631,7 +1636,7 @@ export function WrappedSection({
           <Text variant="serif" style={styles.cardTitle}>
             {newTopicsTitle(seed)}
           </Text>
-          <DiscoveryTimeline items={w.recentNewTopics} accent={accent} />
+          <DiscoveryTimeline items={recentNewTopics} accent={accent} />
         </RevealCard>
       ),
     });
