@@ -110,14 +110,22 @@ export function TutorialOverlay() {
   const insets = useSafeAreaInsets();
   const [collapsed, setCollapsed] = useState(false);
   const cardOpacity = useRef(new Animated.Value(0)).current;
+  // Which step's card has been released to render. Compared against the
+  // CURRENT step id, so the first render after a step change is guaranteed not
+  // to draw a card: the opacity reset lives in an effect, which lands a frame
+  // too late and used to let the incoming card flash at full opacity before
+  // being hidden and faded back in.
+  const [revealedStepId, setRevealedStepId] = useState<string | null>(null);
 
   // Let the dimmed screen sit alone for a moment before the card slides in —
   // abrupt cards covering a chunk of an unfamiliar screen feel jarring.
   useEffect(() => {
     if (!active) return;
     setCollapsed(false);
+    setRevealedStepId(null);
     cardOpacity.setValue(0);
     const t = setTimeout(() => {
+      setRevealedStepId(step.id);
       Animated.timing(cardOpacity, { toValue: 1, duration: CARD_FADE_MS, useNativeDriver: true }).start();
     }, CARD_REVEAL_DELAY);
     return () => clearTimeout(t);
@@ -136,10 +144,12 @@ export function TutorialOverlay() {
   }
 
   const isCard = step.target.kind === 'card';
-  // Registered/tab steps normally only advance by the user touching the real
-  // control; "look at this" steps also offer the card's own button so the
-  // walkthrough can't strand someone on a target that never resolves.
-  const showCardButton = isCard || !!step.dismissible;
+  // Registered/tab steps only advance by the user touching the real control —
+  // the touch IS the lesson. Two exceptions get the card's own button: a step
+  // that lights a region with nothing to tap (`dismissible`), and a registered
+  // target whose rect never resolved, where there is no lit control to tap and
+  // the step would otherwise be a dead end.
+  const showCardButton = isCard || !!step.dismissible || (step.target.kind === 'registered' && !hole);
 
   const isLast = stepIndex === totalSteps - 1;
   const cardButtonLabel = isLast ? 'done' : stepIndex === 0 ? 'begin' : 'got it';
@@ -217,7 +227,7 @@ export function TutorialOverlay() {
 
       <View pointerEvents="box-none" style={[styles.cardWrap, cardAnchor]}>
         <Animated.View style={{ opacity: cardOpacity, width: '100%', alignItems: 'flex-end' }}>
-          {collapsed ? (
+          {revealedStepId !== step.id ? null : collapsed ? (
             <Pressable
               onPress={() => setCollapsed(false)}
               accessibilityRole="button"

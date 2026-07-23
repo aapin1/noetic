@@ -168,9 +168,11 @@ const TOPIC_KICKERS = [
   'Recurring obsessions',
 ];
 
+// No calendar language: the list is a rolling window of recent discoveries,
+// not a month, so "New this month" would be wrong most of the time.
 const NEW_TOPIC_TITLES = [
   'Fresh rabbit holes',
-  'New this month',
+  'Newly broken into',
   'Doors you opened recently',
   'First time here',
 ];
@@ -339,16 +341,10 @@ const NO_FOLLOW_LINES = [
   'Your orbit is empty. Go find someone.',
 ];
 
-const FIRST_FOLLOW_CAPTIONS = ['your first follow', 'you found them first', 'where it started'];
-
 const QUIET_WEEK_LINES = ['Quiet week in your orbit.', 'Everyone you follow is being mysterious.'];
 
 export function noFollowLine(seed: number): string {
   return pick(NO_FOLLOW_LINES, 'no-follow', seed);
-}
-
-export function firstFollowCaption(handle: string): string {
-  return pick(FIRST_FOLLOW_CAPTIONS, 'first-follow', handle);
 }
 
 export function quietWeekLine(seed: number): string {

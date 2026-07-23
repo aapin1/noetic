@@ -64,7 +64,7 @@ function FriendCard({
   onUnfollow: (id: string) => void;
 }) {
   const c = useThemeColors();
-  const { user, map, latest, captureCount, rising } = friend;
+  const { user, map, latest, captureCount } = friend;
   const topRegions = [...map.clusters]
     .filter((cl) => cl.count >= 2)
     .sort((a, b) => b.count - a.count)
@@ -78,7 +78,6 @@ function FriendCard({
   const stats = [
     `${captureCount} ${captureCount === 1 ? 'point' : 'points'}`,
     fieldCount > 0 ? `${fieldCount} ${fieldCount === 1 ? 'field' : 'fields'}` : null,
-    rising ? `${rising.name} rising` : null,
   ].filter(Boolean).join(' · ');
 
   return (

@@ -20,6 +20,11 @@ const MONTHS_SHORT = [
   "Dec",
 ];
 
+/** Rolling window for "what you have newly broken into". */
+const DISCOVERY_WINDOW_DAYS = 45;
+/** Capped server-side so the client renders the list as given. */
+const DISCOVERY_LIMIT = 8;
+
 export const ARC_SIZES = { hours: 24, days: 30, weeks: 12, months: 6 } as const;
 
 export interface ArcBucket {
@@ -45,8 +50,9 @@ export interface WrappedStats {
   topFields: { name: string; count: number }[];
   /** Specific sub-topics, most-captured first. */
   topTopics: { name: string; count: number }[];
-  /** Specific sub-topics that first appeared this calendar month. */
-  newTopicsThisMonth: string[];
+  /** The specific sub-topics you've most recently broken into, oldest first —
+   * already capped, so the client renders the list as given. */
+  recentNewTopics: string[];
   busiestDayOfWeek: string | null;
   busiestHour: number | null;
   /** Captures per hour of day (0–23) and per weekday (index 0 = Sunday). */
@@ -58,19 +64,14 @@ export interface WrappedStats {
   arcs: WrappedArcs;
   followingCount: number;
   followerCount: number;
-  /** The first person this user ever followed. */
-  firstFollow: {
-    handle: string;
-    displayName: string;
-    avatarUrl: string | null;
-    followedAt: string;
-  } | null;
   /** People this user follows who've captured something in the last 7 days, busiest first. */
   friendActivity: {
     handle: string;
     displayName: string;
     avatarUrl: string | null;
     count: number;
+    /** What they've actually been on this week — up to two sub-topics. */
+    topics: string[];
   }[];
 }
 
@@ -213,32 +214,23 @@ export function computeStreaks(
   return { current, longest };
 }
 
+/** Captures scanned across everyone you follow for the week's activity. */
+const FRIEND_CAPTURE_SCAN = 600;
+
 async function getSocialWrappedStats(
   userId: string,
   db: DbClient,
-): Promise<Pick<WrappedStats, "followingCount" | "followerCount" | "firstFollow" | "friendActivity">> {
+): Promise<Pick<WrappedStats, "followingCount" | "followerCount" | "friendActivity">> {
   const profileSelect = { handle: true, displayName: true, avatarUrl: true } as const;
 
   const following = await db.follow.findMany({
     where: { followerId: userId },
-    orderBy: { createdAt: "asc" },
     select: {
-      createdAt: true,
       following: { select: { id: true, profile: { select: profileSelect } } },
     },
   });
 
   const followerCount = await db.follow.count({ where: { followingId: userId } });
-
-  const first = following[0];
-  const firstFollow = first
-    ? {
-        handle: first.following.profile?.handle ?? first.following.id,
-        displayName: first.following.profile?.displayName ?? "Unknown",
-        avatarUrl: first.following.profile?.avatarUrl ?? null,
-        followedAt: first.createdAt.toISOString(),
-      }
-    : null;
 
   let friendActivity: WrappedStats["friendActivity"] = [];
   if (following.length > 0) {
@@ -246,30 +238,50 @@ async function getSocialWrappedStats(
     const followingIds = following.map((f) => f.following.id);
     const recentCaptures = await db.capturedItem.findMany({
       where: { userId: { in: followingIds }, capturedAt: { gte: since } },
+      orderBy: { capturedAt: "desc" },
+      take: FRIEND_CAPTURE_SCAN,
       select: {
         userId: true,
         user: { select: { profile: { select: profileSelect } } },
+        topics: { select: { topic: { select: { name: true } } } },
       },
     });
 
-    const counts = new Map<string, WrappedStats["friendActivity"][number]>();
+    // A bare count says someone was busy but not what with, which is the only
+    // part that makes you want to go look. Track what they were actually on.
+    type Tally = WrappedStats["friendActivity"][number] & { mentions: string[] };
+    const counts = new Map<string, Tally>();
     for (const capture of recentCaptures) {
+      // Specific sub-topics say something ("stoicism"); the coarse field it sits
+      // under mostly doesn't. Fall back to the field when that's all there is.
+      const names = capture.topics.map((row) => row.topic.name);
+      const mentions = names.filter((name) => !isGeneralTopic(name));
       const existing = counts.get(capture.userId);
       if (existing) {
         existing.count += 1;
+        existing.mentions.push(...(mentions.length > 0 ? mentions : names));
       } else {
         counts.set(capture.userId, {
           handle: capture.user.profile?.handle ?? capture.userId,
           displayName: capture.user.profile?.displayName ?? "Unknown",
           avatarUrl: capture.user.profile?.avatarUrl ?? null,
           count: 1,
+          topics: [],
+          mentions: mentions.length > 0 ? [...mentions] : [...names],
         });
       }
     }
-    friendActivity = [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 4);
+
+    friendActivity = [...counts.values()]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 4)
+      .map(({ mentions, ...friend }) => ({
+        ...friend,
+        topics: countTop(mentions, 2).map((entry) => entry.name),
+      }));
   }
 
-  return { followingCount: following.length, followerCount, firstFollow, friendActivity };
+  return { followingCount: following.length, followerCount, friendActivity };
 }
 
 export async function getWrappedStats(
@@ -302,7 +314,7 @@ export async function getWrappedStats(
       distinctTopics: 0,
       topFields: [],
       topTopics: [],
-      newTopicsThisMonth: [],
+      recentNewTopics: [],
       busiestDayOfWeek: null,
       busiestHour: null,
       hourHistogram: new Array<number>(24).fill(0),
@@ -321,7 +333,7 @@ export async function getWrappedStats(
 
   // Topics: split the coarse fields (general) from specific sub-topics so the
   // You page can talk about both "the fields you live in" and "what you're
-  // digging into". `newTopicsThisMonth` tracks new SPECIFIC territory (new
+  // digging into". `recentNewTopics` tracks new SPECIFIC territory (new
   // fields are rare and less interesting to surface).
   const fieldMentions: string[] = [];
   const specificMentions: string[] = [];
@@ -342,12 +354,17 @@ export async function getWrappedStats(
     }
   });
 
-  const thisMonth = nowLocal.getUTCFullYear() * 12 + nowLocal.getUTCMonth();
-  const newTopicsThisMonth = [...specificFirstSeen.entries()]
-    .filter(([, firstAt]) => {
-      const at = new Date(firstAt);
-      return at.getUTCFullYear() * 12 + at.getUTCMonth() === thisMonth;
-    })
+  // A rolling window ending now, not the calendar month. On a month boundary the
+  // old version emptied the card and then refilled it in discovery order — and
+  // because the client took the FIRST six, a topic broken into on the 3rd held
+  // its slot for the rest of the month while everything discovered since was
+  // invisible. Sorting by when each was first seen and keeping the newest means
+  // the card is always the last few places you actually went.
+  const discoveryCutoff = nowLocalMs - DISCOVERY_WINDOW_DAYS * DAY_MS;
+  const recentNewTopics = [...specificFirstSeen.entries()]
+    .filter(([, firstAt]) => firstAt >= discoveryCutoff)
+    .sort((a, b) => a[1] - b[1])
+    .slice(-DISCOVERY_LIMIT)
     .map(([name]) => name);
 
   const weekdayHistogram = new Array<number>(7).fill(0);
@@ -372,7 +389,7 @@ export async function getWrappedStats(
     distinctTopics: topicFirstSeen.size,
     topFields: countTop(fieldMentions, 5),
     topTopics: countTop(specificMentions, 6),
-    newTopicsThisMonth,
+    recentNewTopics,
     busiestDayOfWeek: WEEKDAYS[busiestWeekdayIdx] ?? null,
     busiestHour,
     hourHistogram,

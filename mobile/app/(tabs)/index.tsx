@@ -28,7 +28,6 @@ import Svg, {
   G,
   Line,
   LinearGradient,
-  Pattern,
   RadialGradient,
   Rect,
   Stop,
@@ -47,6 +46,7 @@ import { useTutorial, useTutorialTarget } from '@/contexts/TutorialContext';
 import { TUTORIAL_DEMO_NODE, TUTORIAL_EXAMPLE_LINK, TUTORIAL_TARGET } from '@/constants/tutorialSteps';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
+import { MapBackdrop } from '@/components/ui/MapBackdrop';
 import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
 import type { AppThemeColors } from '@/constants/theme';
 import type {
@@ -979,8 +979,11 @@ function StepOne({
         })}
       </View>
       {/* Wrapped as one region so the tutorial's spotlight (and its tap
-          passthrough) covers the whole visible form, not just the button. */}
-      <View ref={nextTarget.ref} onLayout={nextTarget.onLayout}>
+          passthrough) covers the whole visible form, not just the button.
+          collapsable={false} is load-bearing: this View carries no style, so
+          without it RN flattens it out of the native tree, measureInWindow
+          reports nothing, and the walkthrough step renders no spotlight. */}
+      <View ref={nextTarget.ref} onLayout={nextTarget.onLayout} collapsable={false}>
         {mode === 'image' ? (
           <View style={[sh.inputBox, { borderColor: c.border }]}>
             <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>IMAGE</Text>
@@ -1148,8 +1151,10 @@ function StepTwo({
       <Divider c={c} />
       {/* Wrapped as one region so the tutorial's spotlight (and its tap
           passthrough) covers the reaction box, the context/voice fallback
-          when it appears, and the commit button together. */}
-      <View ref={commitTarget.ref} onLayout={commitTarget.onLayout}>
+          when it appears, and the commit button together. collapsable={false}
+          for the same reason as StepOne's region — an unstyled View is
+          flattened away and cannot be measured. */}
+      <View ref={commitTarget.ref} onLayout={commitTarget.onLayout} collapsable={false}>
         <View style={[sh.inputBox, { borderColor: c.border }]}>
           <TextInput
             style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
@@ -1258,6 +1263,12 @@ function Toolbar({
   // Walkthrough spotlights for the individual buttons, not the whole pill.
   const recenterTarget = useTutorialTarget(TUTORIAL_TARGET.atlasRecenter);
   const discoverTarget = useTutorialTarget(TUTORIAL_TARGET.atlasDiscover);
+  // Releases the crosshair after the walkthrough's multi-select step; held in a
+  // ref so unmounting mid-tour can't fire setToolMode on a dead component.
+  const demoReleaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (demoReleaseTimer.current) clearTimeout(demoReleaseTimer.current);
+  }, []);
 
   const recenterVisible = !!onRecenter && showRecenter !== false;
 
@@ -1300,7 +1311,7 @@ function Toolbar({
           <Pressable
             ref={recenterTarget.ref}
             onLayout={recenterTarget.onLayout}
-            onPress={onRecenter}
+            onPress={() => { onRecenter?.(); recenterTarget.press(); }}
             style={tb.btn}
             accessibilityLabel="Fit all points in view"
             accessibilityRole="button"
@@ -1324,7 +1335,19 @@ function Toolbar({
             <Pressable
               ref={isDiscover ? discoverTarget.ref : undefined}
               onLayout={isDiscover ? discoverTarget.onLayout : undefined}
-              onPress={() => setToolMode(active ? 'default' : tool.id)}
+              onPress={() => {
+                setToolMode(active ? 'default' : tool.id);
+                if (isDiscover) {
+                  // During the walkthrough the tap is the lesson, not the mode:
+                  // release the crosshair again shortly after so the tour never
+                  // walks on with the map stuck in selection mode.
+                  if (discoverTarget.isActive) {
+                    if (demoReleaseTimer.current) clearTimeout(demoReleaseTimer.current);
+                    demoReleaseTimer.current = setTimeout(() => setToolMode('default'), 2000);
+                  }
+                  discoverTarget.press();
+                }
+              }}
               style={[tb.btn, active && { backgroundColor: 'rgba(255,255,255,0.08)' }]}
               accessibilityLabel={tool.label}
               accessibilityRole="button"
@@ -1778,6 +1801,7 @@ export default function MapScreen() {
   // The node-management steps target the walkthrough's own demo node/delete
   // control specifically, not any node — reused below by id match.
   const nodeTarget = useTutorialTarget(TUTORIAL_TARGET.nodeTap);
+  const panelTarget = useTutorialTarget(TUTORIAL_TARGET.nodePanel);
   const deleteTarget = useTutorialTarget(TUTORIAL_TARGET.nodeDelete);
   // "Look at this" spotlight step on the lens picker. (The toolbar buttons
   // register their own targets inside Toolbar.)
@@ -2341,9 +2365,12 @@ export default function MapScreen() {
   // and dropped them on a recentered map. Both are gone; the camera is now left
   // untouched, which is the whole point.
   const handleLensChange = useCallback((newLens: LensMode) => {
+    // The walkthrough's lens step advances on a real lens tap, including a tap
+    // on the lens already active — the point is that they found the control.
+    if (tutorialActive) notifyTargetPressed(TUTORIAL_TARGET.atlasLenses);
     if (newLens === lensMode) return;
     setLensMode(newLens);
-  }, [lensMode]);
+  }, [lensMode, tutorialActive, notifyTargetPressed]);
 
   // Use renderPos for display, fall back to semanticPos on first render
   const pos = Object.keys(renderPos).length > 0 ? renderPos : semanticPos;
@@ -2473,6 +2500,20 @@ export default function MapScreen() {
   const [toolMode, setToolMode] = useState<ToolMode>('default');
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
+
+  // The walkthrough's lens/recenter/multi-select steps advance by pressing the
+  // real controls, which leaves the map in whatever state those presses put it
+  // (temporal lens, discover mode). Put it back when the tour ends — but only
+  // on the transition out of it, so this never overrides a choice the user
+  // makes on their own afterwards.
+  const wasTutorialActive = useRef(false);
+  useEffect(() => {
+    if (wasTutorialActive.current && !tutorialActive) {
+      setLensMode('semantic');
+      setToolMode('default');
+    }
+    wasTutorialActive.current = tutorialActive;
+  }, [tutorialActive]);
 
   const highlightedIds = useMemo<Set<string>>(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -2982,12 +3023,14 @@ export default function MapScreen() {
     nodes.length > 0 && !showCapture && !drawerVisible && lensMode !== 'temporal' &&
     toolMode !== 'search' &&
     !(toolMode === 'discover' && (discoveryNodeIds.length > 0 || discoveryEdgeKeys.length > 0));
-  // Deliberately independent of `infoCollapsed`: the FAB reserves the strip's
-  // EXPANDED height whenever the strip is on screen at all, so toggling the
-  // counts doesn't slide the button up and down under the user's thumb. It only
-  // drops to the bottom edge when the strip is gone entirely — a mode change,
-  // where the whole bottom of the screen is being handed to something else.
-  const fabBottom = (stripVisible ? (stripH || INFO_STRIP_H) : 0) + FAB_GAP;
+  // Deliberately independent of BOTH `infoCollapsed` and `stripVisible`: the
+  // FAB always reserves the strip's expanded height, so it stays pinned at one
+  // spot under the user's thumb whether or not the counts happen to be on
+  // screen. Tying it to the strip meant an empty map, a lens change, or an
+  // active selection each dropped the button to the tab bar and back.
+  // MAP_CHROME_BOTTOM already reserves this band unconditionally, so holding it
+  // here is also what makes the fitted camera agree with the real layout.
+  const fabBottom = (stripH || INFO_STRIP_H) + FAB_GAP;
 
   // First time ever that a source comes back unreadable, explain what
   // happened and what to do about it — after that the inline red line and
@@ -3269,7 +3312,10 @@ export default function MapScreen() {
     // no server write, no AI, nothing that can vary or fail. The landing ring
     // and ease-in animations are the same ones a real capture triggers.
     if (tutorialActive) {
-      await new Promise((r) => setTimeout(r, 1600));
+      // Long enough to actually read the card sitting over the saving state —
+      // at ~1.6s it was gone before the card had finished fading in. Also a
+      // more honest impression of how long a real source takes to read.
+      await new Promise((r) => setTimeout(r, 6000));
       const worldX = savedVB.current.x + (SW / 2) / savedZoom.current;
       const worldY = savedVB.current.y + (SH / 2) / savedZoom.current;
       setDemoNode({
@@ -3807,28 +3853,8 @@ export default function MapScreen() {
   return (
     <View style={[styles.root, { backgroundColor: mapBg }]}>
 
-      {/* The map's backdrop: dot grid + tonal wash, screen-fixed and drawn
-          once. The world SVG above is transparent, so this shows through
-          everywhere — including any sliver the transformed world hasn't
-          covered mid-gesture, which therefore reads as more map rather than a
-          darker box around charted territory. Keeping it out of the world
-          layer is what stops every re-commit from re-rasterizing a Pattern
-          and a gradient across the whole overscanned area. */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        <Svg width={SW} height={SH} style={StyleSheet.absoluteFill}>
-          <Defs>
-            <Pattern id="staticDotGrid" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
-              <Circle cx="16" cy="16" r="0.9" fill={MAP_NODE} fillOpacity={0.04} />
-            </Pattern>
-            <LinearGradient id="staticBgTone" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0%" stopColor={MAP_NODE} stopOpacity={0.012} />
-              <Stop offset="100%" stopColor={MAP_NODE} stopOpacity={0.03} />
-            </LinearGradient>
-          </Defs>
-          <Rect x="0" y="0" width={SW} height={SH} fill="url(#staticDotGrid)" />
-          <Rect x="0" y="0" width={SW} height={SH} fill="url(#staticBgTone)" />
-        </Svg>
-      </View>
+      {/* The map's backdrop — shared with every Mind surface, see MapBackdrop. */}
+      <MapBackdrop />
 
       {/* Pannable map canvas. The wrapper transform carries per-frame gesture
           motion (live camera); the memoized world inside is rendered at the
@@ -4298,31 +4324,42 @@ export default function MapScreen() {
                 {/* Node detail */}
                 {selectedNode && (
                   <View>
-                    <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3] }}>
-                      {selectedNode.kind.toLowerCase()} · {new Date(selectedNode.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      {isRecentNode(selectedNode) && ' · new'}
-                    </Text>
-                    <Text variant="h3" style={{ marginBottom: Spacing[4] }} numberOfLines={4}>
-                      {selectedNode.label}
-                    </Text>
-                    {!!selectedNode.keyIdea && (
-                      <>
-                        <View style={[styles.drawerHairline, { backgroundColor: c.border }]} />
-                        <Text variant="monoSmall" style={{ color: c.muted, fontStyle: 'italic', marginTop: Spacing[3], marginBottom: Spacing[3] }} numberOfLines={3}>
-                          {selectedNode.keyIdea}
+                    {/* The panel's read-only body, wrapped as one region so the
+                        walkthrough can light the text the user is meant to be
+                        reading. Deliberately excludes the actions below it, so
+                        the spotlight leaves room for the card underneath
+                        instead of forcing it up over the title. */}
+                    <View
+                      ref={panelTarget.isActive ? panelTarget.ref : undefined}
+                      onLayout={panelTarget.isActive ? panelTarget.onLayout : undefined}
+                      collapsable={false}
+                    >
+                      <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3] }}>
+                        {selectedNode.kind.toLowerCase()} · {new Date(selectedNode.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        {isRecentNode(selectedNode) && ' · new'}
+                      </Text>
+                      <Text variant="h3" style={{ marginBottom: Spacing[4] }} numberOfLines={4}>
+                        {selectedNode.label}
+                      </Text>
+                      {!!selectedNode.keyIdea && (
+                        <>
+                          <View style={[styles.drawerHairline, { backgroundColor: c.border }]} />
+                          <Text variant="monoSmall" style={{ color: c.muted, fontStyle: 'italic', marginTop: Spacing[3], marginBottom: Spacing[3] }} numberOfLines={3}>
+                            {selectedNode.keyIdea}
+                          </Text>
+                        </>
+                      )}
+                      {!!selectedNode.reaction && (
+                        <Text variant="monoSmall" style={{ color: c.muted, marginBottom: Spacing[4] }} numberOfLines={2}>
+                          "{selectedNode.reaction}"
                         </Text>
-                      </>
-                    )}
-                    {!!selectedNode.reaction && (
-                      <Text variant="monoSmall" style={{ color: c.muted, marginBottom: Spacing[4] }} numberOfLines={2}>
-                        "{selectedNode.reaction}"
-                      </Text>
-                    )}
-                    {selectedNode.topics.length > 0 && (
-                      <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[5] }}>
-                        {selectedNode.topics.slice(0, 4).map((t) => t.name).join(' · ')}
-                      </Text>
-                    )}
+                      )}
+                      {selectedNode.topics.length > 0 && (
+                        <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[5] }}>
+                          {selectedNode.topics.slice(0, 4).map((t) => t.name).join(' · ')}
+                        </Text>
+                      )}
+                    </View>
                     {/* The practice node has no server-side insight to open. */}
                     {selectedNode.id !== TUTORIAL_DEMO_NODE.id && (
                       <Pressable

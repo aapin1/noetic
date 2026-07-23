@@ -41,7 +41,6 @@ import {
   emptyBody,
   emptyTitle,
   fieldsTitle,
-  firstFollowCaption,
   formatHourCompact,
   heroNoun,
   longestStreakLine,
@@ -1313,13 +1312,6 @@ function StatPair({ value, label }: { value: number; label: string }) {
   );
 }
 
-/** "Mar 2026" — enough to place a follow in time without the false precision of a day. */
-function followedSince(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-}
-
 function Social({ w, seed, accent }: { w: WrappedStats; seed: number; accent: string }) {
   const c = useThemeColors();
   const router = useRouter();
@@ -1340,25 +1332,6 @@ function Social({ w, seed, accent }: { w: WrappedStats; seed: number; accent: st
         <StatPair value={w.followerCount} label="followers" />
       </View>
 
-      {w.firstFollow ? (
-        <View style={[styles.firstFollow, { borderTopColor: c.borderSubtle }]}>
-          <Avatar uri={w.firstFollow.avatarUrl} displayName={w.firstFollow.displayName} size="sm" />
-          <View style={styles.firstFollowText}>
-            <Text variant="monoSmall" style={{ color: accent, fontSize: 10 }}>
-              {firstFollowCaption(w.firstFollow.handle)}
-            </Text>
-            <Text variant="serif" numberOfLines={1}>
-              {w.firstFollow.displayName}
-            </Text>
-            {/* The handle and the date are the point — without them this row was
-                a face with no explanation of why it was being shown. */}
-            <Text variant="monoSmall" color="faint" numberOfLines={1}>
-              @{w.firstFollow.handle} · following since {followedSince(w.firstFollow.followedAt)}
-            </Text>
-          </View>
-        </View>
-      ) : null}
-
       {w.followingCount > 0 ? (
         <View style={[styles.friendBlock, { borderTopColor: c.borderSubtle }]}>
           {w.friendActivity.length === 0 ? (
@@ -1367,33 +1340,37 @@ function Social({ w, seed, accent }: { w: WrappedStats; seed: number; accent: st
             </Text>
           ) : (
             <>
-              {/* A bare "+3" under a face never said +3 of what, or over what
-                  span. Spell out both, and give the row somewhere to go. */}
               <Text variant="label" color="muted" style={styles.friendHeading}>
                 busy this week
               </Text>
-              {w.friendActivity.map((f) => (
-                <Pressable
-                  key={f.handle}
-                  onPress={() => router.push('/(tabs)/pulse' as never)}
-                  style={({ pressed }) => [styles.friendRow, pressed && { opacity: 0.6 }]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${f.displayName} captured ${f.count} ${f.count === 1 ? 'thing' : 'things'} this week. Open pulse.`}
-                >
-                  <Avatar uri={f.avatarUrl} displayName={f.displayName} size="sm" />
-                  <View style={styles.friendText}>
-                    <Text variant="serif" numberOfLines={1}>
-                      {f.displayName}
+              {w.friendActivity.map((f) => {
+                // What they were on beats who they are: the handle is already
+                // implied by the face and the name, whereas "8 captures" alone
+                // never said 8 captures OF WHAT.
+                const subject = (f.topics ?? []).length > 0 ? f.topics.join(' · ') : `@${f.handle}`;
+                return (
+                  <Pressable
+                    key={f.handle}
+                    onPress={() => router.push('/(tabs)/pulse' as never)}
+                    style={({ pressed }) => [styles.friendRow, pressed && { opacity: 0.6 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${f.displayName} saved ${f.count} ${f.count === 1 ? 'thing' : 'things'} this week${(f.topics ?? []).length > 0 ? `, on ${f.topics.join(' and ')}` : ''}. Open pulse.`}
+                  >
+                    <Avatar uri={f.avatarUrl} displayName={f.displayName} size="sm" />
+                    <View style={styles.friendText}>
+                      <Text variant="serif" numberOfLines={1}>
+                        {f.displayName}
+                      </Text>
+                      <Text variant="monoSmall" color="faint" numberOfLines={1}>
+                        {subject}
+                      </Text>
+                    </View>
+                    <Text variant="monoSmall" style={{ color: accent }}>
+                      {f.count} {f.count === 1 ? 'save' : 'saves'}
                     </Text>
-                    <Text variant="monoSmall" color="faint" numberOfLines={1}>
-                      @{f.handle}
-                    </Text>
-                  </View>
-                  <Text variant="monoSmall" style={{ color: accent }}>
-                    {f.count} {f.count === 1 ? 'capture' : 'captures'}
-                  </Text>
-                </Pressable>
-              ))}
+                  </Pressable>
+                );
+              })}
               <Pressable
                 onPress={() => router.push('/(tabs)/pulse' as never)}
                 style={({ pressed }) => [styles.friendCta, pressed && { opacity: 0.6 }]}
@@ -1646,7 +1623,7 @@ export function WrappedSection({
     });
   }
 
-  if (w.newTopicsThisMonth.length > 0 && w.totalCaptures >= GATE_NEW_TOPICS) {
+  if (w.recentNewTopics.length > 0 && w.totalCaptures >= GATE_NEW_TOPICS) {
     cards.push({
       key: 'newTopics',
       node: (
@@ -1654,7 +1631,7 @@ export function WrappedSection({
           <Text variant="serif" style={styles.cardTitle}>
             {newTopicsTitle(seed)}
           </Text>
-          <DiscoveryTimeline items={w.newTopicsThisMonth.slice(0, 6)} accent={accent} />
+          <DiscoveryTimeline items={w.recentNewTopics} accent={accent} />
         </RevealCard>
       ),
     });
@@ -2020,15 +1997,6 @@ const styles = StyleSheet.create({
   statRow: { flexDirection: 'row', alignItems: 'center' },
   statPair: { flex: 1, alignItems: 'center', gap: 2 },
   statDivider: { width: 1, height: 34 },
-  firstFollow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing[3],
-    marginTop: Spacing[5],
-    paddingTop: Spacing[4],
-    borderTopWidth: 1,
-  },
-  firstFollowText: { flex: 1, gap: 2 },
   friendBlock: {
     marginTop: Spacing[4],
     paddingTop: Spacing[4],

@@ -23,6 +23,21 @@ function fakeDb(capturedAts: Date[]): DbClient {
   } as unknown as DbClient;
 }
 
+/** A db whose captures each carry one specific sub-topic. */
+function fakeTopicDb(rows: { at: Date; topic: string }[]): DbClient {
+  return {
+    follow: { findMany: async () => [], count: async () => 0 },
+    capturedItem: {
+      findMany: async () =>
+        rows.map((row) => ({
+          kind: "TEXT",
+          capturedAt: row.at,
+          topics: [{ topic: { name: row.topic } }],
+        })),
+    },
+  } as unknown as DbClient;
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
@@ -116,6 +131,36 @@ describe("getWrappedStats local-clock derivations", () => {
 
     expect(stats.longestStreak).toBe(3);
     expect(stats.currentStreak).toBe(0);
+  });
+
+  it("keeps the newest discoveries, not the first ones found", async () => {
+    // Nine sub-topics broken into across the window. The card caps at 8, and it
+    // must be the eight most RECENT — the old version kept whichever six turned
+    // up first in the calendar month and then never moved again.
+    const rows = Array.from({ length: 9 }, (_, i) => ({
+      at: new Date(NOW.getTime() - (9 - i) * 86_400_000),
+      topic: `topic-${i}`,
+    }));
+
+    const stats = await getWrappedStats("user_1", {}, fakeTopicDb(rows));
+
+    expect(stats.recentNewTopics).toHaveLength(8);
+    expect(stats.recentNewTopics).not.toContain("topic-0");
+    // Oldest first, so the timeline's highlighted "newest" node is the last one.
+    expect(stats.recentNewTopics[7]).toBe("topic-8");
+  });
+
+  it("drops sub-topics discovered before the rolling window", async () => {
+    const stats = await getWrappedStats(
+      "user_1",
+      {},
+      fakeTopicDb([
+        { at: new Date(NOW.getTime() - 200 * 86_400_000), topic: "long-abandoned" },
+        { at: new Date(NOW.getTime() - 2 * 86_400_000), topic: "stoicism" },
+      ]),
+    );
+
+    expect(stats.recentNewTopics).toEqual(["stoicism"]);
   });
 
   it("ignores an out-of-range timezone offset instead of skewing the buckets", async () => {

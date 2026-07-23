@@ -20,6 +20,7 @@ import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { SponsoredCard } from '@/components/ui/SponsoredCard';
+import { MapBackdrop } from '@/components/ui/MapBackdrop';
 import { TemporalSpine } from '@/components/mind/TemporalSpine';
 import { FractureZone } from '@/components/mind/FractureZone';
 import { KeystoneBridge } from '@/components/mind/KeystoneBridge';
@@ -75,6 +76,21 @@ type Selection =
 const EMPTY_INTEL: PersonalIntelligenceResponse = {
   contradictionCards: [], threadSyntheses: [], convergenceSignals: [], dormantThreads: [],
 };
+
+/**
+ * Mind's stage. Every state this screen can be in — loading, error, empty,
+ * threshold, dossier — sits on the Atlas backdrop, dots and all: Mind reports
+ * on the map, so it has to look like it belongs to the map. Routing all of them
+ * through one wrapper is what keeps that true as states get added.
+ */
+function MindStage({ children }: { children: React.ReactNode }) {
+  return (
+    <View style={styles.root}>
+      <MapBackdrop />
+      {children}
+    </View>
+  );
+}
 
 export default function MindScreen() {
   const c = useThemeColors();
@@ -181,7 +197,7 @@ export default function MindScreen() {
   // ── Loading / error / empty — all on the Atlas map background ───────────
   if (loading && !data) {
     return (
-      <View style={[styles.root, { backgroundColor: c.mapBackground }]}>
+      <MindStage>
         <SafeAreaView edges={['top']} style={styles.safe}>
           <View style={styles.headerRow}>
             <Text variant="wordmark" style={{ color: stageInk(0.92) }}>mind</Text>
@@ -193,12 +209,12 @@ export default function MindScreen() {
             message={['sifting your mind…', 'weighing tensions…', 'connecting the dots…']}
           />
         </SafeAreaView>
-      </View>
+      </MindStage>
     );
   }
   if (error && !data) {
     return (
-      <View style={[styles.root, { backgroundColor: c.mapBackground }]}>
+      <MindStage>
         <SafeAreaView edges={['top']} style={styles.safe}>
           <View style={styles.headerRow}>
             <Text variant="wordmark" style={{ color: stageInk(0.92) }}>mind</Text>
@@ -211,12 +227,12 @@ export default function MindScreen() {
             </Pressable>
           </View>
         </SafeAreaView>
-      </View>
+      </MindStage>
     );
   }
   if (!hasContent) {
     return (
-      <View style={[styles.root, { backgroundColor: c.mapBackground }]}>
+      <MindStage>
         <SafeAreaView edges={['top']} style={styles.safe}>
           <View style={styles.headerRow}>
             <Text variant="wordmark" style={{ color: stageInk(0.92) }}>mind</Text>
@@ -231,7 +247,7 @@ export default function MindScreen() {
             </Text>
           </View>
         </SafeAreaView>
-      </View>
+      </MindStage>
     );
   }
 
@@ -244,7 +260,7 @@ export default function MindScreen() {
     : null;
 
   return (
-    <View style={[styles.root, { backgroundColor: c.mapBackground }]}>
+    <MindStage>
       <SafeAreaView edges={['top']} style={styles.safe}>
         {view === 'threshold' ? (
           <>
@@ -434,7 +450,7 @@ export default function MindScreen() {
         title="mind"
         body="A report of the forces in your thinking, not a map. Strands show where threads are heading; the fault wall shows where your saved ideas collide; streams show different sources arriving at one idea; embers show what's gone quiet. Tap any instrument to go inside it."
       />
-    </View>
+    </MindStage>
   );
 }
 

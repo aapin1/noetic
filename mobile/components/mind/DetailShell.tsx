@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
 import { Spacing } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
+import { MapBackdrop } from '@/components/ui/MapBackdrop';
 
 // Full-screen stage for a Mind detail visualization. Mind's canvas is dark in
 // both themes (Atlas convention), so the shell is too — on-stage text is light.
@@ -28,6 +29,9 @@ export function DetailShell({
       exiting={FadeOut.duration(160)}
       style={[StyleSheet.absoluteFill, { backgroundColor: background }]}
     >
+      {/* Opaque over the Mind stage below, so it repaints the same backdrop —
+          otherwise going inside an instrument dropped the dot grid. */}
+      <MapBackdrop />
       <SafeAreaView edges={['top']} style={styles.safe}>
         <View style={styles.header}>
           <Pressable onPress={onClose} hitSlop={12} accessibilityLabel="Close detail view">

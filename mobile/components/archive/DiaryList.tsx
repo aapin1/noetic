@@ -121,13 +121,10 @@ export function DiaryList({ refreshToken }: { refreshToken: number }) {
     );
   }
 
-  if (items.length === 0) {
-    return (
-      <Text variant="monoSmall" color="muted" style={styles.status}>
-        nothing logged yet — your saves will line up here, day by day.
-      </Text>
-    );
-  }
+  // No empty message here: the Archive screen already renders its own
+  // "Nothing here yet" intro directly above this list, and the two stacked
+  // read as the same thing said twice.
+  if (items.length === 0) return null;
 
   return (
     <View style={styles.wrap}>

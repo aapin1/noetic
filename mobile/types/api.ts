@@ -311,7 +311,8 @@ export interface WrappedStats {
   topFields: { name: string; count: number }[];
   /** Specific sub-topics, most-captured first. */
   topTopics: { name: string; count: number }[];
-  newTopicsThisMonth: string[];
+  /** Sub-topics most recently broken into, oldest first. Already capped. */
+  recentNewTopics: string[];
   busiestDayOfWeek: string | null;
   busiestHour: number | null;
   /** Captures per hour of day (0–23) and per weekday (index 0 = Sunday). */
@@ -323,17 +324,13 @@ export interface WrappedStats {
   arcs: WrappedArcs;
   followingCount: number;
   followerCount: number;
-  firstFollow: {
-    handle: string;
-    displayName: string;
-    avatarUrl: string | null;
-    followedAt: string;
-  } | null;
   friendActivity: {
     handle: string;
     displayName: string;
     avatarUrl: string | null;
     count: number;
+    /** What they've been on this week — up to two sub-topics. */
+    topics: string[];
   }[];
 }
 
@@ -551,8 +548,6 @@ export interface PulseFriend {
     identitySummary: string | null;
   };
   captureCount: number;
-  /** What they're getting into lately, or null when nothing is picking up. */
-  rising: { topicId: string; name: string } | null;
   map: { nodes: PulseMapNode[]; edges: PulseMapEdge[]; clusters: PulseMapCluster[] };
   latest: PulseLatestItem[];
 }

@@ -11,6 +11,12 @@ import { View } from 'react-native';
 import { useSegments } from 'expo-router';
 import { TUTORIAL_STEPS, TutorialStep } from '@/constants/tutorialSteps';
 
+// How long an active target keeps re-measuring itself, and how often. Covers
+// the capture sheet's slide-in, a drawer animating in from the right, and any
+// subtree that lays out a frame or two after the step becomes active.
+const MEASURE_POLL_MS = 2500;
+const MEASURE_POLL_INTERVAL_MS = 120;
+
 export interface TutorialRect {
   x: number;
   y: number;
@@ -88,7 +94,8 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
 
   // Tab steps advance when the user actually navigates to the target tab. The
   // last route segment is the tab's screen name ('memory', 'pulse', …); the
-  // atlas/index tab reports the group segment ('(tabs)') instead.
+  // atlas tab is the group's index route, so it reports the group segment
+  // ('(tabs)') rather than a screen name.
   useEffect(() => {
     if (!active) return;
     if (step.target.kind !== 'tab') return;
@@ -142,13 +149,26 @@ export function useTutorialTarget(id: string) {
     });
   }, [id, reportTargetRect]);
 
-  // Re-measure when this target becomes active: the capture sheet slides in, so
-  // one immediate read plus a couple of delayed reads catch its settled rect.
+  // Re-measure while this target is active. A fixed handful of delayed reads
+  // used to be enough, but a target inside a sheet that is still sliding (or
+  // whose subtree lays out late) could miss every one of them and leave the
+  // step with no spotlight at all — a dimmed screen and nothing to tap. So
+  // poll instead: cheap, because reportTargetRect drops an unchanged rect, and
+  // it both catches a late first measurement and tracks the rect as the sheet
+  // settles. Bounded so a target that genuinely never resolves stops costing
+  // anything; the overlay falls back to its own button in that case.
   useEffect(() => {
     if (!isActive) return;
     measure();
-    const timers = [80, 320, 600].map((ms) => setTimeout(measure, ms));
-    return () => timers.forEach(clearTimeout);
+    const started = Date.now();
+    const poll = setInterval(() => {
+      if (Date.now() - started > MEASURE_POLL_MS) {
+        clearInterval(poll);
+        return;
+      }
+      measure();
+    }, MEASURE_POLL_INTERVAL_MS);
+    return () => clearInterval(poll);
   }, [isActive, measure]);
 
   return {
