@@ -142,19 +142,6 @@ input:focus-visible {
   justify-content: space-between;
 }
 
-.nav-cta {
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.16em;
-  text-transform: lowercase;
-  color: var(--muted);
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  padding-bottom: 2px;
-  transition: color 0.18s var(--ease), border-color 0.18s var(--ease);
-}
-.nav-cta:hover { color: var(--text); border-color: var(--text); }
-
 /* ---------- hero ---------- */
 
 .hero {
@@ -177,7 +164,18 @@ input:focus-visible {
   padding-bottom: 0.15em; /* italic descender reserve */
 }
 
-.cycle-wrap { white-space: nowrap; }
+/* The cycling word reserves the width of its widest entries ("watch",
+   "think") via hidden sizers stacked in the same grid cell, so the line
+   never re-wraps mid-animation. .no-wrap keeps "you" glued to the word. */
+.no-wrap { white-space: nowrap; }
+.cycle-wrap { display: inline-grid; }
+.cycle-sizer {
+  grid-area: 1 / 1;
+  visibility: hidden;
+  font-style: italic;
+  padding-right: calc(2px + 0.08em); /* caret width reserve */
+}
+.cycle-live { grid-area: 1 / 1; white-space: nowrap; }
 .cycle { font-style: italic; }
 .caret {
   display: inline-block;
@@ -200,8 +198,6 @@ input:focus-visible {
   color: var(--secondary);
   max-width: 44ch;
 }
-
-.hero-copy .btn { margin-top: 2.2rem; }
 
 .hero-map {
   position: relative;
@@ -263,7 +259,7 @@ input:focus-visible {
 
 .bento {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 14px;
 }
 
@@ -286,75 +282,34 @@ input:focus-visible {
   font-size: 0.95rem;
   line-height: 1.6;
   color: var(--muted);
-  max-width: 38ch;
+  max-width: 44ch;
 }
 
+.cell .eyebrow { margin-bottom: 0.2rem; }
+
 .cell-a {
-  grid-column: span 2;
   background: var(--surface);
   border: 1px solid var(--border-subtle);
-  justify-content: space-between;
-}
-.mini-line {
-  margin-top: 1.4rem;
-  font-family: var(--mono);
-  font-size: 0.78rem;
-  color: var(--faint);
-  min-height: 1.2em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .cell-b { background: var(--elevated); }
 
-.cell-c {
-  background: var(--amber-tint);
-  justify-content: space-between;
-}
-
-.brain-wrap {
-  margin-top: 1.6rem;
-  display: flex;
-  justify-content: center;
-}
-.brain {
-  font-family: var(--mono);
-  font-size: 8px;
-  line-height: 8px;
-  color: var(--text);
-  opacity: 0.4;
-  white-space: pre;
-  animation: brain-spin 30s linear infinite;
-}
-@keyframes brain-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .brain { animation: none; }
-}
+.cell-c { background: var(--amber-tint); }
 
 .cell-d {
-  grid-column: span 2;
   background: var(--map);
   border: 1px solid var(--map-border);
-  gap: 0.7rem;
 }
 .cell-d h2 { color: var(--map-text); }
 .cell-d p { color: rgba(236, 236, 236, 0.55); }
-.cell-d-copy { display: flex; flex-direction: column; gap: 0.7rem; }
-.mini-map {
-  flex: 1;
-  margin-top: 1.2rem;
-  min-height: 180px;
-  position: relative;
-}
-#miniMapCanvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cell-d .eyebrow { color: rgba(236, 236, 236, 0.4); }
 
 /* ---------- interlude ---------- */
 
 .interlude {
   max-width: 720px;
   margin: 0 auto;
-  padding: 3rem 1.5rem 8rem;
+  padding: 0 1.5rem 7rem;
   text-align: center;
 }
 
@@ -373,6 +328,13 @@ input:focus-visible {
   letter-spacing: 0.16em;
   text-transform: lowercase;
   color: var(--faint);
+}
+
+/* ---------- cat strip ---------- */
+
+.cat-strip {
+  padding: 0 1.5rem 6rem;
+  text-align: center;
 }
 
 /* ---------- waitlist ---------- */
@@ -571,9 +533,9 @@ input:focus-visible {
   .hero-map { height: 420px; }
 
   .bento { grid-template-columns: 1fr; }
-  .cell-a, .cell-d { grid-column: span 1; }
 
   .waitlist { grid-template-columns: 1fr; gap: 2.5rem; padding-bottom: 6rem; }
   .beats { padding-bottom: 5rem; }
   .interlude { padding-bottom: 6rem; }
+  .cat-strip { padding-bottom: 5rem; }
 }

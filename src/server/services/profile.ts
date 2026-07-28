@@ -204,7 +204,26 @@ export async function getComposedProfile(args: {
 }
 
 export async function getPublicProfile(handle: string, viewerId?: string | null, db: DbClient = prisma) {
-  return getComposedProfile({ handle, viewerId, ownerView: false, db });
+  const profile = await getComposedProfile({ handle, viewerId, ownerView: false, db });
+
+  // A block hides the profile from both sides. Reported as a 404 rather than a
+  // 403 so the response cannot be used to probe whether a block exists.
+  if (viewerId) {
+    const block = await db.userBlock.findFirst({
+      where: {
+        OR: [
+          { blockerId: viewerId, blockedId: profile.user.id },
+          { blockerId: profile.user.id, blockedId: viewerId },
+        ],
+      },
+      select: { id: true },
+    });
+    if (block) {
+      throw new AppError("PROFILE_NOT_FOUND", "Profile not found", 404);
+    }
+  }
+
+  return profile;
 }
 
 export async function getOwnerProfile(userId: string, db: DbClient = prisma) {

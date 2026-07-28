@@ -57,6 +57,27 @@ async function initAds(): Promise<boolean> {
     } catch {
       // tracking module unavailable — non-personalized ads still work
     }
+    // Then Google's own consent (UMP). Separate from ATT and required by AdMob
+    // policy for users in the EEA/UK: without it, serving ads there is a policy
+    // violation regardless of what Apple's prompt returned.
+    //
+    // Fails OPEN on purpose. If consent can't be gathered — no form configured
+    // in the AdMob dashboard, no network, an SDK that predates the API — the
+    // right outcome is non-personalized ads, not a screen with no ads and no
+    // explanation. UMP itself decides the region: outside the EEA/UK this
+    // resolves immediately and shows nothing.
+    try {
+      const consent = (ads as unknown as { AdsConsent?: { gatherConsent?: () => Promise<unknown> } })
+        .AdsConsent;
+      if (typeof consent?.gatherConsent === 'function') {
+        await consent.gatherConsent();
+        adLog('UMP consent gathered');
+      } else {
+        adLog('UMP unavailable on this SDK build — continuing non-personalized');
+      }
+    } catch (e) {
+      adLog('UMP consent FAILED (continuing non-personalized):', e);
+    }
     await ads.default().initialize();
     initialized = true;
     adLog('SDK initialized');

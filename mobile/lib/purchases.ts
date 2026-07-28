@@ -71,10 +71,22 @@ export async function getCurrentPackages(): Promise<PurchasesPackage[]> {
   }
 }
 
-/** Returns the post-purchase CustomerInfo, or null if cancelled. Throws on
- * real failures so callers can show the message. */
+/**
+ * Thrown when the store isn't reachable at all — a dev client built without the
+ * native module, or a failed `configure`.
+ *
+ * The user-initiated paths below raise this instead of returning null. They used
+ * to share the "null" return with user-cancellation, so tapping Go Plus in a
+ * build where RevenueCat never configured did nothing at all: no purchase, no
+ * error, no explanation. Silent is the worst possible outcome on a pay button.
+ */
+const STORE_UNAVAILABLE =
+  'The App Store is unavailable right now. Try again in a moment.';
+
+/** Returns the post-purchase CustomerInfo, or null if the user cancelled.
+ * Throws on real failures so callers can show the message. */
 export async function purchasePackage(pkg: PurchasesPackage): Promise<CustomerInfo | null> {
-  if (!(await configurePurchases())) return null;
+  if (!(await configurePurchases())) throw new Error(STORE_UNAVAILABLE);
   try {
     const { customerInfo } = await purchasesModule!.default.purchasePackage(pkg);
     return customerInfo;
@@ -85,7 +97,7 @@ export async function purchasePackage(pkg: PurchasesPackage): Promise<CustomerIn
 }
 
 export async function restorePurchases(): Promise<CustomerInfo | null> {
-  if (!(await configurePurchases())) return null;
+  if (!(await configurePurchases())) throw new Error(STORE_UNAVAILABLE);
   return purchasesModule!.default.restorePurchases();
 }
 

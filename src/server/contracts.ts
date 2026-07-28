@@ -1,5 +1,19 @@
 import { z } from "zod";
 
+/** Reasons an account can be reported. Kept here rather than in the moderation
+ * service so the contract layer stays free of database imports. */
+export const REPORT_REASONS = [
+  "spam",
+  "harassment",
+  "hate",
+  "sexual",
+  "violence",
+  "impersonation",
+  "other",
+] as const;
+
+export type ReportReason = (typeof REPORT_REASONS)[number];
+
 export const visibilitySchema = z.enum(["PUBLIC", "PRIVATE", "FOLLOWERS"]);
 export const devicePlatformSchema = z.enum(["IOS", "ANDROID", "WEB"]);
 export const deviceProviderSchema = z.enum(["APNS", "FCM", "EXPO"]);
@@ -90,6 +104,16 @@ export const followUserSchema = z.object({
 
 export const unfollowUserSchema = z.object({
   targetUserId: z.string().min(1),
+});
+
+export const blockUserSchema = z.object({
+  targetUserId: z.string().min(1),
+});
+
+export const reportUserSchema = z.object({
+  targetUserId: z.string().min(1),
+  reason: z.enum(REPORT_REASONS),
+  details: z.string().max(2000).optional(),
 });
 
 export const likeReviewSchema = z.object({

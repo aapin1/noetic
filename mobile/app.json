@@ -3,12 +3,13 @@
     "name": "mneme",
     "slug": "mneme",
     "owner": "aaronpintos-team",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
     "scheme": "mneme",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "app.mneme.mobile",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -17,6 +18,7 @@
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#F6F2E9"
       },
       "package": "app.mneme.mobile",
@@ -25,7 +27,8 @@
       ]
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",
@@ -34,8 +37,14 @@
       [
         "expo-splash-screen",
         {
+          "image": "./assets/splash.png",
+          "imageWidth": 180,
           "backgroundColor": "#F6F2E9",
-          "resizeMode": "contain"
+          "resizeMode": "contain",
+          "dark": {
+            "image": "./assets/splash.png",
+            "backgroundColor": "#060606"
+          }
         }
       ],
       [

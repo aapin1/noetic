@@ -5,6 +5,7 @@ import type { DbClient } from "@/server/db";
 import { SIGNAL_WEIGHTS, TOP_FOLLOW_TOPICS } from "@/server/weights";
 import { createNotification } from "@/server/services/notifications";
 import { applyTopicWeights, getPublicTopicIdsForUser, incrementTasteProfileVersion, recordActivityEvent } from "@/server/services/activity";
+import { blockedUserIds } from "@/server/services/moderation";
 import { recomputeProfileSummary } from "@/server/services/profile";
 import { getMemoryGraph } from "@/server/services/memory";
 
@@ -20,6 +21,23 @@ export async function followUser(userId: string, targetUserId: string, db: DbCli
 
   if (!target) {
     throw new AppError("USER_NOT_FOUND", "Target user not found", 404);
+  }
+
+  // A block has to survive the follow button. Checked in both directions so
+  // neither party can re-establish the edge the block just severed. The message
+  // is deliberately non-committal — telling someone "they blocked you" is itself
+  // a thing an abusive account can act on.
+  const block = await db.userBlock.findFirst({
+    where: {
+      OR: [
+        { blockerId: userId, blockedId: targetUserId },
+        { blockerId: targetUserId, blockedId: userId },
+      ],
+    },
+    select: { id: true },
+  });
+  if (block) {
+    throw new AppError("BLOCKED", "You can't follow this account", 403);
   }
 
   const existing = await db.follow.findUnique({
@@ -373,13 +391,20 @@ export async function searchProfiles(args: { userId: string; query: string; db?:
           LIMIT ${USER_SEARCH_LIMIT}
         `;
 
+  // Blocked accounts are filtered here rather than in the SQL above: both
+  // branches are raw queries, and threading an id list through them buys less
+  // than it costs when the result set is already capped at USER_SEARCH_LIMIT.
+  const hidden = new Set(await blockedUserIds(args.userId, db));
+
   return {
-    users: rows.map((row) => ({
-      id: row.userId,
-      handle: row.handle,
-      displayName: row.displayName,
-      avatarUrl: row.avatarUrl,
-    })),
+    users: rows
+      .filter((row) => !hidden.has(row.userId))
+      .map((row) => ({
+        id: row.userId,
+        handle: row.handle,
+        displayName: row.displayName,
+        avatarUrl: row.avatarUrl,
+      })),
   };
 }
 
@@ -400,8 +425,15 @@ const PULSE_MAP_EDGES = 80;
 export async function getPulse(args: { userId: string; db?: DbClient }) {
   const db = args.db ?? prisma;
 
+  // Belt and braces: blockUser already deletes the follow edges, but a block
+  // written by any other path must still take effect on the very next read.
+  const hidden = await blockedUserIds(args.userId, db);
+
   const follows = await db.follow.findMany({
-    where: { followerId: args.userId },
+    where: {
+      followerId: args.userId,
+      ...(hidden.length > 0 ? { followingId: { notIn: hidden } } : {}),
+    },
     orderBy: { createdAt: "desc" },
     select: {
       following: {

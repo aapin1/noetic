@@ -25,7 +25,6 @@
 
   <header class="nav">
     <a class="wordmark" href="#top">Mneme</a>
-    <a class="nav-cta" href="#waitlist">Join the waitlist</a>
   </header>
 
   <main id="top">
@@ -35,14 +34,13 @@
       <div class="hero-copy reveal">
         <p class="eyebrow">coming to iphone</p>
         <h1 class="hero-h1">
-          A memory for everything you
-          <span class="cycle-wrap"><em class="cycle" id="cycleWord">read</em><span class="caret" aria-hidden="true"></span></span>
+          A memory for everything
+          <span class="no-wrap">you <span class="cycle-wrap"><span class="cycle-sizer" aria-hidden="true">watch</span><span class="cycle-sizer" aria-hidden="true">think</span><span class="cycle-live"><em class="cycle" id="cycleWord">read</em><span class="caret" aria-hidden="true"></span></span></span>
         </h1>
         <p class="hero-sub">
           Mneme reads what you save, connects it to what you already believe,
           and draws the map as it grows.
         </p>
-        <a class="btn btn-primary" href="#waitlist">Join the waitlist</a>
       </div>
 
       <div class="hero-map reveal" aria-label="A live map of connected ideas, the way Mneme draws one">
@@ -54,49 +52,6 @@
       </div>
     </section>
 
-    <!-- ============ BEATS ============ -->
-    <section class="beats">
-      <div class="bento">
-        <article class="cell cell-a reveal">
-          <h2>Save anything.</h2>
-          <p>A link, a video, a PDF, or a thought typed in a waiting room. One box, no folders.</p>
-          <div class="mini-line" aria-hidden="true"><span id="miniSaved"></span></div>
-        </article>
-        <article class="cell cell-b reveal">
-          <h2>It reads it for you.</h2>
-          <p>The full text, not the headline. What it argues, and where it sits in your thinking.</p>
-        </article>
-        <article class="cell cell-c reveal">
-          <h2>Ideas find each other.</h2>
-          <p>New saves connect to old ones. Agreements, echoes, and the occasional contradiction.</p>
-          <div class="brain-wrap" aria-hidden="true">
-            <pre class="brain">⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⢀⣀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⢀⣤⣶⣿⣿⣿⣆⠘⠿⠟⢻⣿⣿⡇⢐⣷⣦⣄⡀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⢸⣿⣿⣿⣧⡄⠙⣿⣷⣶⣶⡿⠿⠿⢃⣼⡟⠻⣿⣿⣶⡄⠀⠀⠀⠀
-⠀⠀⢰⣷⣌⠙⠉⣿⣿⡟⢀⣿⣿⡟⢁⣤⣤⣶⣾⣿⡇⠸⢿⣿⠿⢃⣴⡄⠀⠀
-⠀⠀⢸⣿⣿⣿⣿⠿⠋⣠⣾⣿⣿⠀⣾⣿⣿⣛⠛⢿⣿⣶⣤⣤⣴⣿⣿⣿⡆⠀
-⠀⣴⣤⣄⣀⣠⣤⣴⣾⣿⣿⣿⣿⣆⠘⠿⣿⣿⣷⡄⢹⣿⣿⠿⠟⢿⣿⣿⣿⠀
-⠀⢸⣿⣿⡿⠛⠛⣻⣿⣿⣿⣿⣿⣿⣷⣦⣼⣿⣿⠃⣸⣿⠃⢰⣶⣾⣿⣿⡟⠀
-⠀⠀⢿⡏⢠⣾⣿⣿⡿⠋⣠⣄⡉⢻⣿⣿⡿⠟⠁⠀⠛⠛⠀⠘⠿⠿⠿⠋⠀⠀
-⠀⠀⠁⠘⢿⣿⣿⣷⣤⣿⣿⠗⠀⣉⣥⣴⣶⡶⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⣤⣀⡉⠛⠛⠋⣉⣠⣴⠿⢿⣿⠿⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠈⠻⢿⣿⣿⣿⣿⡿⠋⣠⠟⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⡾⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⡿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀</pre>
-          </div>
-        </article>
-        <article class="cell cell-d reveal">
-          <div class="cell-d-copy">
-            <h2>Watch your mind change.</h2>
-            <p>Topics grow and go quiet. Positions shift. The map remembers when.</p>
-          </div>
-          <div class="mini-map" aria-hidden="true">
-            <canvas id="miniMapCanvas"></canvas>
-          </div>
-        </article>
-      </div>
-    </section>
-
     <!-- ============ INTERLUDE ============ -->
     <section class="interlude reveal">
       <p class="interlude-line">
@@ -105,6 +60,39 @@
         and <em>Mneme</em> for memory.
       </p>
       <p class="interlude-note">This one is for Mneme.</p>
+    </section>
+
+    <!-- ============ SECTIONS ============ -->
+    <section class="beats">
+      <div class="bento">
+        <article class="cell cell-a reveal">
+          <p class="eyebrow">the map</p>
+          <h2>Atlas</h2>
+          <p>Everything you save lands as a point on a dark map, near the ideas it already agrees with. Topics form on their own and drift as you change. Zoom into one and it opens as a smaller map of its own.</p>
+        </article>
+        <article class="cell cell-b reveal">
+          <p class="eyebrow">the movement</p>
+          <h2>Mind</h2>
+          <p>Atlas shows where your knowledge lives. Mind reports what is moving through it: a thread picking up speed, or two saves that quietly disagree. When something deserves your attention, it says so.</p>
+        </article>
+        <article class="cell cell-c reveal">
+          <p class="eyebrow">the record</p>
+          <h2>You</h2>
+          <p>The long view of your own attention. A timeline of everything you have saved, streaks and dry spells included. Come back in a month and see what changed.</p>
+        </article>
+        <article class="cell cell-d reveal">
+          <p class="eyebrow">the pulse</p>
+          <h2>Social</h2>
+          <p>A slow pulse from the few people you follow. What your friends have been saving lately, and which topics they are deep in. It is a check-in, not a feed.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============ CAT ============ -->
+    <section class="cat-strip reveal" aria-hidden="true">
+      <pre class="ascii" id="scrollCat"> /\_/\
+( o.o )
+ &gt; ^ &lt;</pre>
     </section>
 
     <!-- ============ WAITLIST ============ -->

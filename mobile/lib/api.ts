@@ -4,6 +4,8 @@ import type {
   ApiResponse,
   ArchiveFolderDetail,
   ArchiveFolderSummary,
+  BlockedUser,
+  ReportReason,
   CaptureKind,
   CapturePreflight,
   CaptureResponse,
@@ -27,10 +29,22 @@ import type {
   SocraticMessage,
 } from '@/types/api';
 
+/**
+ * Where the app talks to. `EXPO_PUBLIC_API_URL` is inlined at build time from
+ * the EAS profile (see mobile/eas.json) or the Metro command line in dev.
+ *
+ * The last resort is deliberately the PRODUCTION url, not localhost. A release
+ * build that lost the env var used to fall through to `http://localhost:3000`,
+ * which is not a degraded app — it is a completely dead one, and nothing in the
+ * build or the store review would have caught it. Dev keeps localhost, because
+ * there the fallback is the useful default rather than a silent disaster.
+ */
+const PRODUCTION_API_URL = 'https://mneme-backend.onrender.com';
+
 const BASE_URL =
   (Constants.expoConfig?.extra?.apiUrl as string | undefined) ??
   process.env.EXPO_PUBLIC_API_URL ??
-  'http://localhost:3000';
+  (__DEV__ ? 'http://localhost:3000' : PRODUCTION_API_URL);
 
 function getValidationMessage(issues: unknown): string | null {
   if (!issues || typeof issues !== 'object') return null;
@@ -60,7 +74,18 @@ async function request<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  // `fetch` rejects with a bare TypeError ("Network request failed") when the
+  // device is offline or the server is unreachable, and that string used to be
+  // shown to the user verbatim on every screen. Translate it once, here, so the
+  // whole app says something a person can act on.
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  } catch {
+    const offline = new Error("Can't reach Mneme. Check your connection and try again.");
+    (offline as Error & { code: string }).code = 'NETWORK_ERROR';
+    throw offline;
+  }
 
   // Never json() blind: a proxy error page, a dropped connection mid-body, or
   // a crashed server returns non-JSON, and the raw SyntaxError ("JSON Parse
@@ -357,6 +382,32 @@ export const api = {
       return request<{ users: { id: string; handle: string; displayName: string; avatarUrl: string | null }[] }>(
         `/api/social/users${buildQuery({ q: query })}`,
       );
+    },
+  },
+
+  /** Block and report — App Store Guideline 1.2 requires both wherever the app
+   * shows other people's content. */
+  moderation: {
+    block(targetUserId: string) {
+      return request<{ blocked: true }>('/api/social/block', {
+        method: 'POST',
+        body: JSON.stringify({ targetUserId }),
+      });
+    },
+    unblock(targetUserId: string) {
+      return request<{ blocked: false }>('/api/social/block', {
+        method: 'DELETE',
+        body: JSON.stringify({ targetUserId }),
+      });
+    },
+    blocked() {
+      return request<{ users: BlockedUser[] }>('/api/social/block');
+    },
+    report(targetUserId: string, reason: ReportReason, details?: string) {
+      return request<{ reported: true }>('/api/social/report', {
+        method: 'POST',
+        body: JSON.stringify({ targetUserId, reason, details }),
+      });
     },
   },
 

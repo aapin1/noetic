@@ -116,47 +116,51 @@ enum SocraticRole {
 }
 
 model User {
-  id                  String             @id @default(cuid())
-  email               String             @unique
-  emailVerified       DateTime?
-  name                String?
-  image               String?
-  passwordHash        String?
-  plan                UserPlan           @default(FREE)
-  tasteProfileVersion Int                @default(0)
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-  accounts            Account[]
-  sessions            Session[]
-  profile             Profile?
-  userTopics          UserTopic[]
-  logs                LogEntry[]
-  reviews             Review[]
-  rankingLists        RankingList[]
-  followings          Follow[]           @relation("Follower")
-  followers           Follow[]           @relation("Following")
-  likes               Like[]
-  saves               Save[]
-  comments            Comment[]
-  shareEvents         ShareEvent[]
-  activityEvents      ActivityEvent[]    @relation("ActivityActor")
-  targetedActivities  ActivityEvent[]    @relation("ActivityTargetUser")
-  notifications       Notification[]     @relation("NotificationRecipient")
-  triggeredNotifications Notification[]  @relation("NotificationActor")
-  deviceTokens        DeviceToken[]
-  comparisonCacheLeft ComparisonCache[]  @relation("ComparisonLeft")
-  comparisonCacheRight ComparisonCache[] @relation("ComparisonRight")
-  capturedItems       CapturedItem[]
-  insights            Insight[]
-  memoryEdges         MemoryEdge[]
-  cognitiveEvents     CognitiveEvent[]
-  preference          UserPreference?
-  positions           UserPosition[]
-  socraticThreads     SocraticThread[]
-  companionThread     CompanionThread?
-  intelligenceCache   IntelligenceCache?
-  terrainCache        TerrainCache?
-  usageCounters       UsageCounter[]
+  id                     String             @id @default(cuid())
+  email                  String             @unique
+  emailVerified          DateTime?
+  name                   String?
+  image                  String?
+  passwordHash           String?
+  plan                   UserPlan           @default(FREE)
+  tasteProfileVersion    Int                @default(0)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  accounts               Account[]
+  sessions               Session[]
+  profile                Profile?
+  userTopics             UserTopic[]
+  logs                   LogEntry[]
+  reviews                Review[]
+  rankingLists           RankingList[]
+  followings             Follow[]           @relation("Follower")
+  followers              Follow[]           @relation("Following")
+  likes                  Like[]
+  saves                  Save[]
+  comments               Comment[]
+  shareEvents            ShareEvent[]
+  activityEvents         ActivityEvent[]    @relation("ActivityActor")
+  targetedActivities     ActivityEvent[]    @relation("ActivityTargetUser")
+  notifications          Notification[]     @relation("NotificationRecipient")
+  triggeredNotifications Notification[]     @relation("NotificationActor")
+  deviceTokens           DeviceToken[]
+  comparisonCacheLeft    ComparisonCache[]  @relation("ComparisonLeft")
+  comparisonCacheRight   ComparisonCache[]  @relation("ComparisonRight")
+  capturedItems          CapturedItem[]
+  insights               Insight[]
+  memoryEdges            MemoryEdge[]
+  cognitiveEvents        CognitiveEvent[]
+  preference             UserPreference?
+  positions              UserPosition[]
+  socraticThreads        SocraticThread[]
+  companionThread        CompanionThread?
+  intelligenceCache      IntelligenceCache?
+  terrainCache           TerrainCache?
+  usageCounters          UsageCounter[]
+  blocksMade             UserBlock[]        @relation("BlocksMade")
+  blocksReceived         UserBlock[]        @relation("BlocksReceived")
+  reportsMade            UserReport[]       @relation("ReportsMade")
+  reportsReceived        UserReport[]       @relation("ReportsReceived")
 }
 
 model Profile {
@@ -182,18 +186,18 @@ model Profile {
 }
 
 model Topic {
-  id          String             @id @default(cuid())
-  name        String             @unique
-  slug        String             @unique
-  description String?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  userTopics  UserTopic[]
-  contentTags ContentItemTopic[]
-  logTags     LogEntryTopic[]
-  capturedTags CapturedItemTopic[]
-  positions        UserPosition[]
-  socraticThreads  SocraticThread[]
+  id              String              @id @default(cuid())
+  name            String              @unique
+  slug            String              @unique
+  description     String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  userTopics      UserTopic[]
+  contentTags     ContentItemTopic[]
+  logTags         LogEntryTopic[]
+  capturedTags    CapturedItemTopic[]
+  positions       UserPosition[]
+  socraticThreads SocraticThread[]
 
   @@index([slug])
 }
@@ -214,45 +218,45 @@ model UserTopic {
 }
 
 model ContentSource {
-  id          String        @id @default(cuid())
-  name        String
-  slug        String        @unique
-  domain      String?       @unique
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id           String        @id @default(cuid())
+  name         String
+  slug         String        @unique
+  domain       String?       @unique
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   contentItems ContentItem[]
 }
 
 model ContentType {
-  id          String        @id @default(cuid())
-  name        String
-  slug        String        @unique
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id           String        @id @default(cuid())
+  name         String
+  slug         String        @unique
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   contentItems ContentItem[]
 }
 
 model ContentItem {
-  id             String            @id @default(cuid())
+  id             String             @id @default(cuid())
   title          String
   description    String?
   bodyText       String?
   /// Where bodyText came from: transcript | body | jsonld | reddit | description | user
   bodySource     String?
-  canonicalUrl   String?           @unique
+  canonicalUrl   String?            @unique
   originalUrl    String?
   siteName       String?
   imageUrl       String?
   authorName     String?
   publishedAt    DateTime?
-  metadataStatus MetadataStatus    @default(COMPLETE)
+  metadataStatus MetadataStatus     @default(COMPLETE)
   sourceId       String?
   contentTypeId  String?
   manualFields   Json?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  source         ContentSource?    @relation(fields: [sourceId], references: [id], onDelete: SetNull)
-  contentType    ContentType?      @relation(fields: [contentTypeId], references: [id], onDelete: SetNull)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  source         ContentSource?     @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  contentType    ContentType?       @relation(fields: [contentTypeId], references: [id], onDelete: SetNull)
   topics         ContentItemTopic[]
   logs           LogEntry[]
   rankingItems   RankedItem[]
@@ -277,19 +281,19 @@ model ContentItemTopic {
 }
 
 model LogEntry {
-  id           String         @id @default(cuid())
-  userId       String
-  contentItemId String
-  rating       Int?
-  annotation   String?
-  visibility   Visibility     @default(PUBLIC)
-  loggedAt     DateTime       @default(now())
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  contentItem  ContentItem    @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
-  review       Review?
-  topics       LogEntryTopic[]
+  id             String          @id @default(cuid())
+  userId         String
+  contentItemId  String
+  rating         Int?
+  annotation     String?
+  visibility     Visibility      @default(PUBLIC)
+  loggedAt       DateTime        @default(now())
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentItem    ContentItem     @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  review         Review?
+  topics         LogEntryTopic[]
   activityEvents ActivityEvent[]
 
   @@unique([userId, contentItemId])
@@ -301,26 +305,26 @@ model LogEntryTopic {
   logEntryId String
   topicId    String
   createdAt  DateTime @default(now())
-  logEntry   LogEntry  @relation(fields: [logEntryId], references: [id], onDelete: Cascade)
-  topic      Topic     @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  logEntry   LogEntry @relation(fields: [logEntryId], references: [id], onDelete: Cascade)
+  topic      Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
 
   @@id([logEntryId, topicId])
   @@index([topicId])
 }
 
 model Review {
-  id           String         @id @default(cuid())
-  logEntryId    String         @unique
-  authorId      String
-  content       String
-  visibility    Visibility     @default(PUBLIC)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  logEntry      LogEntry       @relation(fields: [logEntryId], references: [id], onDelete: Cascade)
-  author        User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  likes         Like[]
-  comments      Comment[]
-  shareEvents   ShareEvent[]
+  id             String          @id @default(cuid())
+  logEntryId     String          @unique
+  authorId       String
+  content        String
+  visibility     Visibility      @default(PUBLIC)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  logEntry       LogEntry        @relation(fields: [logEntryId], references: [id], onDelete: Cascade)
+  author         User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  likes          Like[]
+  comments       Comment[]
+  shareEvents    ShareEvent[]
   activityEvents ActivityEvent[]
 
   @@index([authorId, createdAt])
@@ -328,15 +332,15 @@ model Review {
 }
 
 model RankingList {
-  id           String         @id @default(cuid())
-  userId        String
-  title         String
-  description   String?
-  visibility    Visibility     @default(PUBLIC)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items         RankedItem[]
+  id             String          @id @default(cuid())
+  userId         String
+  title          String
+  description    String?
+  visibility     Visibility      @default(PUBLIC)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items          RankedItem[]
   activityEvents ActivityEvent[]
 
   @@unique([userId, title])
@@ -345,15 +349,15 @@ model RankingList {
 }
 
 model RankedItem {
-  id            String        @id @default(cuid())
+  id            String      @id @default(cuid())
   rankingListId String
   contentItemId String
   position      Int
   note          String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  rankingList   RankingList   @relation(fields: [rankingListId], references: [id], onDelete: Cascade)
-  contentItem   ContentItem   @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  rankingList   RankingList @relation(fields: [rankingListId], references: [id], onDelete: Cascade)
+  contentItem   ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
 
   @@unique([rankingListId, contentItemId])
   @@unique([rankingListId, position])
@@ -361,12 +365,12 @@ model RankedItem {
 }
 
 model Follow {
-  id          String    @id @default(cuid())
-  followerId  String
-  followingId String
-  createdAt   DateTime  @default(now())
-  follower    User      @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
-  following   User      @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+  id             String          @id @default(cuid())
+  followerId     String
+  followingId    String
+  createdAt      DateTime        @default(now())
+  follower       User            @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following      User            @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
   activityEvents ActivityEvent[]
 
   @@unique([followerId, followingId])
@@ -375,18 +379,18 @@ model Follow {
 
 model Like {
   id        String   @id @default(cuid())
-  userId     String
-  reviewId   String
-  createdAt  DateTime @default(now())
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  review     Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  userId    String
+  reviewId  String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  review    Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
 
   @@unique([userId, reviewId])
   @@index([reviewId, createdAt])
 }
 
 model Save {
-  id           String      @id @default(cuid())
+  id            String      @id @default(cuid())
   userId        String
   contentItemId String
   createdAt     DateTime    @default(now())
@@ -398,18 +402,18 @@ model Save {
 }
 
 model Comment {
-  id            String         @id @default(cuid())
+  id             String          @id @default(cuid())
   authorId       String
   reviewId       String
   parentId       String?
   content        String
-  visibility     Visibility     @default(PUBLIC)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  author         User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  review         Review         @relation(fields: [reviewId], references: [id], onDelete: Cascade)
-  parent         Comment?       @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
-  replies        Comment[]      @relation("CommentReplies")
+  visibility     Visibility      @default(PUBLIC)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  author         User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  review         Review          @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  parent         Comment?        @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies        Comment[]       @relation("CommentReplies")
   activityEvents ActivityEvent[]
 
   @@index([reviewId, createdAt])
@@ -417,34 +421,34 @@ model Comment {
 }
 
 model ShareEvent {
-  id           String       @id @default(cuid())
-  userId        String
-  contentItemId String
-  reviewId      String?
-  platform      String
-  deepLink      String?
-  metadata      Json?
-  createdAt     DateTime     @default(now())
-  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  contentItem   ContentItem  @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
-  review        Review?      @relation(fields: [reviewId], references: [id], onDelete: SetNull)
+  id             String          @id @default(cuid())
+  userId         String
+  contentItemId  String
+  reviewId       String?
+  platform       String
+  deepLink       String?
+  metadata       Json?
+  createdAt      DateTime        @default(now())
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentItem    ContentItem     @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  review         Review?         @relation(fields: [reviewId], references: [id], onDelete: SetNull)
   activityEvents ActivityEvent[]
 
   @@index([contentItemId, createdAt])
 }
 
 model ComparisonCache {
-  id           String   @id @default(cuid())
-  comparisonKey String  @unique
-  leftUserId   String
-  rightUserId  String
-  leftVersion  Int
-  rightVersion Int
-  score        Float
-  explanation  Json
-  computedAt   DateTime @default(now())
-  leftUser     User     @relation("ComparisonLeft", fields: [leftUserId], references: [id], onDelete: Cascade)
-  rightUser    User     @relation("ComparisonRight", fields: [rightUserId], references: [id], onDelete: Cascade)
+  id            String   @id @default(cuid())
+  comparisonKey String   @unique
+  leftUserId    String
+  rightUserId   String
+  leftVersion   Int
+  rightVersion  Int
+  score         Float
+  explanation   Json
+  computedAt    DateTime @default(now())
+  leftUser      User     @relation("ComparisonLeft", fields: [leftUserId], references: [id], onDelete: Cascade)
+  rightUser     User     @relation("ComparisonRight", fields: [rightUserId], references: [id], onDelete: Cascade)
 
   @@index([leftUserId, rightUserId])
 }
@@ -471,29 +475,29 @@ model Notification {
 
 model ActivityEvent {
   id            String       @id @default(cuid())
-  actorId        String
-  type           ActivityType
-  contentItemId  String?
-  logEntryId     String?
-  reviewId       String?
-  rankingListId  String?
-  followId       String?
-  commentId      String?
-  shareEventId   String?
-  targetUserId   String?
-  visibility     Visibility   @default(PUBLIC)
-  weight         Float
-  metadata       Json?
-  occurredAt     DateTime     @default(now())
-  actor          User         @relation("ActivityActor", fields: [actorId], references: [id], onDelete: Cascade)
-  contentItem    ContentItem? @relation(fields: [contentItemId], references: [id], onDelete: SetNull)
-  logEntry       LogEntry?    @relation(fields: [logEntryId], references: [id], onDelete: SetNull)
-  review         Review?      @relation(fields: [reviewId], references: [id], onDelete: SetNull)
-  rankingList    RankingList? @relation(fields: [rankingListId], references: [id], onDelete: SetNull)
-  follow         Follow?      @relation(fields: [followId], references: [id], onDelete: SetNull)
-  comment        Comment?     @relation(fields: [commentId], references: [id], onDelete: SetNull)
-  shareEvent     ShareEvent?  @relation(fields: [shareEventId], references: [id], onDelete: SetNull)
-  targetUser     User?        @relation("ActivityTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
+  actorId       String
+  type          ActivityType
+  contentItemId String?
+  logEntryId    String?
+  reviewId      String?
+  rankingListId String?
+  followId      String?
+  commentId     String?
+  shareEventId  String?
+  targetUserId  String?
+  visibility    Visibility   @default(PUBLIC)
+  weight        Float
+  metadata      Json?
+  occurredAt    DateTime     @default(now())
+  actor         User         @relation("ActivityActor", fields: [actorId], references: [id], onDelete: Cascade)
+  contentItem   ContentItem? @relation(fields: [contentItemId], references: [id], onDelete: SetNull)
+  logEntry      LogEntry?    @relation(fields: [logEntryId], references: [id], onDelete: SetNull)
+  review        Review?      @relation(fields: [reviewId], references: [id], onDelete: SetNull)
+  rankingList   RankingList? @relation(fields: [rankingListId], references: [id], onDelete: SetNull)
+  follow        Follow?      @relation(fields: [followId], references: [id], onDelete: SetNull)
+  comment       Comment?     @relation(fields: [commentId], references: [id], onDelete: SetNull)
+  shareEvent    ShareEvent?  @relation(fields: [shareEventId], references: [id], onDelete: SetNull)
+  targetUser    User?        @relation("ActivityTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
 
   @@index([actorId, occurredAt])
   @@index([contentItemId, occurredAt])
@@ -501,15 +505,15 @@ model ActivityEvent {
 }
 
 model DeviceToken {
-  id         String         @id @default(cuid())
-  userId      String
-  platform    DevicePlatform
-  provider    DeviceProvider
-  token       String
-  isActive    Boolean        @default(true)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String         @id @default(cuid())
+  userId    String
+  platform  DevicePlatform
+  provider  DeviceProvider
+  token     String
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, token])
   @@index([userId, isActive])
@@ -550,34 +554,34 @@ model VerificationToken {
 }
 
 model CapturedItem {
-  id              String              @id @default(cuid())
-  userId          String
-  kind            CaptureKind
-  contentItemId   String?
-  rawText         String?             @db.Text
-  caption         String?             @db.Text
-  mediaUrl        String?
-  reaction        String?             @db.Text
+  id                 String              @id @default(cuid())
+  userId             String
+  kind               CaptureKind
+  contentItemId      String?
+  rawText            String?             @db.Text
+  caption            String?             @db.Text
+  mediaUrl           String?
+  reaction           String?             @db.Text
   /// The user's own account of what the content was about (capture fail-safe / post-hoc correction). Treated as ground truth by the pipeline.
-  userContext     String?             @db.Text
+  userContext        String?             @db.Text
   /// User-chosen display title. Cosmetic only — never fed to the pipeline; wins over the content title on every read surface.
-  userTitle       String?
-  summary         String?             @db.Text
-  keyIdea         String?             @db.Text
-  terms           Json
-  embedding       Float[]             @default([])
-  mapX            Float?
-  mapY            Float?
-  capturedAt      DateTime            @default(now())
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  contentItem     ContentItem?        @relation(fields: [contentItemId], references: [id], onDelete: SetNull)
-  insights        Insight[]
-  edgesFrom       MemoryEdge[]        @relation("EdgesFrom")
-  edgesTo         MemoryEdge[]        @relation("EdgesTo")
-  cognitiveEvents CognitiveEvent[]
-  topics          CapturedItemTopic[]
+  userTitle          String?
+  summary            String?             @db.Text
+  keyIdea            String?             @db.Text
+  terms              Json
+  embedding          Float[]             @default([])
+  mapX               Float?
+  mapY               Float?
+  capturedAt         DateTime            @default(now())
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentItem        ContentItem?        @relation(fields: [contentItemId], references: [id], onDelete: SetNull)
+  insights           Insight[]
+  edgesFrom          MemoryEdge[]        @relation("EdgesFrom")
+  edgesTo            MemoryEdge[]        @relation("EdgesTo")
+  cognitiveEvents    CognitiveEvent[]
+  topics             CapturedItemTopic[]
   positionChallenges PositionChallenge[]
 
   @@index([userId, capturedAt])
@@ -630,14 +634,14 @@ model MemoryEdge {
 }
 
 model CognitiveEvent {
-  id             String              @id @default(cuid())
+  id             String             @id @default(cuid())
   userId         String
   capturedItemId String?
   type           CognitiveEventType
   payload        Json
-  occurredAt     DateTime            @default(now())
-  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  capturedItem   CapturedItem?       @relation(fields: [capturedItemId], references: [id], onDelete: SetNull)
+  occurredAt     DateTime           @default(now())
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  capturedItem   CapturedItem?      @relation(fields: [capturedItemId], references: [id], onDelete: SetNull)
 
   @@index([userId, occurredAt])
 }
@@ -670,16 +674,16 @@ model UserPosition {
 }
 
 model PositionChallenge {
-  id             String       @id @default(cuid())
+  id             String        @id @default(cuid())
   positionId     String
   capturedItemId String?
-  tension        String       @db.Text
-  acknowledged   Boolean      @default(false)
-  revised        Boolean      @default(false)
-  revision       String?      @db.Text
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  position       UserPosition @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  tension        String        @db.Text
+  acknowledged   Boolean       @default(false)
+  revised        Boolean       @default(false)
+  revision       String?       @db.Text
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  position       UserPosition  @relation(fields: [positionId], references: [id], onDelete: Cascade)
   capturedItem   CapturedItem? @relation(fields: [capturedItemId], references: [id], onDelete: SetNull)
 
   @@unique([positionId, capturedItemId])
@@ -789,4 +793,37 @@ model TerrainCache {
   payload   Json
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// A one-way block. Required by App Store Guideline 1.2 for any app that shows
+/// user-generated content: the blocker stops seeing the blocked account
+/// anywhere (Pulse, search, profiles) and the follow edge is severed in BOTH
+/// directions, so blocking also revokes the access the other person had.
+model UserBlock {
+  id        String   @id @default(cuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+  blocker   User     @relation("BlocksMade", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked   User     @relation("BlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+}
+
+/// A report of an account, for the Guideline 1.2 "mechanism to report offensive
+/// content" requirement. Deliberately append-only and never surfaced back to the
+/// reported user; triage happens out of band by reading this table.
+model UserReport {
+  id         String   @id @default(cuid())
+  reporterId String
+  reportedId String
+  reason     String
+  details    String?  @db.Text
+  createdAt  DateTime @default(now())
+  reporter   User     @relation("ReportsMade", fields: [reporterId], references: [id], onDelete: Cascade)
+  reported   User     @relation("ReportsReceived", fields: [reportedId], references: [id], onDelete: Cascade)
+
+  @@index([reportedId, createdAt])
+  @@index([createdAt])
 }

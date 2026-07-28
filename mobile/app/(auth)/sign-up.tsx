@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -11,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeftIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
+import { PRIVACY_URL, TERMS_URL } from '@/constants/links';
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
@@ -161,6 +163,40 @@ export default function SignUpScreen() {
               style={styles.submitBtn}
               accessibilityLabel="Create your mneme account"
             />
+
+            {/* Account creation is the moment the terms actually bind, so the
+                links belong here rather than only in settings. */}
+            <View style={styles.legal}>
+              <Text variant="monoSmall" color="faint" style={styles.legalText}>
+                By continuing you agree to the{' '}
+              </Text>
+              <Pressable
+                onPress={() => void Linking.openURL(TERMS_URL)}
+                hitSlop={8}
+                accessibilityRole="link"
+                accessibilityLabel="Read the Terms of Use"
+              >
+                <Text variant="monoSmall" color="muted" style={styles.legalLink}>
+                  terms
+                </Text>
+              </Pressable>
+              <Text variant="monoSmall" color="faint" style={styles.legalText}>
+                {' '}and{' '}
+              </Text>
+              <Pressable
+                onPress={() => void Linking.openURL(PRIVACY_URL)}
+                hitSlop={8}
+                accessibilityRole="link"
+                accessibilityLabel="Read the Privacy Policy"
+              >
+                <Text variant="monoSmall" color="muted" style={styles.legalLink}>
+                  privacy policy
+                </Text>
+              </Pressable>
+              <Text variant="monoSmall" color="faint" style={styles.legalText}>
+                .
+              </Text>
+            </View>
           </View>
 
           <View style={styles.footer}>
@@ -223,6 +259,15 @@ const styles = StyleSheet.create({
     marginBottom: Spacing[4],
   },
   submitBtn: { marginTop: Spacing[4] },
+  legal: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: Spacing[4],
+  },
+  legalText: { fontSize: 10, lineHeight: 15 },
+  legalLink: { fontSize: 10, lineHeight: 15, textDecorationLine: 'underline' },
   loadingOverlay: { zIndex: 10 },
   footer: {
     flexDirection: 'row',

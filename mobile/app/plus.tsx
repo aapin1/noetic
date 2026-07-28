@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { CheckIcon, XIcon } from 'lucide-react-native';
 import type { PurchasesPackage } from 'react-native-purchases';
+import { PRIVACY_URL, TERMS_URL } from '@/constants/links';
 import { Radius, Spacing, accentFor } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
@@ -263,6 +264,44 @@ export default function PlusScreen() {
             })}
           </View>
         ) : null}
+
+        {/* Required on the purchase screen itself by App Store Guideline 3.1.2:
+            what renews, how to stop it, and functional links to the terms and
+            the privacy policy. Rendered unconditionally — a reviewer who lands
+            here already subscribed still has to be able to reach both. */}
+        <View style={styles.legal}>
+          <Text variant="monoSmall" color="faint" style={styles.legalText}>
+            Monthly and yearly plans renew automatically unless cancelled at least 24
+            hours before the period ends. Payment is charged to your Apple ID, and you
+            can manage or cancel in your Apple ID settings. Lifetime is a one-time
+            purchase and does not renew.
+          </Text>
+          <View style={styles.legalLinks}>
+            <Pressable
+              onPress={() => void Linking.openURL(TERMS_URL)}
+              hitSlop={10}
+              accessibilityRole="link"
+              accessibilityLabel="Read the Terms of Use"
+            >
+              <Text variant="monoSmall" color="muted" style={styles.legalLink}>
+                terms of use
+              </Text>
+            </Pressable>
+            <Text variant="monoSmall" color="faint">
+              ·
+            </Text>
+            <Pressable
+              onPress={() => void Linking.openURL(PRIVACY_URL)}
+              hitSlop={10}
+              accessibilityRole="link"
+              accessibilityLabel="Read the Privacy Policy"
+            >
+              <Text variant="monoSmall" color="muted" style={styles.legalLink}>
+                privacy policy
+              </Text>
+            </Pressable>
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -331,6 +370,16 @@ const styles = StyleSheet.create({
   planPrice: {},
 
   restore: { fontSize: 11, textAlign: 'center', marginTop: Spacing[2] },
+
+  legal: { gap: Spacing[3], marginTop: Spacing[2] },
+  legalText: { fontSize: 10, lineHeight: 15, textAlign: 'center' },
+  legalLinks: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: Spacing[2],
+  },
+  legalLink: { fontSize: 11, textDecorationLine: 'underline' },
 
   metersTitle: { fontSize: 11 },
   meter: { gap: Spacing[2] },

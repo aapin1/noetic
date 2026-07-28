@@ -43,6 +43,7 @@ import { describeImage, embedText, polishInsights, type Recommendation } from "@
 import { isPaidTranscriptHost, scoreContentConfidence } from "@/server/metadata";
 import { applyTopicWeights, incrementTasteProfileVersion } from "@/server/services/activity";
 import { scheduleIntelligenceWarm } from "@/server/services/intelligence";
+import { deleteStoredObjects } from "@/server/storage";
 
 const NEIGHBOR_LIMIT = 6;
 const NEIGHBOR_SCAN = 80;
@@ -1226,7 +1227,7 @@ export async function deleteCapture(args: {
   const db = args.db ?? prisma;
   const item = await db.capturedItem.findUnique({
     where: { id: args.capturedItemId },
-    select: { id: true, userId: true, topics: { select: { topicId: true } } },
+    select: { id: true, userId: true, mediaUrl: true, topics: { select: { topicId: true } } },
   });
 
   if (!item || item.userId !== args.userId) {
@@ -1250,6 +1251,11 @@ export async function deleteCapture(args: {
 
     await incrementTasteProfileVersion(tx, args.userId);
   });
+
+  // Outside the transaction, and only once it committed: an uploaded image has
+  // no owner left after the row goes, so leaving it in the bucket is a permanent
+  // orphan the user believes they deleted. Ignores remote URLs and never throws.
+  await deleteStoredObjects([item.mediaUrl]);
 }
 
 export async function getCapture(args: { userId: string; capturedItemId: string; db?: DbClient }) {

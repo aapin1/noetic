@@ -7,6 +7,7 @@ import type { DbClient, RootDbClient } from "@/server/db";
 import { upsertTopics } from "@/server/topics";
 import { applyTopicWeights, incrementTasteProfileVersion, recordActivityEvent } from "@/server/services/activity";
 import { recomputeProfileSummary } from "@/server/services/profile";
+import { deleteStoredObjects } from "@/server/storage";
 
 async function assertEmailAvailable(db: DbClient | RootDbClient, email: string) {
   const existing = await db.user.findUnique({
@@ -259,7 +260,30 @@ export async function deleteAccount(args: { userId: string; db?: RootDbClient })
   if (!user) {
     throw new AppError("USER_NOT_FOUND", "Account not found", 404);
   }
+
+  // Collect the object-store URLs BEFORE the cascade removes the rows that
+  // point at them — afterwards there is nothing left to tell us what to delete,
+  // and the images would outlive the account they belong to.
+  const [captures, profile] = await Promise.all([
+    db.capturedItem.findMany({
+      where: { userId: args.userId, mediaUrl: { not: null } },
+      select: { mediaUrl: true },
+    }),
+    db.profile.findUnique({
+      where: { userId: args.userId },
+      select: { avatarUrl: true },
+    }),
+  ]);
+
   await db.user.delete({ where: { id: args.userId } });
+
+  // After the row is gone, so a storage failure can never block the deletion the
+  // user asked for. deleteStoredObjects swallows and logs its own errors.
+  await deleteStoredObjects([
+    ...captures.map((capture) => capture.mediaUrl),
+    profile?.avatarUrl,
+  ]);
+
   // Drop the account-liveness cache entry so a device token for this user stops
   // authenticating immediately rather than at the end of its TTL.
   forgetUser(args.userId);

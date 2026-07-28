@@ -11,7 +11,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
+import { MoreHorizontalIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
+import { promptModerationActions } from '@/lib/moderation';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
@@ -59,9 +61,11 @@ function LatestRow({ item }: { item: PulseLatestItem }) {
 function FriendCard({
   friend,
   onUnfollow,
+  onBlocked,
 }: {
   friend: PulseFriend;
   onUnfollow: (id: string) => void;
+  onBlocked: () => void;
 }) {
   const c = useThemeColors();
   const { user, map, latest, captureCount } = friend;
@@ -90,6 +94,21 @@ function FriendCard({
         </View>
         <Pressable onPress={() => onUnfollow(user.id)} hitSlop={8} style={[styles.unfollowBtn, { borderColor: c.faint }]}>
           <Text variant="monoSmall" style={{ color: c.faint }}>following</Text>
+        </Pressable>
+        <Pressable
+          onPress={() =>
+            promptModerationActions({
+              targetUserId: user.id,
+              displayName: user.displayName,
+              onChanged: onBlocked,
+            })
+          }
+          hitSlop={10}
+          style={styles.moreBtn}
+          accessibilityRole="button"
+          accessibilityLabel={`Report or block ${user.displayName}`}
+        >
+          <MoreHorizontalIcon size={18} color={c.faint} />
         </Pressable>
       </View>
 
@@ -136,9 +155,11 @@ const SEARCH_DEBOUNCE_MS = 180;
 function UserResult({
   user,
   onFollow,
+  onBlocked,
 }: {
   user: SearchUser;
   onFollow: (id: string) => void;
+  onBlocked: () => void;
 }) {
   const c = useThemeColors();
   const [followed, setFollowed] = useState(false);
@@ -172,6 +193,21 @@ function UserResult({
         <Text variant="monoSmall" style={{ color: followed ? c.faint : c.text }}>
           {followed ? 'following' : 'follow'}
         </Text>
+      </Pressable>
+      <Pressable
+        onPress={() =>
+          promptModerationActions({
+            targetUserId: user.id,
+            displayName: user.displayName,
+            onChanged: onBlocked,
+          })
+        }
+        hitSlop={10}
+        style={styles.moreBtn}
+        accessibilityRole="button"
+        accessibilityLabel={`Report or block ${user.displayName}`}
+      >
+        <MoreHorizontalIcon size={18} color={c.faint} />
       </Pressable>
     </View>
   );
@@ -288,6 +324,14 @@ export default function PulseScreen() {
     }
   }, [refetch]);
 
+  // A block removes the account from both the feed and any open search results,
+  // so the person who just blocked someone doesn't keep looking at them.
+  const handleBlocked = useCallback(() => {
+    setSearchResults([]);
+    setSearchedFor('');
+    void refetch();
+  }, [refetch]);
+
   const isEmpty = !loading && !error && friends.length === 0 && !searchQuery.trim();
 
   return (
@@ -349,7 +393,7 @@ export default function PulseScreen() {
                 <Text variant="monoSmall" style={{ color: c.faint, paddingHorizontal: Spacing[6], paddingTop: Spacing[4] }}>no results</Text>
               )}
               {searchResults.map((u) => (
-                <UserResult key={u.id} user={u} onFollow={handleFollowed} />
+                <UserResult key={u.id} user={u} onFollow={handleFollowed} onBlocked={handleBlocked} />
               ))}
             </View>
           ) : (
@@ -362,7 +406,7 @@ export default function PulseScreen() {
               )}
               {friends.map((friend, i) => (
                 <React.Fragment key={friend.user.id}>
-                  <FriendCard friend={friend} onUnfollow={handleUnfollow} />
+                  <FriendCard friend={friend} onUnfollow={handleUnfollow} onBlocked={handleBlocked} />
                   {i === AD_AFTER_FRIEND_INDEX && friends.length > AD_AFTER_FRIEND_INDEX + 1 ? (
                     <SponsoredCard />
                   ) : null}
@@ -400,6 +444,7 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
   cardMeta: { flex: 1, gap: 2 },
   unfollowBtn: { borderWidth: 1, borderRadius: Radius.xs, paddingVertical: Spacing[1], paddingHorizontal: Spacing[2] },
+  moreBtn: { paddingLeft: Spacing[2], paddingVertical: Spacing[1] },
   identity: { marginTop: Spacing[3], lineHeight: 18 },
   mapWrap: { marginTop: Spacing[4] },
   regions: { marginTop: Spacing[3], letterSpacing: 0.5 },

@@ -574,3 +574,21 @@ export interface Entitlements {
   plan: 'FREE' | 'PLUS';
   usage: UsageMeter[];
 }
+
+/** Must stay in sync with REPORT_REASONS in src/server/contracts.ts. */
+export type ReportReason =
+  | 'spam'
+  | 'harassment'
+  | 'hate'
+  | 'sexual'
+  | 'violence'
+  | 'impersonation'
+  | 'other';
+
+export interface BlockedUser {
+  id: string;
+  handle: string;
+  displayName: string;
+  avatarUrl: string | null;
+  blockedAt: string;
+}

@@ -210,7 +210,6 @@
 
   // The hero map keeps its nodes clear of the capture bar at the bottom.
   const heroMap = runMap('mapCanvas', 26, true, 0.28, 90);
-  runMap('miniMapCanvas', 26, false, 0.85);
 
   /* ---------- capture sequence (hero) ---------- */
 
@@ -283,33 +282,6 @@
     captureText.textContent = 'attention might be a moral act';
   }
 
-  /* ---------- mini typed line (beats cell A) ---------- */
-
-  const SAVED_LINES = [
-    '> saved: the case against travel',
-    '> saved: how buildings learn, ch. 2',
-    '> saved: a voice memo about attention',
-    '> saved: lecture on antifragility',
-  ];
-  const miniSaved = document.getElementById('miniSaved');
-  if (miniSaved) {
-    if (reduceMotion) {
-      miniSaved.textContent = SAVED_LINES[0];
-    } else {
-      let si = 0;
-      const typeLine = (line, i) => {
-        miniSaved.textContent = line.slice(0, i);
-        if (i < line.length) setTimeout(() => typeLine(line, i + 1), 38);
-        else setTimeout(nextLine, 2800);
-      };
-      const nextLine = () => {
-        si = (si + 1) % SAVED_LINES.length;
-        typeLine(SAVED_LINES[si], 0);
-      };
-      typeLine(SAVED_LINES[0], 0);
-    }
-  }
-
   /* ---------- waitlist ---------- */
 
   // Hardcoded launch count. Each join is emailed to the inbox below via
@@ -365,6 +337,32 @@
     ' _____ \n|     |\n|_____|',
   ];
 
+  const startCatLoop = (el) => {
+    let fi = 0;
+    setInterval(() => {
+      el.textContent = CAT_FRAMES[fi % CAT_FRAMES.length];
+      fi += 1;
+    }, 420);
+  };
+
+  /* ---------- scroll cat ---------- */
+
+  // The same cat from the app's loader sits partway down the page (static
+  // frame in the markup) and wakes up the first time it scrolls into view.
+  const scrollCat = document.getElementById('scrollCat');
+  if (scrollCat && !reduceMotion) {
+    const catIo = new IntersectionObserver(
+      ([e]) => {
+        if (e.isIntersecting) {
+          startCatLoop(scrollCat);
+          catIo.disconnect();
+        }
+      },
+      { threshold: 0.4 },
+    );
+    catIo.observe(scrollCat);
+  }
+
   const form = document.getElementById('waitlistForm');
   const successState = document.getElementById('successState');
   const successArt = document.getElementById('successArt');
@@ -383,11 +381,7 @@
         ei += 1;
         setTimeout(envelope, 240);
       } else {
-        let fi = 0;
-        setInterval(() => {
-          successArt.textContent = CAT_FRAMES[fi % CAT_FRAMES.length];
-          fi += 1;
-        }, 420);
+        startCatLoop(successArt);
       }
     };
     envelope();

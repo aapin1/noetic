@@ -1,20 +1,22 @@
 import React, { useState } from 'react';
 import {
   Alert,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   View,
 } from 'react-native';
+import Constants from 'expo-constants';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronLeftIcon, ChevronRightIcon, LogOutIcon } from 'lucide-react-native';
+import { ChevronLeftIcon, ChevronRightIcon, ExternalLinkIcon, LogOutIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 import { presentCustomerCenter } from '@/lib/purchases';
+import { PRIVACY_URL, SUPPORT_URL, TERMS_URL } from '@/constants/links';
 import { Radius, Spacing } from '@/constants/theme';
-import { useThemeColors } from '@/contexts/ThemeContext';
+import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Avatar } from '@/components/ui/Avatar';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
@@ -60,12 +62,46 @@ function SectionHeader({ title }: { title: string }) {
   );
 }
 
+const THEME_MODES = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+] as const;
+
+/** Three-way theme picker. `system` follows the OS, which only works because
+ * app.json declares userInterfaceStyle "automatic" — pinned to "light" it made
+ * `useColorScheme()` a constant and this control a no-op. */
+function ThemePicker() {
+  const c = useThemeColors();
+  const { mode, setMode } = useTheme();
+  return (
+    <View style={[styles.segmented, { borderColor: c.border }]}>
+      {THEME_MODES.map((option) => {
+        const on = mode === option.value;
+        return (
+          <Pressable
+            key={option.value}
+            onPress={() => setMode(option.value)}
+            style={[styles.segment, on && { backgroundColor: c.elevated }]}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: on }}
+            accessibilityLabel={`${option.label} theme`}
+          >
+            <Text variant="monoSmall" color={on ? 'primary' : 'muted'}>
+              {option.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function SettingsScreen() {
   const c = useThemeColors();
   const router = useRouter();
   const { profile, signOut } = useAuth();
-  const [digestWeekly, setDigestWeekly] = useState(true);
-  const [captureNudge, setCaptureNudge] = useState(false);
+  const appVersion = Constants.expoConfig?.version ?? '1.0.0';
 
   const handleSignOut = () => {
     Alert.alert('Sign out', 'End this session on this device?', [
@@ -183,47 +219,55 @@ export default function SettingsScreen() {
           />
         </View>
 
-        <SectionHeader title="Capture & insights" />
+        <SectionHeader title="Appearance" />
         <View style={[styles.section, { borderColor: c.border }]}>
-          <SettingRow
-            label="Weekly summary"
-            description="A weekly recap of what you saved."
-            rightElement={
-              <Switch
-                value={digestWeekly}
-                onValueChange={setDigestWeekly}
-                trackColor={{ true: c.text, false: c.borderSubtle }}
-                thumbColor={c.surface}
-                accessibilityLabel="Toggle weekly summary"
-              />
-            }
-          />
-          <SettingRow
-            label="Capture reminder"
-            description="A reminder when you haven't saved in a while."
-            rightElement={
-              <Switch
-                value={captureNudge}
-                onValueChange={setCaptureNudge}
-                trackColor={{ true: c.text, false: c.borderSubtle }}
-                thumbColor={c.surface}
-                accessibilityLabel="Toggle capture reminders"
-              />
-            }
-          />
+          <View style={[styles.row, { borderBottomColor: c.borderSubtle, backgroundColor: c.surface }]}>
+            <View style={styles.rowText}>
+              <Text variant="serif">Theme</Text>
+            </View>
+            <ThemePicker />
+          </View>
         </View>
 
         <SectionHeader title="Privacy" />
         <View style={[styles.section, { borderColor: c.border }]}>
+          {/* This used to read "your captures are private by default", which was
+              not true: Pulse shows your capture titles and key ideas to anyone
+              who follows you. Say what actually happens. */}
           <SettingRow
-            label="Your data stays yours"
-            description="Your captures are private by default."
+            label="Who can see your captures"
+            description="Only you — except that people who follow you see your titles in Pulse."
+          />
+          <SettingRow
+            label="Blocked accounts"
+            description="People you've blocked, and how to undo it."
+            onPress={() => router.push('/blocked' as never)}
+          />
+          <SettingRow
+            label="Privacy policy"
+            description="What we collect, and how your captures are processed."
+            onPress={() => void Linking.openURL(PRIVACY_URL)}
+            rightElement={<ExternalLinkIcon size={16} color={c.muted} />}
           />
         </View>
 
         <SectionHeader title="About" />
         <View style={[styles.section, { borderColor: c.border }]}>
-          <SettingRow label="Version" rightElement={<Text variant="monoSmall" color="muted">1.0.0</Text>} />
+          <SettingRow
+            label="Terms of use"
+            onPress={() => void Linking.openURL(TERMS_URL)}
+            rightElement={<ExternalLinkIcon size={16} color={c.muted} />}
+          />
+          <SettingRow
+            label="Support"
+            description="Questions, bugs, or anything else."
+            onPress={() => void Linking.openURL(SUPPORT_URL)}
+            rightElement={<ExternalLinkIcon size={16} color={c.muted} />}
+          />
+          <SettingRow
+            label="Version"
+            rightElement={<Text variant="monoSmall" color="muted">{appVersion}</Text>}
+          />
         </View>
 
         <View style={styles.signOutContainer}>
@@ -298,6 +342,16 @@ const styles = StyleSheet.create({
   },
   rowText: { flex: 1, marginRight: Spacing[3] },
   rowDescription: { marginTop: Spacing[1] },
+  segmented: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderRadius: Radius.full,
+    overflow: 'hidden',
+  },
+  segment: {
+    paddingHorizontal: Spacing[3],
+    paddingVertical: Spacing[2],
+  },
   signOutContainer: {
     marginHorizontal: Spacing[6],
     marginTop: Spacing[4],

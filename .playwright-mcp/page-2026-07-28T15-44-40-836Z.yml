@@ -1,0 +1,73 @@
+- generic [active] [ref=f3e1]:
+  - banner [ref=f3e2]:
+    - link "Mneme" [ref=f3e3] [cursor=pointer]:
+      - /url: "#top"
+    - link "Join the waitlist" [ref=f3e4] [cursor=pointer]:
+      - /url: "#waitlist"
+  - main [ref=f3e5]:
+    - generic [ref=f3e6]:
+      - generic [ref=f3e7]:
+        - paragraph [ref=f3e8]: coming to iphone
+        - heading [level=1] [ref=f3e9]:
+          - text: A memory for everything you
+          - emphasis [ref=f3e11]: read
+        - paragraph [ref=f3e13]: Mneme reads what you save, connects it to what you already believe, and draws the map as it grows.
+        - link "Join the waitlist" [ref=f3e14] [cursor=pointer]:
+          - /url: "#waitlist"
+      - generic "A live map of connected ideas, the way Mneme draws one" [ref=f3e15]
+    - generic [ref=f3e19]:
+      - article [ref=f3e20]:
+        - heading "Save anything." [level=2] [ref=f3e21]
+        - paragraph [ref=f3e22]: A link, a video, a PDF, or a thought typed in a waiting room. One box, no folders.
+      - article [ref=f3e24]:
+        - heading "It reads it for you." [level=2] [ref=f3e25]
+        - paragraph [ref=f3e26]: The full text, not the headline. What it argues, and where it sits in your thinking.
+      - article [ref=f3e27]:
+        - heading "Ideas find each other." [level=2] [ref=f3e28]
+        - paragraph [ref=f3e29]: New saves connect to old ones. Agreements, echoes, and the occasional contradiction.
+        - generic [ref=f3e30]: ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⢀⣀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀⠀⠀⠀⠀⢀⣤⣶⣿⣿⣿⣆⠘⠿⠟⢻⣿⣿⡇⢐⣷⣦⣄⡀⠀⠀⠀⠀⠀⠀ ⠀⠀⠀⠀⢸⣿⣿⣿⣧⡄⠙⣿⣷⣶⣶⡿⠿⠿⢃⣼⡟⠻⣿⣿⣶⡄⠀⠀⠀⠀ ⠀⠀⢰⣷⣌⠙⠉⣿⣿⡟⢀⣿⣿⡟⢁⣤⣤⣶⣾⣿⡇⠸⢿⣿⠿⢃⣴⡄⠀⠀ ⠀⠀⢸⣿⣿⣿⣿⠿⠋⣠⣾⣿⣿⠀⣾⣿⣿⣛⠛⢿⣿⣶⣤⣤⣴⣿⣿⣿⡆⠀ ⠀⣴⣤⣄⣀⣠⣤⣴⣾⣿⣿⣿⣿⣆⠘⠿⣿⣿⣷⡄⢹⣿⣿⠿⠟⢿⣿⣿⣿⠀ ⠀⢸⣿⣿⡿⠛⠛⣻⣿⣿⣿⣿⣿⣿⣷⣦⣼⣿⣿⠃⣸⣿⠃⢰⣶⣾⣿⣿⡟⠀ ⠀⠀⢿⡏⢠⣾⣿⣿⡿⠋⣠⣄⡉⢻⣿⣿⡿⠟⠁⠀⠛⠛⠀⠘⠿⠿⠿⠋⠀⠀ ⠀⠀⠁⠘⢿⣿⣿⣷⣤⣿⣿⠗⠀⣉⣥⣴⣶⡶⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀⠀⠀⣤⣀⡉⠛⠛⠋⣉⣠⣴⠿⢿⣿⠿⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀⠀⠀⠈⠻⢿⣿⣿⣿⣿⡿⠋⣠⠟⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⡾⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⡿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+      - article [ref=f3e32]:
+        - generic [ref=f3e33]:
+          - heading "Watch your mind change." [level=2] [ref=f3e34]
+          - paragraph [ref=f3e35]: Topics grow and go quiet. Positions shift. The map remembers when.
+    - generic [ref=f3e38]:
+      - paragraph [ref=f3e39]:
+        - text: "Before the nine muses there were three:"
+        - emphasis [ref=f3e40]: Melete
+        - text: for practice,
+        - emphasis [ref=f3e41]: Aoide
+        - text: for song, and
+        - emphasis [ref=f3e42]: Mneme
+        - text: for memory.
+      - paragraph [ref=f3e43]: This one is for Mneme.
+    - generic [ref=f3e44]:
+      - generic [ref=f3e45]:
+        - heading "Be early." [level=2] [ref=f3e46]
+        - paragraph [ref=f3e47]: Invites go out in order when Mneme reaches the App Store.
+        - paragraph [ref=f3e48]: 753 people on the list
+      - generic [ref=f3e50]:
+        - generic [ref=f3e51]:
+          - generic [ref=f3e52]: Name
+          - textbox "Name" [ref=f3e53]
+        - generic [ref=f3e54]:
+          - generic [ref=f3e55]: Email
+          - textbox "Email" [ref=f3e56]
+        - button "Join the waitlist" [ref=f3e57] [cursor=pointer]
+        - paragraph [ref=f3e58]:
+          - text: One email when it is your turn. Details in the
+          - link "privacy policy" [ref=f3e59] [cursor=pointer]:
+            - /url: privacy.html
+          - text: .
+  - contentinfo [ref=f3e60]:
+    - generic [ref=f3e61]:
+      - generic [ref=f3e62]: Mneme
+      - navigation "Legal" [ref=f3e63]:
+        - link "Privacy" [ref=f3e64] [cursor=pointer]:
+          - /url: privacy.html
+        - link "Terms" [ref=f3e65] [cursor=pointer]:
+          - /url: terms.html
+        - link "Support" [ref=f3e66] [cursor=pointer]:
+          - /url: support.html
+        - link "hello@mneme.app" [ref=f3e67] [cursor=pointer]:
+          - /url: mailto:hello@mneme.app
+      - generic [ref=f3e68]: © 2026 Mneme
