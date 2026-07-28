@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mneme, a memory for everything you read</title>
+  <meta name="description" content="Save links, videos, PDFs, and stray thoughts. Mneme reads them, connects them to what you already believe, and draws a living map of your thinking. Coming to iPhone." />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="canonical" href="https://mneme-app.com/" />
+  <link rel="stylesheet" href="styles.css" />
+  <meta property="og:title" content="Mneme" />
+  <meta property="og:description" content="A memory for everything you read. Coming to iPhone." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://mneme-app.com/" />
+  <meta property="og:image" content="https://mneme-app.com/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Mneme" />
+  <meta name="twitter:description" content="A memory for everything you read. Coming to iPhone." />
+  <meta name="twitter:image" content="https://mneme-app.com/og.png" />
+</head>
+<body>
+
+  <header class="nav">
+    <a class="wordmark" href="#top">Mneme</a>
+    <a class="nav-cta" href="#waitlist">Join the waitlist</a>
+  </header>
+
+  <main id="top">
+
+    <!-- ============ HERO ============ -->
+    <section class="hero">
+      <div class="hero-copy reveal">
+        <p class="eyebrow">coming to iphone</p>
+        <h1 class="hero-h1">
+          A memory for everything you
+          <span class="cycle-wrap"><em class="cycle" id="cycleWord">read</em><span class="caret" aria-hidden="true"></span></span>
+        </h1>
+        <p class="hero-sub">
+          Mneme reads what you save, connects it to what you already believe,
+          and draws the map as it grows.
+        </p>
+        <a class="btn btn-primary" href="#waitlist">Join the waitlist</a>
+      </div>
+
+      <div class="hero-map reveal" aria-label="A live map of connected ideas, the way Mneme draws one">
+        <canvas id="mapCanvas"></canvas>
+        <div class="capture-bar" aria-hidden="true">
+          <span class="capture-text" id="captureText"></span>
+          <span class="capture-status" id="captureStatus"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ BEATS ============ -->
+    <section class="beats">
+      <div class="bento">
+        <article class="cell cell-a reveal">
+          <h2>Save anything.</h2>
+          <p>A link, a video, a PDF, or a thought typed in a waiting room. One box, no folders.</p>
+          <div class="mini-line" aria-hidden="true"><span id="miniSaved"></span></div>
+        </article>
+        <article class="cell cell-b reveal">
+          <h2>It reads it for you.</h2>
+          <p>The full text, not the headline. What it argues, and where it sits in your thinking.</p>
+        </article>
+        <article class="cell cell-c reveal">
+          <h2>Ideas find each other.</h2>
+          <p>New saves connect to old ones. Agreements, echoes, and the occasional contradiction.</p>
+          <div class="brain-wrap" aria-hidden="true">
+            <pre class="brain">⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⢀⣀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⢀⣤⣶⣿⣿⣿⣆⠘⠿⠟⢻⣿⣿⡇⢐⣷⣦⣄⡀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⢸⣿⣿⣿⣧⡄⠙⣿⣷⣶⣶⡿⠿⠿⢃⣼⡟⠻⣿⣿⣶⡄⠀⠀⠀⠀
+⠀⠀⢰⣷⣌⠙⠉⣿⣿⡟⢀⣿⣿⡟⢁⣤⣤⣶⣾⣿⡇⠸⢿⣿⠿⢃⣴⡄⠀⠀
+⠀⠀⢸⣿⣿⣿⣿⠿⠋⣠⣾⣿⣿⠀⣾⣿⣿⣛⠛⢿⣿⣶⣤⣤⣴⣿⣿⣿⡆⠀
+⠀⣴⣤⣄⣀⣠⣤⣴⣾⣿⣿⣿⣿⣆⠘⠿⣿⣿⣷⡄⢹⣿⣿⠿⠟⢿⣿⣿⣿⠀
+⠀⢸⣿⣿⡿⠛⠛⣻⣿⣿⣿⣿⣿⣿⣷⣦⣼⣿⣿⠃⣸⣿⠃⢰⣶⣾⣿⣿⡟⠀
+⠀⠀⢿⡏⢠⣾⣿⣿⡿⠋⣠⣄⡉⢻⣿⣿⡿⠟⠁⠀⠛⠛⠀⠘⠿⠿⠿⠋⠀⠀
+⠀⠀⠁⠘⢿⣿⣿⣷⣤⣿⣿⠗⠀⣉⣥⣴⣶⡶⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⣤⣀⡉⠛⠛⠋⣉⣠⣴⠿⢿⣿⠿⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠈⠻⢿⣿⣿⣿⣿⡿⠋⣠⠟⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⡾⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⡿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀</pre>
+          </div>
+        </article>
+        <article class="cell cell-d reveal">
+          <div class="cell-d-copy">
+            <h2>Watch your mind change.</h2>
+            <p>Topics grow and go quiet. Positions shift. The map remembers when.</p>
+          </div>
+          <div class="mini-map" aria-hidden="true">
+            <canvas id="miniMapCanvas"></canvas>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============ INTERLUDE ============ -->
+    <section class="interlude reveal">
+      <p class="interlude-line">
+        Before the nine muses there were three:
+        <em>Melete</em> for practice, <em>Aoide</em> for song,
+        and <em>Mneme</em> for memory.
+      </p>
+      <p class="interlude-note">This one is for Mneme.</p>
+    </section>
+
+    <!-- ============ WAITLIST ============ -->
+    <section class="waitlist" id="waitlist">
+      <div class="waitlist-copy reveal">
+        <h2 class="waitlist-h2">Be early.</h2>
+        <p class="waitlist-sub">Invites go out in order when Mneme reaches the App Store.</p>
+        <p class="waitlist-count"><span id="countNum">753</span> people on the list</p>
+      </div>
+
+      <div class="waitlist-panel reveal">
+        <form id="waitlistForm" novalidate>
+          <div class="field">
+            <label for="name">Name</label>
+            <input id="name" name="name" type="text" autocomplete="name" required />
+            <p class="field-error" id="nameError" hidden>Tell us what to call you.</p>
+          </div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required />
+            <p class="field-error" id="emailError" hidden>That address does not look right.</p>
+          </div>
+          <button class="btn btn-primary btn-full" type="submit" id="submitBtn">Join the waitlist</button>
+          <p class="form-note">One email when it is your turn. Details in the <a href="privacy.html">privacy policy</a>.</p>
+        </form>
+
+        <div class="success" id="successState" hidden>
+          <pre class="ascii" id="successArt" aria-hidden="true"></pre>
+          <p class="success-title">You're in.</p>
+          <p class="success-sub" id="successSub">we'll write when it's your turn</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span class="wordmark wordmark-sm">Mneme</span>
+      <nav class="footer-links" aria-label="Legal">
+        <a href="privacy.html">Privacy</a>
+        <a href="terms.html">Terms</a>
+        <a href="support.html">Support</a>
+        <a href="mailto:mneme.help@gmail.com">mneme.help@gmail.com</a>
+      </nav>
+      <span class="footer-copy">&copy; 2026 Mneme</span>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

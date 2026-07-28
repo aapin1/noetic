@@ -110,7 +110,15 @@ export function SponsoredCard({ tone = 'auto' }: { tone?: 'auto' | 'dark' } = {}
       // is approved. Real units only ever ship via the EAS env var.
       const adUnitId = process.env.EXPO_PUBLIC_ADMOB_NATIVE_UNIT_ID ?? ads!.TestIds.NATIVE;
       try {
-        loaded = await ads!.NativeAd.createForAdRequest(adUnitId);
+        // Prefer wide creatives so they fit the slim horizontal media strip
+        // instead of leaving dead space beside a square/portrait image. This is
+        // a preference, not a filter — it never reduces fill. `2` is
+        // NativeMediaAspectRatio.LANDSCAPE, which this SDK version (16.4.0)
+        // doesn't re-export from its package root, so the numeric value is used
+        // directly (the request validator only checks that it's a number).
+        loaded = await ads!.NativeAd.createForAdRequest(adUnitId, {
+          aspectRatio: 2,
+        });
         adLog('ad loaded from', adUnitId);
         if (disposed) loaded.destroy();
         else setNativeAd(loaded);
