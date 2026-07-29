@@ -94,6 +94,20 @@ vi.mock("@/server/services/companion", () => ({
   addCompanionReply,
 }));
 
+// The routes under test consume a usage quota before calling their service, and
+// the real implementation writes a UsageCounter row keyed on userId. These tests
+// authenticate as a fabricated "user_1" that has no User row, so the write hit a
+// foreign-key violation and every companion assertion failed on a 500 with the
+// service never reached. Quota behaviour has its own coverage in
+// src/server/usage.test.ts; here it just needs to get out of the way.
+vi.mock("@/server/services/usage", () => ({
+  consumeUsageOrThrow: vi.fn().mockResolvedValue(undefined),
+  tryConsumeUsage: vi.fn().mockResolvedValue(true),
+  hasUsageRemaining: vi.fn().mockResolvedValue(true),
+  getUsageSummary: vi.fn().mockResolvedValue([]),
+  enforceRateLimit: vi.fn(),
+}));
+
 vi.mock("@/server/services/positions", () => ({
   checkCaptureAgainstPositions,
 }));

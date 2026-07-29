@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { CheckIcon, XIcon } from 'lucide-react-native';
 import type { PurchasesPackage } from 'react-native-purchases';
+import { api } from '@/lib/api';
 import { PRIVACY_URL, TERMS_URL } from '@/constants/links';
 import { Radius, Spacing, accentFor } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
@@ -47,6 +48,36 @@ const PACKAGE_SUBLABELS: Record<string, string> = {
   LIFETIME: 'pay once, keep forever',
 };
 
+/**
+ * Waits for the backend to catch up with a purchase that already succeeded
+ * on-device.
+ *
+ * StoreKit returning is NOT the moment the user becomes Plus everywhere. The
+ * only thing that writes `User.plan` is the RevenueCat webhook — a
+ * server-to-server call that arrives a beat after the SDK resolves. Refetching
+ * entitlements immediately therefore raced it and read the old FREE row, so the
+ * app cheerfully said "Welcome to Mneme Plus" while ads kept rendering and the
+ * usage caps stayed clamped until some unrelated refetch happened later.
+ *
+ * Webhooks normally land in a second or two, so poll briefly rather than
+ * blocking on it forever: the purchase is already valid either way, and the
+ * caller degrades to an honest message if the wait times out.
+ */
+const PLAN_POLL_DELAYS_MS = [0, 500, 1000, 2000, 3000];
+
+async function waitForServerPlus(): Promise<boolean> {
+  for (const delay of PLAN_POLL_DELAYS_MS) {
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+    try {
+      const entitlements = await api.plus.entitlements();
+      if (entitlements.plan === 'PLUS') return true;
+    } catch {
+      // A cold backend or a blip — keep polling; the purchase is unaffected.
+    }
+  }
+  return false;
+}
+
 /** Yearly savings vs. paying monthly, when both plans are on offer. */
 function annualSavingsPct(packages: PurchasesPackage[]): number | null {
   const monthly = packages.find((p) => p.packageType === 'MONTHLY');
@@ -70,10 +101,17 @@ export default function PlusScreen() {
   const savings = useMemo(() => annualSavingsPct(packages), [packages]);
 
   const finishPurchase = useCallback(async () => {
-    // The RevenueCat webhook flips User.plan server-side; refetching picks it
-    // up so ads and caps lift on the next entitlements read.
+    // Hold here until the webhook has actually flipped User.plan, so the screen
+    // the user returns to is already ad-free. `busy` stays true throughout, so
+    // the button keeps reading "One moment…" rather than looking frozen.
+    const settled = await waitForServerPlus();
     await refetch();
-    Alert.alert('Welcome to Mneme Plus', 'Thank you for keeping the lights on.');
+    Alert.alert(
+      'Welcome to Mneme Plus',
+      settled
+        ? 'Thank you for keeping the lights on.'
+        : "Your purchase went through — thank you. It's taking a moment to unlock everywhere; reopen the app in a minute if anything still looks limited.",
+    );
     router.back();
   }, [refetch, router]);
 
@@ -113,6 +151,9 @@ export default function PlusScreen() {
     setBusy(true);
     try {
       const info = await restorePurchases();
+      // Same race as a fresh purchase: a restore can trigger a TRANSFER webhook,
+      // and the server plan may lag the SDK's answer by a moment.
+      if (isProEntitled(info)) await waitForServerPlus();
       await refetch();
       Alert.alert(
         isProEntitled(info) ? 'Restored' : 'Nothing to restore',
