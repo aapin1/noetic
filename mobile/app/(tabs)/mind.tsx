@@ -255,10 +255,6 @@ export default function MindScreen() {
     );
   }
 
-  const pulse = activeSections
-    .map((s) => `${counts[s.key]} ${counts[s.key] === 1 ? s.name.replace(/s$/, '') : s.name}`)
-    .join(' · ');
-
   const currentMeta = view !== 'threshold' && view !== 'all'
     ? SECTION_META.find((s) => s.key === view)
     : null;
@@ -284,8 +280,9 @@ export default function MindScreen() {
               <Text variant="serif" style={styles.thresholdTitle}>
                 A read of what your mind has been up to
               </Text>
-              <Text variant="monoSmall" style={styles.thresholdPulse}>{pulse}</Text>
-
+              {/* No summary line here. It restated "3 threads · 2 dormant"
+                  immediately above a list that names each instrument and prints
+                  its own count on the right — the same numbers twice. */}
               <View style={styles.thresholdList}>
                 {activeSections.map((s) => (
                   <Pressable
@@ -494,7 +491,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   headerRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing[6], paddingTop: Spacing[3], paddingBottom: Spacing[2],
+    paddingHorizontal: Spacing[6], paddingTop: Spacing[1], paddingBottom: Spacing[1],
   },
   backBtn: { padding: Spacing[1], marginLeft: -Spacing[2] },
 
@@ -508,10 +505,6 @@ const styles = StyleSheet.create({
 
   threshold: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing[8], paddingBottom: Spacing[12] },
   thresholdTitle: { color: 'rgba(240,232,214,0.94)', textAlign: 'center', marginTop: Spacing[5] },
-  thresholdPulse: {
-    color: 'rgba(240,232,214,0.52)', textAlign: 'center',
-    marginTop: Spacing[2], letterSpacing: 1,
-  },
   thresholdList: { marginTop: Spacing[10], gap: Spacing[2] },
   thresholdRow: {
     flexDirection: 'row',
@@ -528,11 +521,11 @@ const styles = StyleSheet.create({
     marginTop: Spacing[2],
     marginBottom: Spacing[5],
   },
-  scroll: { paddingBottom: Platform.OS === 'ios' ? 110 : 92 },
+  scroll: { paddingBottom: Platform.OS === 'ios' ? 98 : 82 },
 
   sheet: {
     position: 'absolute', left: Spacing[4], right: Spacing[4],
-    bottom: Platform.OS === 'ios' ? 96 : 78,
+    bottom: Platform.OS === 'ios' ? 84 : 68,
     borderWidth: StyleSheet.hairlineWidth, borderRadius: 16, padding: Spacing[4],
   },
   sheetHandle: { alignSelf: 'center', width: 34, height: 3, borderRadius: 2, marginBottom: Spacing[3] },

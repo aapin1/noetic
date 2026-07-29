@@ -16,7 +16,7 @@ import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { EditableAvatar } from '@/components/profile/EditableAvatar';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
-import { WrappedSection } from '@/components/wrapped/WrappedSection';
+import { WrappedSection, wrappedAccent } from '@/components/wrapped/WrappedSection';
 import { ShareRecapEntry } from '@/components/share/ShareRecapEntry';
 import type { OwnerProfile } from '@/types/api';
 
@@ -134,15 +134,19 @@ export default function YouScreen() {
 
         {/* Ads are interleaved between the wrapped cards inside WrappedSection now,
             rather than a single card stranded at the bottom of the page. */}
-        <ShareRecapEntry />
+        {/* Same accent the wrapped kicker is wearing, so the two shelves on
+            this page read as one run rather than as two unrelated colours. */}
+        <ShareRecapEntry accent={wrappedAccent(wrapped)} />
 
         <View style={styles.editButtonWrap}>
+          {/* Untinted. An ochre wash on the one button at the foot of the page
+              read as a warning, not as "edit" — it takes the neutral card
+              stock every other control on this screen uses. */}
           <Button
             label="Edit profile"
             variant="secondary"
             size="md"
             fullWidth
-            accent={Accents.ochre}
             onPress={() => router.push('/profile/edit' as never)}
           />
         </View>
@@ -158,7 +162,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing[6],
-    paddingVertical: Spacing[4],
+    paddingVertical: Spacing[2],
     borderBottomWidth: 1,
   },
   content: { paddingBottom: Spacing[16] },

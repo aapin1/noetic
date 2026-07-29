@@ -433,7 +433,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing[6], paddingVertical: Spacing[4],
+    paddingHorizontal: Spacing[6], paddingVertical: Spacing[2],
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   body: { flex: 1 },

@@ -40,8 +40,10 @@ function sortFolders(folders: ArchiveFolderSummary[], sort: SortKey): ArchiveFol
   }
 }
 
-const VIEW_ACCENT = Accents.slate;
-const SORT_ACCENT = Accents.amber;
+// One accent for both rows. The view toggle used to be slate, which put a blue
+// pill directly above the amber sort pills — two colours for what is one set of
+// controls. Amber is the one the sort row already speaks.
+const PILL_ACCENT = Accents.amber;
 
 export default function ArchiveScreen() {
   const c = useThemeColors();
@@ -126,6 +128,12 @@ export default function ArchiveScreen() {
         body="Everything you've saved. Folders organize it by topic; the diary lists it day by day, newest first. Open anything to revisit its insight."
       />
 
+      {/* The page proper. The safe-area container above is `deep` so the notch
+          strip matches the header band; without this the search field and the
+          pill rows sat on that same dark ground, which spread the header's
+          colour halfway down the screen. Dark belongs to the title bar only —
+          the same split Pulse and You use. */}
+      <View style={[styles.body, { backgroundColor: c.canvas }]}>
       {(folders?.length ?? 0) > 0 && (
         <View style={styles.searchWrap}>
           {/* A recessed field, not a dark one. `elevated` is the tint the app
@@ -158,7 +166,7 @@ export default function ArchiveScreen() {
       )}
 
       {!searchActive && folders && folders.length > 0 && (
-        <View style={styles.sortRow}>
+        <View style={styles.controls}>
           {/* Selected pills are tinted, not filled with `inverse`. `inverse` is
               a near-black in light mode, so this row put two or three dark
               slabs directly under the dark header band — the same colour doing
@@ -166,29 +174,34 @@ export default function ArchiveScreen() {
               recipe, which is what the rest of the app uses to say "this one".
               Dark on this screen belongs to the header and nowhere else. */}
           {/* View toggle: topical folders vs the chronological diary. */}
-          {(['diary', 'folders'] as ViewKey[]).map((v) => {
-            const selected = view === v;
-            return (
-              <Pressable
-                key={v}
-                onPress={() => setView(v)}
-                style={[
-                  styles.sortPill,
-                  { borderColor: selected ? `${VIEW_ACCENT}66` : c.border },
-                  selected && { backgroundColor: `${VIEW_ACCENT}1F` },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={v === 'diary' ? 'Show diary view' : 'Show folder view'}
-              >
-                <Text variant="monoSmall" style={selected ? { color: VIEW_ACCENT } : undefined} color="secondary">
-                  {v}
-                </Text>
-              </Pressable>
-            );
-          })}
+          <View style={styles.pillRow}>
+            {(['diary', 'folders'] as ViewKey[]).map((v) => {
+              const selected = view === v;
+              return (
+                <Pressable
+                  key={v}
+                  onPress={() => setView(v)}
+                  style={[
+                    styles.sortPill,
+                    { borderColor: selected ? `${PILL_ACCENT}66` : c.border },
+                    selected && { backgroundColor: `${PILL_ACCENT}1F` },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={v === 'diary' ? 'Show diary view' : 'Show folder view'}
+                >
+                  <Text variant="monoSmall" style={selected ? { color: PILL_ACCENT } : undefined} color="secondary">
+                    {v}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {/* The sorts get their own line rather than trailing the toggle. On
+              one wrapped row the last pill ("smallest") spilled past the row's
+              measured box and stopped taking taps; two rows each fit on their
+              own line, so every pill is hit-testable. */}
           {view === 'folders' && (
-            <>
-              <View style={[styles.sortDivider, { backgroundColor: c.border }]} />
+            <View style={styles.pillRow}>
               {SORT_OPTIONS.map((opt) => {
                 const selected = sort === opt.key;
                 return (
@@ -197,17 +210,19 @@ export default function ArchiveScreen() {
                     onPress={() => setSort(opt.key)}
                     style={[
                       styles.sortPill,
-                      { borderColor: selected ? `${SORT_ACCENT}66` : c.border },
-                      selected && { backgroundColor: `${SORT_ACCENT}1F` },
+                      { borderColor: selected ? `${PILL_ACCENT}66` : c.border },
+                      selected && { backgroundColor: `${PILL_ACCENT}1F` },
                     ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Sort folders by ${opt.label}`}
                   >
-                    <Text variant="monoSmall" style={selected ? { color: SORT_ACCENT } : undefined} color="secondary">
+                    <Text variant="monoSmall" style={selected ? { color: PILL_ACCENT } : undefined} color="secondary">
                       {opt.label}
                     </Text>
                   </Pressable>
                 );
               })}
-            </>
+            </View>
           )}
         </View>
       )}
@@ -276,6 +291,7 @@ export default function ArchiveScreen() {
           <FolderGrid folders={sortedFolders} />
         )}
       </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -287,25 +303,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing[6],
-    paddingVertical: Spacing[4],
+    paddingVertical: Spacing[2],
     borderBottomWidth: 1,
   },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  sortRow: {
+  body: { flex: 1 },
+  controls: { paddingBottom: Spacing[3] },
+  pillRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
     gap: Spacing[2],
     paddingHorizontal: Spacing[6],
-    paddingVertical: Spacing[3],
-  },
-  sortDivider: {
-    width: 1,
-    height: 16,
-    marginHorizontal: Spacing[1],
+    paddingTop: Spacing[3],
   },
   sortPill: {
     borderWidth: 1,

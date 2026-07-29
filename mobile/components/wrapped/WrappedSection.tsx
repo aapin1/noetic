@@ -1522,6 +1522,16 @@ function TerrainCardBody({ data, accent }: { data: TerrainResponse; accent: stri
 
 /* ----------------------------------------------------------------- shell --- */
 
+/**
+ * The hue this section wears, seeded from the stats so it's stable for a given
+ * reader. Exported because the shelves sitting next to Wrapped on the "you"
+ * page take the same colour — one accent per page, not one per component.
+ */
+export function wrappedAccent(stats: WrappedStats | null | undefined): string {
+  if (!stats) return accentFor(0);
+  return accentFor(stats.totalCaptures * 31 + stats.distinctTopics);
+}
+
 export function WrappedSection({
   scrollY,
   stats,
@@ -1578,7 +1588,7 @@ export function WrappedSection({
   // field, so a stale cache hydrates it as undefined. Default like `arcs` above.
   const recentNewTopics = w.recentNewTopics ?? [];
   const seed = w.totalCaptures * 31 + w.distinctTopics;
-  const accent = accentFor(seed);
+  const accent = wrappedAccent(w);
   // Successive hues, walked from the page seed, so the run of cards reads as
   // a sequence rather than as one colour repeated ten times.
   const cardAccentAt = (i: number) => accentFor(seed + i);

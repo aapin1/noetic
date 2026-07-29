@@ -11,12 +11,15 @@ import { Text } from './Text';
 import { Button } from './Button';
 
 const { width: SW, height: SH } = Dimensions.get('window');
-const TAB_H = Platform.OS === 'ios' ? 86 : 68;
-// The icon band inside a tab button: the bar has 14px of top padding before
-// the icon, so the spotlight starts below the bar's top edge and only spans
-// the icon itself (the rest of the bar height is safe-area padding).
-const TAB_HIT_Y = 10;
-const TAB_HIT_H = 42;
+// All three mirror (tabs)/_layout.tsx: the bar's total height, its top padding,
+// and the icon slot's height. The tab spotlight is the one target the overlay
+// can't measure — it's drawn by react-navigation, outside this tree — so it has
+// to be derived, and a fixed y/height pair drifted off the icons every time the
+// bar was resized. Deriving from these three plus the safe-area inset keeps the
+// hole on the icon whatever the bar's height becomes.
+const TAB_H = Platform.OS === 'ios' ? 74 : 64;
+const TAB_PAD_TOP = 4;
+const TAB_ICON_H = 32;
 const HOLE_PAD = 8;
 const HOLE_RADIUS = 14;
 // One darkness level, used on every step (hole or card) so nothing flickers
@@ -140,7 +143,17 @@ export function TutorialOverlay() {
     hole = targetRects[step.target.id] ?? null;
   } else if (step.target.kind === 'tab') {
     const colW = SW / TAB_COUNT;
-    hole = { x: step.target.index * colW, y: SH - TAB_H + TAB_HIT_Y, width: colW, height: TAB_HIT_H };
+    // react-navigation lays the bar out as: top padding, then the item row,
+    // then the bottom safe-area inset. The icon slot is centred in that item
+    // row, so that's where the hole goes.
+    const rowTop = SH - TAB_H + TAB_PAD_TOP;
+    const rowH = Math.max(TAB_ICON_H, TAB_H - insets.bottom - TAB_PAD_TOP);
+    hole = {
+      x: step.target.index * colW,
+      y: rowTop + (rowH - TAB_ICON_H) / 2,
+      width: colW,
+      height: TAB_ICON_H,
+    };
   }
 
   const isCard = step.target.kind === 'card';
@@ -161,7 +174,10 @@ export function TutorialOverlay() {
   // actions like the capture form's buttons.
   let cardAnchor: { top?: number; bottom?: number };
   if (!hole) {
-    cardAnchor = { bottom: insets.bottom + TAB_H + Spacing[6] };
+    // TAB_H is the bar's *total* height, home-indicator inset included, so
+    // adding the inset again here floated these cards a whole safe-area above
+    // where they were meant to sit.
+    cardAnchor = { bottom: TAB_H + Spacing[6] };
   } else {
     const holeTop = hole.y - HOLE_PAD;
     const holeBottom = hole.y + hole.height + HOLE_PAD;

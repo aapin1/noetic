@@ -74,7 +74,8 @@ type GraphNode = MemoryGraphResponse['nodes'][number];
 type GraphEdge = MemoryGraphResponse['edges'][number];
 
 const { width: SW, height: SH } = Dimensions.get('window');
-const TAB_H = Platform.OS === 'ios' ? 86 : 68;
+// Must match `tabBarStyle.height` in (tabs)/_layout.tsx.
+const TAB_H = Platform.OS === 'ios' ? 74 : 64;
 const FAB_SIZE = 82;
 // Just barely larger than the button itself — a subtle breathing ring, not a halo.
 const FAB_GLOW_SIZE = FAB_SIZE * 1.14;
@@ -4094,7 +4095,7 @@ export default function MapScreen() {
 
         {/* Header */}
         <View
-          style={[styles.header, { paddingTop: insets.top + 6 }]}
+          style={[styles.header, { paddingTop: insets.top + 2 }]}
           onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}
           pointerEvents="box-none"
         >

@@ -87,10 +87,12 @@ function TabsRoot() {
             // and the edge only has to confirm it.
             borderTopWidth: StyleSheet.hairlineWidth,
             borderTopColor: c.tabBarBorder,
-            // Unchanged: the Atlas lays its FAB and summary strip out against
-            // this exact height (TAB_H in (tabs)/index.tsx).
-            height: Platform.OS === 'ios' ? 86 : 68,
-            paddingTop: 10,
+            // Trimmed: this is a total height, home-indicator inset included,
+            // so most of the old 86 was empty band below the icons. Keep in
+            // step with TAB_H in (tabs)/index.tsx — the Atlas lays its FAB and
+            // summary strip out against this exact number.
+            height: Platform.OS === 'ios' ? 74 : 64,
+            paddingTop: 4,
           },
           tabBarItemStyle: {
             paddingVertical: 0,

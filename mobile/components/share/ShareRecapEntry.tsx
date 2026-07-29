@@ -12,10 +12,9 @@ import { SectionKicker } from '@/components/ui/SectionKicker';
  * the Wrapped cards — same surface, border, and mono/serif rhythm — so it reads
  * as one more shelf on the "you" page rather than a bolted-on button.
  */
-export function ShareRecapEntry() {
+export function ShareRecapEntry({ accent = Accents.ochre }: { accent?: string }) {
   const c = useThemeColors();
   const router = useRouter();
-  const accent = Accents.ochre;
 
   return (
     <View style={styles.wrap}>
