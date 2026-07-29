@@ -9,6 +9,7 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { TutorialProvider } from '@/contexts/TutorialContext';
 import { TutorialOverlay } from '@/components/ui/TutorialOverlay';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { KeyboardDismissButton } from '@/components/ui/KeyboardDismissButton';
 import { hydrateQueryCache } from '@/hooks/useApiQuery';
 import { warmBackend } from '@/lib/api';
@@ -38,6 +39,9 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      {/* Above the providers on purpose: a throw inside one of them is
+          exactly the case that would otherwise white-screen the app. */}
+      <ErrorBoundary>
       <ShareIntentProvider>
         <ThemeProvider>
           <AuthProvider>
@@ -73,6 +77,7 @@ export default function RootLayout() {
           </AuthProvider>
         </ThemeProvider>
       </ShareIntentProvider>
+      </ErrorBoundary>
     </GestureHandlerRootView>
   );
 }
