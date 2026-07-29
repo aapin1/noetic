@@ -455,6 +455,10 @@ const IMAGE_MIME_BY_EXT: Record<string, string> = {
   gif: "image/gif",
 };
 
+/** Generous for a ≤5MB object read off R2, tight enough that a hung store
+ *  can't hold a capture-pipeline slot open indefinitely. */
+const IMAGE_FETCH_TIMEOUT_MS = 10_000;
+
 /**
  * Loads a capture image as base64 so it can be sent to the vision model.
  * Fetches the stored object by URL, which works for both R2 public URLs
@@ -466,14 +470,22 @@ async function loadImageForVision(mediaUrl: string): Promise<{ base64: string; m
   const ext = (mediaUrl.split("?")[0].split(".").pop() ?? "").toLowerCase();
   const mimeType = IMAGE_MIME_BY_EXT[ext] ?? "image/jpeg";
 
+  // Hard timeout: this runs inside capturePipeline, which has only 8 slots
+  // app-wide, so a hung object-store read doesn't just stall this capture —
+  // eight of them stall captures for every user on the instance. Every other
+  // outbound fetch in the pipeline is bounded the same way.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(mediaUrl);
+    const res = await fetch(mediaUrl, { signal: controller.signal });
     if (res.ok) {
       const buffer = Buffer.from(await res.arrayBuffer());
       if (buffer.length > 0) return { base64: buffer.toString("base64"), mimeType };
     }
   } catch {
     // fall through to the local-disk fallback below
+  } finally {
+    clearTimeout(timer);
   }
 
   try {

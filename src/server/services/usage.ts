@@ -82,21 +82,35 @@ export async function tryConsumeUsage(
 ): Promise<boolean> {
   const cap = USAGE_CAPS[kind];
   const period = periodKey(cap.period);
-  const plus = await isPlus(db, userId);
 
-  const counter = await db.usageCounter.upsert({
-    where: { userId_kind_period: { userId, kind, period } },
-    create: { userId, kind, period, count: 0 },
-    update: {},
-  });
+  // A metering failure must not fail the caller. Both capture call sites treat
+  // `false` as "skip the paid step" and still complete via their own fallback
+  // (caption/reaction for images, non-paid scrape for links), so denying on a
+  // DB error degrades the capture instead of 500ing it — and refuses to spend
+  // money we've just proven we can't account for. Failing open would do the
+  // opposite of both.
+  try {
+    const plus = await isPlus(db, userId);
 
-  if (!plus && counter.count >= cap.free) return false;
+    const counter = await db.usageCounter.upsert({
+      where: { userId_kind_period: { userId, kind, period } },
+      create: { userId, kind, period, count: 0 },
+      update: {},
+    });
 
-  await db.usageCounter.update({
-    where: { userId_kind_period: { userId, kind, period } },
-    data: { count: { increment: 1 } },
-  });
-  return true;
+    if (!plus && counter.count >= cap.free) return false;
+
+    await db.usageCounter.update({
+      where: { userId_kind_period: { userId, kind, period } },
+      data: { count: { increment: 1 } },
+    });
+    return true;
+  } catch (err) {
+    console.error(
+      JSON.stringify({ event: "usage_meter_failed", kind, userId, message: String(err) }),
+    );
+    return false;
+  }
 }
 
 /** Read-only check — used by preflight so peeking never burns quota. */
