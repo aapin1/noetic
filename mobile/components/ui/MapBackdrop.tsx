@@ -5,8 +5,10 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
-// The map's ink. Matches MAP_NODE in app/(tabs)/index.tsx — the dots are the
-// same colour as the points they sit behind, just barely lit.
+// The map's ink — a hair below MAP_NODE in app/(tabs)/index.tsx, so the grid
+// reads as the unlit version of the points that sit on top of it. Deliberately
+// not raised alongside MAP_NODE: this surface is shared with every Mind screen,
+// and the grid's whole job is to stay under the notice threshold.
 const BACKDROP_INK = 'rgba(236,236,236,0.9)';
 
 /**

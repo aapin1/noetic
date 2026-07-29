@@ -75,8 +75,16 @@ const FAB_GAP = Spacing[3];
 
 // Always-dark map colors (map is always dark regardless of theme)
 const MAP_BG = '#060606';
-const MAP_NODE = 'rgba(236,236,236,0.9)';
-const MAP_LINE = 'rgba(255,255,255,0.92)';
+// Fully opaque, and a touch brighter than the old 90%-alpha grey. A node is the
+// smallest mark on the map, so any alpha it carries is spent before the eye can
+// resolve it — the points read as smudges rather than as points. Every dimming
+// the map does (search, focus, timeline, zoom fade) is applied on top of this,
+// so nothing is lost by starting from a solid ink.
+const MAP_NODE = 'rgba(246,246,246,1)';
+// Faintly cool rather than pure white: at edge alphas a neutral grey goes muddy
+// against the near-black, where a hint of blue stays crisp. Opaque for the same
+// reason as MAP_NODE — strokeOpacity carries the whole falloff (see below).
+const MAP_LINE = 'rgba(222,230,241,1)';
 
 // One glass recipe for everything floating over the map — the toolbar pill, the
 // capture FAB, the bottom summary strip — so they read as the same surface
@@ -122,12 +130,19 @@ const EDGE_RANK_FALLOFF = 0.55;
 // Hard-cut past a node's few strongest connections instead of just dimming.
 const EDGE_MAX_RANK = 4;
 // Every edge stays readable — a weak connection is faint but never invisible —
-// while the strongest land as a thin, subdued line, never a bold one. MAP_LINE
-// is near-white, so these opacities are effectively the on-screen alpha.
-const EDGE_MIN_OPACITY = 0.05;
-const EDGE_MAX_OPACITY = 0.28;
-const EDGE_MIN_WIDTH = 0.35;
-const EDGE_MAX_WIDTH = 0.9;
+// while the strongest land as a thin, crisp line, never a bold one. MAP_LINE is
+// opaque, so these opacities are exactly the on-screen alpha.
+//
+// The whole band sits higher than it used to. Salience already does the work of
+// separating the strong few from the long tail — it does not need the tail to be
+// nearly invisible as well, and pinning the ceiling at 0.28 meant even a node's
+// best connection was a ghost. Structure is the point of the map: lines should
+// be thin and sharp, not faint. Width stays deliberately sub-pixel-ish at the
+// floor so the tail reads as texture rather than as more lines.
+const EDGE_MIN_OPACITY = 0.1;
+const EDGE_MAX_OPACITY = 0.46;
+const EDGE_MIN_WIDTH = 0.4;
+const EDGE_MAX_WIDTH = 1;
 
 const edgeSalience = (weight: number, rank: number) => {
   const t = Math.max(0, Math.min(1, (weight - EDGE_WEIGHT_FLOOR) / (EDGE_WEIGHT_CEIL - EDGE_WEIGHT_FLOOR)));
@@ -300,29 +315,73 @@ const GLOW_H = (GLOW_W * CANVAS_H) / CANVAS_W;
 // Static: the world SVG is always offset by exactly the overscan margin.
 const MAP_WORLD_STYLE = { position: 'absolute' as const, left: -MARGIN_X, top: -MARGIN_Y };
 
+// ── Ambient drift ─────────────────────────────────────────────────
+// A slow, sub-pixel-ish wander applied to the whole world layer, so the map
+// reads as a field that is alive rather than as a static diagram.
+//
+// It has to be free, and on this architecture "free" rules out the obvious
+// implementation. Moving nodes individually means moving them in the SVG, and
+// the SVG is a rasterized layer: every frame would re-rasterize a ~3×-screen
+// vector layer, which is exactly the cost the whole double-buffer design exists
+// to avoid. Splitting the nodes across several independently-animated layers
+// would sidestep the re-raster but allocate a full overscanned backing store per
+// layer, per buffer — tens of megabytes each, for a 1px effect.
+//
+// So the motion is a transform on the single container that already holds both
+// buffers: a native-driven, GPU-composited layer transform, the same class of
+// work as a scroll. No JS per frame, no re-rasterization, no extra pixels.
+//
+// A pure translate would be wrong — that is the camera drifting, and a camera
+// that will not sit still is unsettling. The motion is mostly a hair of ROTATION
+// and SCALE about the screen centre, which is not rigid in appearance: how far a
+// node moves, and in which direction, depends on where it sits relative to the
+// centre, so neighbours separate and converge slightly. That relative motion is
+// what reads as hovering. The small translate is there only so a node sitting
+// near the centre of rotation isn't perfectly still.
+//
+// Amplitudes are in screen points and therefore constant at every zoom — peak
+// displacement lands near 1pt at the edges of the screen, less toward the
+// middle. Periods are mutually indivisible so the composite never visibly loops.
+const DRIFT_X_MS = 5300;
+const DRIFT_Y_MS = 6700;
+const DRIFT_ROT_MS = 8900;
+const DRIFT_SCALE_MS = 7300;
+const DRIFT_X_PT = 0.55;
+const DRIFT_Y_PT = 0.45;
+const DRIFT_ROT_DEG = 0.085;
+const DRIFT_SCALE = 0.0015;
+
 // Zoom fade → node/raster dimming as you pull back, floored so points stay
 // readable when fully zoomed out and pinned at 1 once you are zoomed in. Applied
 // as a NATIVE VIEW opacity over the raster (not baked into the SVG), so it
 // composites the cached layer on the GPU — no re-rasterization, no per-frame
 // JS, and identical across both buffers so a swap never pops. Continuous (not
 // stepped): nothing rebuilds, so there is no rebuild cost to amortize.
-const fadeForZoom = (z: number) => Math.max(0.6, Math.min(1, (z - 0.15) / 0.75));
+// Floored high: this exists to keep the zoomed-out map from glaring, not to
+// wash it out. At the old 0.6 floor the whole graph sat at 60% over black the
+// moment you pulled back — which is the view the map opens in, so the first
+// impression was of something faded rather than something sharp. 0.9 still
+// takes the edge off the wide view while leaving the points solid.
+const fadeForZoom = (z: number) => Math.max(0.9, Math.min(1, (z - 0.15) / 0.75));
 
-// Muted on purpose. The rest of the map is near-monochrome, so saturated hues
-// read as the loudest thing on screen rather than as a quiet grouping cue —
-// these are the original hues pulled ~35% toward their own luma and dimmed
-// slightly, which keeps every cluster distinguishable at ~40% of the chroma.
+// Accent hues, not decoration. The map is monochrome apart from these, so a
+// cluster's colour is the only thing that says "this region is one subject" —
+// it has to survive being a 4px dot on black. The palette used to be pulled
+// ~35% toward its own luma to stay quiet, and at that chroma the dots read as
+// dirty white instead of as colour. These sit near full chroma but stay
+// mid-luminance, so a cluster is unmistakable up close and still resolves as
+// texture, not confetti, when the whole map is in frame.
 const CLUSTER_PALETTE = [
-  '#7393B3',
-  '#8D7FAB',
-  '#89B69D',
-  '#C8A186',
-  '#BD7979',
-  '#86B6B6',
-  '#B09F88',
-  '#9DACBD',
-  '#AE8293',
-  '#A6BC90',
+  '#6E9AD1',
+  '#9885C9',
+  '#7FC7A2',
+  '#DFA26B',
+  '#D97878',
+  '#79C2C2',
+  '#C6AC7F',
+  '#9BB4D1',
+  '#C4849B',
+  '#A8CC86',
 ];
 
 // Recent threshold: 14 days
@@ -340,7 +399,7 @@ const RECENT_MS = 14 * 24 * 60 * 60 * 1000;
 // edge to see. It's also one fewer element per node, and a third of the glow
 // area — the vector layer's re-rasterization cost scales with exactly this (see
 // RECOMMIT_ZOOM_IN_PINCH), so it buys smoothness during a pinch too.
-const RECENT_NODE_COLOR = '#D4B896';
+const RECENT_NODE_COLOR = '#E3B87C';
 const NODE_GLOW_COLORS: string[] = [...CLUSTER_PALETTE, RECENT_NODE_COLOR, MAP_NODE];
 // Index-based ids: the colours themselves ('#7393B3', 'rgba(...)') aren't valid
 // SVG id characters.
@@ -387,6 +446,25 @@ type Cam = { x: number; y: number; zoom: number };
  * down with the map when far out, SHRINKING (never looming) on the way in. */
 const domainScreenAt = (z: number) => (z <= 1 ? 16 * Math.min(1, z / 0.64) : 16 / Math.pow(z, 0.8));
 const topicScreenAt = (z: number) => (z < 0.71 ? 10 * (z / 0.71) : 10);
+
+// ── Cluster label form ────────────────────────────────────────────
+// A label is a coloured dot followed by the region's name in lower case, set in
+// the mono face — the same mark the map already uses for a node, so the label
+// reads as "this point names that region" rather than as floating chrome.
+//
+// It used to be wide-tracked upper case centred on the region, at ~0.2 alpha:
+// tracking that loose stops reading as a word and starts reading as texture, and
+// at that alpha it was texture you had to hunt for. Tracking is now barely more
+// than the mono grid's own, and the alphas below are legible on purpose.
+const DOMAIN_TRACKING = 0.06;
+const TOPIC_TRACKING = 0.08;
+// Dot diameter and its gap to the text, both as multiples of the label's font
+// size, so the whole mark scales as one unit with the counter-scale transform.
+const LABEL_DOT_EM = 0.42;
+const LABEL_DOT_GAP_EM = 0.42;
+// Total lead-in the dot adds ahead of the first glyph, in em. Used both to
+// lay the row out and to widen the label's box for the de-clutter overlap test.
+const LABEL_LEAD_EM = LABEL_DOT_EM + LABEL_DOT_GAP_EM;
 
 // Sample points for the piecewise-linear counter-scale interpolation.
 const LABEL_SCALE_KS = [0.25, 0.4, 0.55, 0.7, 0.85, 1, 1.2, 1.5, 1.9, 2.4, 3, 4];
@@ -498,34 +576,37 @@ const WorldBuffer = React.memo(function WorldBuffer({
     // Sub-topics earn their ink only once the user has zoomed into a region.
     // Same ramp the hand-off below uses, so a domain fading out and its
     // sub-topics fading in are two halves of one crossfade.
-    const subtopicOpacityAt = (z: number) => clamp01((z - 1.1) / 0.5) * 0.28;
+    const subtopicOpacityAt = (z: number) => clamp01((z - 1.1) / 0.5) * 0.62;
 
     const toCandidate = (cl: WorldClusterLabel, isDomain: boolean): LabelCandidate => {
       const fontSize = isDomain ? domainScreen : topicScreen;
       const worldFont = fontSize / zoom;
-      const letterSpacing = fontSize * (isDomain ? 0.25 : 0.3);
+      const tracking = isDomain ? DOMAIN_TRACKING : TOPIC_TRACKING;
+      const letterSpacing = fontSize * tracking;
       let opacity: number;
       if (isDomain) {
         // Domains carry the map's structure at a glance, so they sit a little
         // heavier than the sub-topics that replace them further in.
         if (zoom <= 1.0) {
-          opacity = Math.min(0.38, 0.20 + (1 - zoom) * 0.12);
+          opacity = Math.min(0.82, 0.62 + (1 - zoom) * 0.2);
         } else if (labelContainment.domainsWithSubtopics.has(cl.topicId)) {
           // A sub-topic label exists to take over this region — hand off.
-          opacity = Math.max(0, 0.20 * (1 - (zoom - 1.0) / 0.6));
+          opacity = Math.max(0, 0.62 * (1 - (zoom - 1.0) / 0.6));
         } else {
           // Nothing to hand off to: keep the label as the user zooms in. It
           // shrinks smoothly and only fades away once genuinely small.
-          opacity = 0.20 * clamp01((domainScreen - 5) / 2);
+          opacity = 0.62 * clamp01((domainScreen - 5) / 2);
         }
       } else {
         opacity = subtopicOpacityAt(zoom);
       }
-      // Mono uppercase: char advance ≈ 0.6·fontSize + letterSpacing.
-      const worldLs = worldFont * (isDomain ? 0.25 : 0.3);
+      // Mono lower case: char advance ≈ 0.6·fontSize + letterSpacing. The dot
+      // and its gap ride ahead of the first glyph, so they widen the box too.
+      const worldLs = worldFont * tracking;
+      const worldW = cl.name.length * (worldFont * 0.6 + worldLs) + worldFont * LABEL_LEAD_EM;
       return {
         cl, isDomain, fontSize, letterSpacing, opacity,
-        hw: (cl.name.length * (worldFont * 0.6 + worldLs)) / 2,
+        hw: worldW / 2,
         hh: worldFont / 2,
       };
     };
@@ -578,15 +659,19 @@ const WorldBuffer = React.memo(function WorldBuffer({
       const dimmed = focusDimTopicId && cl.topicId !== focusDimTopicId;
       return {
         key: cl.topicId,
-        name: cl.name.toUpperCase(),
+        name: cl.name.toLowerCase(),
         isDomain,
+        dotColor: clusterColorFor(cl.topicId),
         // Committed screen coordinates — the buffer transform carries them
         // to the live camera, exactly like the world SVG.
         screenX: (cl.x - cam.x) * zoom,
         screenY: (cl.y - cam.y) * zoom,
         fontSize,
         letterSpacing,
-        opacity: dimmed ? Math.min(0.08, labelOpacity) : labelOpacity,
+        // Proportional rather than a flat clamp: the alphas above are much
+        // higher now, so a fixed 0.08 ceiling would have dimmed a focused map's
+        // background labels harder than the nodes beside them.
+        opacity: dimmed ? labelOpacity * 0.12 : labelOpacity,
       };
     });
   }, [keptLabels, focusDimTopicId, cam.x, cam.y, cam.zoom]);
@@ -638,40 +723,113 @@ const WorldBuffer = React.memo(function WorldBuffer({
       {/* Cluster labels — native views that counter-scale continuously
           against the live wrapper transform (smooth through pinches,
           unlike text baked into the SVG raster). */}
-      {labelSpecs.map((l) => (
-        <RNAnimated.View
-          key={`cl-label-${l.key}`}
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            left: l.screenX - 150,
-            top: l.screenY - 20,
-            width: 300,
-            height: 40,
-            alignItems: 'center',
-            justifyContent: 'center',
-            transform: [{ scale: l.isDomain ? labelScales.domain : labelScales.topic }],
-          }}
-        >
-          <RNText
-            numberOfLines={1}
+      {labelSpecs.map((l) => {
+        const dot = l.fontSize * LABEL_DOT_EM;
+        return (
+          <RNAnimated.View
+            key={`cl-label-${l.key}`}
+            pointerEvents="none"
             style={{
-              fontFamily: FontFamily.mono,
-              fontSize: l.fontSize,
-              letterSpacing: l.letterSpacing,
-              color: `rgba(236,236,236,${l.opacity.toFixed(3)})`,
-              textAlign: 'center',
+              position: 'absolute',
+              left: l.screenX - 150,
+              top: l.screenY - 20,
+              width: 300,
+              height: 40,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transform: [{ scale: l.isDomain ? labelScales.domain : labelScales.topic }],
             }}
           >
-            {l.name}
-          </RNText>
-        </RNAnimated.View>
-      ))}
+            {/* The region's colour, as the same kind of mark the map draws for
+                a node. Carries the label's own alpha so dot and name fade as
+                one through every hand-off. */}
+            <View
+              style={{
+                width: dot,
+                height: dot,
+                borderRadius: dot / 2,
+                marginRight: l.fontSize * LABEL_DOT_GAP_EM,
+                backgroundColor: l.dotColor,
+                opacity: l.opacity,
+              }}
+            />
+            <RNText
+              numberOfLines={1}
+              style={{
+                fontFamily: FontFamily.mono,
+                fontSize: l.fontSize,
+                letterSpacing: l.letterSpacing,
+                color: `rgba(236,240,246,${l.opacity.toFixed(3)})`,
+              }}
+            >
+              {l.name}
+            </RNText>
+          </RNAnimated.View>
+        );
+      })}
       {/* New node landing animation */}
       {landingRing}
     </RNAnimated.View>
   );
 });
+
+/**
+ * Drives the ambient drift (see the DRIFT_* constants) and returns the transform
+ * for the container that holds both world buffers.
+ *
+ * Native-driven, so the loops live on the UI thread and keep their timing
+ * through any JS stall — including the commit/swap work, which is the one moment
+ * a stutter here would be most visible. Safe to native-drive precisely because
+ * this container carries no other animated prop: the buffers' own transforms and
+ * the swap's opacities are JS-driven and live on their own views, and mixing the
+ * two drivers on a single view is what breaks.
+ *
+ * Paused while Atlas isn't the focused screen. The effect costs a continuous
+ * layer recomposite, which is worth paying while the user is looking at the map
+ * and worth nothing at all while they're on another tab.
+ */
+function useAmbientDrift() {
+  const phases = useRef({
+    x: new RNAnimated.Value(0),
+    y: new RNAnimated.Value(0),
+    rot: new RNAnimated.Value(0),
+    scale: new RNAnimated.Value(0),
+  }).current;
+
+  useFocusEffect(
+    useCallback(() => {
+      // Each phase eases 0→1→0 forever. Interpolating that onto a symmetric
+      // range below puts the eased ends at the turnarounds, so the motion slows
+      // into each reversal instead of snapping direction.
+      const swing = (v: RNAnimated.Value, duration: number) =>
+        RNAnimated.loop(
+          RNAnimated.sequence([
+            RNAnimated.timing(v, { toValue: 1, duration, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+            RNAnimated.timing(v, { toValue: 0, duration, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+          ]),
+        );
+      const anims = [
+        swing(phases.x, DRIFT_X_MS),
+        swing(phases.y, DRIFT_Y_MS),
+        swing(phases.rot, DRIFT_ROT_MS),
+        swing(phases.scale, DRIFT_SCALE_MS),
+      ];
+      anims.forEach((a) => a.start());
+      return () => anims.forEach((a) => a.stop());
+    }, [phases]),
+  );
+
+  return useMemo(
+    () => [
+      { translateX: phases.x.interpolate({ inputRange: [0, 1], outputRange: [-DRIFT_X_PT, DRIFT_X_PT] }) },
+      { translateY: phases.y.interpolate({ inputRange: [0, 1], outputRange: [-DRIFT_Y_PT, DRIFT_Y_PT] }) },
+      { rotate: phases.rot.interpolate({ inputRange: [0, 1], outputRange: [`${-DRIFT_ROT_DEG}deg`, `${DRIFT_ROT_DEG}deg`] }) },
+      { scale: phases.scale.interpolate({ inputRange: [0, 1], outputRange: [1 - DRIFT_SCALE, 1 + DRIFT_SCALE] }) },
+    ],
+    [phases],
+  );
+}
 
 // ── Layout helpers ─────────────────────────────────────────────────
 
@@ -1933,6 +2091,9 @@ export default function MapScreen() {
   // ── Lens mode ──────────────────────────────────────────────────
   const [lensMode, setLensMode] = useState<LensMode>('semantic');
 
+  // Sub-pixel wander applied to the whole world layer — see useAmbientDrift.
+  const ambientDrift = useAmbientDrift();
+
   // ── Viewport: pan + zoom ──────────────────────────────────────
   // Two-tier camera, double-buffered rendering (see WorldBuffer). The
   // COMMITTED camera is what a world buffer is rendered against; it changes
@@ -2478,13 +2639,21 @@ export default function MapScreen() {
   }, [edges]);
 
   // Precompute per-node radius + base opacity (each node's RNG constructed once)
+  //
+  // Tighter and brighter than it was. The radius jitter is there so the field
+  // doesn't look stamped, but at ±2px on a ~4px dot it was reading as "some
+  // nodes are important" — a meaning the map never intended, since degree
+  // already carries that. The opacity jitter had the same problem in reverse:
+  // a random 28% of alpha meant a good third of the map was permanently half
+  // lit for no reason the user could see. Both are now a hair of variation on
+  // a solid mark, and degree stays the only real size signal.
   const nodeMetrics = useMemo(() => {
     const m = new Map<string, { r: number; baseOpacity: number }>();
     for (const node of nodes) {
       const rng = seededRng(hashId(node.id));
-      const base = 3.2 + rng() * 2.0;
+      const base = 2.9 + rng() * 1.2;
       const deg = Math.min(edgeCounts[node.id] ?? 0, 8);
-      m.set(node.id, { r: base + deg * 0.5, baseOpacity: 0.72 + rng() * 0.28 });
+      m.set(node.id, { r: base + deg * 0.45, baseOpacity: 0.9 + rng() * 0.1 });
     }
     return m;
   }, [nodes, edgeCounts]);
@@ -3493,19 +3662,27 @@ export default function MapScreen() {
         const color = clusterColorFor(cl.topicId);
         return (
           <RadialGradient key={`grad-${cl.topicId}`} id={`clGrad-${cl.topicId}`} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-            <Stop offset="0%" stopColor={color} stopOpacity={0.14} />
-            <Stop offset="55%" stopColor={color} stopOpacity={0.04} />
+            {/* Lighter than it was, and now that the palette carries real
+                chroma it still tints as clearly. These washes overlap wherever
+                two regions sit close, and every overlap lifts the black the
+                points have to stand against — the haze that made the map look
+                like it was behind glass. */}
+            <Stop offset="0%" stopColor={color} stopOpacity={0.1} />
+            <Stop offset="55%" stopColor={color} stopOpacity={0.028} />
             <Stop offset="100%" stopColor={color} stopOpacity={0} />
           </RadialGradient>
         );
       })}
       {/* One per possible node colour; constant, so this never rebuilds. The
-          stops carry the falloff — a node's own fillOpacity just scales it. */}
+          stops carry the falloff — a node's own fillOpacity just scales it.
+          They fall off faster than they used to: a wide, slow falloff is what
+          reads as fog around a point, where a tight one reads as the point
+          being lit. Same total reach, most of the alpha spent close in. */}
       {NODE_GLOW_COLORS.map((color, i) => (
         <RadialGradient key={`nodeGlow-${i}`} id={`nodeGlow${i}`} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
           <Stop offset="0%" stopColor={color} stopOpacity={1} />
-          <Stop offset="30%" stopColor={color} stopOpacity={0.45} />
-          <Stop offset="62%" stopColor={color} stopOpacity={0.14} />
+          <Stop offset="24%" stopColor={color} stopOpacity={0.4} />
+          <Stop offset="55%" stopColor={color} stopOpacity={0.08} />
           <Stop offset="100%" stopColor={color} stopOpacity={0} />
         </RadialGradient>
       ))}
@@ -3627,7 +3804,7 @@ export default function MapScreen() {
             // needing reach to look soft. Dropped below GLOW_ZOOM (a searched
             // node keeps its glow so it stays findable) — see GLOW_ZOOM.
             const glowR = isHighlighted ? baseR * 5 : baseR * 3;
-            const glowOp = isHighlighted ? 0.42 : 0.13;
+            const glowOp = isHighlighted ? 0.42 : 0.18;
 
             return (
               <G key={node.id}>
@@ -3650,8 +3827,8 @@ export default function MapScreen() {
                     cx={p.x} cy={p.y} r={baseR * 1.6}
                     fill="none"
                     stroke={color}
-                    strokeWidth={0.5}
-                    strokeOpacity={0.3}
+                    strokeWidth={0.6}
+                    strokeOpacity={0.45}
                   />
                 )}
               </G>
@@ -3741,8 +3918,11 @@ export default function MapScreen() {
   const ambientGlow = useMemo(() => (
     <Svg width={GLOW_W} height={GLOW_H}>
       <Defs>
+        {/* Barely there on purpose: this is a hint that the canvas has a
+            centre, not a light source. Anything heavier lifts the black the
+            whole map is read against. */}
         <RadialGradient id="ambientGlow" cx="50%" cy="44%" r="48%" fx="50%" fy="44%">
-          <Stop offset="0%" stopColor={MAP_NODE} stopOpacity={0.06} />
+          <Stop offset="0%" stopColor={MAP_NODE} stopOpacity={0.035} />
           <Stop offset="100%" stopColor={MAP_NODE} stopOpacity={0} />
         </RadialGradient>
       </Defs>
@@ -3872,12 +4052,14 @@ export default function MapScreen() {
         }}
       >
         <View style={[StyleSheet.absoluteFill, { overflow: 'visible' }]} {...mapPan.panHandlers}>
-          {/* Plain container: the live transform is now applied PER BUFFER
-              (each against its own camera) inside WorldBuffer, so the swap is a
-              clean crossfade between two already-aligned layers. The world SVG
-              extends OVERSCAN beyond this view; it must not clip (screen edges
-              still clip at the root). */}
-          <View style={[StyleSheet.absoluteFill, { overflow: 'visible' }]}>
+          {/* Container for both buffers: the live camera transform is applied
+              PER BUFFER (each against its own camera) inside WorldBuffer, so the
+              swap is a clean crossfade between two already-aligned layers. The
+              world SVG extends OVERSCAN beyond this view; it must not clip
+              (screen edges still clip at the root).
+              The only transform here is the ambient drift, which applies to both
+              buffers identically and so can never disturb their alignment. */}
+          <RNAnimated.View style={[StyleSheet.absoluteFill, { overflow: 'visible', transform: ambientDrift }]}>
             {/* The two world buffers. Buffer 0 is the always-opaque bottom
                 layer; buffer 1 is the top layer whose opacity the swap fades. A
                 re-commit paints the hidden one and the crossfade reveals it. */}
@@ -3915,7 +4097,7 @@ export default function MapScreen() {
               landingPos={landingPos}
               landingAnim={landingAnim}
             />
-          </View>
+          </RNAnimated.View>
 
           {/* Node touch targets — deliberately OUTSIDE the transform. They are
               built against the settled camera, so when the map is at rest the
