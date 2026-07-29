@@ -174,6 +174,14 @@ export const Accents = {
   plum: '#7A6797',
 } as const;
 
+/**
+ * Ink for type sitting ON a filled accent. Fixed, not themed: the fill is the
+ * same mid-tone in both modes, so the type on it has to be too. Warm off-white
+ * rather than #FFFFFF — a pure white glyph on a warm fill is the one place the
+ * old palette's coldness showed through even in dark mode.
+ */
+export const INK_ON_ACCENT = '#F7F3EA';
+
 export const AccentList: readonly string[] = [
   Accents.amber,
   Accents.moss,

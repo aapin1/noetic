@@ -39,11 +39,11 @@
         {
           "image": "./assets/splash.png",
           "imageWidth": 180,
-          "backgroundColor": "#F6F2E9",
+          "backgroundColor": "#F3EFE6",
           "resizeMode": "contain",
           "dark": {
             "image": "./assets/splash.png",
-            "backgroundColor": "#060606"
+            "backgroundColor": "#0C0B08"
           }
         }
       ],

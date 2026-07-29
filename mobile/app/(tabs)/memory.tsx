@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
+import { FontFamily, FontSize, Radius, Spacing, accentForKey } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
@@ -226,26 +226,33 @@ export default function ArchiveScreen() {
                 nothing matches that.
               </Text>
             )}
-            {(searchResults ?? []).map((item) => (
-              <Pressable
-                key={item.id}
-                onPress={() => router.push(`/insight/${item.id}` as never)}
-                style={[styles.resultRow, { borderColor: c.border }]}
-                accessibilityRole="button"
-              >
-                <Text variant="bodyMedium" numberOfLines={2}>{item.title}</Text>
-                <View style={styles.resultMeta}>
-                  {item.topics[0] ? (
-                    <Text variant="monoSmall" color="muted" numberOfLines={1}>
-                      {item.topics[0].name}
+            {(searchResults ?? []).map((item) => {
+              const topic = item.topics[0] ?? null;
+              const accent = topic ? accentForKey(topic.topicId) : null;
+              return (
+                <Pressable
+                  key={item.id}
+                  onPress={() => router.push(`/insight/${item.id}` as never)}
+                  style={[styles.resultRow, { borderColor: c.border, backgroundColor: c.surface }]}
+                  accessibilityRole="button"
+                >
+                  <Text variant="bodyMedium" numberOfLines={2}>{item.title}</Text>
+                  <View style={styles.resultMeta}>
+                    {topic ? (
+                      <View style={styles.resultTopic}>
+                        <View style={[styles.topicDot, { backgroundColor: accent! }]} />
+                        <Text variant="monoSmall" color="muted" numberOfLines={1}>
+                          {topic.name}
+                        </Text>
+                      </View>
+                    ) : <View />}
+                    <Text variant="monoSmall" color="muted">
+                      {new Date(item.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </Text>
-                  ) : <View />}
-                  <Text variant="monoSmall" color="muted">
-                    {new Date(item.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  </Text>
-                </View>
-              </Pressable>
-            ))}
+                  </View>
+                </Pressable>
+              );
+            })}
           </View>
         ) : view === 'diary' ? (
           <DiaryList refreshToken={diaryRefreshToken} />
@@ -311,6 +318,8 @@ const styles = StyleSheet.create({
     padding: Spacing[4],
     marginBottom: Spacing[3],
   },
+  resultTopic: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
+  topicDot: { width: 6, height: 6, borderRadius: 3, marginRight: Spacing[2] },
   resultMeta: {
     flexDirection: 'row',
     justifyContent: 'space-between',

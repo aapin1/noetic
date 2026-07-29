@@ -49,11 +49,15 @@ import type {
 // Every surface sits on the same map background as Atlas.
 // ─────────────────────────────────────────────────────────────────────────
 
+// One hue per instrument. These sit on the dark map surface, so they are cut
+// like the Atlas cluster palette rather than like the app's Accents: enough
+// chroma to name the instrument at a glance, held mid-luminance so none of them
+// glares against the near-black.
 const ACCENT = {
-  threads: '#6E90AE',
-  contradictions: '#B08276',
-  convergence: '#8A7EA6',
-  dormant: '#7C7C82',
+  threads: '#6E9AD1',
+  contradictions: '#C4877A',
+  convergence: '#9885C9',
+  dormant: '#8A8A93',
 } as const;
 
 type SectionKey = keyof typeof ACCENT;

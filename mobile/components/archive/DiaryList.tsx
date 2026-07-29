@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { api } from '@/lib/api';
-import { FontFamily, Radius, Spacing } from '@/constants/theme';
+import { FontFamily, Radius, Spacing, accentForKey } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
@@ -133,19 +133,34 @@ export function DiaryList({ refreshToken }: { refreshToken: number }) {
           <Text variant="monoSmall" style={[styles.dayHeader, { color: c.faint }]}>
             {group.label.toUpperCase()}
           </Text>
-          {group.entries.map((item) => (
-            <Pressable
-              key={item.id}
-              onPress={() => router.push(`/insight/${item.id}` as never)}
-              style={[styles.row, { borderBottomColor: c.borderSubtle }]}
-              accessibilityRole="button"
-            >
-              <Text variant="serif" color="primary" numberOfLines={2}>{item.title}</Text>
-              <Text variant="monoSmall" color="muted" numberOfLines={1} style={styles.rowSub}>
-                {subline(item)}
-              </Text>
-            </Pressable>
-          ))}
+          {/* Each day is a leaf of paper, not a run of rules on the page. The
+              diary was type on a flat field with hairlines between entries —
+              nothing to tell one day from the next except a caption. */}
+          <View style={[styles.day, { backgroundColor: c.surface, borderColor: c.border }]}>
+            {group.entries.map((item, i) => {
+              const topic = item.topics[0] ?? null;
+              const accent = topic ? accentForKey(topic.topicId) : null;
+              return (
+                <Pressable
+                  key={item.id}
+                  onPress={() => router.push(`/insight/${item.id}` as never)}
+                  style={[
+                    styles.row,
+                    i > 0 && { borderTopWidth: 1, borderTopColor: c.borderSubtle },
+                  ]}
+                  accessibilityRole="button"
+                >
+                  <Text variant="serif" color="primary" numberOfLines={2}>{item.title}</Text>
+                  <View style={styles.rowSub}>
+                    {!!accent && <View style={[styles.topicDot, { backgroundColor: accent }]} />}
+                    <Text variant="monoSmall" color="muted" numberOfLines={1} style={styles.rowSubText}>
+                      {subline(item)}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
           {showAdAfterDay(gi, groups.length) ? <SponsoredCard /> : null}
         </View>
       ))}
@@ -175,11 +190,27 @@ const styles = StyleSheet.create({
     marginTop: Spacing[6],
     marginBottom: Spacing[2],
   },
+  day: {
+    borderWidth: 1,
+    borderRadius: Radius.lg,
+    paddingHorizontal: Spacing[4],
+    overflow: 'hidden',
+  },
   row: {
     paddingVertical: Spacing[4],
-    borderBottomWidth: 1,
   },
-  rowSub: { marginTop: Spacing[1] },
+  rowSub: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Spacing[1],
+  },
+  topicDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: Spacing[2],
+  },
+  rowSubText: { flex: 1 },
   moreBtn: {
     marginTop: Spacing[6],
     alignSelf: 'center',

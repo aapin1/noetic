@@ -12,15 +12,24 @@ interface Props {
   selected?: boolean;
   onPress?: () => void;
   small?: boolean;
+  /**
+   * The subject's own colour, for a `topic` badge. A row of topic chips was
+   * outline-on-nothing in the one grey the whole screen already used, so it
+   * added a shape but no information; tinted, the chips say WHICH subjects at a
+   * glance and match the dot the archive and the Atlas put beside the same
+   * topic. Ignored by the other variants, which aren't about a subject.
+   */
+  accent?: string;
 }
 
-export function Badge({ label, variant = 'topic', selected = false, onPress, small = false }: Props) {
+export function Badge({ label, variant = 'topic', selected = false, onPress, small = false, accent }: Props) {
   const c = useThemeColors();
   const box = useMemo(
     () => ({
       topic: {
-        backgroundColor: 'transparent' as const,
-        borderColor: c.border,
+        // A wash rather than a fill: eight of these can sit in one row.
+        backgroundColor: accent ? `${accent}1A` : ('transparent' as const),
+        borderColor: accent ? `${accent}66` : c.border,
       },
       contentType: {
         backgroundColor: 'transparent' as const,
@@ -44,7 +53,7 @@ export function Badge({ label, variant = 'topic', selected = false, onPress, sma
         borderColor: c.inverse,
       },
     }),
-    [c],
+    [c, accent],
   );
 
   const inner = (
@@ -60,7 +69,13 @@ export function Badge({ label, variant = 'topic', selected = false, onPress, sma
       <Text
         variant="monoSmall"
         color={selected ? 'inverse' : 'secondary'}
-        style={small ? styles.labelSmall : undefined}
+        // The label takes the accent too, so the chip is one coloured object
+        // rather than grey type in a coloured box. Not when `selected` — that
+        // variant fills with `inverse`, and the accent would not clear it.
+        style={[
+          small ? styles.labelSmall : null,
+          accent && !selected ? { color: accent } : null,
+        ]}
       >
         {variant === 'edge' ? label.toUpperCase() : label}
       </Text>

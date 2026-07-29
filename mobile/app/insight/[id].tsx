@@ -6,7 +6,7 @@ import { ChevronLeftIcon, ExternalLinkIcon, PencilIcon } from 'lucide-react-nati
 import { Image } from 'expo-image';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
+import { FontFamily, FontSize, Radius, Spacing, accentForKey } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Badge } from '@/components/ui/Badge';
@@ -225,6 +225,7 @@ export default function InsightDetailScreen() {
                   key={t.topicId}
                   label={t.name}
                   variant="topic"
+                  accent={accentForKey(t.topicId)}
                   selected={t.kind === 'general'}
                 />
               ))}

@@ -6,7 +6,7 @@ import { CheckIcon, XIcon } from 'lucide-react-native';
 import type { PurchasesPackage } from 'react-native-purchases';
 import { api } from '@/lib/api';
 import { PRIVACY_URL, TERMS_URL } from '@/constants/links';
-import { Radius, Spacing, accentFor } from '@/constants/theme';
+import { INK_ON_ACCENT, Radius, Spacing, accentFor } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -193,7 +193,7 @@ export default function PlusScreen() {
           {PERKS.map((perk) => (
             <View key={perk} style={styles.perkRow}>
               <View style={[styles.check, { backgroundColor: ACCENT }]}>
-                <CheckIcon size={12} color="#fff" strokeWidth={3} />
+                <CheckIcon size={12} color={INK_ON_ACCENT} strokeWidth={3} />
               </View>
               <Text variant="body" style={styles.perkText}>
                 {perk}
@@ -407,7 +407,7 @@ const styles = StyleSheet.create({
   planText: { flex: 1, gap: 2 },
   planTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2] },
   savePill: { borderRadius: Radius.full, paddingHorizontal: Spacing[2], paddingVertical: 2 },
-  savePillText: { color: '#fff', fontSize: 10 },
+  savePillText: { color: INK_ON_ACCENT, fontSize: 10 },
   planPrice: {},
 
   restore: { fontSize: 11, textAlign: 'center', marginTop: Spacing[2] },

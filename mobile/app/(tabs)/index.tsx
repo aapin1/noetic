@@ -372,7 +372,7 @@ const RECENT_MS = 14 * 24 * 60 * 60 * 1000;
 // area — the vector layer's re-rasterization cost scales with exactly this (see
 // RECOMMIT_ZOOM_IN_PINCH), so it buys smoothness during a pinch too.
 const NODE_GLOW_COLORS: string[] = [...CLUSTER_PALETTE, RECENT_NODE_COLOR, MAP_NODE];
-// Index-based ids: the colours themselves ('#7393B3', 'rgba(...)') aren't valid
+// Index-based ids: the colours themselves ('#6E9AD1', 'rgba(...)') aren't valid
 // SVG id characters.
 const nodeGlowId = (color: string) => {
   const i = NODE_GLOW_COLORS.indexOf(color);
@@ -1907,7 +1907,7 @@ function CenterFocusButton({ onPress, color, borderColor }: {
 
 export default function MapScreen() {
   const c = useThemeColors();
-  const { setMode: setThemeMode } = useTheme();
+  const { setMode: setThemeMode, scheme } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { start: startTutorial, active: tutorialActive, notifyTargetPressed } = useTutorial();
@@ -1933,7 +1933,7 @@ export default function MapScreen() {
   const [stripH, setStripH] = useState(0);
 
   const mapBg = c.mapBackground;
-  const isDarkMode = c.mapBackground === '#060606';
+  const isDarkMode = scheme === 'dark';
 
   const { data: graphData, loading: graphLoading, refetch: refetchGraph } = useApiQuery(
     () => api.memory.graph({ limit: 80 }),

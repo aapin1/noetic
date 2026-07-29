@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     backgroundColor: 'rgba(30,27,22,0.94)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(240,232,214,0.34)',
+    borderColor: 'rgba(240,232,214,0.2)',
     borderRadius: 12,
     padding: Spacing[3],
     zIndex: 5,
@@ -401,6 +401,6 @@ const styles = StyleSheet.create({
     marginTop: Spacing[8],
     paddingTop: Spacing[4],
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(240,232,214,0.33)',
+    borderTopColor: 'rgba(240,232,214,0.18)',
   },
 });

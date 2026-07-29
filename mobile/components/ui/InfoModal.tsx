@@ -35,7 +35,7 @@ export function InfoModal({ visible, onClose, title, body }: Props) {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(10,9,7,0.5)',
     justifyContent: 'flex-end',
     paddingHorizontal: Spacing[6],
     paddingBottom: Spacing[16],

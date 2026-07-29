@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { FileTextIcon } from 'lucide-react-native';
-import { Radius, Spacing } from '@/constants/theme';
+import { Radius, Spacing, accentForKey } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import type { CaptureSummary } from '@/types/api';
@@ -16,14 +16,26 @@ export function FileRow({ item, onPress }: { item: CaptureSummary; onPress: () =
 
   const thumbUrl = item.kind === 'IMAGE' ? item.mediaUrl : item.contentItem?.imageUrl;
   const author = item.contentItem?.authorName ?? item.contentItem?.sourceName ?? null;
+  // The capture's own region, in the region's colour — the same dot-then-name
+  // mark the Atlas puts beside a cluster. A list of forty rows had nothing on
+  // it but two greys, and this is the cheapest thing that gives the eye a
+  // second axis to sort by without adding a column.
+  const topic = item.topics[0] ?? null;
+  const accent = topic ? accentForKey(topic.topicId) : null;
 
   return (
     <Pressable onPress={onPress} style={[styles.row, { borderBottomColor: c.border }]} accessibilityRole="button">
       {thumbUrl ? (
         <Image source={{ uri: thumbUrl }} style={[styles.thumb, { borderColor: c.border }]} contentFit="cover" />
       ) : (
-        <View style={[styles.thumb, styles.thumbPlaceholder, { borderColor: c.border, backgroundColor: c.surface }]}>
-          <FileTextIcon size={18} color={c.faint} />
+        <View
+          style={[
+            styles.thumb,
+            styles.thumbPlaceholder,
+            { borderColor: c.border, backgroundColor: accent ? `${accent}1F` : c.surface },
+          ]}
+        >
+          <FileTextIcon size={18} color={accent ?? c.faint} />
         </View>
       )}
 
@@ -31,10 +43,13 @@ export function FileRow({ item, onPress }: { item: CaptureSummary; onPress: () =
         <Text variant="serif" color="primary" numberOfLines={2}>
           {item.title}
         </Text>
-        {!!author && (
-          <Text variant="monoSmall" color="faint" numberOfLines={1} style={styles.author}>
-            {author}
-          </Text>
+        {(!!author || !!topic) && (
+          <View style={styles.meta}>
+            {!!accent && <View style={[styles.topicDot, { backgroundColor: accent }]} />}
+            <Text variant="monoSmall" color="faint" numberOfLines={1} style={styles.metaText}>
+              {author ?? topic!.name.toLowerCase()}
+            </Text>
+          </View>
         )}
       </View>
 
@@ -67,9 +82,18 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: Spacing[4],
   },
-  author: {
+  meta: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: Spacing[1],
   },
+  topicDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: Spacing[2],
+  },
+  metaText: { flex: 1 },
   date: {
     alignSelf: 'flex-start',
   },

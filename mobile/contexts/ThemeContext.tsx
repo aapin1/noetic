@@ -10,13 +10,26 @@ type ThemeMode = 'light' | 'dark' | 'system';
 
 interface ThemeContextValue {
   colors: AppThemeColors;
+  /** What the user PICKED — may be 'system'. */
   mode: ThemeMode;
+  /**
+   * What that actually resolves to right now, with 'system' already followed.
+   *
+   * Exposed because callers need it and the alternative is guessing. The Atlas
+   * used to derive it by string-comparing `colors.mapBackground` against a
+   * hardcoded hex, which silently inverted the moment that colour was retuned:
+   * the check went permanently false, so its toggle rendered one icon forever
+   * and kept re-setting the theme it was already in. Reading a value out of the
+   * palette to infer which palette you have is the bug; this is the fix.
+   */
+  scheme: 'light' | 'dark';
   setMode: (mode: ThemeMode) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
   colors: lightColors,
   mode: 'system',
+  scheme: 'light',
   setMode: () => {},
 });
 
@@ -37,16 +50,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     void AsyncStorage.setItem(THEME_KEY, newMode);
   }, []);
 
-  const colors = useMemo(() => {
+  const scheme = useMemo<'light' | 'dark'>(() => {
     const effective = mode === 'system' ? systemScheme : mode;
-    return effective === 'dark' ? darkColors : lightColors;
+    return effective === 'dark' ? 'dark' : 'light';
   }, [mode, systemScheme]);
 
-  return (
-    <ThemeContext.Provider value={{ colors, mode, setMode }}>
-      {children}
-    </ThemeContext.Provider>
+  const colors = scheme === 'dark' ? darkColors : lightColors;
+
+  const value = useMemo(
+    () => ({ colors, mode, scheme, setMode }),
+    [colors, mode, scheme, setMode],
   );
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useThemeColors() {

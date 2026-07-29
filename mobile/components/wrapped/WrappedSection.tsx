@@ -26,7 +26,7 @@ import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { useRouter, useIsFocused } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { ChevronRight, Image as ImageIcon, Link2, PenLine } from 'lucide-react-native';
-import { AccentList, Radius, Spacing, accentFor, hourAccent } from '@/constants/theme';
+import { AccentList, INK_ON_ACCENT, Radius, Spacing, accentFor, hourAccent } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
@@ -202,6 +202,7 @@ function RevealCard({
   onReveal,
   children,
   style,
+  accent,
 }: {
   scrollY: SharedValue<number>;
   sectionY: SharedValue<number>;
@@ -209,6 +210,8 @@ function RevealCard({
   onReveal?: () => void;
   children: React.ReactNode;
   style?: object;
+  /** This card's own hue, painted as a rule down its leading edge. */
+  accent?: string;
 }) {
   const c = useThemeColors();
   const cardY = useSharedValue(0);
@@ -247,11 +250,23 @@ function RevealCard({
         cardY.value = e.nativeEvent.layout.y;
         measured.value = 1;
       }}
-      // No fill: the cards sit directly on the page tint, the same way the
-      // archive rows and pulse cards do. A white surface made this tab read as
-      // a different app.
-      style={[styles.card, { borderColor: c.border }, style, anim]}
+      // Filled now. This used to be an unfilled outline because `surface` was
+      // pure #FFFFFF and a white sheet made the tab read as a different app —
+      // a real problem with a real fix, which was to stop `surface` being
+      // white. It's warm card stock a shade off the page now, so the fill does
+      // what it should: gives the card a body, and gives ten stacked cards a
+      // rhythm instead of ten hairline rectangles on one flat field.
+      style={[
+        styles.card,
+        { borderColor: c.border, backgroundColor: c.surface },
+        style,
+        anim,
+      ]}
     >
+      {/* Each card carries its own hue on its leading edge — the same mark a
+          pulse card uses for a friend. Enough to tell one panel from the next
+          while scrolling; not enough to turn the page into a paint chart. */}
+      {accent && <View style={[styles.cardAccent, { backgroundColor: accent }]} />}
       {children}
     </Animated.View>
   );
@@ -880,7 +895,7 @@ function TopicBubbles({
           lines={L.lines}
           fill={L.top ? accent : c.elevated}
           border={L.top ? accent : c.border}
-          textColor={L.top ? '#fff' : c.text}
+          textColor={L.top ? INK_ON_ACCENT : c.text}
           fontSize={L.fontSize}
         />
       ))}
@@ -1560,6 +1575,9 @@ export function WrappedSection({
   const recentNewTopics = w.recentNewTopics ?? [];
   const seed = w.totalCaptures * 31 + w.distinctTopics;
   const accent = accentFor(seed);
+  // Successive hues, walked from the page seed, so the run of cards reads as
+  // a sequence rather than as one colour repeated ten times.
+  const cardAccentAt = (i: number) => accentFor(seed + i);
 
   const burst = () => {
     setConfettiKey((k) => k + 1);
@@ -1582,7 +1600,7 @@ export function WrappedSection({
     {
       key: 'hero',
       node: (
-        <RevealCard {...cardProps} onReveal={() => setHeroActive(true)} style={styles.hero}>
+        <RevealCard {...cardProps} onReveal={() => setHeroActive(true)} accent={cardAccentAt(0)} style={styles.hero}>
           {w.totalCaptures === 0 ? (
             <>
               <Text variant="h2" style={styles.heroTitle}>
@@ -1604,7 +1622,7 @@ export function WrappedSection({
     cards.push({
       key: 'fields',
       node: (
-        <RevealCard {...cardProps}>
+        <RevealCard {...cardProps} accent={cardAccentAt(1)}>
           <Text variant="serif" style={styles.cardTitle}>
             {fieldsTitle(seed)}
           </Text>
@@ -1618,7 +1636,7 @@ export function WrappedSection({
     cards.push({
       key: 'topics',
       node: (
-        <RevealCard {...cardProps} onReveal={() => setTopicsActive(true)}>
+        <RevealCard {...cardProps} onReveal={() => setTopicsActive(true)} accent={cardAccentAt(2)}>
           <Text variant="serif" style={[styles.cardTitle, styles.overline]}>
             {topicsKicker(seed)}
           </Text>
@@ -1632,7 +1650,7 @@ export function WrappedSection({
     cards.push({
       key: 'newTopics',
       node: (
-        <RevealCard {...cardProps}>
+        <RevealCard {...cardProps} accent={cardAccentAt(3)}>
           <Text variant="serif" style={styles.cardTitle}>
             {newTopicsTitle(seed)}
           </Text>
@@ -1646,7 +1664,7 @@ export function WrappedSection({
     cards.push({
       key: 'rhythm',
       node: (
-        <RevealCard {...cardProps} onReveal={() => setDialActive(true)}>
+        <RevealCard {...cardProps} onReveal={() => setDialActive(true)} accent={cardAccentAt(4)}>
           <View style={styles.rhythmHead}>
             <Text variant="h3" style={{ color: hourAccent(w.busiestHour!) }}>
               {formatHourCompact(w.busiestHour!)}
@@ -1665,7 +1683,7 @@ export function WrappedSection({
     cards.push({
       key: 'streak',
       node: (
-        <RevealCard {...cardProps} onReveal={() => setStreakActive(true)}>
+        <RevealCard {...cardProps} onReveal={() => setStreakActive(true)} accent={cardAccentAt(5)}>
           <View style={styles.streakHead}>
             <Text variant="hero" style={[styles.streakNumber, { color: accent }]}>
               {streakLive ? w.currentStreak : w.longestStreak}
@@ -1706,7 +1724,7 @@ export function WrappedSection({
     cards.push({
       key: 'archetype',
       node: (
-        <RevealCard {...cardProps}>
+        <RevealCard {...cardProps} accent={cardAccentAt(6)}>
           <Text variant="serif" style={styles.cardTitle}>
             Your type
           </Text>
@@ -1734,7 +1752,7 @@ export function WrappedSection({
     cards.push({
       key: 'timeline',
       node: (
-        <RevealCard {...cardProps}>
+        <RevealCard {...cardProps} accent={cardAccentAt(7)}>
           <Timeline
             arcs={arcs}
             daysSinceFirst={w.daysSinceFirst}
@@ -1751,7 +1769,7 @@ export function WrappedSection({
     cards.push({
       key: 'terrain',
       node: (
-        <RevealCard {...cardProps}>
+        <RevealCard {...cardProps} accent={cardAccentAt(8)}>
           <TerrainCardBody data={terrain} accent={accent} />
         </RevealCard>
       ),
@@ -1761,7 +1779,7 @@ export function WrappedSection({
   cards.push({
     key: 'social',
     node: (
-      <RevealCard {...cardProps}>
+      <RevealCard {...cardProps} accent={cardAccentAt(9)}>
         <Social w={w} seed={seed} accent={accent} />
       </RevealCard>
     ),
@@ -1818,6 +1836,13 @@ const styles = StyleSheet.create({
     padding: Spacing[5],
     marginBottom: Spacing[3],
     overflow: 'hidden',
+  },
+  cardAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 3,
   },
   cardTitle: {
     lineHeight: 26,

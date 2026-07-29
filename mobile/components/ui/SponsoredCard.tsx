@@ -160,8 +160,8 @@ export function SponsoredCard({ tone = 'auto' }: { tone?: 'auto' | 'dark' } = {}
   const { NativeAdView, NativeAsset, NativeAssetType, NativeMediaView } = ads;
 
   const dark = tone === 'dark';
-  const surface = dark ? 'rgba(255,255,255,0.05)' : c.surface;
-  const border = dark ? 'rgba(240,232,214,0.33)' : c.border;
+  const surface = dark ? 'rgba(240,232,214,0.06)' : c.surface;
+  const border = dark ? 'rgba(240,232,214,0.18)' : c.border;
   // On a dark stage the themed text colors go near-black, so drive the ad's
   // copy off the same light ink the rest of that stage uses.
   const ink = dark ? { color: 'rgba(240,232,214,0.94)' } : undefined;

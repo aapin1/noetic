@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(10,9,7,0.45)',
     justifyContent: 'flex-end',
     padding: Spacing[4],
   },

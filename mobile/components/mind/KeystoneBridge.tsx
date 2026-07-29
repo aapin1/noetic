@@ -346,6 +346,6 @@ const styles = StyleSheet.create({
     marginTop: Spacing[8],
     paddingTop: Spacing[4],
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(240,232,214,0.33)',
+    borderTopColor: 'rgba(240,232,214,0.18)',
   },
 });
