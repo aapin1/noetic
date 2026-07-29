@@ -27,11 +27,11 @@ export function ShareRecapEntry() {
         accessibilityLabel="Share what you've been up to"
         style={({ pressed }) => [
           styles.card,
-          { borderColor: c.border },
+          { borderColor: c.border, backgroundColor: c.surface },
           pressed && { opacity: 0.75 },
         ]}
       >
-        <View style={[styles.glyph, { borderColor: accent }]}>
+        <View style={[styles.glyph, { borderColor: accent, backgroundColor: `${accent}1F` }]}>
           <Share2Icon size={20} color={accent} strokeWidth={1.6} />
         </View>
         <View style={styles.text}>

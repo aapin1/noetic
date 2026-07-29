@@ -91,12 +91,12 @@ export function EditableAvatar({ profile, onChanged }: Props) {
         accessibilityLabel="Change profile picture"
         disabled={busy}
       >
-        <Avatar uri={profile?.avatarUrl} displayName={profile?.displayName} size="xl" />
-        <View style={[styles.badge, { backgroundColor: c.text, borderColor: c.background }]}>
+        <Avatar uri={profile?.avatarUrl} displayName={profile?.displayName} size="xl" onDeep />
+        <View style={[styles.badge, { backgroundColor: c.deepInk, borderColor: c.deep }]}>
           {busy ? (
-            <ActivityIndicator size="small" color={c.background} />
+            <ActivityIndicator size="small" color={c.deep} />
           ) : (
-            <CameraIcon size={13} color={c.background} />
+            <CameraIcon size={13} color={c.deep} />
           )}
         </View>
       </Pressable>

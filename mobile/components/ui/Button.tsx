@@ -64,7 +64,13 @@ export function Button({
           ? c.inverse
           : variant === 'danger'
             ? c.danger
-            : 'transparent',
+            // `secondary` used to be a transparent outline. An outline has no
+            // fill, so it sat out every change to the palette and ended up the
+            // one control on a screen that still looked untouched. It is a
+            // button; it gets a body.
+            : variant === 'secondary'
+              ? c.elevated
+              : 'transparent',
       border: variant === 'secondary' ? c.border : 'transparent',
     };
   }, [c, variant]);

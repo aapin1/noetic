@@ -78,32 +78,52 @@ export type AppThemeColors = {
   tabBarBorder: string;
   /** Fill behind the focused tab's icon — see the tab bar in (tabs)/_layout. */
   tabBarActive: string;
+  /**
+   * A genuinely DARK structural surface — in both themes.
+   *
+   * The list tabs were all paper and no ink, while the Atlas and Mind are dark
+   * fields with light marks on them, and that gap is what made the two halves
+   * of the app read as two apps. This is the token that closes it: search
+   * fields, hero panels and inset blocks on the light screens are cut from the
+   * same near-black those maps are drawn on, so the darkness the app is built
+   * around shows up in light mode too instead of being a dark-mode-only trait.
+   *
+   * In dark mode it lands just ABOVE `background` rather than below it — the
+   * contrast has to come from somewhere, and there is no room underneath.
+   * Either way its ink is light, which is why `deepInk` is one value.
+   */
+  deep: string;
+  deepBorder: string;
+  deepInk: string;
+  deepInkMuted: string;
+  deepInkFaint: string;
   mapBackground: string;
   mapBackgroundOverlay: string;
 };
 
 export const lightColors: AppThemeColors = {
-  // Paper, not page. Sits ~6% below white so a full screen of it doesn't
-  // glare, which is the whole complaint with a #FFFFFF-backed light mode.
-  background: '#F3EFE6',
+  // Paper, not page — and a second step down from where this landed first
+  // time. ~7% off white was still bright enough to be the loudest thing in the
+  // room next to an Atlas drawn on near-black.
+  background: '#EDE7DA',
   // A full step deeper than `background`, not a hair. This is the ground the
   // list tabs stand on, and it has to be a tone in its own right for the cards
   // sitting on it to read as raised at all.
-  canvas: '#E8E3D6',
-  // Card stock: the lightest thing in the app, and still not white.
-  surface: '#FBF8F1',
+  canvas: '#DFD8C7',
+  // Card stock: the lightest thing in the app, and still nowhere near white.
+  surface: '#F5F0E4',
   // A tinted BLOCK, not a lift — chips, meter tracks, message bubbles. Reads
   // as recessed against `background`, which is what every caller wants it for.
-  elevated: '#EDE8DB',
+  elevated: '#E2DBC9',
   // Warm near-black. Pure black on warm paper is the one combination that
   // actually looks cheap: the type goes cold and detaches from the sheet.
   text: '#241F18',
   textSecondary: '#453D31',
-  muted: '#6B6153',
-  // Deliberately darker than the #8A8A8A it replaces (3.0:1 vs 2.8:1 on
-  // canvas). Meta text was already the weakest link; warming it is not a
-  // licence to weaken it further.
-  faint: '#8A8071',
+  muted: '#625849',
+  // Deliberately darker than the #8A8A8A it replaces (3.3:1 vs 2.8:1 on
+  // canvas). Meta text was already the weakest link; warming the palette — and
+  // then deepening it — is not a licence to weaken it further.
+  faint: '#7D7364',
   // Brown-black alpha rather than neutral. A grey hairline over warm paper
   // reads as a seam; this reads as the edge of the sheet.
   border: 'rgba(58,46,30,0.14)',
@@ -117,9 +137,16 @@ export const lightColors: AppThemeColors = {
   graphLine: 'rgba(36,31,24,0.16)',
   // A shade off `background`, so the bar is a surface the content scrolls
   // under rather than more page with a line drawn across it.
-  tabBar: '#EFEADF',
+  tabBar: '#E9E3D4',
   tabBarBorder: 'rgba(58,46,30,0.10)',
   tabBarActive: 'rgba(58,46,30,0.08)',
+  // Near-black on paper: the same family the Atlas is drawn on, one shade up
+  // so it reads as a panel rather than as a hole.
+  deep: '#252119',
+  deepBorder: 'rgba(240,232,214,0.14)',
+  deepInk: '#EFEADE',
+  deepInkMuted: 'rgba(239,234,222,0.62)',
+  deepInkFaint: 'rgba(239,234,222,0.4)',
   // The map is dark in BOTH themes; warmed to match the ink below so light
   // mode's Atlas doesn't sit in a cold grey box.
   mapBackground: '#1A1712',
@@ -150,12 +177,19 @@ export const darkColors: AppThemeColors = {
   tabBar: '#100E0A',
   tabBarBorder: 'rgba(239,234,222,0.09)',
   tabBarActive: 'rgba(239,234,222,0.09)',
+  // Above `background`, not below — see the type. Same role, opposite
+  // direction, identical ink.
+  deep: '#1A1811',
+  deepBorder: 'rgba(239,234,222,0.1)',
+  deepInk: '#EFEADE',
+  deepInkMuted: 'rgba(239,234,222,0.62)',
+  deepInkFaint: 'rgba(239,234,222,0.4)',
   mapBackground: '#0A0907',
   mapBackgroundOverlay: 'rgba(10,9,7,0.88)',
 };
 
 /**
- * Mid-tone accents. Every one stays legible on both paper (#F3EFE6) and ink
+ * Mid-tone accents. Every one stays legible on both paper (#EDE7DA) and ink
  * (#0C0B08), so a single palette serves both themes — which is also the
  * constraint that pins their lightness: anything brighter fails on paper,
  * anything deeper fails on ink.

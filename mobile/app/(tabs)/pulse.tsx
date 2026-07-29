@@ -41,16 +41,18 @@ function LatestRow({ item }: { item: PulseLatestItem }) {
   const showKeyIdea = !!item.keyIdea && item.keyIdea.trim().toLowerCase() !== normalizedTitle;
 
   return (
-    <View style={[styles.latestRow, { borderTopColor: c.borderSubtle }]}>
+    // These rows live inside the card's deep block, so every one of them takes
+    // deep ink. The themed tokens would be near-black here — invisible.
+    <View style={[styles.latestRow, { borderTopColor: c.deepBorder }]}>
       <View style={styles.latestMeta}>
-        <Text variant="monoSmall" style={{ color: c.muted }}>{item.kind.toLowerCase()}</Text>
-        <Text variant="monoSmall" style={{ color: c.faint }}>{date}</Text>
+        <Text variant="monoSmall" style={{ color: c.deepInkMuted }}>{item.kind.toLowerCase()}</Text>
+        <Text variant="monoSmall" style={{ color: c.deepInkFaint }}>{date}</Text>
       </View>
-      <Text variant="serif" color="primary" numberOfLines={2} style={styles.latestTitle}>
+      <Text variant="serif" numberOfLines={2} style={[styles.latestTitle, { color: c.deepInk }]}>
         {item.title}
       </Text>
       {showKeyIdea && (
-        <Text variant="monoSmall" color="muted" numberOfLines={2} style={styles.latestIdea}>
+        <Text variant="monoSmall" numberOfLines={2} style={[styles.latestIdea, { color: c.deepInkMuted }]}>
           {item.keyIdea}
         </Text>
       )}
@@ -138,8 +140,8 @@ function FriendCard({
       )}
 
       {latest.length > 0 && (
-        <View style={styles.latestSection}>
-          <Text variant="monoSmall" style={[styles.latestLabel, { color: c.muted }]}>latest</Text>
+        <View style={[styles.latestSection, { backgroundColor: c.deep, borderColor: c.deepBorder }]}>
+          <Text variant="monoSmall" style={[styles.latestLabel, { color: c.deepInkFaint }]}>latest</Text>
           {latest.map((item) => (
             <LatestRow key={item.id} item={item} />
           ))}
@@ -336,11 +338,14 @@ export default function PulseScreen() {
   const isEmpty = !loading && !error && friends.length === 0 && !searchQuery.trim();
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.canvas }]} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: c.border }]}>
-        <Text variant="wordmark" color="primary">pulse</Text>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.deep }]} edges={['top']}>
+      {/* A dark chrome band, the way the Atlas wears its wordmark on the map.
+          The safe-area strip above takes the same colour, so the notch region
+          reads as part of the header rather than as a pale sliver over it. */}
+      <View style={[styles.header, { borderBottomColor: c.deepBorder, backgroundColor: c.deep }]}>
+        <Text variant="wordmark" style={{ color: c.deepInk }}>pulse</Text>
         <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About pulse">
-          <Text style={{ color: c.faint, fontSize: 16 }}>ⓘ</Text>
+          <Text style={{ color: c.deepInkFaint, fontSize: 16 }}>ⓘ</Text>
         </Pressable>
       </View>
       <InfoModal
@@ -350,6 +355,9 @@ export default function PulseScreen() {
         body="Follow people by their handle and watch a small version of their map, and their latest logs, appear here. Search is always open at the top to find more."
       />
 
+      {/* The page proper. The safe-area container above is `deep` for the
+          header band; this puts the paper back under the content. */}
+      <View style={[styles.body, { backgroundColor: c.canvas }]}>
       {loading && !data ? (
         <AsciiLoader
           fill
@@ -371,20 +379,24 @@ export default function PulseScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={[styles.searchWrap, { borderBottomColor: c.border }]}>
-            <View style={[styles.searchBox, { borderColor: c.border }]}>
-              <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: c.faint, marginRight: Spacing[2], letterSpacing: 1.5 }}>
+            {/* A dark inset, not an outlined box on paper. The search field is
+                where the eye lands first on this tab, so it is the right place
+                to put the app's near-black — the same surface the Atlas is
+                drawn on, recessed into the page rather than floating on it. */}
+            <View style={[styles.searchBox, { borderColor: c.deepBorder, backgroundColor: c.deep }]}>
+              <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: c.deepInkFaint, marginRight: Spacing[2], letterSpacing: 1.5 }}>
                 FIND_
               </Text>
               <TextInput
                 ref={searchInputRef}
-                style={{ flex: 1, fontFamily: FontFamily.mono, fontSize: FontSize.sm, color: c.text, paddingVertical: 0 }}
+                style={{ flex: 1, fontFamily: FontFamily.mono, fontSize: FontSize.sm, color: c.deepInk, paddingVertical: 0 }}
                 value={searchQuery}
                 onChangeText={handleSearchChange}
                 placeholder="find people by handle..."
-                placeholderTextColor={c.faint}
+                placeholderTextColor={c.deepInkFaint}
                 autoCapitalize="none"
               />
-              {searching && <ActivityIndicator size="small" color={c.muted} />}
+              {searching && <ActivityIndicator size="small" color={c.deepInkMuted} />}
             </View>
           </View>
 
@@ -417,6 +429,7 @@ export default function PulseScreen() {
           )}
         </ScrollView>
       )}
+      </View>
     </SafeAreaView>
   );
 }
@@ -428,6 +441,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[6], paddingVertical: Spacing[4],
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  body: { flex: 1 },
   content: { paddingBottom: Spacing[16] },
   searchWrap: { paddingHorizontal: Spacing[6], paddingVertical: Spacing[4], borderBottomWidth: StyleSheet.hairlineWidth },
   searchBox: {
@@ -465,7 +479,14 @@ const styles = StyleSheet.create({
     marginTop: Spacing[4], borderWidth: 1, borderRadius: Radius.md,
     paddingVertical: Spacing[8], alignItems: 'center',
   },
-  latestSection: { marginTop: Spacing[5] },
+  latestSection: {
+    marginTop: Spacing[5],
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing[4],
+    paddingBottom: Spacing[2],
+    paddingTop: Spacing[3],
+  },
   latestLabel: { textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: Spacing[1] },
   latestRow: { paddingTop: Spacing[3], marginTop: Spacing[1], borderTopWidth: StyleSheet.hairlineWidth },
   latestMeta: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing[1] },

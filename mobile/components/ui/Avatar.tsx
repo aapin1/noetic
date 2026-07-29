@@ -11,6 +11,14 @@ interface Props {
   uri?: string | null;
   displayName?: string | null;
   size?: Size;
+  /**
+   * Set when the avatar sits on a `deep` surface. The fallback initials
+   * normally take `c.text`, which is a near-black in light mode and therefore
+   * invisible on a dark panel — the profile hero is exactly that case, and it
+   * only shows for people who haven't set a photo, which is the wrong bug to
+   * ship blind.
+   */
+  onDeep?: boolean;
 }
 
 const sizeMap: Record<Size, number> = {
@@ -36,7 +44,7 @@ function getInitials(displayName?: string | null): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-export function Avatar({ uri, displayName, size = 'md' }: Props) {
+export function Avatar({ uri, displayName, size = 'md', onDeep = false }: Props) {
   const c = useThemeColors();
   const dimension = sizeMap[size];
   const initials = getInitials(displayName);
@@ -49,7 +57,7 @@ export function Avatar({ uri, displayName, size = 'md' }: Props) {
           width: dimension,
           height: dimension,
           borderRadius: dimension / 2,
-          borderColor: c.border,
+          borderColor: onDeep ? c.deepBorder : c.border,
         },
       ]}
     >
@@ -67,7 +75,7 @@ export function Avatar({ uri, displayName, size = 'md' }: Props) {
             {
               fontSize: fontSizeMap[size],
               lineHeight: dimension,
-              color: c.text,
+              color: onDeep ? c.deepInk : c.text,
               fontFamily: FontFamily.mono,
               includeFontPadding: false,
             },

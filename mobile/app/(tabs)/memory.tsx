@@ -99,17 +99,20 @@ export default function ArchiveScreen() {
   const searchActive = searchQuery.trim().length > 0;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.canvas }]} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: c.border }]}>
-        <Text variant="wordmark" color="primary">archive</Text>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.deep }]} edges={['top']}>
+      {/* A dark chrome band, the way the Atlas wears its wordmark on the map.
+          The safe-area strip above takes the same colour, so the notch region
+          reads as part of the header rather than as a pale sliver over it. */}
+      <View style={[styles.header, { borderBottomColor: c.deepBorder, backgroundColor: c.deep }]}>
+        <Text variant="wordmark" style={{ color: c.deepInk }}>archive</Text>
         <View style={styles.headerRight}>
           {folders && folders.length > 0 && (
-            <Text variant="monoSmall" style={{ color: c.faint, fontFamily: FontFamily.mono, marginRight: Spacing[3] }}>
+            <Text variant="monoSmall" style={{ color: c.deepInkFaint, fontFamily: FontFamily.mono, marginRight: Spacing[3] }}>
               {folders.length}
             </Text>
           )}
           <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About archive">
-            <Text style={{ color: c.faint, fontSize: 16 }}>ⓘ</Text>
+            <Text style={{ color: c.deepInkFaint, fontSize: 16 }}>ⓘ</Text>
           </Pressable>
         </View>
       </View>
@@ -122,26 +125,30 @@ export default function ArchiveScreen() {
 
       {(folders?.length ?? 0) > 0 && (
         <View style={styles.searchWrap}>
-          <View style={[styles.searchBox, { borderColor: c.border }]}>
-            <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: c.faint, marginRight: Spacing[2], letterSpacing: 1.5 }}>
+          {/* A dark inset, not an outlined box on paper. The search field is
+              where the eye lands first on this tab, so it is the right place to
+              put the app's near-black — the same surface the Atlas is drawn on,
+              recessed into the page rather than floating on it. */}
+          <View style={[styles.searchBox, { borderColor: c.deepBorder, backgroundColor: c.deep }]}>
+            <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: c.deepInkFaint, marginRight: Spacing[2], letterSpacing: 1.5 }}>
               FIND_
             </Text>
             <TextInput
-              style={{ flex: 1, fontFamily: FontFamily.mono, fontSize: FontSize.sm, color: c.text, paddingVertical: 0 }}
+              style={{ flex: 1, fontFamily: FontFamily.mono, fontSize: FontSize.sm, color: c.deepInk, paddingVertical: 0 }}
               value={searchQuery}
               onChangeText={handleSearchChange}
               placeholder="search everything you've saved…"
-              placeholderTextColor={c.faint}
+              placeholderTextColor={c.deepInkFaint}
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="search"
               accessibilityLabel="Search your captures"
             />
             {searching ? (
-              <LoadingDots size={4} />
+              <LoadingDots size={4} color={c.deepInkMuted} />
             ) : searchActive ? (
               <Pressable onPress={() => handleSearchChange('')} hitSlop={10} accessibilityLabel="Clear search">
-                <Text style={{ color: c.faint, fontSize: 14 }}>✕</Text>
+                <Text style={{ color: c.deepInkMuted, fontSize: 14 }}>✕</Text>
               </Pressable>
             ) : null}
           </View>
@@ -198,6 +205,7 @@ export default function ArchiveScreen() {
       )}
 
       <ScrollView
+        style={{ backgroundColor: c.canvas }}
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={c.text} />

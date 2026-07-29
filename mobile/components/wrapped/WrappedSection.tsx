@@ -263,10 +263,13 @@ function RevealCard({
         anim,
       ]}
     >
-      {/* Each card carries its own hue on its leading edge — the same mark a
-          pulse card uses for a friend. Enough to tell one panel from the next
-          while scrolling; not enough to turn the page into a paint chart. */}
-      {accent && <View style={[styles.cardAccent, { backgroundColor: accent }]} />}
+      {/* A single dot in the corner, not a rule down the edge. The rule was
+          too much: a full-height bar in a different hue on every card turned
+          scrolling into a run of coloured stripes shuffling past, which is
+          louder than the cards it was meant to distinguish. A dot is the same
+          mark the Atlas and the archive already use for "this belongs to
+          something", at the size those use it. */}
+      {accent && <View style={[styles.cardDot, { backgroundColor: accent }]} />}
       {children}
     </Animated.View>
   );
@@ -1837,12 +1840,13 @@ const styles = StyleSheet.create({
     marginBottom: Spacing[3],
     overflow: 'hidden',
   },
-  cardAccent: {
+  cardDot: {
     position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 3,
+    top: Spacing[4],
+    right: Spacing[4],
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   cardTitle: {
     lineHeight: 26,

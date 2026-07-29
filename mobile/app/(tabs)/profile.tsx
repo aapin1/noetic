@@ -10,7 +10,7 @@ import { SettingsIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -82,15 +82,19 @@ export default function YouScreen() {
   });
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.canvas }]} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: c.border }]}>
-        <Text variant="wordmark">you</Text>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.deep }]} edges={['top']}>
+      {/* A dark chrome band, the way the Atlas wears its wordmark on the map.
+          The safe-area strip above takes the same colour, so the notch region
+          reads as part of the header rather than as a pale sliver over it. */}
+      <View style={[styles.header, { borderBottomColor: c.deepBorder, backgroundColor: c.deep }]}>
+        <Text variant="wordmark" style={{ color: c.deepInk }}>you</Text>
         <Pressable onPress={() => router.push('/settings')} accessibilityLabel="Settings">
-          <SettingsIcon size={22} color={c.text} />
+          <SettingsIcon size={22} color={c.deepInkMuted} />
         </Pressable>
       </View>
       <Animated.ScrollView
         ref={scroller}
+        style={{ backgroundColor: c.canvas }}
         contentContainerStyle={styles.content}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
@@ -99,16 +103,20 @@ export default function YouScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.hero}>
+        {/* The page's anchor, cut from the same near-black the Atlas is drawn
+            on. This tab was paper all the way down while the map half of the
+            app is a dark field — one deep panel at the top is what ties the two
+            together, and it works in light mode, which is where the gap was. */}
+        <View style={[styles.hero, { backgroundColor: c.deep, borderColor: c.deepBorder }]}>
           <EditableAvatar profile={p} onChanged={handleAvatarChanged} />
-          <Text variant="h3" style={{ marginTop: Spacing[4] }}>
+          <Text variant="h3" style={{ marginTop: Spacing[4], color: c.deepInk }}>
             {p?.displayName ?? '—'}
           </Text>
-          <Text variant="mono" color="muted">
+          <Text variant="mono" style={{ color: c.deepInkMuted }}>
             @{p?.handle ?? '—'}
           </Text>
           {p?.bio ? (
-            <Text variant="serif" color="secondary" style={styles.bio}>
+            <Text variant="serif" style={[styles.bio, { color: c.deepInkMuted }]}>
               {p.bio}
             </Text>
           ) : null}
@@ -153,7 +161,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   content: { paddingBottom: Spacing[16] },
-  hero: { alignItems: 'center', paddingHorizontal: Spacing[6], paddingVertical: Spacing[8] },
+  hero: {
+    alignItems: 'center',
+    paddingHorizontal: Spacing[6],
+    paddingVertical: Spacing[8],
+    marginHorizontal: Spacing[4],
+    marginTop: Spacing[4],
+    borderRadius: Radius.xl,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
   bio: { marginTop: Spacing[3], textAlign: 'center', maxWidth: 320 },
   editButtonWrap: { paddingHorizontal: Spacing[6], marginTop: Spacing[6] },
 });
