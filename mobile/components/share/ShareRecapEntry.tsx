@@ -5,6 +5,7 @@ import { ChevronRightIcon, Share2Icon } from 'lucide-react-native';
 import { Accents, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { SectionKicker } from '@/components/ui/SectionKicker';
 
 /**
  * Bottom-of-profile entry point into the recap composer. Styled to sit beside
@@ -18,9 +19,7 @@ export function ShareRecapEntry() {
 
   return (
     <View style={styles.wrap}>
-      <Text variant="label" color="muted" style={styles.kicker}>
-        share
-      </Text>
+      <SectionKicker label="share" accent={accent} style={styles.kicker} />
       <Pressable
         onPress={() => router.push('/share-recap' as never)}
         accessibilityRole="button"

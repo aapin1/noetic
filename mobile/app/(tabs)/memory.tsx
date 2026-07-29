@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { FontFamily, FontSize, Radius, Spacing, accentForKey } from '@/constants/theme';
+import { Accents, FontFamily, FontSize, Radius, Spacing, accentForKey } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
@@ -39,6 +39,9 @@ function sortFolders(folders: ArchiveFolderSummary[], sort: SortKey): ArchiveFol
       return copy.sort((a, b) => b.latestActivity.localeCompare(a.latestActivity));
   }
 }
+
+const VIEW_ACCENT = Accents.slate;
+const SORT_ACCENT = Accents.amber;
 
 export default function ArchiveScreen() {
   const c = useThemeColors();
@@ -156,6 +159,12 @@ export default function ArchiveScreen() {
 
       {!searchActive && folders && folders.length > 0 && (
         <View style={styles.sortRow}>
+          {/* Selected pills are tinted, not filled with `inverse`. `inverse` is
+              a near-black in light mode, so this row put two or three dark
+              slabs directly under the dark header band — the same colour doing
+              two different jobs a few pixels apart. The tint is the topic-badge
+              recipe, which is what the rest of the app uses to say "this one".
+              Dark on this screen belongs to the header and nowhere else. */}
           {/* View toggle: topical folders vs the chronological diary. */}
           {(['diary', 'folders'] as ViewKey[]).map((v) => {
             const selected = view === v;
@@ -165,13 +174,13 @@ export default function ArchiveScreen() {
                 onPress={() => setView(v)}
                 style={[
                   styles.sortPill,
-                  { borderColor: selected ? c.inverse : c.border },
-                  selected && { backgroundColor: c.inverse },
+                  { borderColor: selected ? `${VIEW_ACCENT}66` : c.border },
+                  selected && { backgroundColor: `${VIEW_ACCENT}1F` },
                 ]}
                 accessibilityRole="button"
                 accessibilityLabel={v === 'diary' ? 'Show diary view' : 'Show folder view'}
               >
-                <Text variant="monoSmall" color={selected ? 'inverse' : 'secondary'}>
+                <Text variant="monoSmall" style={selected ? { color: VIEW_ACCENT } : undefined} color="secondary">
                   {v}
                 </Text>
               </Pressable>
@@ -188,11 +197,11 @@ export default function ArchiveScreen() {
                     onPress={() => setSort(opt.key)}
                     style={[
                       styles.sortPill,
-                      { borderColor: selected ? c.inverse : c.border },
-                      selected && { backgroundColor: c.inverse },
+                      { borderColor: selected ? `${SORT_ACCENT}66` : c.border },
+                      selected && { backgroundColor: `${SORT_ACCENT}1F` },
                     ]}
                   >
-                    <Text variant="monoSmall" color={selected ? 'inverse' : 'secondary'}>
+                    <Text variant="monoSmall" style={selected ? { color: SORT_ACCENT } : undefined} color="secondary">
                       {opt.label}
                     </Text>
                   </Pressable>

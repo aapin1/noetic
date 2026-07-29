@@ -107,7 +107,7 @@ export default function YouScreen() {
             first card in the stack rather than as a slab dropped on top of
             it — the accent dot is the same mark the wrapped cards carry. */}
         <View style={[styles.hero, { backgroundColor: c.surface, borderColor: c.border }]}>
-          <View style={[styles.heroDot, { backgroundColor: Accents.ochre }]} />
+          <View style={[styles.heroDot, { backgroundColor: Accents.slate }]} />
           <EditableAvatar profile={p} onChanged={handleAvatarChanged} />
           <Text variant="h3" style={{ marginTop: Spacing[4] }}>
             {p?.displayName ?? '—'}
@@ -142,6 +142,7 @@ export default function YouScreen() {
             variant="secondary"
             size="md"
             fullWidth
+            accent={Accents.ochre}
             onPress={() => router.push('/profile/edit' as never)}
           />
         </View>

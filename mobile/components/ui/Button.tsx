@@ -30,6 +30,14 @@ interface Props {
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
   style?: ViewStyle;
+  /**
+   * Tints a `secondary` button with a subject colour instead of leaving it the
+   * neutral grey block. Same recipe as a topic badge — a wash, a half-strength
+   * border and the label in full — so an accented button reads as part of the
+   * same family as everything else on the page rather than as the one
+   * monochrome control left over from before the palette existed.
+   */
+  accent?: string;
   accessibilityLabel?: string;
   accessibilityHint?: string;
 }
@@ -47,6 +55,7 @@ export function Button({
   leftIcon,
   rightIcon,
   style,
+  accent,
   accessibilityLabel,
   accessibilityHint,
 }: Props) {
@@ -55,10 +64,12 @@ export function Button({
   const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
   const dynamic = useMemo(() => {
+    const tinted = variant === 'secondary' && !!accent;
     const labelOnPrimary = variant === 'primary' || variant === 'danger' ? c.inverseText : c.text;
+    const labelColor = tinted ? accent! : labelOnPrimary;
     return {
-      labelColor: labelOnPrimary,
-      spinnerColor: labelOnPrimary,
+      labelColor,
+      spinnerColor: labelColor,
       bg:
         variant === 'primary'
           ? c.inverse
@@ -69,11 +80,11 @@ export function Button({
             // one control on a screen that still looked untouched. It is a
             // button; it gets a body.
             : variant === 'secondary'
-              ? c.elevated
+              ? (tinted ? `${accent!}1F` : c.elevated)
               : 'transparent',
-      border: variant === 'secondary' ? c.border : 'transparent',
+      border: variant === 'secondary' ? (tinted ? `${accent!}66` : c.border) : 'transparent',
     };
-  }, [c, variant]);
+  }, [c, variant, accent]);
 
   const handlePressIn = () => {
     opacity.value = withTiming(0.78, { duration: 120 });

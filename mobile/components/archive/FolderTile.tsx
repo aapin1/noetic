@@ -7,12 +7,13 @@ import { FolderIcon } from '@/components/archive/FolderIcon';
 import type { ArchiveFolderSummary } from '@/types/api';
 
 export function FolderTile({ folder, onPress }: { folder: ArchiveFolderSummary; onPress: () => void }) {
+  const accent = accentForKey(folder.topicId);
   return (
     <Pressable onPress={onPress} style={styles.tile} accessibilityRole="button" accessibilityLabel={folder.name}>
       <View style={styles.iconWrap}>
-        <FolderIcon size={56} accent={accentForKey(folder.topicId)} />
+        <FolderIcon size={56} accent={accent} />
         <View style={styles.countBadge}>
-          <Badge label={String(folder.count)} variant="count" selected small />
+          <Badge label={String(folder.count)} variant="count" accent={accent} selected small />
         </View>
       </View>
       <Text variant="label" color="secondary" numberOfLines={1} style={styles.name}>

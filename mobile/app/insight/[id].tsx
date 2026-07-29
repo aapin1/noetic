@@ -9,6 +9,7 @@ import { useApiQuery } from '@/hooks/useApiQuery';
 import { Accents, FontFamily, FontSize, Radius, Spacing, accentForKey } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { SectionKicker } from '@/components/ui/SectionKicker';
 import { Badge } from '@/components/ui/Badge';
 import { InsightLine } from '@/components/InsightLine';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -41,10 +42,7 @@ function Section({
   return (
     <View style={[styles.section, { backgroundColor: c.surface, borderColor: c.border }]}>
       <View style={styles.sectionHead}>
-        <View style={styles.sectionKicker}>
-          <View style={[styles.sectionTick, { backgroundColor: accent }]} />
-          <Text variant="label" style={{ color: accent }}>{kicker}</Text>
-        </View>
+        <SectionKicker label={kicker} accent={accent} />
         {right}
       </View>
       <Text variant="h3" style={styles.sectionTitle}>{title}</Text>
@@ -496,10 +494,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     minHeight: 20,
   },
-  sectionKicker: { flexDirection: 'row', alignItems: 'center' },
-  // A short bar, not a dot: it sits beside a line of tracked-out mono, and a
-  // dot beside upper-case reads as punctuation where a bar reads as a rule.
-  sectionTick: { width: 12, height: 2, borderRadius: 1, marginRight: Spacing[2] },
   sectionTitle: { marginTop: Spacing[2] },
   aboutHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   editBtn: { padding: Spacing[2] },

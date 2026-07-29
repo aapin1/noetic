@@ -31,6 +31,7 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Text } from '@/components/ui/Text';
+import { SectionKicker } from '@/components/ui/SectionKicker';
 import { Avatar } from '@/components/ui/Avatar';
 import { Confetti } from '@/components/ui/Confetti';
 import { SponsoredCard } from '@/components/ui/SponsoredCard';
@@ -1795,9 +1796,7 @@ export function WrappedSection({
       }}
       style={styles.section}
     >
-      <Text variant="label" color="muted" style={styles.kicker}>
-        your mneme, wrapped
-      </Text>
+      <SectionKicker label="your mneme, wrapped" accent={accent} style={styles.kicker} />
 
       {spiced(cards).map((card, i) => (
         <React.Fragment key={card.key}>

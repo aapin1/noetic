@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { FontSize, Radius, Spacing } from '@/constants/theme';
+import { INK_ON_ACCENT, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 
@@ -40,7 +40,12 @@ export function Badge({ label, variant = 'topic', selected = false, onPress, sma
         borderColor: 'transparent' as const,
       },
       count: {
-        backgroundColor: c.inverse,
+        // The folder tiles' count chip. `inverse` is a near-black in light
+        // mode, which put a dark dot on every folder in the grid — the same
+        // colour the header band uses, doing a completely different job a
+        // few hundred pixels below it. With an accent it belongs to its
+        // folder instead.
+        backgroundColor: accent ?? c.inverse,
         borderColor: 'transparent' as const,
       },
       edge: {
@@ -49,8 +54,8 @@ export function Badge({ label, variant = 'topic', selected = false, onPress, sma
         borderRadius: Radius.xs,
       },
       selected: {
-        backgroundColor: c.inverse,
-        borderColor: c.inverse,
+        backgroundColor: accent ?? c.inverse,
+        borderColor: accent ?? c.inverse,
       },
     }),
     [c, accent],
@@ -74,7 +79,8 @@ export function Badge({ label, variant = 'topic', selected = false, onPress, sma
         // variant fills with `inverse`, and the accent would not clear it.
         style={[
           small ? styles.labelSmall : null,
-          accent && !selected ? { color: accent } : null,
+          // On a filled accent the label has to clear the fill, not match it.
+          accent ? { color: selected ? INK_ON_ACCENT : accent } : null,
         ]}
       >
         {variant === 'edge' ? label.toUpperCase() : label}
