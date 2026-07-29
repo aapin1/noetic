@@ -3,7 +3,7 @@ import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { buildIdentitySummary } from "@/server/profile-summary";
 import type { DbClient } from "@/server/db";
-import { buildTasteVectors, suggestSimilarUsers } from "@/server/services/taste";
+import { buildTasteVectors } from "@/server/services/taste";
 import { viewerFollowsUser, visibleActivityWhere, visibleLogWhere, visibleRankingWhere, visibleReviewWhere } from "@/server/viewer";
 
 async function topicNames(db: DbClient, topicIds: string[]) {
@@ -176,7 +176,14 @@ export async function getComposedProfile(args: {
       orderBy: { loggedAt: "desc" },
       take: 10,
     }),
-    isOwner ? suggestSimilarUsers({ userId: user.id, db }) : [],
+    // Always empty. `suggestSimilarUsers` compared this user against 50
+    // candidates SEQUENTIALLY, each comparison running its own `take: 500`
+    // taste-vector queries — by far the slowest thing on the owner profile,
+    // and nothing has ever read the `similarPeople` field it fed. Non-owner
+    // profiles already returned [] here, so this is the shape both paths had.
+    // Restore the call (batched, and behind its own endpoint) if the
+    // similar-people feature actually ships.
+    [],
   ]);
 
   return {
