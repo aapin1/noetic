@@ -496,16 +496,16 @@ const styles = StyleSheet.create({
 
   stateBlock: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing[8], paddingBottom: Spacing[16] },
   stateBody: {
-    color: 'rgba(236,236,236,0.45)',
+    color: 'rgba(240,232,214,0.57)',
     textAlign: 'center',
     marginTop: Spacing[3],
     lineHeight: 20,
   },
 
   threshold: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing[8], paddingBottom: Spacing[12] },
-  thresholdTitle: { color: 'rgba(236,236,236,0.92)', textAlign: 'center', marginTop: Spacing[5] },
+  thresholdTitle: { color: 'rgba(240,232,214,0.94)', textAlign: 'center', marginTop: Spacing[5] },
   thresholdPulse: {
-    color: 'rgba(236,236,236,0.38)', textAlign: 'center',
+    color: 'rgba(240,232,214,0.52)', textAlign: 'center',
     marginTop: Spacing[2], letterSpacing: 1,
   },
   thresholdList: { marginTop: Spacing[10], gap: Spacing[2] },
@@ -519,7 +519,7 @@ const styles = StyleSheet.create({
   seeAll: { alignSelf: 'center', marginTop: Spacing[10], padding: Spacing[2] },
 
   sectionWhisper: {
-    color: 'rgba(236,236,236,0.4)',
+    color: 'rgba(240,232,214,0.53)',
     paddingHorizontal: Spacing[6],
     marginTop: Spacing[2],
     marginBottom: Spacing[5],

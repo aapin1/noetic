@@ -308,13 +308,13 @@ const styles = StyleSheet.create({
   faultLabels: { flexDirection: 'row' },
   faultLabelA: {
     flex: 1,
-    color: 'rgba(236,236,236,0.88)',
+    color: 'rgba(240,232,214,0.91)',
     textAlign: 'right',
     paddingRight: Spacing[6],
   },
   faultLabelB: {
     flex: 1,
-    color: 'rgba(236,236,236,0.88)',
+    color: 'rgba(240,232,214,0.91)',
     textAlign: 'left',
     paddingLeft: Spacing[6],
   },
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[4],
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 999,
-    backgroundColor: 'rgba(10,10,12,0.92)',
+    backgroundColor: 'rgba(30,27,22,0.92)',
   },
 
   confRow: { paddingHorizontal: PAD, marginBottom: Spacing[8], height: CONF_H },

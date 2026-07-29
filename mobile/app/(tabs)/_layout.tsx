@@ -9,14 +9,39 @@ import {
   UsersIcon,
   ZapIcon,
 } from 'lucide-react-native';
+import { Radius } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { SocraticProvider } from '@/contexts/SocraticContext';
 import { api } from '@/lib/api';
 import { prefetchQuery } from '@/hooks/useApiQuery';
 
-function TabBarIcon({ color, icon: Icon }: { color: ColorValue; icon: React.ElementType }) {
-  return <Icon size={22} color={color as string} strokeWidth={1.4} />;
+/**
+ * A tab: its icon on a rounded fill that only appears when the tab is focused.
+ *
+ * The bar used to signal the current tab purely by tinting one of five
+ * identical icons — the iOS 7 convention, and the reason it read as dated. A
+ * filled shape behind the active icon is doing something a colour change can't:
+ * it gives the selection a body, so the eye finds it as an object rather than
+ * having to compare five glyphs for tone. The icon also thickens a notch when
+ * focused, which carries the state for anyone who can't rely on the tint.
+ *
+ * A rounded rectangle, not a circle: circles read as buttons, and these are
+ * positions in a set. The radius matches the app's `Radius.lg` cards.
+ */
+function TabBarIcon({
+  color, icon: Icon, focused, activeBg,
+}: {
+  color: ColorValue;
+  icon: React.ElementType;
+  focused: boolean;
+  activeBg: string;
+}) {
+  return (
+    <View style={[styles.iconSlot, focused && { backgroundColor: activeBg }]}>
+      <Icon size={21} color={color as string} strokeWidth={focused ? 1.9 : 1.4} />
+    </View>
+  );
 }
 
 function TabsRoot() {
@@ -44,19 +69,28 @@ function TabsRoot() {
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: c.text,
-          tabBarInactiveTintColor: c.faint,
+          // `muted`, not `faint`. An unselected tab is a destination the user
+          // can still read, not a disabled control — at `faint` the four
+          // inactive icons were most of the bar and all of them were mumbling.
+          tabBarInactiveTintColor: c.muted,
           // Icons only — the labels crowded the bar; the title still names the
           // tab for screen readers via accessibility.
           tabBarShowLabel: false,
           tabBarStyle: {
             backgroundColor: c.tabBar,
-            borderTopWidth: 1,
+            // A hairline, not a 1px rule. At 1px against the old neutral border
+            // this was a hard line ruled across the bottom of every screen;
+            // the bar now separates by tone (`tabBar` sits off `background`)
+            // and the edge only has to confirm it.
+            borderTopWidth: StyleSheet.hairlineWidth,
             borderTopColor: c.tabBarBorder,
+            // Unchanged: the Atlas lays its FAB and summary strip out against
+            // this exact height (TAB_H in (tabs)/index.tsx).
             height: Platform.OS === 'ios' ? 86 : 68,
-            paddingTop: 14,
+            paddingTop: 10,
           },
           tabBarItemStyle: {
-            paddingVertical: 4,
+            paddingVertical: 0,
           },
         }}
       >
@@ -64,35 +98,45 @@ function TabsRoot() {
           name="index"
           options={{
             title: 'atlas',
-            tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={GitGraphIcon} />,
+            tabBarIcon: ({ color, focused }) => (
+              <TabBarIcon color={color} icon={GitGraphIcon} focused={focused} activeBg={c.tabBarActive} />
+            ),
           }}
         />
         <Tabs.Screen
           name="mind"
           options={{
             title: 'mind',
-            tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={ZapIcon} />,
+            tabBarIcon: ({ color, focused }) => (
+              <TabBarIcon color={color} icon={ZapIcon} focused={focused} activeBg={c.tabBarActive} />
+            ),
           }}
         />
         <Tabs.Screen
           name="memory"
           options={{
             title: 'archive',
-            tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={ListIcon} />,
+            tabBarIcon: ({ color, focused }) => (
+              <TabBarIcon color={color} icon={ListIcon} focused={focused} activeBg={c.tabBarActive} />
+            ),
           }}
         />
         <Tabs.Screen
           name="pulse"
           options={{
             title: 'pulse',
-            tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={UsersIcon} />,
+            tabBarIcon: ({ color, focused }) => (
+              <TabBarIcon color={color} icon={UsersIcon} focused={focused} activeBg={c.tabBarActive} />
+            ),
           }}
         />
         <Tabs.Screen
           name="profile"
           options={{
             title: 'you',
-            tabBarIcon: ({ color }) => <TabBarIcon color={color} icon={UserIcon} />,
+            tabBarIcon: ({ color, focused }) => (
+              <TabBarIcon color={color} icon={UserIcon} focused={focused} activeBg={c.tabBarActive} />
+            ),
           }}
         />
       </Tabs>
@@ -110,4 +154,11 @@ export default function TabsLayout() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  iconSlot: {
+    width: 46,
+    height: 32,
+    borderRadius: Radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

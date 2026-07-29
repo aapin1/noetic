@@ -8,7 +8,11 @@ import { MapBackdrop } from '@/components/ui/MapBackdrop';
 
 // Full-screen stage for a Mind detail visualization. Mind's canvas is dark in
 // both themes (Atlas convention), so the shell is too — on-stage text is light.
-export const stageInk = (o: number) => `rgba(236,236,236,${o})`;
+//
+// Warm, matching MAP_CHROME_ICON and the rest of the ink that sits on a dark
+// map surface. A neutral grey here read as a different app the moment the
+// palette went warm, and Mind shares its backdrop with the Atlas.
+export const stageInk = (o: number) => `rgba(240,232,214,${o})`;
 
 export function DetailShell({
   typeLabel,

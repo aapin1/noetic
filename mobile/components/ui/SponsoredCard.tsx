@@ -161,11 +161,11 @@ export function SponsoredCard({ tone = 'auto' }: { tone?: 'auto' | 'dark' } = {}
 
   const dark = tone === 'dark';
   const surface = dark ? 'rgba(255,255,255,0.05)' : c.surface;
-  const border = dark ? 'rgba(236,236,236,0.14)' : c.border;
+  const border = dark ? 'rgba(240,232,214,0.33)' : c.border;
   // On a dark stage the themed text colors go near-black, so drive the ad's
   // copy off the same light ink the rest of that stage uses.
-  const ink = dark ? { color: 'rgba(236,236,236,0.92)' } : undefined;
-  const inkMuted = dark ? { color: 'rgba(236,236,236,0.45)' } : undefined;
+  const ink = dark ? { color: 'rgba(240,232,214,0.94)' } : undefined;
+  const inkMuted = dark ? { color: 'rgba(240,232,214,0.57)' } : undefined;
 
   return (
     <View style={styles.wrap}>

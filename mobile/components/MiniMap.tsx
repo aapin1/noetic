@@ -2,26 +2,9 @@ import React, { useId, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, Line, Rect, RadialGradient, Stop } from 'react-native-svg';
 import { Radius } from '@/constants/theme';
+import { MAP_BG, MAP_NODE, clusterColorFor } from '@/constants/mapPalette';
 import type { PulseMapCluster, PulseMapEdge, PulseMapNode } from '@/types/api';
 
-// Same cluster palette the full atlas uses, so a friend's regions read in the
-// same colors here as they would on their own map.
-const CLUSTER_PALETTE = [
-  '#6B9FD4',
-  '#9B84CC',
-  '#7EC8A0',
-  '#E8A87C',
-  '#E87878',
-  '#78C8C8',
-  '#C4A882',
-  '#A0B8D4',
-  '#CC84A0',
-  '#A8CC84',
-];
-
-// The map is always dark, matching the atlas tab regardless of app theme.
-const MAP_BG = '#060606';
-const MAP_NODE = 'rgba(236,236,236,0.85)';
 const MAJOR_CLUSTER_MIN = 2;
 // Only the densest regions get a halo; past that they overlap into mush.
 const HALO_CLUSTERS = 4;
@@ -46,12 +29,17 @@ export function MiniMap({ nodes, clusters, edges = [], width, height = 148 }: Pr
   // per friend — namespace the gradients so they can't capture each other's.
   const uid = useId().replace(/:/g, '');
 
+  // Colour by topic id, not by rank in the count-sorted list. Rank-indexing
+  // meant a friend's regions were coloured by how they ranked ON THIS CARD, so
+  // the same topic came out a different colour on their own atlas — and shifted
+  // hue here every time one region overtook another. Sorted only to decide
+  // which regions are dense enough to earn a halo.
   const colorByTopic = useMemo(() => {
     const map = new Map<string, string>();
     clusters
       .filter((cl) => cl.count >= MAJOR_CLUSTER_MIN)
       .sort((a, b) => b.count - a.count)
-      .forEach((cl, i) => map.set(cl.topicId, CLUSTER_PALETTE[i % CLUSTER_PALETTE.length]));
+      .forEach((cl) => map.set(cl.topicId, clusterColorFor(cl.topicId)));
     return map;
   }, [clusters]);
 

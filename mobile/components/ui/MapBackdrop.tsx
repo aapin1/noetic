@@ -5,11 +5,11 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
-// The map's ink — a hair below MAP_NODE in app/(tabs)/index.tsx, so the grid
-// reads as the unlit version of the points that sit on top of it. Deliberately
-// not raised alongside MAP_NODE: this surface is shared with every Mind screen,
-// and the grid's whole job is to stay under the notice threshold.
-const BACKDROP_INK = 'rgba(236,236,236,0.9)';
+// The grid's ink: the same warm light the rest of the map chrome is drawn in
+// (see constants/mapPalette), so the backdrop belongs to the surface its points
+// sit on. Its real weight comes from the 0.04 and 0.012–0.03 opacities below —
+// this stays under the notice threshold by design.
+const BACKDROP_INK = 'rgba(240,232,214,0.92)';
 
 /**
  * The Atlas backdrop: base tone + dot grid + vertical wash. This is THE

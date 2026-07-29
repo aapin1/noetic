@@ -38,6 +38,22 @@ import { api } from '@/lib/api';
 import { takeRecentSharedCapture } from '@/lib/lastShared';
 import { prefetchQuery, useApiQuery } from '@/hooks/useApiQuery';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
+import {
+  CLUSTER_PALETTE,
+  GLASS_ACTIVE_BG,
+  GLASS_BG,
+  GLASS_BORDER,
+  GLASS_BORDER_GLOW,
+  GLASS_SEP,
+  MAP_BG,
+  MAP_CHROME_ICON,
+  MAP_CHROME_ICON_ACTIVE,
+  MAP_LINE,
+  MAP_NODE,
+  RECENT_NODE_COLOR,
+  clusterColorFor,
+  hashId,
+} from '@/constants/mapPalette';
 import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
 import { useSocratic } from '@/contexts/SocraticContext';
 import { Text } from '@/components/ui/Text';
@@ -73,33 +89,8 @@ const INFO_STRIP_H = 48;
 // Gap between the strip and the capture FAB floating above it.
 const FAB_GAP = Spacing[3];
 
-// Always-dark map colors (map is always dark regardless of theme)
-const MAP_BG = '#060606';
-// Fully opaque, and a touch brighter than the old 90%-alpha grey. A node is the
-// smallest mark on the map, so any alpha it carries is spent before the eye can
-// resolve it — the points read as smudges rather than as points. Every dimming
-// the map does (search, focus, timeline, zoom fade) is applied on top of this,
-// so nothing is lost by starting from a solid ink.
-const MAP_NODE = 'rgba(246,246,246,1)';
-// Faintly cool rather than pure white: at edge alphas a neutral grey goes muddy
-// against the near-black, where a hint of blue stays crisp. Opaque for the same
-// reason as MAP_NODE — strokeOpacity carries the whole falloff (see below).
-const MAP_LINE = 'rgba(222,230,241,1)';
 
-// One glass recipe for everything floating over the map — the toolbar pill, the
-// capture FAB, the bottom summary strip — so they read as the same surface
-// rather than as unrelated controls.
-//
-// The map is dark in BOTH themes (light mode's mapBackground is #1E1E1E, dark
-// mode's is #060606), so these are safe to hardcode. The same 0.72 alpha is
-// what makes one constant serve the FAB in both modes: over light mode's
-// #1E1E1E it composites to a grey that matches the toolbar buttons, and over
-// dark mode's #060606 it lands at near-black.
-const GLASS_BG = 'rgba(10,10,10,0.72)';
-const GLASS_BORDER = 'rgba(255,255,255,0.12)';
-// Brighter than GLASS_BORDER: the FAB is the primary action, so its edge
-// catches light where the passive surfaces' do not.
-const GLASS_BORDER_GLOW = 'rgba(236,236,236,0.3)';
+
 // Green accent shared by every discovery/multi-select affordance.
 const DISCOVERY_ACCENT = '#7EC8A0';
 // Stable identity for an edge, independent of its array index.
@@ -364,25 +355,6 @@ const DRIFT_SCALE = 0.0015;
 // takes the edge off the wide view while leaving the points solid.
 const fadeForZoom = (z: number) => Math.max(0.9, Math.min(1, (z - 0.15) / 0.75));
 
-// Accent hues, not decoration. The map is monochrome apart from these, so a
-// cluster's colour is the only thing that says "this region is one subject" —
-// it has to survive being a 4px dot on black. The palette used to be pulled
-// ~35% toward its own luma to stay quiet, and at that chroma the dots read as
-// dirty white instead of as colour. These sit near full chroma but stay
-// mid-luminance, so a cluster is unmistakable up close and still resolves as
-// texture, not confetti, when the whole map is in frame.
-const CLUSTER_PALETTE = [
-  '#6E9AD1',
-  '#9885C9',
-  '#7FC7A2',
-  '#DFA26B',
-  '#D97878',
-  '#79C2C2',
-  '#C6AC7F',
-  '#9BB4D1',
-  '#C4849B',
-  '#A8CC86',
-];
 
 // Recent threshold: 14 days
 const RECENT_MS = 14 * 24 * 60 * 60 * 1000;
@@ -399,7 +371,6 @@ const RECENT_MS = 14 * 24 * 60 * 60 * 1000;
 // edge to see. It's also one fewer element per node, and a third of the glow
 // area — the vector layer's re-rasterization cost scales with exactly this (see
 // RECOMMIT_ZOOM_IN_PINCH), so it buys smoothness during a pinch too.
-const RECENT_NODE_COLOR = '#E3B87C';
 const NODE_GLOW_COLORS: string[] = [...CLUSTER_PALETTE, RECENT_NODE_COLOR, MAP_NODE];
 // Index-based ids: the colours themselves ('#7393B3', 'rgba(...)') aren't valid
 // SVG id characters.
@@ -833,14 +804,6 @@ function useAmbientDrift() {
 
 // ── Layout helpers ─────────────────────────────────────────────────
 
-function hashId(id: string): number {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) {
-    h = (Math.imul(31, h) + id.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h) || 1;
-}
-
 function seededRng(seed: number) {
   let v = seed % 233280 || 1;
   return () => {
@@ -849,13 +812,6 @@ function seededRng(seed: number) {
   };
 }
 
-// Color is a stable function of the topic id — NEVER of the cluster's rank in
-// a count-sorted list. Rank-indexed colors reshuffled every cluster's hue
-// whenever relative counts changed (each new capture could recolor the whole
-// map); a hash keeps a topic's color fixed for the life of the account.
-function clusterColorFor(topicId: string): string {
-  return CLUSTER_PALETTE[hashId(topicId) % CLUSTER_PALETTE.length]!;
-}
 
 const MAJOR_CLUSTER_MIN = 2;
 
@@ -1412,7 +1368,7 @@ function Toolbar({
   showRecenter?: boolean;
   c: AppThemeColors;
 }) {
-  const iconColor = (active: boolean) => (active ? c.text : c.muted);
+  const iconColor = (active: boolean) => (active ? MAP_CHROME_ICON_ACTIVE : MAP_CHROME_ICON);
   const tools: { id: Exclude<ToolMode, 'default'>; label: string; Icon: LucideIcon }[] = [
     { id: 'discover', label: 'Discover connections', Icon: Crosshair },
     { id: 'search', label: 'Find on map', Icon: Search },
@@ -1475,13 +1431,13 @@ function Toolbar({
             accessibilityRole="button"
           >
             <Svg width={17} height={17} viewBox="0 0 18 18">
-              <Rect x={1.5} y={1.5} width={15} height={15} fill="none" stroke={c.muted} strokeWidth={1} strokeDasharray="3 2.5" />
-              <Circle cx={9} cy={9} r={1.5} fill={c.muted} />
-              <Line x1={9} y1={4} x2={9} y2={14} stroke={c.muted} strokeWidth={0.7} strokeDasharray="1.5 1.5" />
-              <Line x1={4} y1={9} x2={14} y2={9} stroke={c.muted} strokeWidth={0.7} strokeDasharray="1.5 1.5" />
+              <Rect x={1.5} y={1.5} width={15} height={15} fill="none" stroke={MAP_CHROME_ICON} strokeWidth={1} strokeDasharray="3 2.5" />
+              <Circle cx={9} cy={9} r={1.5} fill={MAP_CHROME_ICON} />
+              <Line x1={9} y1={4} x2={9} y2={14} stroke={MAP_CHROME_ICON} strokeWidth={0.7} strokeDasharray="1.5 1.5" />
+              <Line x1={4} y1={9} x2={14} y2={9} stroke={MAP_CHROME_ICON} strokeWidth={0.7} strokeDasharray="1.5 1.5" />
             </Svg>
           </Pressable>
-          <View style={[tb.sep, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
+          <View style={[tb.sep, { backgroundColor: GLASS_SEP }]} />
         </>
       )}
       {tools.map((tool, i) => {
@@ -1489,7 +1445,7 @@ function Toolbar({
         const isDiscover = tool.id === 'discover';
         return (
           <React.Fragment key={tool.id}>
-            {i > 0 && <View style={[tb.sep, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />}
+            {i > 0 && <View style={[tb.sep, { backgroundColor: GLASS_SEP }]} />}
             <Pressable
               ref={isDiscover ? discoverTarget.ref : undefined}
               onLayout={isDiscover ? discoverTarget.onLayout : undefined}
@@ -1506,7 +1462,7 @@ function Toolbar({
                   discoverTarget.press();
                 }
               }}
-              style={[tb.btn, active && { backgroundColor: 'rgba(255,255,255,0.08)' }]}
+              style={[tb.btn, active && { backgroundColor: GLASS_ACTIVE_BG }]}
               accessibilityLabel={tool.label}
               accessibilityRole="button"
             >
@@ -1515,7 +1471,7 @@ function Toolbar({
           </React.Fragment>
         );
       })}
-      <View style={[tb.sep, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
+      <View style={[tb.sep, { backgroundColor: GLASS_SEP }]} />
       <Pressable
         ref={companionTarget.isActive ? companionTarget.ref : undefined}
         onLayout={companionTarget.isActive ? companionTarget.onLayout : undefined}
@@ -1524,7 +1480,7 @@ function Toolbar({
         accessibilityLabel="Open Socratic dialogue"
         accessibilityRole="button"
       >
-        <MessageCircleIcon size={17} color={c.muted} strokeWidth={1.5} />
+        <MessageCircleIcon size={17} color={MAP_CHROME_ICON} strokeWidth={1.5} />
       </Pressable>
     </View>
   );
@@ -1630,8 +1586,8 @@ function InfoStrip({
         accessibilityRole="button"
       >
         {collapsed
-          ? <ChevronUp size={16} color="rgba(236,236,236,0.4)" strokeWidth={1.5} />
-          : <ChevronDown size={16} color="rgba(236,236,236,0.4)" strokeWidth={1.5} />}
+          ? <ChevronUp size={16} color="rgba(240,232,214,0.53)" strokeWidth={1.5} />
+          : <ChevronDown size={16} color="rgba(240,232,214,0.53)" strokeWidth={1.5} />}
       </Pressable>
     </View>
   );
@@ -1679,7 +1635,7 @@ const infoStripStyles = StyleSheet.create({
     marginLeft: 'auto',
   },
   item: {
-    color: 'rgba(236,236,236,0.45)',
+    color: 'rgba(240,232,214,0.57)',
   },
 });
 
@@ -1801,12 +1757,12 @@ function TimelineScrubber({ startMs, endMs, pct, onChange, top, railH }: Timelin
 
   return (
     <View style={[tls.wrap, { top, height: railH + 40 }]} pointerEvents="box-none">
-      <Text style={[tls.label, { color: 'rgba(236,236,236,0.35)' }]}>date</Text>
+      <Text style={[tls.label, { color: 'rgba(240,232,214,0.49)' }]}>date</Text>
       <View style={[tls.trackWrap, { height: railH }]} {...pan.panHandlers}>
         {/* Track */}
-        <View style={[tls.track, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
+        <View style={[tls.track, { backgroundColor: GLASS_SEP }]} />
         {/* Filled portion (created → cutoff) */}
-        <View style={[tls.fill, { height: thumbY, backgroundColor: 'rgba(255,255,255,0.22)' }]} />
+        <View style={[tls.fill, { height: thumbY, backgroundColor: 'rgba(240,232,214,0.34)' }]} />
         {/* Incremental date ticks */}
         {ticks.map((tk, i) => (
           <React.Fragment key={i}>
@@ -1817,13 +1773,13 @@ function TimelineScrubber({ startMs, endMs, pct, onChange, top, railH }: Timelin
                   top: tk.pct * railH - 1,
                   width: tk.labelled ? 9 : 5,
                   left: (RAIL_TRACK_W - (tk.labelled ? 9 : 5)) / 2,
-                  backgroundColor: tk.labelled ? 'rgba(255,255,255,0.32)' : 'rgba(255,255,255,0.15)',
+                  backgroundColor: tk.labelled ? 'rgba(240,232,214,0.44)' : 'rgba(240,232,214,0.24)',
                 },
               ]}
             />
             {tk.labelled && (
               <Text
-                style={[tls.tickLabel, { top: tk.pct * railH - 6, color: 'rgba(236,236,236,0.3)' }]}
+                style={[tls.tickLabel, { top: tk.pct * railH - 6, color: 'rgba(240,232,214,0.45)' }]}
                 numberOfLines={1}
               >
                 {tk.label}
@@ -1899,7 +1855,7 @@ const tls = StyleSheet.create({
     letterSpacing: 0.3,
     width: 60,
     textAlign: 'right',
-    color: 'rgba(236,236,236,0.5)',
+    color: 'rgba(240,232,214,0.61)',
   },
   thumb: {
     position: 'absolute',
@@ -1910,7 +1866,7 @@ const tls = StyleSheet.create({
   datePill: {
     position: 'absolute',
     right: RAIL_TRACK_W - 2,
-    backgroundColor: 'rgba(6,6,6,0.9)',
+    backgroundColor: GLASS_BG,
     paddingHorizontal: 5,
     paddingVertical: 2,
     borderRadius: 4,
@@ -1919,7 +1875,7 @@ const tls = StyleSheet.create({
     fontFamily: FontFamily.mono,
     fontSize: 9,
     letterSpacing: 0.5,
-    color: 'rgba(236,236,236,0.75)',
+    color: 'rgba(240,232,214,0.81)',
   },
 });
 
@@ -3723,7 +3679,7 @@ export default function MapScreen() {
                 <SvgText
                   x={MAP_PAD + 20} y={MAP_PAD + LAYOUT_H * 0.85}
                   fontSize={fontSize} fontFamily={FontFamily.mono}
-                  fill="rgba(236,236,236,1)" fillOpacity={0.15}
+                  fill="rgba(240,232,214,1)" fillOpacity={0.3}
                   letterSpacing={2}
                 >
                   OLDER
@@ -3731,7 +3687,7 @@ export default function MapScreen() {
                 <SvgText
                   x={MAP_PAD + LAYOUT_W - 20} y={MAP_PAD + LAYOUT_H * 0.85}
                   fontSize={fontSize} fontFamily={FontFamily.mono}
-                  fill="rgba(236,236,236,1)" fillOpacity={0.15}
+                  fill="rgba(240,232,214,1)" fillOpacity={0.3}
                   textAnchor="end" letterSpacing={2}
                 >
                   RECENT
@@ -4146,7 +4102,7 @@ export default function MapScreen() {
           <View style={styles.headerLeft} pointerEvents="box-none">
             <View pointerEvents="box-none">
               <View style={styles.headerTitleRow} pointerEvents="box-none">
-                <Text variant="wordmark" style={{ color: 'rgba(236,236,236,0.85)' }}>atlas</Text>
+                <Text variant="wordmark" style={{ color: 'rgba(246,242,233,0.96)' }}>atlas</Text>
                 <Pressable
                   onPress={() => setInfoVisible(true)}
                   hitSlop={12}
@@ -4154,7 +4110,7 @@ export default function MapScreen() {
                   style={{ marginLeft: Spacing[3] }}
                   pointerEvents="auto"
                 >
-                  <Text style={{ color: 'rgba(236,236,236,0.35)', fontSize: 16 }}>ⓘ</Text>
+                  <Text style={{ color: 'rgba(240,232,214,0.49)', fontSize: 16 }}>ⓘ</Text>
                 </Pressable>
                 <Pressable
                   onPress={() => startTutorial()}
@@ -4163,7 +4119,7 @@ export default function MapScreen() {
                   style={{ marginLeft: Spacing[3] }}
                   pointerEvents="auto"
                 >
-                  <Text style={{ color: 'rgba(236,236,236,0.35)', fontSize: 16 }}>ⓣ</Text>
+                  <Text style={{ color: 'rgba(240,232,214,0.49)', fontSize: 16 }}>ⓣ</Text>
                 </Pressable>
               </View>
               {/* Lens picker — registered so the walkthrough can spotlight it.
@@ -4190,7 +4146,7 @@ export default function MapScreen() {
                         accessibilityLabel={`${label} lens`}
                         accessibilityRole="button"
                       >
-                        <Text style={[styles.lensLabel, { color: active ? 'rgba(236,236,236,0.65)' : 'rgba(236,236,236,0.22)' }]}>
+                        <Text style={[styles.lensLabel, { color: active ? 'rgba(240,232,214,0.73)' : 'rgba(240,232,214,0.39)' }]}>
                           {label.toUpperCase()}
                         </Text>
                       </Pressable>
@@ -4203,7 +4159,7 @@ export default function MapScreen() {
           <View style={styles.headerRight} pointerEvents="box-none">
             {graphLoading && (
               <View style={{ marginRight: Spacing[3] }}>
-                <LoadingDots size={4} color="rgba(236,236,236,0.4)" />
+                <LoadingDots size={4} color="rgba(240,232,214,0.53)" />
               </View>
             )}
             <View pointerEvents="auto">
@@ -4226,8 +4182,8 @@ export default function MapScreen() {
               pointerEvents="auto"
             >
               {isDarkMode
-                ? <Sun size={15} color="rgba(236,236,236,0.4)" strokeWidth={1.5} />
-                : <Moon size={15} color="rgba(236,236,236,0.6)" strokeWidth={1.5} />}
+                ? <Sun size={15} color="rgba(240,232,214,0.53)" strokeWidth={1.5} />
+                : <Moon size={15} color="rgba(240,232,214,0.69)" strokeWidth={1.5} />}
             </Pressable>
           </View>
         </View>
@@ -4264,8 +4220,8 @@ export default function MapScreen() {
 
         {/* Focus mode indicator */}
         {focusedTopicId && !showCapture && (
-          <View style={[styles.focusBadge, { top: insets.top + 80, backgroundColor: 'rgba(10,10,10,0.85)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
-            <Text style={[styles.focusBadgeText, { color: 'rgba(236,236,236,0.5)' }]}>
+          <View style={[styles.focusBadge, { top: insets.top + 80, backgroundColor: GLASS_BG, borderColor: GLASS_BORDER }]} pointerEvents="auto">
+            <Text style={[styles.focusBadgeText, { color: 'rgba(240,232,214,0.61)' }]}>
               {clusters.find((cl) => cl.topicId === focusedTopicId)?.name ?? ''}
               {activeFocusGraph
                 ? ` · ${activeFocusGraph.totalCount > activeFocusGraph.nodes.length
@@ -4274,7 +4230,7 @@ export default function MapScreen() {
                 : ' · opening…'}
             </Text>
             <Pressable onPress={() => setFocusedTopicId(null)} hitSlop={8} style={{ marginLeft: Spacing[2] }}>
-              <Text style={[styles.focusBadgeText, { color: 'rgba(236,236,236,0.35)' }]}>×</Text>
+              <Text style={[styles.focusBadgeText, { color: 'rgba(240,232,214,0.49)' }]}>×</Text>
             </Pressable>
           </View>
         )}
@@ -4282,10 +4238,10 @@ export default function MapScreen() {
         {/* Search bar */}
         {toolMode === 'search' && (
           <View
-            style={[styles.searchBar, { top: insets.top + 80, backgroundColor: 'rgba(14,14,14,0.92)', borderColor: 'rgba(255,255,255,0.12)' }]}
+            style={[styles.searchBar, { top: insets.top + 80, backgroundColor: GLASS_BG, borderColor: GLASS_BORDER }]}
             pointerEvents="auto"
           >
-            <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: 'rgba(236,236,236,0.35)', marginRight: Spacing[2], letterSpacing: 1.5 }}>
+            <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: 'rgba(240,232,214,0.49)', marginRight: Spacing[2], letterSpacing: 1.5 }}>
               FIND_
             </Text>
             <TextInput
@@ -4294,17 +4250,17 @@ export default function MapScreen() {
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholder="topic or keyword..."
-              placeholderTextColor="rgba(236,236,236,0.2)"
+              placeholderTextColor="rgba(240,232,214,0.38)"
               autoCapitalize="none"
               returnKeyType="search"
             />
             {hasSearch && (
               <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-                <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: 'rgba(236,236,236,0.4)' }}>✕</Text>
+                <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: 'rgba(240,232,214,0.53)' }}>✕</Text>
               </Pressable>
             )}
             {hasSearch && (
-              <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: 'rgba(236,236,236,0.3)', marginLeft: Spacing[3] }}>
+              <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: 'rgba(240,232,214,0.45)', marginLeft: Spacing[3] }}>
                 {highlightedIds.size}
               </Text>
             )}
@@ -4314,8 +4270,8 @@ export default function MapScreen() {
         {/* Discover mode: selection count + open-in-companion button */}
         {toolMode === 'discover' && (discoveryNodeIds.length > 0 || discoveryEdgeKeys.length > 0) && !showCapture && !drawerVisible && (
           <View style={[styles.discoveryBar, { bottom: fabBottom + FAB_SIZE + Spacing[3] }]} pointerEvents="box-none">
-            <View style={[styles.discoveryPill, { backgroundColor: 'rgba(10,10,10,0.9)', borderColor: 'rgba(255,255,255,0.12)' }]} pointerEvents="auto">
-              <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.5)' }]}>
+            <View style={[styles.discoveryPill, { backgroundColor: GLASS_BG, borderColor: GLASS_BORDER }]} pointerEvents="auto">
+              <Text style={[styles.discoveryCount, { color: 'rgba(240,232,214,0.61)' }]}>
                 {[
                   discoveryNodeIds.length > 0 && `${discoveryNodeIds.length} ${discoveryNodeIds.length === 1 ? 'point' : 'points'}`,
                   discoveryEdgeKeys.length > 0 && `${discoveryEdgeKeys.length} ${discoveryEdgeKeys.length === 1 ? 'link' : 'links'}`,
@@ -4334,7 +4290,7 @@ export default function MapScreen() {
                 </Pressable>
               )}
               <Pressable onPress={() => { clearDiscovery(); setToolMode('default'); }} hitSlop={10} style={styles.discoveryClose}>
-                <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.35)' }]}>✕</Text>
+                <Text style={[styles.discoveryCount, { color: 'rgba(240,232,214,0.49)' }]}>✕</Text>
               </Pressable>
             </View>
           </View>
@@ -4369,13 +4325,13 @@ export default function MapScreen() {
                 variant={savedPill.phase === 'logging' ? 'mail' : 'cat'}
                 idle={savedPill.phase !== 'logging'}
                 size={30}
-                color="rgba(236,236,236,0.7)"
+                color="rgba(240,232,214,0.77)"
               />
-              <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.6)', flex: 1 }]}>
+              <Text style={[styles.discoveryCount, { color: 'rgba(240,232,214,0.69)', flex: 1 }]}>
                 {savedPill.phase === 'logging' ? 'reading & mapping…' : 'saved ✓'}
               </Text>
               <Pressable onPress={() => setSavedPill(null)} hitSlop={10}>
-                <Text style={[styles.discoveryCount, { color: 'rgba(236,236,236,0.35)' }]}>✕</Text>
+                <Text style={[styles.discoveryCount, { color: 'rgba(240,232,214,0.49)' }]}>✕</Text>
               </Pressable>
             </View>
             {savedPill.phase === 'saved' && (
@@ -4398,11 +4354,11 @@ export default function MapScreen() {
                     setNewNodeId(id);
                   }}
                   hitSlop={8}
-                  style={[styles.discoveryActionBtn, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.18)' }]}
+                  style={[styles.discoveryActionBtn, { backgroundColor: GLASS_ACTIVE_BG, borderColor: GLASS_BORDER_GLOW }]}
                   accessibilityRole="button"
                   accessibilityLabel="Show this capture on the atlas map"
                 >
-                  <Text style={[styles.discoveryAction, { color: 'rgba(236,236,236,0.8)' }]}>atlas →</Text>
+                  <Text style={[styles.discoveryAction, { color: 'rgba(240,232,214,0.84)' }]}>atlas →</Text>
                 </Pressable>
               </View>
             )}
@@ -4414,7 +4370,7 @@ export default function MapScreen() {
           <View style={styles.emptyHint} pointerEvents="none">
             <AsciiLoader
               size={110}
-              color="rgba(236,236,236,0.55)"
+              color="rgba(240,232,214,0.65)"
               message={['drawing your map…', 'plotting your ideas…', 'charting the territory…']}
             />
           </View>
@@ -4423,11 +4379,11 @@ export default function MapScreen() {
         {/* Empty state */}
         {isEmpty && (
           <View style={styles.emptyHint} pointerEvents="none">
-            <AsciiLoader idle size={100} color="rgba(236,236,236,0.45)" />
-            <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[3], color: 'rgba(236,236,236,0.4)' }}>
+            <AsciiLoader idle size={100} color="rgba(240,232,214,0.57)" />
+            <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[3], color: 'rgba(240,232,214,0.53)' }}>
               your map is waiting
             </Text>
-            <Text variant="monoSmall" style={{ color: 'rgba(236,236,236,0.25)', textAlign: 'center', lineHeight: 20 }}>
+            <Text variant="monoSmall" style={{ color: 'rgba(240,232,214,0.42)', textAlign: 'center', lineHeight: 20 }}>
               {'tap + to chart your first thought.'}
             </Text>
           </View>
@@ -4437,7 +4393,7 @@ export default function MapScreen() {
         {drawerVisible && !showCapture && (
           <>
             <Pressable
-              style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.4)' }]}
+              style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(10,9,7,0.45)' }]}
               onPress={closeDrawer}
               accessibilityLabel="Close detail panel"
             />
@@ -4743,7 +4699,7 @@ const styles = StyleSheet.create({
   lensDot: {
     fontFamily: FontFamily.mono,
     fontSize: 8,
-    color: 'rgba(236,236,236,0.15)',
+    color: 'rgba(240,232,214,0.34)',
     marginHorizontal: 5,
   },
   focusBadge: {

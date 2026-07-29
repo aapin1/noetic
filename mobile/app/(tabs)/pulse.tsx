@@ -15,7 +15,7 @@ import { MoreHorizontalIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { promptModerationActions } from '@/lib/moderation';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
+import { FontFamily, FontSize, Radius, Spacing, accentForKey } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Avatar } from '@/components/ui/Avatar';
@@ -85,7 +85,8 @@ function FriendCard({
   ].filter(Boolean).join(' · ');
 
   return (
-    <View style={[styles.card, { borderColor: c.border }]}>
+    <View style={[styles.card, { borderColor: c.border, backgroundColor: c.surface }]}>
+      <View style={[styles.cardAccent, { backgroundColor: accentForKey(user.id) }]} />
       <View style={styles.cardHeader}>
         <Avatar uri={user.avatarUrl} displayName={user.displayName} size="sm" />
         <View style={styles.cardMeta}>
@@ -440,6 +441,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: Radius.lg,
     padding: Spacing[5],
+    overflow: 'hidden',
+  },
+  // A hairline of the friend's accent down the leading edge. Deliberately not
+  // a tinted card: six friends in six wash colours turns the feed into a
+  // paint chart. One saturated edge is enough to tell the cards apart while
+  // the surfaces stay the same paper.
+  cardAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 3,
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
   cardMeta: { flex: 1, gap: 2 },

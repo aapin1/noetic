@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: SW * 0.8,
     marginTop: -46,
-    backgroundColor: 'rgba(10,10,12,0.92)',
+    backgroundColor: 'rgba(30,27,22,0.92)',
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 14,
     padding: Spacing[4],
@@ -337,6 +337,6 @@ const styles = StyleSheet.create({
     marginTop: Spacing[8],
     paddingTop: Spacing[4],
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(236,236,236,0.14)',
+    borderTopColor: 'rgba(240,232,214,0.33)',
   },
 });

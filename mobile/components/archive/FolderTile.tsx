@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Spacing } from '@/constants/theme';
+import { Spacing, accentForKey } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
 import { Badge } from '@/components/ui/Badge';
 import { FolderIcon } from '@/components/archive/FolderIcon';
@@ -10,7 +10,7 @@ export function FolderTile({ folder, onPress }: { folder: ArchiveFolderSummary; 
   return (
     <Pressable onPress={onPress} style={styles.tile} accessibilityRole="button" accessibilityLabel={folder.name}>
       <View style={styles.iconWrap}>
-        <FolderIcon size={56} />
+        <FolderIcon size={56} accent={accentForKey(folder.topicId)} />
         <View style={styles.countBadge}>
           <Badge label={String(folder.count)} variant="count" selected small />
         </View>

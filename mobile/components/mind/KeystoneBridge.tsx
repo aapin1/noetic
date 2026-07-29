@@ -324,7 +324,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   keyChip: {
-    backgroundColor: 'rgba(10,10,12,0.82)',
+    backgroundColor: 'rgba(30,27,22,0.82)',
     borderRadius: 999,
     paddingHorizontal: Spacing[3],
     paddingVertical: 3,
@@ -346,6 +346,6 @@ const styles = StyleSheet.create({
     marginTop: Spacing[8],
     paddingTop: Spacing[4],
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(236,236,236,0.14)',
+    borderTopColor: 'rgba(240,232,214,0.33)',
   },
 });
