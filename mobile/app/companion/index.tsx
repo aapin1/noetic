@@ -90,6 +90,11 @@ export default function CompanionScreen() {
   const [error, setError] = useState<string | null>(null);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
+  // Kept separate from `error`: that one gates the whole screen, which is right
+  // for a thread that never loaded (there is no conversation to show) and very
+  // wrong for a send that failed (there is, and hiding it loses the user's
+  // place). A send failure shows a line above the input and nothing else.
+  const [sendError, setSendError] = useState<string | null>(null);
 
   // Seed the input with a pre-filled draft when arriving from a Mind thread
   // ("Continue in companion"), so the user only has to write their own take.
@@ -148,6 +153,7 @@ export default function CompanionScreen() {
 
     setReply('');
     setSending(true);
+    setSendError(null);
     setSuggestionsUsed(true);
     setMessages((prev) => [...prev, optimisticUser]);
 
@@ -163,7 +169,11 @@ export default function CompanionScreen() {
       ]);
     } catch (e) {
       setMessages((prev) => prev.filter((m) => m.id !== optimisticUser.id));
-      setError(e instanceof Error ? e.message : 'Failed to send');
+      setSendError(e instanceof Error ? e.message : 'Failed to send');
+      // Put the text back so a failed send is retryable — the optimistic
+      // bubble is gone and `reply` was already cleared, so otherwise the
+      // user's message is simply lost. Never clobber a fresh draft.
+      setReply((cur) => (cur.trim() ? cur : content));
     } finally {
       setSending(false);
     }
@@ -269,6 +279,12 @@ export default function CompanionScreen() {
             </View>
           )}
 
+          {sendError && (
+            <View style={[styles.sendError, { backgroundColor: c.background }]}>
+              <Text variant="monoSmall" color="danger">{sendError}</Text>
+            </View>
+          )}
+
           <View
             style={[
               styles.inputBar,
@@ -315,6 +331,10 @@ export default function CompanionScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   flex: { flex: 1 },
+  sendError: {
+    paddingHorizontal: Spacing[5],
+    paddingBottom: Spacing[2],
+  },
   scrollCompact: { flexGrow: 0 },
   contextBlock: {
     paddingHorizontal: Spacing[5],
