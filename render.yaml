@@ -46,6 +46,13 @@ services:
       # content (optional; extraction degrades gracefully without it).
       - key: SUPADATA_API_KEY
         sync: false
+      # Groq — Whisper ASR tier for caption-less video (src/server/transcribe.ts).
+      # Optional and silent when unset: `groqConfigured()` returns false and
+      # every caller skips the tier, so a caption-less video quietly falls back
+      # to its description instead of erroring. Declared here so that
+      # degradation is a choice rather than a blueprint omission nobody notices.
+      - key: GROQ_API_KEY
+        sync: false
       # Rotating residential proxy (e.g. Webshare) for hosts that bot-wall
       # datacenter IPs. URL template; an optional {session} placeholder pins a
       # multi-request extraction to one exit IP, e.g.
