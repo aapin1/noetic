@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { InteractionManager, Linking, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeftIcon, ExternalLinkIcon, PencilIcon } from 'lucide-react-native';
+import { ChevronLeftIcon, ChevronRightIcon, ExternalLinkIcon, PencilIcon } from 'lucide-react-native';
 import { Image } from 'expo-image';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { FontFamily, FontSize, Radius, Spacing, accentForKey } from '@/constants/theme';
+import { Accents, FontFamily, FontSize, Radius, Spacing, accentForKey } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Badge } from '@/components/ui/Badge';
@@ -16,6 +16,42 @@ import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
 import { SponsoredCard } from '@/components/ui/SponsoredCard';
+
+/**
+ * One block of the read: a kicker, a heading, and its body, on card stock.
+ *
+ * The page used to be four `h3`s and their paragraphs stacked on a bare
+ * background with nothing but vertical space between them, which gave the eye
+ * no way to tell where one part ended and the next began — it read as one
+ * undifferentiated column. The kicker is the app's mono `label` in the
+ * section's own accent, matched by a short tick beside it: the same
+ * colour-plus-mark grammar the Atlas uses for a region and the archive for a
+ * topic, so nothing new has to be learned to read it.
+ */
+function Section({
+  kicker, title, accent, right, children,
+}: {
+  kicker: string;
+  title: string;
+  accent: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const c = useThemeColors();
+  return (
+    <View style={[styles.section, { backgroundColor: c.surface, borderColor: c.border }]}>
+      <View style={styles.sectionHead}>
+        <View style={styles.sectionKicker}>
+          <View style={[styles.sectionTick, { backgroundColor: accent }]} />
+          <Text variant="label" style={{ color: accent }}>{kicker}</Text>
+        </View>
+        {right}
+      </View>
+      <Text variant="h3" style={styles.sectionTitle}>{title}</Text>
+      {children}
+    </View>
+  );
+}
 
 export default function InsightDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -129,13 +165,16 @@ export default function InsightDetailScreen() {
 
   if (loading && !data) {
     return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-        <View style={[styles.nav, { borderBottomColor: c.border }]}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: c.deep }]} edges={['top']}>
+        <View style={[styles.nav, { borderBottomColor: c.deepBorder, backgroundColor: c.deep }]}>
           <Pressable onPress={() => router.back()} style={styles.back}>
-            <ChevronLeftIcon size={22} color={c.text} />
+            <ChevronLeftIcon size={22} color={c.deepInk} />
           </Pressable>
         </View>
-        <AsciiLoader fill size={96} message={['pulling it from memory…', 'unfolding the insight…']} />
+        {/* The loader gets the page tone, not the band's. */}
+        <View style={{ flex: 1, backgroundColor: c.background }}>
+          <AsciiLoader fill size={96} message={['pulling it from memory…', 'unfolding the insight…']} />
+        </View>
       </SafeAreaView>
     );
   }
@@ -190,18 +229,24 @@ export default function InsightDetailScreen() {
   const aboutText = data.userContext?.trim() || data.summary?.trim() || legacyDescription || null;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-      <View style={[styles.nav, { borderBottomColor: c.border }]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.deep }]} edges={['top']}>
+      {/* Same dark chrome band as every tab's header, so a detail page reads
+          as part of the app rather than as a plain sheet with a back arrow. */}
+      <View style={[styles.nav, { borderBottomColor: c.deepBorder, backgroundColor: c.deep }]}>
         <Pressable onPress={() => router.back()} accessibilityLabel="Back">
-          <ChevronLeftIcon size={22} color={c.text} />
+          <ChevronLeftIcon size={22} color={c.deepInk} />
         </Pressable>
-        <Text variant="monoSmall" color="muted" numberOfLines={1} style={{ flex: 1, textAlign: 'center' }}>
+        <Text variant="monoSmall" numberOfLines={1} style={{ flex: 1, textAlign: 'center', color: c.deepInkMuted }}>
           insight
         </Text>
         <View style={{ width: 28 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={{ backgroundColor: c.background }}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         {data.contentItem?.imageUrl ? (
           <Image
             source={{ uri: data.contentItem.imageUrl }}
@@ -294,19 +339,20 @@ export default function InsightDetailScreen() {
         </View>
 
         {showAbout ? (
-          <View style={styles.section}>
-            <View style={styles.aboutHeader}>
-              <Text variant="h3">About this capture</Text>
-              {!editing && !saving ? (
-                <Pressable
-                  onPress={() => startEdit(data.userContext ?? aboutText ?? '')}
-                  accessibilityLabel="Correct what this capture is about"
-                  style={styles.editBtn}
-                >
-                  <PencilIcon size={14} color={c.muted} />
-                </Pressable>
-              ) : null}
-            </View>
+          <Section
+            kicker="context"
+            title="About this capture"
+            accent={Accents.slate}
+            right={!editing && !saving ? (
+              <Pressable
+                onPress={() => startEdit(data.userContext ?? aboutText ?? '')}
+                accessibilityLabel="Correct what this capture is about"
+                style={styles.editBtn}
+              >
+                <PencilIcon size={14} color={c.muted} />
+              </Pressable>
+            ) : null}
+          >
             {saving ? (
               <View style={styles.savingRow}>
                 <LoadingDots size={4} />
@@ -361,50 +407,61 @@ export default function InsightDetailScreen() {
                 ) : null}
               </>
             )}
-          </View>
+          </Section>
         ) : null}
 
         {showReaction ? (
-          <View style={styles.section}>
-            <Text variant="h3">Your reaction</Text>
+          <Section kicker="you said" title="Your reaction" accent={Accents.clay}>
             <Text variant="body" color="secondary" style={{ marginTop: Spacing[4] }}>
               {data.reaction}
             </Text>
-          </View>
+          </Section>
         ) : null}
 
-        <View style={styles.section}>
-          <Text variant="h3">Insight</Text>
+        <Section kicker="what it means" title="Insight" accent={Accents.amber}>
           {data.insights.map((ins) => (
             <InsightLine key={ins.id} insight={ins} />
           ))}
-        </View>
+        </Section>
 
         {/* Between the read and the onward links, not after everything: at the
             very bottom it sat below the last tappable row and was never seen. */}
         <SponsoredCard />
 
-        <View style={styles.section}>
-          <Text variant="h3">Connected memory</Text>
+        <Section kicker="nearby" title="Connected memory" accent={Accents.moss}>
           {data.related.length === 0 ? (
-            <Text variant="body" color="muted" style={{ marginTop: Spacing[2] }}>
+            <Text variant="body" color="muted" style={{ marginTop: Spacing[4] }}>
               Nothing connected yet. Links appear as you save more.
             </Text>
           ) : (
-            data.related.map((r) => (
-              <Pressable
-                key={r.id}
-                onPress={() => router.push(`/insight/${r.id}` as never)}
-                style={[styles.rel, { borderColor: c.border }]}
-              >
-                {r.edgeType ? <Badge label={r.edgeType} variant="edge" small /> : null}
-                <Text variant="bodyMedium" style={{ marginTop: Spacing[2] }} numberOfLines={3}>
-                  {r.title}
-                </Text>
-              </Pressable>
-            ))
+            data.related.map((r) => {
+              // Each link carries its own region's colour and name, so the list
+              // says WHAT it connects to and not merely that it connects. These
+              // were unfilled boxes holding a title and an edge-type chip.
+              const relTopic = r.topics[0] ?? null;
+              const relAccent = relTopic ? accentForKey(relTopic.topicId) : null;
+              return (
+                <Pressable
+                  key={r.id}
+                  onPress={() => router.push(`/insight/${r.id}` as never)}
+                  style={[styles.rel, { borderColor: c.border, backgroundColor: c.elevated }]}
+                >
+                  <View style={styles.relBody}>
+                    <Text variant="bodyMedium" numberOfLines={3}>{r.title}</Text>
+                    <View style={styles.relMeta}>
+                      {!!relAccent && <View style={[styles.relDot, { backgroundColor: relAccent }]} />}
+                      <Text variant="monoSmall" color="faint" numberOfLines={1} style={{ flex: 1 }}>
+                        {relTopic ? relTopic.name.toLowerCase() : 'linked'}
+                      </Text>
+                      {r.edgeType ? <Badge label={r.edgeType} variant="edge" small /> : null}
+                    </View>
+                  </View>
+                  <ChevronRightIcon size={16} color={c.faint} />
+                </Pressable>
+              );
+            })
           )}
-        </View>
+        </Section>
       </ScrollView>
     </SafeAreaView>
   );
@@ -426,7 +483,24 @@ const styles = StyleSheet.create({
   block: { paddingHorizontal: Spacing[6], paddingTop: Spacing[6] },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[2], marginBottom: Spacing[3] },
   linkRow: { flexDirection: 'row', alignItems: 'center' },
-  section: { paddingHorizontal: Spacing[6], marginTop: Spacing[8] },
+  section: {
+    marginHorizontal: Spacing[4],
+    marginTop: Spacing[5],
+    padding: Spacing[5],
+    borderWidth: 1,
+    borderRadius: Radius.lg,
+  },
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 20,
+  },
+  sectionKicker: { flexDirection: 'row', alignItems: 'center' },
+  // A short bar, not a dot: it sits beside a line of tracked-out mono, and a
+  // dot beside upper-case reads as punctuation where a bar reads as a rule.
+  sectionTick: { width: 12, height: 2, borderRadius: 1, marginRight: Spacing[2] },
+  sectionTitle: { marginTop: Spacing[2] },
   aboutHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   editBtn: { padding: Spacing[2] },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing[2] },
@@ -450,9 +524,15 @@ const styles = StyleSheet.create({
   editActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing[3] },
   saveBtn: { paddingVertical: Spacing[2], paddingHorizontal: Spacing[4], borderRadius: Radius.xs },
   rel: {
-    marginTop: Spacing[4],
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Spacing[3],
     padding: Spacing[4],
     borderWidth: 1,
     borderRadius: Radius.md,
+    gap: Spacing[3],
   },
+  relBody: { flex: 1 },
+  relMeta: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing[2] },
+  relDot: { width: 6, height: 6, borderRadius: 3, marginRight: Spacing[2] },
 });

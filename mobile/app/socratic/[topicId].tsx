@@ -1,22 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeftIcon } from 'lucide-react-native';
+import { useLocalSearchParams } from 'expo-router';
+
 import { api } from '@/lib/api';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import type { SocraticMessage, SocraticThread } from '@/types/api';
 
 function MessageBlock({ message }: { message: SocraticMessage }) {
@@ -52,7 +44,6 @@ function MessageBlock({ message }: { message: SocraticMessage }) {
 
 export default function SocraticScreen() {
   const c = useThemeColors();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { topicId } = useLocalSearchParams<{ topicId: string }>();
 
@@ -124,16 +115,8 @@ export default function SocraticScreen() {
   const topicName = thread?.topic.name ?? '';
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: c.border }]}>
-        <Pressable onPress={() => router.back()} style={styles.backButton} accessibilityLabel="Back">
-          <ChevronLeftIcon size={22} color={c.text} />
-        </Pressable>
-        <Text variant="monoSmall" color="muted" style={styles.headerTitle} numberOfLines={1}>
-          dialogue{topicName ? ` · ${topicName.toLowerCase()}` : ''}
-        </Text>
-        <View style={{ width: 30 }} />
-      </View>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
+      <ScreenHeader title={`dialogue${topicName ? ` · ${topicName.toLowerCase()}` : ''}`} />
 
       {loading && (
         <View style={styles.centered}>

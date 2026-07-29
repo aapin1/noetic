@@ -10,7 +10,7 @@ import { SettingsIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { Radius, Spacing } from '@/constants/theme';
+import { Accents, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -103,20 +103,20 @@ export default function YouScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* The page's anchor, cut from the same near-black the Atlas is drawn
-            on. This tab was paper all the way down while the map half of the
-            app is a dark field — one deep panel at the top is what ties the two
-            together, and it works in light mode, which is where the gap was. */}
-        <View style={[styles.hero, { backgroundColor: c.deep, borderColor: c.deepBorder }]}>
+        {/* Card stock, like every other panel on the page. It reads as the
+            first card in the stack rather than as a slab dropped on top of
+            it — the accent dot is the same mark the wrapped cards carry. */}
+        <View style={[styles.hero, { backgroundColor: c.surface, borderColor: c.border }]}>
+          <View style={[styles.heroDot, { backgroundColor: Accents.ochre }]} />
           <EditableAvatar profile={p} onChanged={handleAvatarChanged} />
-          <Text variant="h3" style={{ marginTop: Spacing[4], color: c.deepInk }}>
+          <Text variant="h3" style={{ marginTop: Spacing[4] }}>
             {p?.displayName ?? '—'}
           </Text>
-          <Text variant="mono" style={{ color: c.deepInkMuted }}>
+          <Text variant="mono" color="muted">
             @{p?.handle ?? '—'}
           </Text>
           {p?.bio ? (
-            <Text variant="serif" style={[styles.bio, { color: c.deepInkMuted }]}>
+            <Text variant="serif" color="secondary" style={styles.bio}>
               {p.bio}
             </Text>
           ) : null}
@@ -170,6 +170,14 @@ const styles = StyleSheet.create({
     borderRadius: Radius.xl,
     borderWidth: 1,
     overflow: 'hidden',
+  },
+  heroDot: {
+    position: 'absolute',
+    top: Spacing[4],
+    right: Spacing[4],
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   bio: { marginTop: Spacing[3], textAlign: 'center', maxWidth: 320 },
   editButtonWrap: { paddingHorizontal: Spacing[6], marginTop: Spacing[6] },

@@ -68,11 +68,14 @@ function TabsRoot() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: c.text,
-          // `muted`, not `faint`. An unselected tab is a destination the user
-          // can still read, not a disabled control — at `faint` the four
-          // inactive icons were most of the bar and all of them were mumbling.
-          tabBarInactiveTintColor: c.muted,
+          // The bar is `deep` in both themes (see tabBar), so its icons take
+          // deep ink in both — the themed tokens would be near-black on
+          // near-black in light mode.
+          tabBarActiveTintColor: c.deepInk,
+          // `deepInkMuted`, not faint. An unselected tab is a destination the
+          // user can still read, not a disabled control — too far down and the
+          // four inactive icons, which are most of the bar, all mumble.
+          tabBarInactiveTintColor: c.deepInkMuted,
           // Icons only — the labels crowded the bar; the title still names the
           // tab for screen readers via accessibility.
           tabBarShowLabel: false,

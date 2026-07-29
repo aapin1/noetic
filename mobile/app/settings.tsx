@@ -1,16 +1,9 @@
 import React, { useState } from 'react';
-import {
-  Alert,
-  Linking,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Constants from 'expo-constants';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronLeftIcon, ChevronRightIcon, ExternalLinkIcon, LogOutIcon } from 'lucide-react-native';
+import { ChevronRightIcon, ExternalLinkIcon, LogOutIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 import { presentCustomerCenter } from '@/lib/purchases';
@@ -18,6 +11,7 @@ import { PRIVACY_URL, SUPPORT_URL, TERMS_URL } from '@/constants/links';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Avatar } from '@/components/ui/Avatar';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 
@@ -159,14 +153,8 @@ export default function SettingsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-      <View style={[styles.navBar, { borderBottomColor: c.border }]}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="Back">
-          <ChevronLeftIcon size={22} color={c.text} />
-        </Pressable>
-        <Text variant="h4">Settings</Text>
-        <View style={{ width: 40 }} />
-      </View>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
+      <ScreenHeader title="Settings" variant="title" />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={[styles.profileCard, { borderBottomColor: c.border }]}>

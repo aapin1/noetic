@@ -125,30 +125,29 @@ export default function ArchiveScreen() {
 
       {(folders?.length ?? 0) > 0 && (
         <View style={styles.searchWrap}>
-          {/* A dark inset, not an outlined box on paper. The search field is
-              where the eye lands first on this tab, so it is the right place to
-              put the app's near-black — the same surface the Atlas is drawn on,
-              recessed into the page rather than floating on it. */}
-          <View style={[styles.searchBox, { borderColor: c.deepBorder, backgroundColor: c.deep }]}>
-            <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: c.deepInkFaint, marginRight: Spacing[2], letterSpacing: 1.5 }}>
+          {/* A recessed field, not a dark one. `elevated` is the tint the app
+              uses everywhere for "pressed into the page"; near-black here read
+              as a second header stacked under the first. */}
+          <View style={[styles.searchBox, { borderColor: c.border, backgroundColor: c.elevated }]}>
+            <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: c.faint, marginRight: Spacing[2], letterSpacing: 1.5 }}>
               FIND_
             </Text>
             <TextInput
-              style={{ flex: 1, fontFamily: FontFamily.mono, fontSize: FontSize.sm, color: c.deepInk, paddingVertical: 0 }}
+              style={{ flex: 1, fontFamily: FontFamily.mono, fontSize: FontSize.sm, color: c.text, paddingVertical: 0 }}
               value={searchQuery}
               onChangeText={handleSearchChange}
               placeholder="search everything you've saved…"
-              placeholderTextColor={c.deepInkFaint}
+              placeholderTextColor={c.faint}
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="search"
               accessibilityLabel="Search your captures"
             />
             {searching ? (
-              <LoadingDots size={4} color={c.deepInkMuted} />
+              <LoadingDots size={4} />
             ) : searchActive ? (
               <Pressable onPress={() => handleSearchChange('')} hitSlop={10} accessibilityLabel="Clear search">
-                <Text style={{ color: c.deepInkMuted, fontSize: 14 }}>✕</Text>
+                <Text style={{ color: c.muted, fontSize: 14 }}>✕</Text>
               </Pressable>
             ) : null}
           </View>

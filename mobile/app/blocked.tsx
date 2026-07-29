@@ -1,13 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { ChevronLeftIcon } from 'lucide-react-native';
+
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Avatar } from '@/components/ui/Avatar';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import type { BlockedUser } from '@/types/api';
@@ -19,7 +19,6 @@ import type { BlockedUser } from '@/types/api';
  */
 export default function BlockedAccountsScreen() {
   const c = useThemeColors();
-  const router = useRouter();
   const { data, loading, error, refetch } = useApiQuery(() => api.moderation.blocked(), []);
 
   // Unblocking is optimistic, but the source of truth stays the query. Tracking
@@ -56,14 +55,8 @@ export default function BlockedAccountsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-      <View style={[styles.navBar, { borderBottomColor: c.border }]}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="Back">
-          <ChevronLeftIcon size={22} color={c.text} />
-        </Pressable>
-        <Text variant="h4">Blocked</Text>
-        <View style={{ width: 40 }} />
-      </View>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
+      <ScreenHeader title="Blocked" variant="title" />
 
       {loading && !data ? (
         <AsciiLoader fill size={90} message="loading…" />

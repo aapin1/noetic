@@ -135,11 +135,14 @@ export const lightColors: AppThemeColors = {
   danger: '#8A3A2A',
   graphNode: 'rgba(36,31,24,0.85)',
   graphLine: 'rgba(36,31,24,0.16)',
-  // A shade off `background`, so the bar is a surface the content scrolls
-  // under rather than more page with a line drawn across it.
-  tabBar: '#E9E3D4',
-  tabBarBorder: 'rgba(58,46,30,0.10)',
-  tabBarActive: 'rgba(58,46,30,0.08)',
+  // The bar is CHROME, so it takes `deep` — the same near-black as the header
+  // band at the top of every tab. Framing the page top and bottom is what makes
+  // that colour read as structure rather than as a dark patch dropped somewhere
+  // in the middle of the content, which is what it looked like when the search
+  // fields and hero panels were wearing it.
+  tabBar: '#252119',
+  tabBarBorder: 'rgba(240,232,214,0.12)',
+  tabBarActive: 'rgba(240,232,214,0.13)',
   // Near-black on paper: the same family the Atlas is drawn on, one shade up
   // so it reads as a panel rather than as a hole.
   deep: '#252119',
@@ -174,9 +177,11 @@ export const darkColors: AppThemeColors = {
   danger: '#D08A76',
   graphNode: 'rgba(239,234,222,0.9)',
   graphLine: 'rgba(239,234,222,0.13)',
-  tabBar: '#100E0A',
-  tabBarBorder: 'rgba(239,234,222,0.09)',
-  tabBarActive: 'rgba(239,234,222,0.09)',
+  // Same rule as light mode: the bar matches `deep`, which sits just above the
+  // page here rather than below it.
+  tabBar: '#1A1811',
+  tabBarBorder: 'rgba(239,234,222,0.1)',
+  tabBarActive: 'rgba(239,234,222,0.11)',
   // Above `background`, not below — see the type. Same role, opposite
   // direction, identical ink.
   deep: '#1A1811',

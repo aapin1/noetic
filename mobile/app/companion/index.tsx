@@ -1,21 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeftIcon } from 'lucide-react-native';
+import { useLocalSearchParams } from 'expo-router';
+
 import { api } from '@/lib/api';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import type { CompanionMessage, CompanionThread } from '@/types/api';
 
 // Names the selected items directly in the message text, so the question is
@@ -70,7 +62,6 @@ function MessageBlock({ message }: { message: CompanionMessage }) {
 
 export default function CompanionScreen() {
   const c = useThemeColors();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { contextIds, contextLabels, connections, prefill } = useLocalSearchParams<{ contextIds?: string; contextLabels?: string; connections?: string; prefill?: string }>();
 
@@ -179,16 +170,8 @@ export default function CompanionScreen() {
   }, [reply, sending, thread?.id, contextItemIds]);
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: c.border }]}>
-        <Pressable onPress={() => router.back()} style={styles.backButton} accessibilityLabel="Back">
-          <ChevronLeftIcon size={22} color={c.text} />
-        </Pressable>
-        <Text variant="monoSmall" color="muted" style={styles.headerTitle} numberOfLines={1}>
-          companion
-        </Text>
-        <View style={{ width: 30 }} />
-      </View>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
+      <ScreenHeader title="companion" />
 
       {loading && (
         <View style={styles.centered}>

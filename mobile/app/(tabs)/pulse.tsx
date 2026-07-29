@@ -41,18 +41,16 @@ function LatestRow({ item }: { item: PulseLatestItem }) {
   const showKeyIdea = !!item.keyIdea && item.keyIdea.trim().toLowerCase() !== normalizedTitle;
 
   return (
-    // These rows live inside the card's deep block, so every one of them takes
-    // deep ink. The themed tokens would be near-black here — invisible.
-    <View style={[styles.latestRow, { borderTopColor: c.deepBorder }]}>
+    <View style={[styles.latestRow, { borderTopColor: c.borderSubtle }]}>
       <View style={styles.latestMeta}>
-        <Text variant="monoSmall" style={{ color: c.deepInkMuted }}>{item.kind.toLowerCase()}</Text>
-        <Text variant="monoSmall" style={{ color: c.deepInkFaint }}>{date}</Text>
+        <Text variant="monoSmall" style={{ color: c.muted }}>{item.kind.toLowerCase()}</Text>
+        <Text variant="monoSmall" style={{ color: c.faint }}>{date}</Text>
       </View>
-      <Text variant="serif" numberOfLines={2} style={[styles.latestTitle, { color: c.deepInk }]}>
+      <Text variant="serif" color="primary" numberOfLines={2} style={styles.latestTitle}>
         {item.title}
       </Text>
       {showKeyIdea && (
-        <Text variant="monoSmall" numberOfLines={2} style={[styles.latestIdea, { color: c.deepInkMuted }]}>
+        <Text variant="monoSmall" color="muted" numberOfLines={2} style={styles.latestIdea}>
           {item.keyIdea}
         </Text>
       )}
@@ -140,8 +138,8 @@ function FriendCard({
       )}
 
       {latest.length > 0 && (
-        <View style={[styles.latestSection, { backgroundColor: c.deep, borderColor: c.deepBorder }]}>
-          <Text variant="monoSmall" style={[styles.latestLabel, { color: c.deepInkFaint }]}>latest</Text>
+        <View style={[styles.latestSection, { borderTopColor: c.border }]}>
+          <Text variant="monoSmall" style={[styles.latestLabel, { color: c.faint }]}>latest</Text>
           {latest.map((item) => (
             <LatestRow key={item.id} item={item} />
           ))}
@@ -379,24 +377,21 @@ export default function PulseScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={[styles.searchWrap, { borderBottomColor: c.border }]}>
-            {/* A dark inset, not an outlined box on paper. The search field is
-                where the eye lands first on this tab, so it is the right place
-                to put the app's near-black — the same surface the Atlas is
-                drawn on, recessed into the page rather than floating on it. */}
-            <View style={[styles.searchBox, { borderColor: c.deepBorder, backgroundColor: c.deep }]}>
-              <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: c.deepInkFaint, marginRight: Spacing[2], letterSpacing: 1.5 }}>
+            {/* Recessed, not dark — see the archive's field. */}
+            <View style={[styles.searchBox, { borderColor: c.border, backgroundColor: c.elevated }]}>
+              <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: c.faint, marginRight: Spacing[2], letterSpacing: 1.5 }}>
                 FIND_
               </Text>
               <TextInput
                 ref={searchInputRef}
-                style={{ flex: 1, fontFamily: FontFamily.mono, fontSize: FontSize.sm, color: c.deepInk, paddingVertical: 0 }}
+                style={{ flex: 1, fontFamily: FontFamily.mono, fontSize: FontSize.sm, color: c.text, paddingVertical: 0 }}
                 value={searchQuery}
                 onChangeText={handleSearchChange}
                 placeholder="find people by handle..."
-                placeholderTextColor={c.deepInkFaint}
+                placeholderTextColor={c.faint}
                 autoCapitalize="none"
               />
-              {searching && <ActivityIndicator size="small" color={c.deepInkMuted} />}
+              {searching && <ActivityIndicator size="small" color={c.muted} />}
             </View>
           </View>
 
@@ -481,11 +476,8 @@ const styles = StyleSheet.create({
   },
   latestSection: {
     marginTop: Spacing[5],
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing[4],
-    paddingBottom: Spacing[2],
-    paddingTop: Spacing[3],
+    borderTopWidth: 1,
+    paddingTop: Spacing[4],
   },
   latestLabel: { textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: Spacing[1] },
   latestRow: { paddingTop: Spacing[3], marginTop: Spacing[1], borderTopWidth: StyleSheet.hairlineWidth },

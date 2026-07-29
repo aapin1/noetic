@@ -14,6 +14,7 @@ import { useApiQuery } from '@/hooks/useApiQuery';
 import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import type { PositionChallengeItem } from '@/types/api';
 
 function ChallengeCard({
@@ -118,7 +119,7 @@ export default function PositionDetailScreen() {
 
   if (loading && !position) {
     return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
         <ActivityIndicator style={{ marginTop: Spacing[8] }} />
       </SafeAreaView>
     );
@@ -126,10 +127,8 @@ export default function PositionDetailScreen() {
 
   if (!position) {
     return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-        <View style={[styles.header, { borderBottomColor: c.border }]}>
-          <Pressable onPress={() => router.back()}><Text variant="body" color="muted">Back</Text></Pressable>
-        </View>
+      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
+        <ScreenHeader title="position" />
         <Text variant="body" color="muted" style={{ padding: Spacing[4] }}>Position not found.</Text>
       </SafeAreaView>
     );
@@ -139,14 +138,8 @@ export default function PositionDetailScreen() {
   const acknowledged = position.challenges.filter((ch) => ch.acknowledged);
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: c.border }]}>
-        <Pressable onPress={() => router.back()}>
-          <Text variant="body" color="muted">Back</Text>
-        </Pressable>
-        <Text variant="monoSmall" color="muted">{position.topic.name}</Text>
-        <View style={{ width: 40 }} />
-      </View>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
+      <ScreenHeader title={position.topic.name} />
 
       <ScrollView contentContainerStyle={styles.content}>
         <View style={[styles.statementCard, { borderColor: c.border }]}>

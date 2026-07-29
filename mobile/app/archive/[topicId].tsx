@@ -1,13 +1,14 @@
 import React, { useCallback, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeftIcon } from 'lucide-react-native';
+
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { FolderGrid } from '@/components/archive/FolderGrid';
@@ -44,12 +45,8 @@ export default function ArchiveFolderScreen() {
 
   if (loading && !data) {
     return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-        <View style={[styles.nav, { borderBottomColor: c.border }]}>
-          <Pressable onPress={() => router.back()} style={styles.back}>
-            <ChevronLeftIcon size={22} color={c.text} />
-          </Pressable>
-        </View>
+      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
+        <ScreenHeader title="folder" />
         <AsciiLoader fill variant="cat" size={80} message="pulling the folder…" />
       </SafeAreaView>
     );
@@ -57,7 +54,7 @@ export default function ArchiveFolderScreen() {
 
   if (!data) {
     return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
         <EmptyState title="Folder not found" ctaLabel="Back" onCta={() => router.back()} />
       </SafeAreaView>
     );
@@ -74,16 +71,8 @@ export default function ArchiveFolderScreen() {
   const adAtSeam = adForThisFolder && data.subfolders.length > 0;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
-      <View style={[styles.nav, { borderBottomColor: c.border }]}>
-        <Pressable onPress={() => router.back()} accessibilityLabel="Back">
-          <ChevronLeftIcon size={22} color={c.text} />
-        </Pressable>
-        <Text variant="monoSmall" color="muted" numberOfLines={1} style={styles.navTitle}>
-          {data.name}
-        </Text>
-        <View style={{ width: 22 }} />
-      </View>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
+      <ScreenHeader title={data.name} />
 
       <ScrollView
         contentContainerStyle={styles.content}
