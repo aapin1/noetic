@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ShareIntentProvider } from 'expo-share-intent';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { NotificationProvider } from '@/contexts/NotificationContext';
 import { TutorialProvider } from '@/contexts/TutorialContext';
 import { TutorialOverlay } from '@/components/ui/TutorialOverlay';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
@@ -45,6 +46,10 @@ export default function RootLayout() {
       <ShareIntentProvider>
         <ThemeProvider>
           <AuthProvider>
+            {/* Under AuthProvider: it registers a device token for the signed-in
+                user and routes notification taps, so it needs to know both who
+                is signed in and whether anyone is. */}
+            <NotificationProvider>
             <TutorialProvider>
               <ThemedStatusBar />
               {/* gestureEnabled: false — navigation is fully button-driven
@@ -74,6 +79,7 @@ export default function RootLayout() {
               {/* After the overlay so it stays tappable mid-walkthrough. */}
               <KeyboardDismissButton />
             </TutorialProvider>
+            </NotificationProvider>
           </AuthProvider>
         </ThemeProvider>
       </ShareIntentProvider>

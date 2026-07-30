@@ -66,6 +66,13 @@ services:
       # value in its Authorization header; keeps User.plan authoritative.
       - key: REVENUECAT_WEBHOOK_SECRET
         sync: false
+      # Shared secret for POST /api/notifications/dispatch — the drain that
+      # pushes PENDING notifications through Expo. Nothing schedules it; it is
+      # pulled by curl (or whatever you point at it later), so this is the only
+      # thing standing between the internet and everyone's push queue.
+      # Generate with: openssl rand -hex 32
+      - key: NOTIFICATIONS_DISPATCH_SECRET
+        sync: false
       # Cloudflare R2 object storage for capture images.
       - key: R2_ACCOUNT_ID
         sync: false

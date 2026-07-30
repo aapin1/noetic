@@ -164,11 +164,13 @@ export const registerDeviceTokenSchema = z.object({
   provider: deviceProviderSchema,
 });
 
+// Both fields optional and an empty body allowed: the route scopes to the
+// caller by default ("send me whatever I have pending"), which is the common
+// case from a device. The old refine required naming a target, which made the
+// natural request — your own queue — the one thing you couldn't ask for.
 export const sendNotificationPayloadsSchema = z.object({
   notificationIds: z.array(z.string().min(1)).optional(),
   recipientId: z.string().min(1).optional(),
-}).refine((value) => Boolean(value.notificationIds?.length || value.recipientId), {
-  message: "notificationIds or recipientId is required",
 });
 
 export const captureKindSchema = z.enum(["LINK", "TEXT", "QUOTE", "IMAGE"]);

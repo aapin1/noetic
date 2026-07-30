@@ -57,6 +57,9 @@ import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
 import { useSocratic } from '@/contexts/SocraticContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
+import { PushPrimer } from '@/components/ui/PushPrimer';
+import { useNotifications } from '@/contexts/NotificationContext';
+import { hasAskedForPush, markAskedForPush } from '@/lib/storage';
 import { useTutorial, useTutorialTarget } from '@/contexts/TutorialContext';
 import { TUTORIAL_DEMO_NODE, TUTORIAL_EXAMPLE_LINK, TUTORIAL_TARGET } from '@/constants/tutorialSteps';
 import { LoadingDots } from '@/components/ui/LoadingDots';
@@ -3416,6 +3419,40 @@ export default function MapScreen() {
     if (pillDelayTimer.current) clearTimeout(pillDelayTimer.current);
   }, []);
 
+  // ── push pre-permission ───────────────────────────────────────────────────
+  const { requestPermission } = useNotifications();
+  const [showPushPrimer, setShowPushPrimer] = useState(false);
+  const pushPrimerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Called on a capture that actually succeeded. No-op after the first time. */
+  const maybeAskForPush = useCallback(() => {
+    void hasAskedForPush().then((asked) => {
+      if (asked) return;
+      // Let the saved pill land first — the primer makes its case off the back
+      // of a capture the user can see worked, not on top of it.
+      if (pushPrimerTimer.current) clearTimeout(pushPrimerTimer.current);
+      pushPrimerTimer.current = setTimeout(() => setShowPushPrimer(true), 2600);
+    });
+  }, []);
+
+  useEffect(() => () => {
+    if (pushPrimerTimer.current) clearTimeout(pushPrimerTimer.current);
+  }, []);
+
+  // Both paths mark it asked: iOS grants exactly one system prompt per install,
+  // so a "not now" that we later re-asked would just be a sheet with no prompt
+  // behind it.
+  const closePushPrimer = useCallback(() => {
+    setShowPushPrimer(false);
+    void markAskedForPush();
+  }, []);
+
+  const acceptPushPrimer = useCallback(() => {
+    setShowPushPrimer(false);
+    void markAskedForPush();
+    void requestPermission();
+  }, [requestPermission]);
+
   // A capture shared in from the OS share sheet whose insight was never
   // opened: offer it again on the next visit to the map — including a cold
   // start hours later. Read-and-clear, so the pill shows exactly once.
@@ -3424,8 +3461,12 @@ export default function MapScreen() {
       if (!id) return;
       void prefetchQuery(`capture:${id}`, () => api.captures.get(id));
       showSavedPill(id);
+      // A capture that came in through the OS share sheet is still a first
+      // successful capture — without this, someone who starts that way is never
+      // asked at all.
+      maybeAskForPush();
     });
-  }, [showSavedPill]));
+  }, [showSavedPill, maybeAskForPush]));
 
   const commit = useCallback(async () => {
     // Drop the keyboard the moment they commit, so it doesn't linger over the
@@ -3496,6 +3537,11 @@ export default function MapScreen() {
         setSavedPill(null);
         if (pillDelayTimer.current) clearTimeout(pillDelayTimer.current);
         pillDelayTimer.current = setTimeout(() => showSavedPill(res.id), 1800);
+        // Ask for push here and nowhere else: the moment a capture has actually
+        // landed is the only point where "we'll tell you when something surfaces"
+        // describes something the user has just seen work. On launch it would be
+        // a stranger asking for a permission the app hasn't earned yet.
+        maybeAskForPush();
       })
       .catch((e) => {
         setSavedPill(null);
@@ -3504,7 +3550,7 @@ export default function MapScreen() {
           e instanceof Error ? e.message : 'Could not save that. Try again.',
         );
       });
-  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, tutorialActive, showSavedPill]);
+  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, tutorialActive, showSavedPill, maybeAskForPush]);
 
   const quickSave = useCallback(() => {
     if (!validatePayload()) return;
@@ -4664,6 +4710,12 @@ export default function MapScreen() {
             </KeyboardAvoidingView>
           </RNAnimated.View>
         )}
+
+        <PushPrimer
+          visible={showPushPrimer}
+          onDecline={closePushPrimer}
+          onAccept={acceptPushPrimer}
+        />
 
       </View>
     </View>

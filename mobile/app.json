@@ -84,6 +84,12 @@
         }
       ],
       [
+        "expo-notifications",
+        {
+          "color": "#252119"
+        }
+      ],
+      [
         "expo-tracking-transparency",
         {
           "userTrackingPermission": "This lets Mneme show ads that are more relevant to you, which helps keep the app free."

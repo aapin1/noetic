@@ -1,22 +1,6 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { secretMatches } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-/**
- * Constant-time secret comparison. `!==` leaks how many leading bytes matched
- * via response timing, which over enough samples recovers the secret one byte
- * at a time. Lengths are compared first because `timingSafeEqual` throws on a
- * length mismatch — that leaks only the length, which is not sensitive here.
- */
-function secretMatches(provided: string | null, expected: string): boolean {
-  if (!provided) return false;
-
-  const a = Buffer.from(provided);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-
-  return timingSafeEqual(a, b);
-}
 
 // RevenueCat server notifications keep User.plan authoritative on the backend
 // (the mobile SDK only reflects StoreKit state). app_user_id is our User.id —

@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
@@ -206,4 +207,45 @@ export async function requireRequestUserId(request: Request) {
   }
 
   return userId;
+}
+
+/**
+ * Constant-time secret comparison for machine-to-machine endpoints (webhooks,
+ * the notification dispatch drain).
+ *
+ * `!==` leaks how many leading bytes matched via response timing, which over
+ * enough samples recovers the secret one byte at a time. Lengths are compared
+ * first because `timingSafeEqual` throws on a length mismatch — that leaks only
+ * the length, which is not sensitive here.
+ */
+export function secretMatches(provided: string | null | undefined, expected: string): boolean {
+  if (!provided) return false;
+
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+
+  return timingSafeEqual(a, b);
+}
+
+/**
+ * Gate a request on a shared secret held in an env var, accepting either
+ * `Authorization: Bearer <secret>` or a bare `Authorization: <secret>`.
+ *
+ * Throws rather than returning a boolean so a caller can never forget to check
+ * the result. An unset env var fails closed: on a deploy that never configured
+ * the secret, the endpoint is unreachable rather than open to the internet.
+ */
+export function requireSharedSecret(request: Request, envVar: string): void {
+  const expected = process.env[envVar];
+  if (!expected) {
+    throw new AppError("NOT_CONFIGURED", `${envVar} is not configured on this server`, 503);
+  }
+
+  const header = request.headers.get("authorization");
+  const provided = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : header;
+
+  if (!secretMatches(provided, expected)) {
+    throw new AppError("UNAUTHORIZED", "Invalid or missing dispatch secret", 401);
+  }
 }

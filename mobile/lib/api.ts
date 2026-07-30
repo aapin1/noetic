@@ -150,6 +150,27 @@ export const api = {
     },
   },
 
+  devices: {
+    /**
+     * Hand the backend this device's Expo push token. Idempotent — the server
+     * upserts on (provider, token), so re-registering on every launch just
+     * reactivates a token the user had previously turned off.
+     */
+    register(token: string, platform: 'IOS' | 'ANDROID') {
+      return request<{ id: string }>('/api/device-tokens', {
+        method: 'POST',
+        body: JSON.stringify({ token, platform, provider: 'EXPO' }),
+      });
+    },
+    /** Push whatever is queued for this account right now — the test path. */
+    flushPending() {
+      return request<{ sent: number; failed: number; deactivatedTokens: number }>(
+        '/api/notifications/send',
+        { method: 'POST', body: JSON.stringify({}) },
+      );
+    },
+  },
+
   auth: {
     register(body: { name: string; email: string; password: string }) {
       return request<{ user: { id: string; email: string; name: string | null }; token: string }>(

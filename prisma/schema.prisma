@@ -40,6 +40,12 @@ enum NotificationType {
   NEW_COMMENT
   NEW_REPLY
   RANKING_UPDATED
+  // Resurfacing — the app telling you something about your own thinking
+  // rather than about someone else's activity. See services/resurface.ts.
+  CONTRADICTION_FOUND
+  THREAD_MOMENTUM
+  DORMANT_REVIVAL
+  RESURFACE
 }
 
 enum NotificationStatus {
