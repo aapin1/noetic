@@ -317,27 +317,3 @@ export const Radius = {
   full: 9999,
 } as const;
 
-export const ONBOARDING_TOPICS = [
-  'philosophy',
-  'psychology',
-  'economics',
-  'history',
-  'science',
-  'literature',
-  'law',
-  'technology',
-  'design',
-  'film',
-  'mathematics',
-  'politics',
-  'theology',
-  'education',
-  'art',
-  'AI',
-  'writing',
-  'culture',
-  'medicine',
-  'architecture',
-] as const;
-
-export type OnboardingTopic = (typeof ONBOARDING_TOPICS)[number];

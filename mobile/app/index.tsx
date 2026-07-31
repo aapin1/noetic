@@ -95,7 +95,7 @@ export default function LandingScreen() {
     return <Redirect href="/(tabs)" />;
   }
   if (!isLoading && isAuthenticated && !hasProfile) {
-    return <Redirect href="/(onboarding)/topics" />;
+    return <Redirect href="/(onboarding)/identity" />;
   }
 
   const breathScale = breath.interpolate({ inputRange: [0, 1], outputRange: [0.985, 1.03] });

@@ -1,15 +1,17 @@
 /**
  * Canonical list of GENERAL topics — the coarse fields every node is filed
- * under. Mirrors the onboarding topic picker (`ONBOARDING_TOPICS` in
- * `mobile/constants/theme.ts`) plus a few extra broad fields, kept coarse on
- * purpose so similar captures land in the same region of the map even when
- * their specific sub-topics differ ("neuroscience" vs "cognitive neuroscience").
+ * under. Kept coarse on purpose so similar captures land in the same region of
+ * the map even when their specific sub-topics differ ("neuroscience" vs
+ * "cognitive neuroscience").
  *
  * A node's general topic is always one of these; its SPECIFIC topics are
  * AI-generated fine-grained labels that are never in this set. That lets every
  * read surface derive a topic's kind by simple membership — no schema column.
  *
- * Keep this in sync with the mobile onboarding list.
+ * This list used to mirror a topic picker shown during onboarding. That screen
+ * is gone: asking someone to name their interests before they had saved
+ * anything produced a worse signal than watching what they actually save. The
+ * list stayed because classification still needs a fixed coarse vocabulary.
  */
 export const GENERAL_TOPICS = [
   "philosophy", "psychology", "economics", "history", "science", "literature",

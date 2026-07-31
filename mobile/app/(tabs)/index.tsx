@@ -3422,22 +3422,42 @@ export default function MapScreen() {
   // ── push pre-permission ───────────────────────────────────────────────────
   const { requestPermission } = useNotifications();
   const [showPushPrimer, setShowPushPrimer] = useState(false);
-  const pushPrimerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Armed by a successful capture, fired later once the user is actually free.
+  const [pushPrimerArmed, setPushPrimerArmed] = useState(false);
 
   /** Called on a capture that actually succeeded. No-op after the first time. */
   const maybeAskForPush = useCallback(() => {
     void hasAskedForPush().then((asked) => {
-      if (asked) return;
-      // Let the saved pill land first — the primer makes its case off the back
-      // of a capture the user can see worked, not on top of it.
-      if (pushPrimerTimer.current) clearTimeout(pushPrimerTimer.current);
-      pushPrimerTimer.current = setTimeout(() => setShowPushPrimer(true), 2600);
+      if (!asked) setPushPrimerArmed(true);
     });
   }, []);
 
-  useEffect(() => () => {
-    if (pushPrimerTimer.current) clearTimeout(pushPrimerTimer.current);
-  }, []);
+  // Whether the map is the thing the user is currently looking at. The primer
+  // must not fire while they're off reading an insight — they'd come back to a
+  // modal they never saw open.
+  const [screenFocused, setScreenFocused] = useState(true);
+  useFocusEffect(useCallback(() => {
+    setScreenFocused(true);
+    return () => setScreenFocused(false);
+  }, []));
+
+  // Wait for a genuinely quiet moment rather than a fixed delay. The saved pill
+  // carries "insight →" and "atlas →" actions and lives for ten seconds, so a
+  // timer raced it: the primer landed on top of the one prompt the user was
+  // still deciding about, and both wanted attention at once. Now it waits for
+  // the pill to go, the capture sheet to close, any drawer to dismiss, and the
+  // map to be back in front — whether that takes two seconds or two minutes.
+  useEffect(() => {
+    if (!pushPrimerArmed) return;
+    if (savedPill || showCapture || drawerVisible || !screenFocused) return;
+    // A short beat after things settle, so it reads as a follow-up rather than
+    // something that was queued behind the pill all along.
+    const timer = setTimeout(() => {
+      setShowPushPrimer(true);
+      setPushPrimerArmed(false);
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [pushPrimerArmed, savedPill, showCapture, drawerVisible, screenFocused]);
 
   // Both paths mark it asked: iOS grants exactly one system prompt per install,
   // so a "not now" that we later re-asked would just be a sheet with no prompt

@@ -13,16 +13,21 @@ import {
 import { fetchMetadata } from "@/server/metadata";
 
 describe("contracts", () => {
-  it("validates onboarding 3-5 topics and optional identity fields", () => {
+  it("accepts onboarding with no topics and optional identity fields", () => {
+    // Onboarding no longer asks anyone to pick topics, so an empty body is the
+    // normal case and must validate. Topic weights accrue from real captures.
+    expect(onboardingProfileSchema.parse({})).toBeTruthy();
     expect(
       onboardingProfileSchema.parse({
-        topics: ["philosophy", "systems", "design"],
         displayName: "Ada",
         insightStyle: "ANALYTICAL",
       }),
     ).toBeTruthy();
-    expect(() => onboardingProfileSchema.parse({ topics: ["a", "b"] })).toThrow();
-    expect(() => onboardingProfileSchema.parse({ topics: ["a", "b", "c", "d", "e", "f"] })).toThrow();
+    // Still accepted when supplied — the profile editor sends topics.
+    expect(
+      onboardingProfileSchema.parse({ topics: ["philosophy", "systems", "design"] }),
+    ).toBeTruthy();
+    expect(() => onboardingProfileSchema.parse({ topics: [""] })).toThrow();
   });
 
   it("validates capture variants and memory schemas", () => {

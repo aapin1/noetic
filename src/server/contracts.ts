@@ -38,7 +38,11 @@ export const onboardingProfileSchema = z.object({
   bio: z.string().max(280).optional(),
   publicNotes: z.string().max(4000).optional(),
   avatarUrl: z.string().url().optional(),
-  topics: z.array(z.string().min(1).max(80)).min(3).max(5),
+  // Optional since onboarding stopped asking people to pick topics up front.
+  // Topic weights now accrue from what someone actually saves, which is both
+  // more accurate than a guess made before they've used the app and one less
+  // screen between signing up and the first capture.
+  topics: z.array(z.string().min(1).max(80)).max(20).optional(),
   insightStyle: insightStyleSchema.optional(),
 });
 

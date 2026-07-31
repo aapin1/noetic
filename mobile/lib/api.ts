@@ -199,7 +199,9 @@ export const api = {
       return { profile: { ...composed.user.profile, id: composed.user.id, createdAt: composed.user.createdAt } };
     },
     async onboarding(body: {
-      topics: string[];
+      /** No longer collected during onboarding; topic weights accrue from
+       * what the user actually saves. Kept optional for the profile editor. */
+      topics?: string[];
       handle?: string;
       displayName?: string;
       bio?: string;

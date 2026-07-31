@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/lib/api';
 import { Spacing } from '@/constants/theme';
@@ -21,14 +21,6 @@ export default function IdentityScreen() {
   const c = useThemeColors();
   const router = useRouter();
   const { refreshProfile } = useAuth();
-  const { topics: topicsJson } = useLocalSearchParams<{ topics: string }>();
-  const topics: string[] = (() => {
-    try {
-      return JSON.parse(topicsJson ?? '[]') as string[];
-    } catch {
-      return [];
-    }
-  })();
 
   const [displayName, setDisplayName] = useState('');
   const [handle, setHandle] = useState('');
@@ -37,21 +29,16 @@ export default function IdentityScreen() {
   const [error, setError] = useState('');
 
   const submit = async () => {
-    if (topics.length < 3) {
-      setError('Return to topics and choose at least three.');
-      return;
-    }
     setLoading(true);
     setError('');
     try {
       await api.profile.onboarding({
-        topics,
         displayName: displayName.trim() || undefined,
         handle: handle.trim() || undefined,
         insightStyle,
       });
       await refreshProfile();
-      router.replace('/(onboarding)/walkthrough');
+      router.replace('/(onboarding)/notifications');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not finish setup.');
     } finally {
@@ -71,7 +58,7 @@ export default function IdentityScreen() {
           showsVerticalScrollIndicator={false}
         >
           <Text variant="label" color="muted">
-            Setup · 2 of 3
+            Setup · 1 of 2
           </Text>
           <Text variant="h2" style={{ marginTop: Spacing[2] }}>
             How should your insights read?

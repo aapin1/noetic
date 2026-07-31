@@ -52,7 +52,7 @@ export default function SignUpScreen() {
     setLoading(true);
     try {
       await signUp(name.trim(), email.trim().toLowerCase(), password);
-      router.replace('/(onboarding)/topics');
+      router.replace('/(onboarding)/identity');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Registration failed. Please try again.');
     } finally {
