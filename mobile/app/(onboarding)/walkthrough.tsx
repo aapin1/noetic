@@ -31,11 +31,12 @@ export default function WalkthroughOfferScreen() {
           <Text variant="label" color="muted">
             You're in
           </Text>
-          <Text variant="h2" style={{ marginTop: Spacing[2] }}>
+          <Text variant="h2">
             Want a quick walkthrough?
           </Text>
-          <Text variant="body" color="secondary" style={{ marginTop: Spacing[3] }}>
-            I'll help you log your first node and show you around. Takes a minute.
+          <Text variant="body" color="secondary" style={styles.lead}>
+            About a minute. I'll help you save your first thing and show you
+            around the map.
           </Text>
         </View>
 
@@ -53,7 +54,6 @@ export default function WalkthroughOfferScreen() {
             size="md"
             fullWidth
             onPress={() => enter(false)}
-            style={{ marginTop: Spacing[3] }}
           />
         </View>
       </View>
@@ -61,9 +61,18 @@ export default function WalkthroughOfferScreen() {
   );
 }
 
+// Deliberately identical to the notifications screen's layout — the two are
+// consecutive, so any difference in margins reads as a jump between them.
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  content: { flex: 1, paddingHorizontal: Spacing[6], paddingBottom: Spacing[8], justifyContent: 'space-between' },
-  copy: { marginTop: Spacing[16] },
-  actions: {},
+  content: {
+    flex: 1,
+    paddingHorizontal: Spacing[6],
+    paddingTop: Spacing[12],
+    paddingBottom: Spacing[8],
+    justifyContent: 'space-between',
+  },
+  copy: { gap: Spacing[3] },
+  lead: { marginTop: Spacing[2], lineHeight: 26 },
+  actions: { gap: Spacing[3] },
 });

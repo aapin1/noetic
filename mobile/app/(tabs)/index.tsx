@@ -3316,11 +3316,17 @@ export default function MapScreen() {
   // immediately with a first-capture prompt, so the first thing a new user
   // does is save something — not stare at an empty map.
   const [firstCapturePrompt, setFirstCapturePrompt] = useState(false);
+  // Shown only on the self-guided path. Someone who took the walkthrough gets
+  // this explained in it; showing it to them too would be the same lesson twice.
+  const [captureIntroVisible, setCaptureIntroVisible] = useState(false);
   useEffect(() => {
     if (shareParams.firstCapture !== '1') return;
     router.setParams({ firstCapture: '' });
     setFirstCapturePrompt(true);
-    openCapture();
+    // A sentence about what "capture" means BEFORE the sheet, rather than an
+    // empty input on a blank map. Skipping the tutorial shouldn't mean being
+    // handed a text field with no idea what belongs in it.
+    setCaptureIntroVisible(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shareParams.firstCapture]);
   // Clear the prompt only on a real open→close transition — on first mount
@@ -4259,6 +4265,15 @@ export default function MapScreen() {
           onClose={() => setInfoVisible(false)}
           title="atlas"
           body="Your knowledge map. Every node is something you saved. Lines appear when ideas share a topic, contradict each other, or grow out of one another. Switch lenses to sort the map by meaning or time."
+        />
+
+        {/* Dismissing it opens the capture sheet, so the explanation and the
+            thing it explains are one continuous motion. */}
+        <InfoModal
+          visible={captureIntroVisible}
+          onClose={() => { setCaptureIntroVisible(false); openCapture(); }}
+          title="capturing"
+          body="save anything that made you think — an article, a video, a screenshot, or a thought you haven't finished having. mneme reads the source itself, so you never have to summarize it. everything you save lands on this map, placed near the ideas it relates to."
         />
 
         <InfoModal

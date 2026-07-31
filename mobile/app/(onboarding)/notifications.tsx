@@ -48,28 +48,22 @@ export default function NotificationsScreen() {
           <Text variant="label" color="muted">
             Setup · 2 of 2
           </Text>
-          <Text variant="h2" style={{ marginTop: Spacing[2] }}>
+          <Text variant="h2">
             Want to hear when something surfaces?
           </Text>
-
-          <Text variant="body" color="secondary" style={{ marginTop: Spacing[3] }}>
+          <Text variant="body" color="secondary" style={styles.lead}>
             mneme keeps reading after you save. When two things you saved
-            disagree, or a thread you'd left alone starts moving again, that's
-            usually worth knowing about.
-          </Text>
-
-          <Text variant="body" color="secondary" style={{ marginTop: Spacing[3] }}>
-            Right now the only way to find out is to open the app and go
-            looking. This is how it reaches you instead.
-          </Text>
-
-          <Text variant="caption" color="muted" style={{ marginTop: Spacing[5] }}>
-            At most one a day, and only when there's something specific to say.
-            It will never be a badge with a number on it.
+            disagree, or a quiet thread starts moving again, it can tell you.
           </Text>
         </View>
 
         <View style={styles.actions}>
+          {/* The ceiling sits with the buttons, not in the body: it is the last
+              thing read before deciding, and it is the objection people
+              actually have. */}
+          <Text variant="caption" color="muted" style={styles.footnote}>
+            At most one a day, and only when there's something worth saying.
+          </Text>
           <Button
             label={busy ? 'One moment…' : 'Turn on notifications'}
             variant="primary"
@@ -84,7 +78,6 @@ export default function NotificationsScreen() {
             size="md"
             fullWidth
             onPress={decline}
-            style={{ marginTop: Spacing[3] }}
           />
         </View>
       </View>
@@ -94,7 +87,19 @@ export default function NotificationsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  content: { flex: 1, paddingHorizontal: Spacing[6], paddingBottom: Spacing[8], justifyContent: 'space-between' },
-  copy: { marginTop: Spacing[16] },
-  actions: {},
+  // `gap` instead of per-element marginTop: the vertical rhythm is then one
+  // number rather than four that drift apart every time the copy is edited.
+  content: {
+    flex: 1,
+    paddingHorizontal: Spacing[6],
+    paddingTop: Spacing[12],
+    paddingBottom: Spacing[8],
+    justifyContent: 'space-between',
+  },
+  copy: { gap: Spacing[3] },
+  // A little more air under the headline than between kicker and headline,
+  // so the eye reads title-then-explanation rather than three equal lines.
+  lead: { marginTop: Spacing[2], lineHeight: 26 },
+  actions: { gap: Spacing[3] },
+  footnote: { marginBottom: Spacing[2] },
 });
