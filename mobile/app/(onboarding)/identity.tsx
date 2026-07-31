@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { track } from '@/lib/analytics';
 import { Text } from '@/components/ui/Text';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -38,6 +39,7 @@ export default function IdentityScreen() {
         insightStyle,
       });
       await refreshProfile();
+      track('onboarding_step', { step: 'identity', action: 'completed' });
       router.replace('/(onboarding)/notifications');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not finish setup.');

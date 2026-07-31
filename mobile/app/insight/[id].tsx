@@ -17,6 +17,7 @@ import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
 import { SponsoredCard } from '@/components/ui/SponsoredCard';
+import { asInsightSource, track } from '@/lib/analytics';
 
 /**
  * One block of the read: a kicker, a heading, and its body, on card stock.
@@ -52,9 +53,18 @@ function Section({
 }
 
 export default function InsightDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
   const c = useThemeColors();
   const router = useRouter();
+
+  // Keyed on id, not on mount: this screen re-renders as the capture's drafts
+  // stream in, and an open is one event.
+  useEffect(() => {
+    track('insight_opened', { source: asInsightSource(from) });
+    // `from` is fixed for a given navigation, so it is deliberately not a
+    // dependency — re-reading the same insight is not a second open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   const { data, loading, refetch } = useApiQuery(() => api.captures.get(id), [id], {
     cacheKey: `capture:${id}`,

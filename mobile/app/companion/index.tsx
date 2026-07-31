@@ -4,6 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useLocalSearchParams } from 'expo-router';
 
 import { api } from '@/lib/api';
+import { track } from '@/lib/analytics';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
@@ -115,6 +116,10 @@ export default function CompanionScreen() {
 
   const scrollRef = useRef<ScrollView>(null);
 
+  // Position of the user's next message in the thread, seeded from history
+  // below so `turn_index` counts the conversation rather than this mount.
+  const turnRef = useRef(0);
+
   const scrollToEnd = useCallback((animated = true) => {
     scrollRef.current?.scrollToEnd({ animated });
   }, []);
@@ -125,6 +130,7 @@ export default function CompanionScreen() {
         const data = await api.companion.getThread();
         setThread(data);
         setMessages(data.messages);
+        turnRef.current = data.messages.filter((m) => m.role === 'USER').length;
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load companion');
       } finally {
@@ -156,6 +162,11 @@ export default function CompanionScreen() {
     setSendError(null);
     setSuggestionsUsed(true);
     setMessages((prev) => [...prev, optimisticUser]);
+
+    // On send, not on reply: the user engaging is the behaviour being measured,
+    // and a failed round-trip is still an attempt to talk to the companion.
+    turnRef.current += 1;
+    track('companion_message', { turn_index: turnRef.current });
 
     try {
       const { userMessage, companionMessage } = await api.companion.reply(

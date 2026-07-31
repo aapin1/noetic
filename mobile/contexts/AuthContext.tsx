@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { api } from '@/lib/api';
 import { clearQueryCache } from '@/hooks/useApiQuery';
 import { clearAuth, getToken, storeToken, storeUserId } from '@/lib/storage';
+import { identifyUser, resetIdentity, track } from '@/lib/analytics';
 import type { OwnerProfile } from '@/types/api';
 import { DEV_FAKE_LOGIN } from '@/dev/fake-login';
 
@@ -62,6 +63,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const result = await api.profile.me();
+        // Every restored session re-identifies, which is also what backfills
+        // `signup_date` for accounts that predate analytics — without it the
+        // activation window has no anchor for the existing user base.
+        identifyUser(result.profile.id, result.profile.createdAt ?? null);
         setState((prev) => ({
           ...prev,
           profile: result.profile,
@@ -172,6 +177,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { token, user } = await api.auth.register({ name, email, password });
     await storeToken(token);
     await storeUserId(user.id);
+    // Identify before the event so `signup` lands against the person rather
+    // than an anonymous id that later has to be stitched. The registration
+    // response carries no timestamp, but "now" is the signup date by
+    // definition here.
+    identifyUser(user.id, new Date().toISOString());
+    track('signup', { method: 'email' });
     setState((prev) => ({ ...prev, token, isAuthenticated: true }));
     await loadProfile();
   }, [loadProfile]);
@@ -179,6 +190,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     // Cached screen data belongs to this account — never show it to the next.
     clearQueryCache();
+    // Same reasoning for the analytics person: the next account signing in on
+    // this device must not inherit this one's identity.
+    resetIdentity();
     await clearAuth();
     setState({
       token: null,

@@ -7,6 +7,7 @@ import { ChevronRightIcon, ExternalLinkIcon, LogOutIcon } from 'lucide-react-nat
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 import { presentCustomerCenter } from '@/lib/purchases';
+import { throwTestCrash } from '@/lib/analytics';
 import { PRIVACY_URL, SUPPORT_URL, TERMS_URL } from '@/constants/links';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
@@ -183,7 +184,7 @@ export default function SettingsScreen() {
           <SettingRow
             label="Mneme Plus"
             description="Remove ads and unlock every limit."
-            onPress={() => router.push('/plus' as never)}
+            onPress={() => router.push('/plus?from=settings' as never)}
           />
           <SettingRow
             label="Manage subscription"
@@ -274,6 +275,21 @@ export default function SettingsScreen() {
             </Text>
           </Pressable>
         </View>
+
+        {/* Dev builds only — stripped from every release bundle by the
+            `__DEV__` guard. The one reliable way to confirm that Sentry is
+            wired, reachable, and symbolicating before trusting it to report a
+            real crash. */}
+        {__DEV__ && (
+          <View style={styles.section}>
+            <SettingRow
+              label="Trigger a test crash"
+              description="Dev only. Verifies Sentry reporting."
+              onPress={throwTestCrash}
+              destructive
+            />
+          </View>
+        )}
       </ScrollView>
       {deleting && (
         <View style={[StyleSheet.absoluteFill, styles.deletingOverlay, { backgroundColor: c.background }]}>

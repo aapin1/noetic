@@ -107,13 +107,22 @@ Deliberately closed. A bloated schema is worse than none.
 | `capture_failed` | `kind`, `source`, `duration_ms`, `reason` |
 | `first_capture` | `kind`, `source`, `ms_since_signup` |
 | `tab_view` | `tab` |
-| `insight_opened` | `source: 'map' \| 'timeline' \| 'notification'` |
+| `insight_opened` | `source: 'map' \| 'archive' \| 'mind' \| 'share' \| 'unknown'` |
 | `companion_message` | `turn_index` |
-| `paywall_view` | `source` |
+| `paywall_view` | `source: 'settings' \| 'ad_card' \| 'unknown'` |
 | `purchase` | `product_id`, `period` |
 
-`kind` reuses the backend's existing `LINK | TEXT | IMAGE` values so client
-events join against server data with no translation.
+`kind` is re-exported from `types/api.ts` rather than redeclared, so it tracks
+the API's union (`LINK | TEXT | QUOTE | IMAGE`) and client events join against
+server data with no translation. A hand-copied duplicate had already drifted —
+it omitted `QUOTE` — which would have surfaced as missing data rather than a
+compile error.
+
+`insight_opened.source` is threaded through the route as a `from` query param
+and narrowed by `asInsightSource`, so a stale or hand-typed deep link cannot
+invent a breakdown value. `unknown` is reachable by design: notification deep
+links route through `NotificationContext`, which is under active development
+elsewhere and deliberately untouched here.
 
 Every event additionally carries `environment: 'dev' | 'prod'`, so the on-device
 verification run is filterable rather than permanently polluting production
@@ -162,7 +171,10 @@ Modified:
 - `mobile/app/(tabs)/index.tsx` — composer capture events
 - `mobile/app/shareintent.tsx` — share-extension capture events
 - `mobile/app/insight/[id].tsx` — `insight_opened`
-- `mobile/app/companion/[id].tsx` — `companion_message`
+- `mobile/app/companion/index.tsx` — `companion_message`
+- `mobile/components/ui/ErrorBoundary.tsx` — reports caught render errors
+- `mobile/app/(tabs)/{mind,memory}.tsx`, `mobile/components/archive/{DiaryList,FileList}.tsx`,
+  `mobile/components/ui/SponsoredCard.tsx` — `from` params on navigation only
 - `mobile/app/plus.tsx` — `paywall_view`, `purchase`
 - `mobile/app/settings.tsx` — `__DEV__`-only crash trigger
 - `mobile/app.json`, `mobile/package.json`, `mobile/.env.example`
@@ -197,3 +209,19 @@ trigger in settings must appear in Sentry with a symbolicated stack trace.
 The Sentry Expo config plugin changes native configuration, so a native rebuild
 is required before this run — Expo Go and any previously built dev client will
 not carry it.
+
+Static checks that did run: `tsc --noEmit` passes clean, and `expo lint` reports
+151 problems both before and after the change (identical to the untouched
+baseline), so nothing here adds a finding.
+
+Outstanding before the device run, all outside the codebase:
+
+1. Create the PostHog and Sentry projects; put `EXPO_PUBLIC_POSTHOG_KEY` and
+   `EXPO_PUBLIC_SENTRY_DSN` in `mobile/.env.local` and in EAS build secrets.
+2. Add `organization` and `project` to the `@sentry/react-native` entry in
+   `app.json`, plus `SENTRY_AUTH_TOKEN` as an EAS secret. Left unset here on
+   purpose: guessed slugs fail the build loudly. Without them crashes still
+   report, but stacks are unsymbolicated.
+3. Apply to both startup programs (PostHog $50K, Sentry $5K). Neither changes
+   any code.
+4. Declare "Analytics" as a data use in the App Store privacy questionnaire.

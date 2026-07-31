@@ -1,5 +1,8 @@
 import React from 'react';
 import { Appearance, Pressable, StyleSheet, Text, View } from 'react-native';
+// The one exception to this file's no-dependencies rule: a plain module with
+// no context, no hooks, and no call that can throw back out at us.
+import { captureError } from '@/lib/analytics';
 
 /**
  * Last line of defence for a render-time exception.
@@ -30,9 +33,12 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // Surfaced in TestFlight/device logs. This is the only signal that exists
-    // until a crash reporter is wired up.
+    // Surfaced in TestFlight/device logs.
     console.error('[mneme] uncaught render error', error, info.componentStack);
+    // A caught render error never reaches Sentry's global handler — the
+    // boundary is what stopped it. Report it explicitly, or the very failures
+    // this component exists to absorb stay invisible.
+    captureError(error, { componentStack: info.componentStack });
   }
 
   render() {

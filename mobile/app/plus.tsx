@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { CheckIcon, XIcon } from 'lucide-react-native';
 import type { PurchasesPackage } from 'react-native-purchases';
 import { api } from '@/lib/api';
@@ -17,6 +17,7 @@ import {
   purchasePackage,
   restorePurchases,
 } from '@/lib/purchases';
+import { track } from '@/lib/analytics';
 import type { UsageMeter } from '@/types/api';
 
 const ACCENT = accentFor(7);
@@ -92,6 +93,7 @@ function annualSavingsPct(packages: PurchasesPackage[]): number | null {
 export default function PlusScreen() {
   const c = useThemeColors();
   const router = useRouter();
+  const { from } = useLocalSearchParams<{ from?: string }>();
   const { plan, usage, refetch } = useEntitlements();
   const [packages, setPackages] = useState<PurchasesPackage[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -116,6 +118,10 @@ export default function PlusScreen() {
   }, [refetch, router]);
 
   useEffect(() => {
+    // Fired on mount rather than after the packages resolve: a paywall the
+    // user saw but that failed to load its prices is still a paywall view, and
+    // is the more interesting one.
+    track('paywall_view', { source: from ?? 'unknown' });
     void (async () => {
       // This screen is the paywall. Load the packages straight into the
       // in-app plan list — no remote RevenueCat paywall in front of it.
@@ -136,7 +142,16 @@ export default function PlusScreen() {
       setBusy(true);
       try {
         const info = await purchasePackage(pkg);
-        if (isProEntitled(info)) await finishPurchase();
+        if (isProEntitled(info)) {
+          // Only on a confirmed entitlement. A completed StoreKit transaction
+          // that didn't grant `plus` is not revenue, and counting it here would
+          // quietly inflate conversion.
+          track('purchase', {
+            product_id: pkg.product.identifier,
+            period: pkg.packageType,
+          });
+          await finishPurchase();
+        }
       } catch (err) {
         Alert.alert('Purchase failed', (err as Error).message);
       } finally {

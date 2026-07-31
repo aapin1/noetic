@@ -6,6 +6,7 @@ import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { markAskedForPush } from '@/lib/storage';
+import { track } from '@/lib/analytics';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 
@@ -33,11 +34,15 @@ export default function NotificationsScreen() {
     // then declines Apple's dialog has still finished this step, and stalling
     // them on a screen they can't satisfy would be worse than letting it go.
     await requestPermission();
+    // For the same reason the event records the step, not the OS answer: this
+    // measures onboarding drop-off, and both buttons complete the step.
+    track('onboarding_step', { step: 'notifications', action: 'completed' });
     finish();
   };
 
   const decline = () => {
     void markAskedForPush();
+    track('onboarding_step', { step: 'notifications', action: 'skipped' });
     finish();
   };
 

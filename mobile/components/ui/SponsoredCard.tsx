@@ -211,7 +211,7 @@ export function SponsoredCard({ tone = 'auto' }: { tone?: 'auto' | 'dark' } = {}
         </View>
       </NativeAdView>
       <Pressable
-        onPress={() => router.push('/plus' as never)}
+        onPress={() => router.push('/plus?from=ad_card' as never)}
         accessibilityRole="button"
         accessibilityLabel="Remove ads with Mneme Plus"
         hitSlop={10}

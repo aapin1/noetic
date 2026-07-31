@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { useTutorial } from '@/contexts/TutorialContext';
+import { track } from '@/lib/analytics';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 
@@ -14,6 +15,13 @@ export default function WalkthroughOfferScreen() {
   const { start: startTutorial } = useTutorial();
 
   const enter = (withWalkthrough: boolean) => {
+    // "Explore on my own" is a skip of the walkthrough, not of onboarding —
+    // both branches reach the app, and the distinction is the thing worth
+    // measuring here.
+    track('onboarding_step', {
+      step: 'walkthrough',
+      action: withWalkthrough ? 'completed' : 'skipped',
+    });
     if (withWalkthrough) {
       router.replace('/(tabs)');
       startTutorial();

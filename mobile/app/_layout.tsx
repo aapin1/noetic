@@ -14,15 +14,26 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { KeyboardDismissButton } from '@/components/ui/KeyboardDismissButton';
 import { hydrateQueryCache } from '@/hooks/useApiQuery';
 import { warmBackend } from '@/lib/api';
+import {
+  initAnalytics,
+  initCrashReporting,
+  trackSessionStart,
+  wrapRoot,
+} from '@/lib/analytics';
 
 SplashScreen.preventAutoHideAsync();
+
+// At module scope rather than in an effect: a crash while the providers below
+// are mounting is exactly the crash worth catching, and Sentry has to already
+// be listening when it happens.
+initCrashReporting();
 
 function ThemedStatusBar() {
   const scheme = useColorScheme();
   return <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />;
 }
 
-export default function RootLayout() {
+function RootLayout() {
   // Hold the splash until the previous session's cache is loaded, so the
   // first screen renders populated instead of blank. Meanwhile, ping the
   // backend so a cold Render instance starts booting before the user's first
@@ -30,6 +41,10 @@ export default function RootLayout() {
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
     warmBackend();
+    // After the warm-up call, before the await: analytics must never be a
+    // reason the splash stays up a moment longer.
+    initAnalytics();
+    trackSessionStart();
     void hydrateQueryCache().finally(() => {
       setHydrated(true);
       void SplashScreen.hideAsync();
@@ -87,3 +102,7 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+// Sentry's wrapper adds startup and navigation instrumentation. It degrades to
+// a pass-through when the SDK or DSN is absent.
+export default wrapRoot(RootLayout);
