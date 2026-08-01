@@ -117,7 +117,7 @@ export default function MindScreen() {
   const hasContent = activeSections.length > 0;
 
   const openItem = useCallback((id: string) => {
-    router.push(`/insight/${id}` as never);
+    router.push(`/insight/${id}?from=mind` as never);
   }, [router]);
 
   const continueInCompanion = useCallback((itemIds: string[], contextLabel: string, prefill: string) => {

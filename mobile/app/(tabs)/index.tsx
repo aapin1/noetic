@@ -61,6 +61,7 @@ import { PushPrimer } from '@/components/ui/PushPrimer';
 import { StreakMark } from '@/components/ui/StreakMark';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { hasAskedForPush, markAskedForPush } from '@/lib/storage';
+import { failureReason, track } from '@/lib/analytics';
 import { useTutorial, useTutorialTarget } from '@/contexts/TutorialContext';
 import { TUTORIAL_DEMO_NODE, TUTORIAL_EXAMPLE_LINK, TUTORIAL_TARGET } from '@/constants/tutorialSteps';
 import { LoadingDots } from '@/components/ui/LoadingDots';
@@ -3551,8 +3552,17 @@ export default function MapScreen() {
     setBusy(false);
     closeCapture();
     setSavedPill({ phase: 'logging' });
+    // After the optimistic close, never before it: instrumentation does not get
+    // to sit in front of the sheet dismissing.
+    const startedAt = Date.now();
+    track('capture_started', { kind, source: 'composer' });
     void api.captures.create(body)
       .then((res) => {
+        track('capture_succeeded', {
+          kind,
+          source: 'composer',
+          duration_ms: Date.now() - startedAt,
+        });
         // The node plots via the refetch — deliberately NO camera fly-to or
         // highlight ring: the user may be mid-something else, and the pill's
         // "atlas →" action performs the guided reveal only when asked.
@@ -3571,6 +3581,12 @@ export default function MapScreen() {
         maybeAskForPush();
       })
       .catch((e) => {
+        track('capture_failed', {
+          kind,
+          source: 'composer',
+          duration_ms: Date.now() - startedAt,
+          reason: failureReason(e),
+        });
         setSavedPill(null);
         Alert.alert(
           'Capture failed',
@@ -4422,7 +4438,7 @@ export default function MapScreen() {
             {savedPill.phase === 'saved' && (
               <View style={styles.capturePillActions} pointerEvents="auto">
                 <Pressable
-                  onPress={() => { const id = savedPill.id; setSavedPill(null); router.push(`/insight/${id}` as never); }}
+                  onPress={() => { const id = savedPill.id; setSavedPill(null); router.push(`/insight/${id}?from=map` as never); }}
                   hitSlop={8}
                   style={[styles.discoveryActionBtn, { backgroundColor: 'rgba(126,200,160,0.15)', borderColor: 'rgba(126,200,160,0.32)' }]}
                   accessibilityRole="button"
@@ -4586,7 +4602,7 @@ export default function MapScreen() {
                     {/* The practice node has no server-side insight to open. */}
                     {selectedNode.id !== TUTORIAL_DEMO_NODE.id && (
                       <Pressable
-                        onPress={() => { closeDrawer(); router.push(`/insight/${selectedNode.id}` as never); }}
+                        onPress={() => { closeDrawer(); router.push(`/insight/${selectedNode.id}?from=map` as never); }}
                         style={{ marginTop: Spacing[2] }}
                       >
                         <Text variant="monoSmall" color="muted">view insight →</Text>

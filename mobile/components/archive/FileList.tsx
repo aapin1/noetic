@@ -9,7 +9,7 @@ export function FileList({ entries }: { entries: CaptureSummary[] }) {
   return (
     <>
       {entries.map((item) => (
-        <FileRow key={item.id} item={item} onPress={() => router.push(`/insight/${item.id}` as never)} />
+        <FileRow key={item.id} item={item} onPress={() => router.push(`/insight/${item.id}?from=archive` as never)} />
       ))}
     </>
   );

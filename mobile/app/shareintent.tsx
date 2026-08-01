@@ -7,6 +7,7 @@ import { useShareIntentContext } from 'expo-share-intent';
 import * as FileSystem from 'expo-file-system/legacy';
 import { api } from '@/lib/api';
 import { clearSharedCapture, rememberSharedCapture } from '@/lib/lastShared';
+import { failureReason, track, type CaptureKind } from '@/lib/analytics';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
@@ -49,6 +50,19 @@ export default function ShareIntentScreen() {
     handledRef.current = true;
 
     (async () => {
+      // Classified up front so `capture_started` can name a kind. A shared PDF
+      // is guessed IMAGE here and resolves to LINK once the server has sniffed
+      // it — the success event below uses `res.kind`, which is authoritative.
+      const startedKind: CaptureKind = shareIntent.webUrl
+        ? 'LINK'
+        : shareIntent.files?.length
+          ? 'IMAGE'
+          : shareIntent.text && URL_RE.test(shareIntent.text.trim())
+            ? 'LINK'
+            : 'TEXT';
+      const startedAt = Date.now();
+      track('capture_started', { kind: startedKind, source: 'share_extension' });
+
       try {
         let res;
         if (shareIntent.webUrl) {
@@ -78,6 +92,11 @@ export default function ShareIntentScreen() {
           throw new Error('Nothing to capture from that share.');
         }
 
+        track('capture_succeeded', {
+          kind: res.kind,
+          source: 'share_extension',
+          duration_ms: Date.now() - startedAt,
+        });
         resetShareIntent();
         // If they leave without opening the insight (the common share-sheet
         // exit), the map offers it again on the next app open.
@@ -86,6 +105,12 @@ export default function ShareIntentScreen() {
         setSavedTitle(res.title);
         setStatus('saved');
       } catch (e) {
+        track('capture_failed', {
+          kind: startedKind,
+          source: 'share_extension',
+          duration_ms: Date.now() - startedAt,
+          reason: failureReason(e),
+        });
         resetShareIntent();
         setStatus('error');
         setMessage(e instanceof Error ? e.message : 'Could not save that.');
@@ -125,7 +150,7 @@ export default function ShareIntentScreen() {
           <Pressable
             onPress={() => {
               void clearSharedCapture();
-              router.replace(`/insight/${savedId}` as never);
+              router.replace(`/insight/${savedId}?from=share` as never);
             }}
             style={[styles.primaryBtn, { backgroundColor: c.text }]}
             accessibilityRole="button"

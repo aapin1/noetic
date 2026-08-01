@@ -143,7 +143,7 @@ export function DiaryList({ refreshToken }: { refreshToken: number }) {
               return (
                 <Pressable
                   key={item.id}
-                  onPress={() => router.push(`/insight/${item.id}` as never)}
+                  onPress={() => router.push(`/insight/${item.id}?from=archive` as never)}
                   style={[
                     styles.row,
                     i > 0 && { borderTopWidth: 1, borderTopColor: c.borderSubtle },

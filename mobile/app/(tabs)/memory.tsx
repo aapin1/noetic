@@ -263,7 +263,7 @@ export default function ArchiveScreen() {
               return (
                 <Pressable
                   key={item.id}
-                  onPress={() => router.push(`/insight/${item.id}` as never)}
+                  onPress={() => router.push(`/insight/${item.id}?from=archive` as never)}
                   style={[styles.resultRow, { borderColor: c.border, backgroundColor: c.surface }]}
                   accessibilityRole="button"
                 >

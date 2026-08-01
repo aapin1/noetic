@@ -15,6 +15,20 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { SocraticProvider } from '@/contexts/SocraticContext';
 import { api } from '@/lib/api';
 import { prefetchQuery } from '@/hooks/useApiQuery';
+import { track, type TabName } from '@/lib/analytics';
+
+/**
+ * Route names are historical; the tab bar's titles are what the product calls
+ * these places. Events use the product names so a dashboard reads the way the
+ * app does — `archive`, not `memory`.
+ */
+const TAB_NAMES: Record<string, TabName> = {
+  index: 'atlas',
+  mind: 'mind',
+  memory: 'archive',
+  pulse: 'pulse',
+  profile: 'you',
+};
 
 /**
  * A tab: its icon on a rounded fill that only appears when the tab is focused.
@@ -66,6 +80,15 @@ function TabsRoot() {
   return (
     <View style={styles.root}>
       <Tabs
+        // `focus` rather than `tabPress`: it fires for the tab the app opens
+        // on, which tabPress misses, and it doesn't double-count a tap on the
+        // tab you're already looking at.
+        screenListeners={({ route }) => ({
+          focus: () => {
+            const tab = TAB_NAMES[route.name];
+            if (tab) track('tab_view', { tab });
+          },
+        })}
         screenOptions={{
           headerShown: false,
           // The bar is `deep` in both themes (see tabBar), so its icons take
