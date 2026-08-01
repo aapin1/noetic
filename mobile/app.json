@@ -102,7 +102,13 @@
           "iosAppId": "ca-app-pub-3892528257283491~5018350937"
         }
       ],
-      "@sentry/react-native",
+      [
+        "@sentry/react-native",
+        {
+          "organization": "mneme",
+          "project": "apple-ios"
+        }
+      ],
       "expo-localization"
     ],
     "experiments": {
