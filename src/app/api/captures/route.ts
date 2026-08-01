@@ -6,12 +6,17 @@ import { capturePipeline } from "@/server/services/admission";
 import { captureItem, listCaptures } from "@/server/services/cognition";
 import { checkCaptureAgainstPositions } from "@/server/services/positions";
 import { enforceRateLimit } from "@/server/services/ratelimit";
+import { rememberTzOffset } from "@/server/services/streak";
 
 export async function POST(request: Request) {
   return handleRoute(async () => {
     const userId = await requireRequestUserId(request);
     enforceRateLimit(userId, "capture", 30, 5 * 60_000);
     const input = await parseJson(request, captureSchema);
+    // The clock, learned from the event that defines a streak day. Not awaited:
+    // a capture must never wait on — or fail because of — bookkeeping for a
+    // feature it doesn't otherwise touch.
+    void rememberTzOffset(userId, input.tzOffsetMinutes);
     // Bounded concurrency: the pipeline is several LLM round-trips plus
     // synchronous CPU, and without a ceiling one burst of captures stalls every
     // other request on the instance — cheap ones included.

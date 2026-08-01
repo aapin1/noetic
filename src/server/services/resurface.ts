@@ -10,6 +10,7 @@ import {
   type LoadedCapture,
 } from "@/server/services/intelligence";
 import { rankTopicMomentum } from "@/server/services/memory";
+import { dueThisHourWhere } from "@/server/services/notification-policy";
 import { createNotification } from "@/server/services/notifications";
 
 /**
@@ -36,9 +37,20 @@ const MIN_CORPUS = 5;
 /** The weakest tier (an old capture) needs a real corpus to not feel arbitrary. */
 const MIN_CORPUS_FOR_ANNIVERSARY = 12;
 const CAPTURE_SCAN_LIMIT = 200;
-/** One push per user per day, measured from the last one we created. */
-const DAILY_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * One push per user per day, measured from the last one we created.
+ *
+ * Twenty hours rather than twenty-four, and the four hours are the point. The
+ * sweep runs at a fixed local hour, so yesterday's push was created at very
+ * nearly this time yesterday — a full-day window would race its own schedule
+ * and block today's selection whenever the job started a few seconds early,
+ * costing the user a day at random and looking like nothing at all in the logs.
+ * Twenty hours is comfortably clear of that and still cannot fit two pushes
+ * into one waking day.
+ */
+const SAME_DAY_WINDOW_MS = 20 * 60 * 60 * 1000;
 /** Momentum windows — same shape memory.ts uses for the "rising" topic. */
 const MOMENTUM_RECENT_DAYS = 7;
 const MOMENTUM_PRIOR_DAYS = 30;
@@ -170,11 +182,21 @@ export async function selectResurfaceCandidate(args: {
   // Daily cap, enforced against what we actually created — not against what
   // was delivered, so a send failure can't turn into a second attempt tomorrow
   // plus today's, arriving together.
+  //
+  // STREAK_HELD is in this list, and that is the arbitration rule: a streak
+  // push already queued today takes the day's slot, and this returns null
+  // BEFORE any candidate is selected. That ordering is the whole point. A
+  // resurfacing candidate is "used up" the moment its notification row exists,
+  // because loadSeenKeys reads every row regardless of status — so losing the
+  // slot after selection would silently burn a contradiction the user never
+  // saw. Losing it before selection costs nothing: the same contradiction is
+  // just as interesting tomorrow, which is precisely why it yields and the
+  // perishable streak push does not.
   const recent = await db.notification.findFirst({
     where: {
       recipientId: args.userId,
-      type: { in: [...RESURFACE_TYPES] },
-      createdAt: { gte: new Date(now.getTime() - DAILY_COOLDOWN_MS) },
+      type: { in: [...RESURFACE_TYPES, NotificationType.STREAK_HELD] },
+      createdAt: { gte: new Date(now.getTime() - SAME_DAY_WINDOW_MS) },
     },
     select: { id: true },
   });
@@ -368,29 +390,49 @@ export type ResurfaceSweepResult = {
 };
 
 /**
- * Run selection across everyone who could actually receive a push.
+ * Run selection across everyone who could actually receive a push, and for whom
+ * it is currently the send hour locally.
  *
- * Scoped to users with a live Expo token and some activity this season: there
- * is no point selecting for an account that cannot be reached, and no point
- * waking one that left months ago.
+ * Scoped four ways, each of which removes work rather than adding it: a live
+ * Expo token (no point selecting for an account that cannot be reached), some
+ * activity this season (no point waking one that left months ago), resurfacing
+ * pushes not switched off, and the local-hour window that turns an hourly cron
+ * into a daily-per-user sweep. On any given run this is roughly a
+ * twenty-fourth of the eligible base.
  */
 export async function runResurfaceSweep(args: {
   db?: DbClient;
   now?: Date;
   limit?: number;
+  /**
+   * Users the caller has already spent today's push on. The hourly job passes
+   * everyone whose streak was just held: streak beats resurfacing, and skipping
+   * them here means the candidate is never selected, never written, and so
+   * never marked seen. It stays eligible for tomorrow.
+   */
+  skipUserIds?: Iterable<string>;
+  /** Pre-resolved candidates, already scoped and filtered by the caller. The
+   * hourly job resolves both sweeps' user sets in one read. */
+  userIds?: string[];
 } = {}): Promise<ResurfaceSweepResult> {
   const db = args.db ?? prisma;
   const now = args.now ?? new Date();
   const activeSince = new Date(now.getTime() - SWEEP_ACTIVE_WITHIN_DAYS * DAY_MS);
+  const skip = new Set(args.skipUserIds ?? []);
 
-  const users = await db.user.findMany({
-    where: {
-      deviceTokens: { some: { isActive: true, provider: "EXPO" } },
-      capturedItems: { some: { capturedAt: { gte: activeSince } } },
-    },
-    select: { id: true },
-    ...(args.limit ? { take: args.limit } : {}),
-  });
+  const found = args.userIds
+    ? args.userIds.map((id) => ({ id }))
+    : await db.user.findMany({
+        where: {
+          deviceTokens: { some: { isActive: true, provider: "EXPO" } },
+          capturedItems: { some: { capturedAt: { gte: activeSince } } },
+          ...dueThisHourWhere(now, "resurface"),
+        },
+        select: { id: true },
+        ...(args.limit ? { take: args.limit } : {}),
+      });
+
+  const users = skip.size > 0 ? found.filter((user) => !skip.has(user.id)) : found;
 
   let queued = 0;
   for (const user of users) {

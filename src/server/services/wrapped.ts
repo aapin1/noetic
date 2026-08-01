@@ -61,6 +61,10 @@ export interface WrappedStats {
   formats: { name: string; count: number }[];
   currentStreak: number;
   longestStreak: number;
+  /** Days inside the live run that a freeze covered. Zero for almost everyone;
+   * non-zero is what lets the You page say "we held the 14th for you" — always
+   * after the fact, never as a warning. */
+  streakHeldDays: number;
   arcs: WrappedArcs;
   followingCount: number;
   followerCount: number;
@@ -173,45 +177,88 @@ function buildArcs(localMsList: number[], nowLocalMs: number): WrappedArcs {
  * not having captured yet doesn't break it). Without that anchor the run ending
  * at the LAST active day was reported forever: skip a week and the card still
  * claimed the streak you had before the gap.
+ *
+ * `frozenDays` are local days a streak freeze has covered (see services/streak.ts).
+ * A frozen day **bridges** a run without **counting** toward it: Mon–Wed captured,
+ * Thu frozen, Fri captured reads as 4, not 5. Both properties matter.
+ *
+ *  - Bridging keeps the run alive, which is the entire point of a freeze.
+ *  - Not counting keeps the number honest: it is always a count of days on which
+ *    something was actually saved.
+ *
+ * Crucially the same rule governs `longest`, so `current` can never exceed it.
+ * `current` is by construction the length of one of the runs `longest` maximises
+ * over, which makes the impossible pair (current 15 / longest 12) unreachable
+ * rather than merely unlikely.
  */
 export function computeStreaks(
   localDayIndices: number[],
   todayIdx: number,
-): { current: number; longest: number } {
-  const dayIndices = [...new Set(localDayIndices)].sort((a, b) => a - b);
-  if (dayIndices.length === 0) {
-    return { current: 0, longest: 0 };
+  frozenDays: number[] = [],
+): { current: number; longest: number; held: number } {
+  const captureDays = new Set(localDayIndices);
+  if (captureDays.size === 0) {
+    return { current: 0, longest: 0, held: 0 };
   }
+
+  // A freeze on a day that was captured anyway is a no-op, and one dated in the
+  // future is clock skew — neither should be able to bridge anything.
+  const covered = [
+    ...new Set([
+      ...captureDays,
+      ...frozenDays.filter((day) => !captureDays.has(day) && day <= todayIdx),
+    ]),
+  ].sort((a, b) => a - b);
 
   let longest = 0;
   let run = 0;
   let prev: number | null = null;
-  for (const day of dayIndices) {
-    run = prev !== null && day === prev + 1 ? run + 1 : 1;
+  for (const day of covered) {
+    // A gap that no freeze covers ends the run; a frozen day carries it across.
+    if (prev !== null && day !== prev + 1) run = 0;
+    if (captureDays.has(day)) run += 1;
     longest = Math.max(longest, run);
     prev = day;
   }
 
-  const lastActive = dayIndices[dayIndices.length - 1];
-  if (lastActive < todayIdx - 1) {
-    return { current: 0, longest };
+  const lastCovered = covered[covered.length - 1];
+  if (lastCovered < todayIdx - 1) {
+    return { current: 0, longest, held: 0 };
   }
 
-  // Current streak = consecutive days ending at the most recent active day,
-  // which the guard above has established is today or yesterday.
+  // Current streak = the contiguous covered block ending at the most recent
+  // covered day, which the guard above has established is today or yesterday.
   let current = 0;
+  let held = 0;
   prev = null;
-  for (let i = dayIndices.length - 1; i >= 0; i -= 1) {
-    const day = dayIndices[i];
-    if (prev === null || day === prev - 1) {
-      current += 1;
-      prev = day;
-    } else {
-      break;
-    }
+  for (let i = covered.length - 1; i >= 0; i -= 1) {
+    const day = covered[i];
+    if (prev !== null && day !== prev - 1) break;
+    if (captureDays.has(day)) current += 1;
+    else held += 1;
+    prev = day;
   }
 
-  return { current, longest };
+  return { current, longest, held };
+}
+
+/**
+ * Local days a freeze has already covered for this user.
+ *
+ * Defensive on purpose: a preferences row that is missing, or a read that
+ * fails, means "no freezes" — never a broken You page. The streak is a garnish
+ * on this endpoint, not its reason for existing.
+ */
+async function loadFrozenDays(userId: string, db: DbClient): Promise<number[]> {
+  try {
+    const prefs = await db.userPreference?.findUnique({
+      where: { userId },
+      select: { streakFrozenDays: true },
+    });
+    return prefs?.streakFrozenDays ?? [];
+  } catch {
+    return [];
+  }
 }
 
 /** Captures scanned across everyone you follow for the week's activity. */
@@ -322,6 +369,7 @@ export async function getWrappedStats(
       formats: [],
       currentStreak: 0,
       longestStreak: 0,
+      streakHeldDays: 0,
       arcs: buildArcs([], nowLocalMs),
       ...social,
     };
@@ -377,9 +425,13 @@ export async function getWrappedStats(
   const busiestWeekdayIdx = weekdayHistogram.indexOf(Math.max(...weekdayHistogram));
   const busiestHour = hourHistogram.indexOf(Math.max(...hourHistogram));
 
-  const { current, longest } = computeStreaks(
+  // Freezes already spent on this user's missed days. Read-only here — the
+  // sweep in services/streak.ts is the only thing that ever grants one.
+  const frozenDays = await loadFrozenDays(userId, db);
+  const { current, longest, held } = computeStreaks(
     localMsList.map((ms) => Math.floor(ms / DAY_MS)),
     Math.floor(nowLocalMs / DAY_MS),
+    frozenDays,
   );
 
   return {
@@ -402,6 +454,7 @@ export async function getWrappedStats(
     ),
     currentStreak: current,
     longestStreak: longest,
+    streakHeldDays: held,
     arcs: buildArcs(localMsList, nowLocalMs),
     ...social,
   };

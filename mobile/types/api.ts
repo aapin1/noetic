@@ -321,6 +321,9 @@ export interface WrappedStats {
   formats: { name: string; count: number }[];
   currentStreak: number;
   longestStreak: number;
+  /** Days inside the live run a freeze covered. Post-hoc only — never shown as
+   * a warning, and zero for almost everyone. */
+  streakHeldDays: number;
   arcs: WrappedArcs;
   followingCount: number;
   followerCount: number;
@@ -332,6 +335,20 @@ export interface WrappedStats {
     /** What they've been on this week — up to two sub-topics. */
     topics: string[];
   }[];
+}
+
+/**
+ * The streak as the home screen shows it.
+ *
+ * Small on purpose: it rides along with every app open, where the wrapped run
+ * on the profile tab is a heavy read the user has to go looking for.
+ */
+export interface StreakSummary {
+  current: number;
+  longest: number;
+  /** Days in the live run a freeze covered. Lets the mark read as "held"
+   * after the fact; never used to hint that one might be coming. */
+  heldDays: number;
 }
 
 export interface IngestedMetadata {

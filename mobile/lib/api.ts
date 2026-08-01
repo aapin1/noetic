@@ -19,6 +19,7 @@ import type {
   MemoryGraphResponse,
   MemoryTrendsResponse,
   OwnerProfile,
+  StreakSummary,
   TerrainResponse,
   WrappedStats,
   PersonalIntelligenceResponse,
@@ -252,6 +253,11 @@ export const api = {
       const tzOffsetMinutes = -new Date().getTimezoneOffset();
       return request<WrappedStats>(`/api/me/wrapped?tzOffsetMinutes=${tzOffsetMinutes}`);
     },
+    streak(): Promise<StreakSummary> {
+      // Same clock as wrapped — a streak day is a local day.
+      const tzOffsetMinutes = -new Date().getTimezoneOffset();
+      return request<StreakSummary>(`/api/me/streak?tzOffsetMinutes=${tzOffsetMinutes}`);
+    },
   },
 
   preferences: {
@@ -288,7 +294,11 @@ export const api = {
     }) {
       return request<CaptureResponse>('/api/captures', {
         method: 'POST',
-        body: JSON.stringify(body),
+        // A capture is what defines a streak day, so it carries the clock that
+        // says which day it was. The server has no other reliable way to know:
+        // it sees a UTC instant, and for a US user that lands on the wrong
+        // local day for a good part of every evening.
+        body: JSON.stringify({ ...body, tzOffsetMinutes: -new Date().getTimezoneOffset() }),
       });
     },
     upload(imageBase64: string, mimeType?: string) {

@@ -58,9 +58,15 @@ function fakeDb(args: {
 
   const db = {
     notification: {
-      findFirst: async (q: { where: { createdAt?: { gte: Date } } }) => {
+      // Honours the type filter as well as the window: the cooldown query names
+      // the types it counts, and STREAK_HELD being among them is the
+      // arbitration rule rather than an accident.
+      findFirst: async (q: { where: { createdAt?: { gte: Date }; type?: { in: string[] } } }) => {
         const since = q.where.createdAt?.gte;
-        const hit = notifications.find((n) => !since || n.createdAt >= since);
+        const types = q.where.type?.in;
+        const hit = notifications.find(
+          (n) => (!since || n.createdAt >= since) && (!types || types.includes(n.type)),
+        );
         return hit ? { id: "existing" } : null;
       },
       findMany: async () => notifications.map((n) => ({ payload: n.payload })),
@@ -185,6 +191,31 @@ describe("selectResurfaceCandidate", () => {
     });
 
     expect(await selectResurfaceCandidate({ userId: "u1", db, now: NOW })).toBeNull();
+  });
+
+  it("yields the day to a streak push, and is still eligible tomorrow", async () => {
+    // The load-bearing arbitration test. A streak push is perishable — it is
+    // only true today — so it takes the slot. What must NOT happen is the
+    // resurfacing candidate being selected and then losing: selection writes
+    // the notification, and loadSeenKeys reads every row regardless of status,
+    // so the contradiction would be marked seen and never sent. Yielding before
+    // selection costs nothing, because the contradiction is exactly as
+    // interesting tomorrow.
+    const { db, notifications } = fakeDb({
+      captures: richCorpus(),
+      edges: [{ fromItemId: "a1", toItemId: "a3" }],
+      existing: [{ type: "STREAK_HELD", payload: {}, createdAt: NOW }],
+    });
+
+    expect(await enqueueResurfaceFor({ userId: "u1", db, now: NOW })).toBeNull();
+    // Nothing was written, so nothing was consumed.
+    expect(notifications).toHaveLength(1);
+
+    const tomorrow = new Date(NOW.getTime() + DAY);
+    const picked = await enqueueResurfaceFor({ userId: "u1", db, now: tomorrow });
+
+    expect(picked?.type).toBe("CONTRADICTION_FOUND");
+    expect(picked?.key).toBe("contradiction:a1:a3");
   });
 
   it("never repeats itself across runs", async () => {

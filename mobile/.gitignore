@@ -7,3 +7,9 @@ expo-env.d.ts
 
 # local Expo state (machine-specific device history + dev server settings)
 .expo/
+
+# Native projects are generated from app.json by `expo prebuild` — 1.2GB of
+# build output that is regenerated on demand and goes stale the moment a
+# config plugin changes. app.json is the source of truth, not these.
+/ios/
+/android/

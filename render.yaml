@@ -66,13 +66,26 @@ services:
       # value in its Authorization header; keeps User.plan authoritative.
       - key: REVENUECAT_WEBHOOK_SECRET
         sync: false
-      # Shared secret for POST /api/notifications/dispatch — the drain that
-      # pushes PENDING notifications through Expo. Nothing schedules it; it is
-      # pulled by curl (or whatever you point at it later), so this is the only
-      # thing standing between the internet and everyone's push queue.
+      # Shared secret for the notification endpoints — the drain that pushes
+      # PENDING notifications through Expo, and the hourly job below that feeds
+      # it. This is the only thing standing between the internet and everyone's
+      # push queue, and the cron service reads the same value via fromService.
       # Generate with: openssl rand -hex 32
       - key: NOTIFICATIONS_DISPATCH_SECRET
         sync: false
+      # Global kill switch for outbound push. Absent or "true" means pushes
+      # transmit; "false"/"0"/"off" stops every one of them.
+      #
+      # Declared here with an explicit value so the toggle is a dashboard edit
+      # and a restart, not a deploy — which is the whole point of it. If the
+      # launch copy turns out wrong or the cron misfires at 3am, this is the
+      # thing to reach for. An unset variable deliberately means ON: a fresh
+      # environment must never look healthy while silently delivering nothing.
+      #
+      # Notifications still reach a terminal status while it is off, so nothing
+      # piles up PENDING waiting to flood out when it is switched back on.
+      - key: PUSH_NOTIFICATIONS_ENABLED
+        value: "true"
       # Cloudflare R2 object storage for capture images.
       - key: R2_ACCOUNT_ID
         sync: false
@@ -84,3 +97,56 @@ services:
         sync: false
       - key: R2_PUBLIC_URL
         sync: false
+
+  # The clock for the notification pipeline. It calls one endpoint and holds no
+  # logic whatsoever — who is due, what they get, and whether anything sends at
+  # all are decided in services/notification-job.ts, where they can be tested.
+  # If you find yourself wanting to put a condition here, it belongs there.
+  #
+  # HOURLY, not nightly, and that is a correctness requirement rather than a
+  # preference. Quiet hours are enforced per user in their own local time, and
+  # there is no instant that is 9am everywhere: a single nightly UTC run would
+  # have to either ignore local time (and wake Sydney in the small hours) or
+  # serve one timezone properly and everyone else badly. So the clock ticks
+  # every hour and the send path selects the users for whom it is currently the
+  # send hour locally. Each run touches roughly a twenty-fourth of the base, and
+  # an hour with nobody due costs two lease writes, two indexed reads, and no
+  # outbound request.
+  #
+  # A prebuilt curl image rather than this repo's Dockerfile: the job is one
+  # HTTP request, and building a Next.js image on every deploy to make it would
+  # be absurd. It also means the clock cannot accidentally acquire a database
+  # connection or a copy of the app's code.
+  - type: cron
+    name: mneme-notifications
+    runtime: image
+    image:
+      url: docker.io/curlimages/curl:latest
+    region: oregon
+    plan: starter
+    # Top of every hour, UTC — Render evaluates all schedules in UTC, which is
+    # what keeps this stable across daylight saving.
+    schedule: "0 * * * *"
+    # No --retry, deliberately. Every step of the job is idempotent and the next
+    # tick is at most an hour away, so a failed run has nothing to recover that
+    # waiting would not — while a retrying clock turns one bad minute at Expo
+    # into a burst of concurrent drains against it. --max-time is under the hour
+    # so a wedged request can never overlap the next tick.
+    dockerCommand: >-
+      /bin/sh -c 'curl --fail-with-body --silent --show-error --max-time 3000
+      -X POST -H "Authorization: Bearer $NOTIFICATIONS_DISPATCH_SECRET"
+      "$MNEME_BASE_URL/api/notifications/resurface"'
+    envVars:
+      # Both pulled from the web service rather than re-entered, so the secret
+      # has exactly one value and rotating it in one place cannot leave the
+      # clock authenticating with the old one.
+      - key: NOTIFICATIONS_DISPATCH_SECRET
+        fromService:
+          name: mneme-backend
+          type: web
+          envVarKey: NOTIFICATIONS_DISPATCH_SECRET
+      - key: MNEME_BASE_URL
+        fromService:
+          name: mneme-backend
+          type: web
+          envVarKey: MNEME_BASE_URL

@@ -1,33 +1,31 @@
 import { handleRoute } from "@/lib/api";
 import { requireSharedSecret } from "@/lib/auth";
-import { dispatchPendingNotifications } from "@/server/services/notifications";
-import { runResurfaceSweep } from "@/server/services/resurface";
+import { runNotificationJob } from "@/server/services/notification-job";
 
 /**
- * The daily job: pick one thing worth saying to each reachable user, queue it,
- * then push everything pending.
+ * The hourly notification job, as an endpoint. All of it lives in
+ * services/notification-job.ts; this is the shared-secret gate and nothing else.
  *
- * Same shared secret as the plain drain — this is strictly more powerful, so it
- * gets no weaker a gate.
+ * Same secret as the plain drain — this is strictly more powerful, so it gets no
+ * weaker a gate.
  *
  *   curl -X POST https://mneme-backend.onrender.com/api/notifications/resurface \
  *     -H "Authorization: Bearer $NOTIFICATIONS_DISPATCH_SECRET"
  *
- * Idempotent within a day: selection enforces its own one-per-user-per-day cap,
- * so calling this twice in an afternoon queues nothing the second time. Nothing
- * schedules it; run it when you want the day's pushes to go out.
+ * Safe to call as often as you like. The sweeps select each user once a day, at
+ * their own local send hour, and a lease keeps two overlapping runs from both
+ * draining the queue — so a second call inside the hour queues nothing and sends
+ * nothing.
+ *
+ * The path still says "resurface" because that is what render.yaml's cron and
+ * the runbook curl already point at. It has run the streak guard too since the
+ * guard shipped, and the whole hourly job since scheduling did.
  */
 export const dynamic = "force-dynamic";
-
-const DISPATCH_LIMIT = 500;
 
 export async function POST(request: Request) {
   return handleRoute(async () => {
     requireSharedSecret(request, "NOTIFICATIONS_DISPATCH_SECRET");
-
-    const sweep = await runResurfaceSweep();
-    const dispatch = await dispatchPendingNotifications({ limit: DISPATCH_LIMIT });
-
-    return { sweep, dispatch };
+    return runNotificationJob();
   });
 }

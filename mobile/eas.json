@@ -20,7 +20,10 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://mneme-backend.onrender.com",
         "EXPO_PUBLIC_ADMOB_NATIVE_UNIT_ID": "ca-app-pub-3892528257283491/6139860918",
-        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "appl_SaCKbzifUHTPCxEHZtCEeerpQgK"
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "appl_SaCKbzifUHTPCxEHZtCEeerpQgK",
+        "EXPO_PUBLIC_POSTHOG_KEY": "phc_z6nhmgJdWuUc4Z7rrths5vyU8VMzZNCXXrREGnv9obnM",
+        "EXPO_PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://1c750fe2dc3c0de9d27849276f1a46ed@o4511833681362944.ingest.us.sentry.io/4511833709871104"
       }
     },
     "production": {
@@ -28,7 +31,10 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://mneme-backend.onrender.com",
         "EXPO_PUBLIC_ADMOB_NATIVE_UNIT_ID": "ca-app-pub-3892528257283491/6139860918",
-        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "appl_SaCKbzifUHTPCxEHZtCEeerpQgK"
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "appl_SaCKbzifUHTPCxEHZtCEeerpQgK",
+        "EXPO_PUBLIC_POSTHOG_KEY": "phc_z6nhmgJdWuUc4Z7rrths5vyU8VMzZNCXXrREGnv9obnM",
+        "EXPO_PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://1c750fe2dc3c0de9d27849276f1a46ed@o4511833681362944.ingest.us.sentry.io/4511833709871104"
       }
     }
   },

@@ -46,6 +46,10 @@ enum NotificationType {
   THREAD_MOMENTUM
   DORMANT_REVIVAL
   RESURFACE
+  // Sent only AFTER a freeze has already been spent on a day that was missed.
+  // There is deliberately no "your streak is about to die" counterpart — see
+  // services/streak.ts.
+  STREAK_HELD
 }
 
 enum NotificationStatus {
@@ -659,7 +663,66 @@ model UserPreference {
   preferences  Json?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
+
+  // Streak state. Scalar columns rather than keys inside `preferences` on
+  // purpose: updatePreferences writes that column wholesale, and this row has
+  // two independent writers — the capture/read paths recording the clock, and
+  // the nightly sweep recording a freeze. Sharing one JSON blob would let them
+  // clobber each other, surfacing as a streak that "randomly reset".
+
+  /// Last offset the client reported, in minutes (JS sign: UTC-4 is -240).
+  /// Null until we have heard from a client; the sweep reads 0 for those.
+  tzOffsetMinutes     Int?
+  /// Local epoch-day indices a freeze has covered. Bridges a gap without ever
+  /// counting toward a streak's length. Pruned on the same horizon as the
+  /// capture history the guard reads (services/streak.ts FROZEN_DAY_RETENTION).
+  streakFrozenDays    Int[]
+  /// Local epoch day the last freeze was spent, for the weekly refill.
+  streakLastFreezeDay Int?
+
+  // Push policy. Scalar for the same reason as the streak columns, and the
+  // reason is sharper here: these are the only fields a *user* edits that the
+  // *sweep* also reads. A settings screen writing the blob and a sweep writing
+  // a freeze would each silently discard the other's work.
+
+  /// Local hour (0–23) quiet hours begin, inclusive. Nothing transmits between
+  /// here and `quietHoursEndHour`; a push that comes due inside the window
+  /// waits for the next eligible hour rather than being dropped. The window
+  /// wraps midnight whenever start > end, which is the normal case.
+  quietHoursStartHour Int     @default(21)
+  /// Local hour (0–23) quiet hours end, exclusive.
+  quietHoursEndHour   Int     @default(9)
+
+  // Per-category opt-outs. Three switches rather than one because the
+  // categories answer different questions — "tell me when people react to me",
+  // "tell me things about my own thinking", "tell me when a streak was held" —
+  // and a user who wants the third rarely wants the first.
+  /// Follows, likes, comments, replies, ranking updates.
+  pushSocial          Boolean @default(true)
+  /// Contradictions, momentum, dormancy, anniversaries.
+  pushResurface       Boolean @default(true)
+  /// STREAK_HELD, and nothing else — the guard never warns.
+  pushStreak          Boolean @default(true)
+
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// A named mutual-exclusion lease with an expiry.
+///
+/// Exists because the hourly notification job must be safe to overlap: Render
+/// will happily start the next run while a slow one is still going, and two
+/// concurrent drains reading the same PENDING rows would send them twice. The
+/// expiry is what keeps a crashed run from wedging the job forever — the lease
+/// simply goes stale and the next hour picks it up.
+model JobLease {
+  /// The job's name. The primary key, so acquiring is one conditional UPDATE.
+  name      String   @id
+  /// When the current holder's claim lapses. A lease in the past is free.
+  heldUntil DateTime
+  /// Opaque id of the current holder, so a run that overran its lease cannot
+  /// release the claim that replaced it.
+  heldBy    String
+  updatedAt DateTime @updatedAt
 }
 
 model UserPosition {

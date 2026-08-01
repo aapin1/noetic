@@ -19,6 +19,11 @@ export async function PATCH(request: Request) {
       userId,
       insightStyle: input.insightStyle,
       preferences: input.preferences as Prisma.InputJsonValue | undefined,
+      quietHoursStartHour: input.quietHoursStartHour,
+      quietHoursEndHour: input.quietHoursEndHour,
+      pushSocial: input.pushSocial,
+      pushResurface: input.pushResurface,
+      pushStreak: input.pushStreak,
     });
   });
 }

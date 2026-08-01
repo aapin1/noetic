@@ -58,6 +58,7 @@ import { useSocratic } from '@/contexts/SocraticContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { PushPrimer } from '@/components/ui/PushPrimer';
+import { StreakMark } from '@/components/ui/StreakMark';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { hasAskedForPush, markAskedForPush } from '@/lib/storage';
 import { useTutorial, useTutorialTarget } from '@/contexts/TutorialContext';
@@ -4193,6 +4194,9 @@ export default function MapScreen() {
                 >
                   <Text style={{ color: 'rgba(240,232,214,0.49)', fontSize: 16 }}>ⓣ</Text>
                 </Pressable>
+                {/* Last in the row, so the marks people already reach for keep
+                    their positions. Renders nothing below a 2-day run. */}
+                <StreakMark />
               </View>
               {/* Lens picker — registered so the walkthrough can spotlight it.
                   collapsable={false} keeps the View measurable on Android. */}

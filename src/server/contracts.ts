@@ -188,6 +188,11 @@ export const captureSchema = z.object({
   reaction: z.string().max(500).optional(),
   userContext: z.string().max(4000).optional(),
   topicHints: z.array(z.string().min(1).max(80)).max(8).optional(),
+  /** The client's UTC offset in minutes (JS sign: UTC-4 sends -240).
+   * A capture is the event that defines a streak day, so it is also the event
+   * that should teach the server which day that was. Optional: older clients
+   * omit it, and the server falls back to its last known offset. */
+  tzOffsetMinutes: z.number().int().min(-840).max(840).optional(),
 }).superRefine((value, ctx) => {
   if (value.kind === "LINK" && !value.url) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "url is required for LINK captures", path: ["url"] });
@@ -237,12 +242,30 @@ export const memoryTrendsSchema = z.object({
   window: z.enum(["week", "month"]).default("week"),
 });
 
+/**
+ * Push policy fields are named individually rather than folded into the
+ * `preferences` blob, and that is not a style choice.
+ *
+ * `preferences` is written wholesale — a PATCH carrying it replaces the whole
+ * column. The push fields have a second writer (the hourly sweep, recording a
+ * freeze and the client's clock into the same row), so a settings save and a
+ * sweep would each silently discard the other's work. Distinct columns mean
+ * distinct writes, and the two can never eat each other.
+ */
 export const updatePreferencesSchema = z.object({
   insightStyle: insightStyleSchema.optional(),
   preferences: z.record(z.string(), z.unknown()).optional(),
-}).refine((value) => value.insightStyle !== undefined || value.preferences !== undefined, {
-  message: "At least one preference field is required",
-});
+  /** Local hour quiet hours begin (inclusive) and end (exclusive). Setting both
+   * to the same hour turns quiet hours off. */
+  quietHoursStartHour: z.number().int().min(0).max(23).optional(),
+  quietHoursEndHour: z.number().int().min(0).max(23).optional(),
+  pushSocial: z.boolean().optional(),
+  pushResurface: z.boolean().optional(),
+  pushStreak: z.boolean().optional(),
+}).refine(
+  (value) => Object.values(value).some((field) => field !== undefined),
+  { message: "At least one preference field is required" },
+);
 
 export const captureUploadSchema = z.object({
   // Base64 payload: images up to ~6MB, PDFs up to ~15MB (route enforces the
