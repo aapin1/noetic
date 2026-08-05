@@ -64,6 +64,14 @@ interface NotificationContextValue {
    * Returns whether permission ended up granted. Never throws.
    */
   requestPermission: () => Promise<boolean>;
+  /**
+   * Re-read the OS permission and register if it is now granted, without ever
+   * prompting. For the trip out to iOS Settings and back: granting there only
+   * backgrounds the app, and launch-time registration has already run for this
+   * session, so without this the user would hold permission but own no token
+   * until their next cold start. Never throws.
+   */
+  refreshPermission: () => Promise<boolean>;
 }
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
@@ -208,8 +216,23 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
   }, []);
 
+  const refreshPermission = useCallback(async () => {
+    try {
+      const { status } = await Notifications.getPermissionsAsync();
+      const isGranted = status === 'granted';
+      setGranted(isGranted);
+      // Deliberately not guarded by registeredRef: that guard exists to keep one
+      // launch from registering twice, and this is a different event — the user
+      // just changed the answer. `register` upserts, so a redundant call is free.
+      if (isGranted) await registerToken();
+      return isGranted;
+    } catch {
+      return false;
+    }
+  }, []);
+
   return (
-    <NotificationContext.Provider value={{ granted, requestPermission }}>
+    <NotificationContext.Provider value={{ granted, requestPermission, refreshPermission }}>
       {children}
     </NotificationContext.Provider>
   );

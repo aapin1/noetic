@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Constants from 'expo-constants';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { ChevronRightIcon, ExternalLinkIcon, LogOutIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 import { api } from '@/lib/api';
 import { presentCustomerCenter } from '@/lib/purchases';
 import { throwTestCrash } from '@/lib/analytics';
@@ -96,7 +97,30 @@ export default function SettingsScreen() {
   const c = useThemeColors();
   const router = useRouter();
   const { profile, signOut } = useAuth();
+  const { granted: pushGranted, requestPermission, refreshPermission } = useNotifications();
   const appVersion = Constants.expoConfig?.version ?? '1.0.0';
+
+  // Returning from the OS settings app only backgrounds this screen, so re-read
+  // on focus — otherwise the row still reads "Off" immediately after the user
+  // turned it on, which is the one moment the label has to be right.
+  useFocusEffect(
+    useCallback(() => {
+      void refreshPermission();
+    }, [refreshPermission]),
+  );
+
+  const handleNotifications = async () => {
+    if (pushGranted) {
+      await Linking.openSettings();
+      return;
+    }
+    // iOS shows its permission prompt at most once per install, and the in-app
+    // primer may already have spent it. After that requestPermissionsAsync
+    // resolves "denied" without displaying anything, so the OS settings app is
+    // the only way back — this row exists precisely to make that reachable.
+    const ok = await requestPermission();
+    if (!ok) await Linking.openSettings();
+  };
 
   const handleSignOut = () => {
     Alert.alert('Sign out', 'End this session on this device?', [
@@ -216,6 +240,22 @@ export default function SettingsScreen() {
             </View>
             <ThemePicker />
           </View>
+        </View>
+
+        <SectionHeader title="Notifications" />
+        <View style={[styles.section, { borderColor: c.border }]}>
+          <SettingRow
+            label="Push notifications"
+            description={
+              pushGranted
+                ? 'On — resurfacing, streaks, and replies.'
+                : 'Off — turn them on for resurfacing, streaks, and replies.'
+            }
+            onPress={() => void handleNotifications()}
+            rightElement={
+              pushGranted ? <ExternalLinkIcon size={16} color={c.muted} /> : undefined
+            }
+          />
         </View>
 
         <SectionHeader title="Privacy" />
