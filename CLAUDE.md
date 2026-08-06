@@ -21,13 +21,3 @@ Always run `npm run prisma:generate` after editing `prisma/schema.prisma`. Copy 
 
 - Backend: `@/*` → `src/*`
 - Mobile: `@/*` → `mobile/*`
-
-## Working Guidelines
-
-**Think before coding.** State assumptions explicitly. If multiple interpretations exist, present them. If something is unclear, ask — don't guess.
-
-**Simplicity first.** Minimum code that solves the problem. No speculative features, abstractions, or configurability that wasn't asked for.
-
-**Surgical changes.** Touch only what the task requires. Don't improve adjacent code. Remove only the dead code YOUR changes created — mention pre-existing dead code instead of deleting it.
-
-**Verify completion.** Define what done looks like before starting. For multi-step tasks, state a brief plan with a check per step.
