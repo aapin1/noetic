@@ -50,7 +50,8 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Mneme uses your microphone so you can describe a capture in your own words."
+          "microphonePermission": "Mneme uses your microphone so you can describe a capture in your own words.",
+          "enableBackgroundPlayback": false
         }
       ],
       [
