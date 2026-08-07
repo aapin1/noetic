@@ -24,6 +24,7 @@ import { MapBackdrop } from '@/components/ui/MapBackdrop';
 import { TemporalSpine } from '@/components/mind/TemporalSpine';
 import { FractureZone } from '@/components/mind/FractureZone';
 import { KeystoneBridge } from '@/components/mind/KeystoneBridge';
+import { BankedEmber } from '@/components/mind/BankedEmber';
 import {
   ConfluenceRow,
   EmberRow,
@@ -150,11 +151,12 @@ export default function MindScreen() {
     [],
   );
 
-  // Which selections open a dedicated full-screen visualization; the rest
-  // (dormant, or data cached before the visualization fields existed) keep
-  // the small explanation sheet.
+  // Which selections open a dedicated full-screen visualization; only data
+  // cached before the visualization fields existed still falls back to the
+  // small explanation sheet.
   const immersive =
     selection?.type === 'contradiction' ||
+    selection?.type === 'dormant' ||
     (selection?.type === 'thread' && (selection.d.timeline?.length ?? 0) >= 2) ||
     (selection?.type === 'convergence' && (selection.d.clusters?.length ?? 0) >= 2);
 
@@ -404,8 +406,24 @@ export default function MindScreen() {
           onViewAtlas={() => viewInAtlas(convergenceItemIds(selection.d))}
         />
       )}
+      {selection?.type === 'dormant' && (
+        <BankedEmber
+          data={selection.d}
+          color={ACCENT.dormant}
+          background={c.mapBackground}
+          onClose={() => setSelection(null)}
+          onContinueCompanion={() => continueInCompanion(
+            [],
+            selection.d.topicName,
+            `I went deep on ${selection.d.topicName} once — ${selection.d.captureCount} captures — ` +
+              `and then it went quiet for ${selection.d.daysSilent} days.\n\n` +
+              `What did I leave unfinished there?`,
+          )}
+          onOpenFolder={() => router.push(`/archive/${selection.d.topicId}` as never)}
+        />
+      )}
 
-      {/* ── Small sheet (dormant + pre-visualization fallbacks) ─────────── */}
+      {/* ── Small sheet (pre-visualization fallbacks) ───────────────────── */}
       {selection && !immersive && (
         <Animated.View
           entering={FadeIn.duration(200)}
@@ -414,7 +432,7 @@ export default function MindScreen() {
           <View style={[styles.sheetHandle, { backgroundColor: c.border }]} />
           <View style={styles.sheetHead}>
             <View style={styles.sheetHeadLeft}>
-              <View style={[styles.sheetDot, { backgroundColor: ACCENT[selection.type === 'thread' ? 'threads' : selection.type === 'convergence' ? 'convergence' : 'dormant'] }]} />
+              <View style={[styles.sheetDot, { backgroundColor: ACCENT[selection.type === 'convergence' ? 'convergence' : 'threads'] }]} />
               <Text variant="monoSmall" style={{ letterSpacing: 2 }} color="muted">
                 {selection.type.toUpperCase()}
               </Text>
@@ -423,17 +441,7 @@ export default function MindScreen() {
               <Text variant="monoSmall" color="faint">close</Text>
             </Pressable>
           </View>
-          {selection.type === 'dormant' ? (
-            <>
-              <View style={styles.sheetMeta}>
-                <Text variant="monoSmall" color="muted">{selection.d.topicName}</Text>
-                <Text variant="monoSmall" color="muted">{selection.d.captureCount} captures</Text>
-              </View>
-              <Text variant="body" numberOfLines={3} style={{ marginTop: Spacing[3] }}>
-                Quiet for {selection.d.daysSilent} days. You went deep here once — worth reawakening?
-              </Text>
-            </>
-          ) : selection.type === 'thread' ? (
+          {selection.type === 'thread' ? (
             <Text variant="body" numberOfLines={5} style={{ marginTop: Spacing[2] }}>
               {selection.d.position}
             </Text>
@@ -532,5 +540,4 @@ const styles = StyleSheet.create({
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing[2] },
   sheetHeadLeft: { flexDirection: 'row', alignItems: 'center' },
   sheetDot: { width: 7, height: 7, borderRadius: 4, marginRight: Spacing[2] },
-  sheetMeta: { flexDirection: 'row', justifyContent: 'space-between' },
 });

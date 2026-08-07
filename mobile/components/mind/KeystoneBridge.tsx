@@ -16,7 +16,7 @@ import Animated, {
 import { Spacing } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
 import type { ConvergenceSignal, IntelNode } from '@/types/api';
-import { DetailShell, stageInk } from './DetailShell';
+import { DETAIL_PAGE_BOTTOM, DetailShell, stageInk } from './DetailShell';
 
 // ─────────────────────────────────────────────────────────────────────────
 // KeystoneBridge — the Convergence detail view. Two source clusters sit far
@@ -104,9 +104,15 @@ export function KeystoneBridge({
   return (
     <DetailShell typeLabel="CONVERGENCE" accent={color} background={background} onClose={onClose}>
       {/* One continuous page: the bridge scrolls away with the text */}
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.page}>
+      <ScrollView
+        style={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.page}
+      >
       <View style={{ height: STAGE_H }}>
-        <Svg width={SW} height={STAGE_H} style={StyleSheet.absoluteFill}>
+        {/* Decorative only — captures are opened through ClusterOverlay's
+            Pressables. Left touchable it swallows the drag on the stage. */}
+        <Svg width={SW} height={STAGE_H} style={StyleSheet.absoluteFill} pointerEvents="none">
           {clusters.map((cluster, ci) =>
             cluster.items.map((item, i) => (
               <TensionLine
@@ -332,7 +338,8 @@ const styles = StyleSheet.create({
   },
   memberHit: { position: 'absolute', width: 40, height: 40, borderRadius: 20 },
   clusterLabel: { position: 'absolute', width: 150 },
-  page: { paddingBottom: Spacing[12] },
+  scroll: { flex: 1 },
+  page: { paddingBottom: DETAIL_PAGE_BOTTOM },
   footer: { paddingHorizontal: Spacing[6], paddingTop: Spacing[5] },
   signal: {
     marginTop: Spacing[3],

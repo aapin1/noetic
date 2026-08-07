@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
 import { Spacing } from '@/constants/theme';
@@ -13,6 +13,13 @@ import { MapBackdrop } from '@/components/ui/MapBackdrop';
 // map surface. A neutral grey here read as a different app the moment the
 // palette went warm, and Mind shares its backdrop with the Atlas.
 export const stageInk = (o: number) => `rgba(240,232,214,${o})`;
+
+// A detail view opens *inside* the Mind tab, so the tab bar floats over the
+// bottom of its page. Every scrolling detail view has to end above the bar —
+// at the old 48pt the closing CTAs sat underneath it with no scroll left to
+// bring them out, which read as the page refusing to scroll. Keep in step
+// with the tab bar height in (tabs)/_layout.tsx.
+export const DETAIL_PAGE_BOTTOM = Platform.OS === 'ios' ? 98 : 82;
 
 export function DetailShell({
   typeLabel,

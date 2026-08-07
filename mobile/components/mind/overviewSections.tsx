@@ -262,6 +262,12 @@ export function ConfluenceRow({
 
 // ── Dormant: embers ───────────────────────────────────────────────────────
 
+/** The longer it's been quiet, the dimmer the ember burns. Shared with the
+ *  BankedEmber detail view so a topic looks equally cold in both places. */
+export function emberHeat(daysSilent: number): number {
+  return Math.max(0.22, Math.min(0.85, 1 - (daysSilent - 14) / 70));
+}
+
 export function EmberRow({
   data,
   color,
@@ -271,8 +277,7 @@ export function EmberRow({
   color: string;
   onPress: () => void;
 }) {
-  // The longer it's been quiet, the dimmer the ember burns.
-  const heat = Math.max(0.22, Math.min(0.85, 1 - (data.daysSilent - 14) / 70));
+  const heat = emberHeat(data.daysSilent);
   return (
     <Pressable onPress={onPress} style={styles.emberRow} accessibilityLabel={`Dormant topic: ${data.topicName}`}>
       <View style={styles.emberDot}>

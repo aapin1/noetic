@@ -13,7 +13,7 @@ import Animated, {
 import { Spacing } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
 import type { ThreadSynthesis } from '@/types/api';
-import { DetailShell, stageInk } from './DetailShell';
+import { DETAIL_PAGE_BOTTOM, DetailShell, stageInk } from './DetailShell';
 
 // ─────────────────────────────────────────────────────────────────────────
 // TemporalSpine — the Threads detail view. A vertical spline runs down the
@@ -393,7 +393,7 @@ const styles = StyleSheet.create({
   // crosses to its side of the screen.
   driftWrap: { position: 'absolute', justifyContent: 'flex-start', paddingTop: 6 },
   drift: { borderLeftWidth: 2, paddingLeft: Spacing[3], paddingVertical: Spacing[2] },
-  end: { paddingHorizontal: Spacing[6], paddingBottom: Spacing[16], paddingTop: Spacing[4] },
+  end: { paddingHorizontal: Spacing[6], paddingBottom: DETAIL_PAGE_BOTTOM, paddingTop: Spacing[4] },
   endMarker: { width: 24, height: 2, borderRadius: 1, marginBottom: Spacing[4], opacity: 0.8 },
   ctaRow: {
     flexDirection: 'row',
