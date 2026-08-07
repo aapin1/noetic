@@ -61,9 +61,10 @@ The slide-two stagger begins **200ms before the morph lands**, deliberately
 overlapping it, so the two beats read as one continuous motion rather than as a
 scene change. CTA is tappable at roughly 4.6s; the whole intro is skippable.
 
-When `onSettled()` fires (4.6s, or immediately on skip) the haze eases to 60% of
-its intro opacity over 800ms so it never competes with the CTA, and keeps
-drifting indefinitely.
+When the intro retires (4.6s, or immediately on skip) the haze eases to 60% of
+its intro opacity so it never competes with the CTA, and keeps drifting
+indefinitely. The settle reuses the same 900ms fade constant as the entrance —
+one number rather than two that nobody could tell apart.
 
 All timings live as named constants at the top of `MusesIntro.tsx` so the pacing
 is tunable in one place.
@@ -101,45 +102,65 @@ drifts furthest, the faintest drifts least.
 Periods are coprime-ish so the layers never visibly resync.
 
 **Props.** `opacity: number` — the multiplier the landing screen drives to fade
-the field in and later settle it to 60%. Nothing else.
+the field in and later settle it to 60% — and `reduceMotion: boolean`, passed
+down rather than read again so the preference is queried once, by the screen.
 
 **Static mode.** When Reduce Motion is on, the marks render at their final
 positions and opacity with no loops started.
 
 ### `mobile/components/landing/MusesIntro.tsx` (new)
 
-Beat one and the morph. Calls `onSettled()` when the wordmark lands.
+Beat one and the morph. Calls `onHandoff()` when the screen behind should start
+rising, and `onDone()` once the word has landed and the intro can be retired.
 
-**The morph.** The intro's "Mneme" is a single `Animated.Text` rendered with
-`variant="wordmark"` at `scale: 2.4`, centered. On exit it animates to `scale: 1`
-and translates by the delta between its measured `onLayout` origin and the known
-wordmark slot — `Spacing[6]` from the left, `Spacing[8]` plus the safe-area top
-inset from the top. Because it is the same variant and the same font the whole
-way, there is no cross-fade seam: the word *is* the wordmark by the time it
-lands, and the real one swaps in underneath it pixel-identically.
+**The morph is a pure translation.** All three names are set in `variant="wordmark"`
+at its natural size, which means the word that travels already *is* the wordmark —
+no scale, no cross-fade, no font seam, and nothing for a rounding error to land
+on. It moves by the delta between where it was laid out and where the real
+wordmark sits.
 
-Melete and Aoide are separate `Animated.Text` nodes that fade to 0 while drifting
-~14px outward, so the three names visibly become one.
+Both are measured rather than assumed: the intro root, the names row, and the
+word each report an `onLayout` box, and the screen passes down the wordmark's own
+measured box. Every box resolves against the same parent, so they subtract
+cleanly — no assumption about how Yoga insets absolutely-positioned children by
+padding, which is the kind of thing that silently differs by platform. The
+timeline does not start until all four boxes are in.
 
-**Copy.** Verbatim, across three staged reveals:
+Melete and Aoide fade to 0 while drifting ~14px outward, so the three names
+visibly become one.
+
+**One clock.** The whole sequence interpolates off a single `Animated.Value`
+counting milliseconds, driven linearly with `useNativeDriver`. Every beat is a
+range on that one clock, so the pacing is legible in one place and the timeline
+cannot drift out of sync with itself. Easing that matters — the word's travel —
+is baked in as sampled ease-out-cubic points on the interpolation.
+
+**Copy.** Verbatim, across three staged reveals. The names are set lowercase and
+unpunctuated so the surviving one matches the wordmark exactly:
 
 1. `Before the nine muses` / `there were three.`
-2. `Melete.` `Aoide.` `Mneme.`
-3. `This one is for Mneme.`
+2. `melete` `aoide` `mneme`
+3. `This one is for mneme.`
 
-**Skip.** A full-screen `Pressable` covers the intro. On press it cancels the
-pending stage timers, runs a 220ms collapse of whatever is on screen, and calls
-`onSettled()`.
+**Skip.** A full-screen `Pressable` covers the intro. On press it clears the
+pending stage timers, stops the clock, and cross-fades the whole intro out over
+220ms — the word does not fly on a skip, because someone who tapped wants the
+screen, not the flourish. `onHandoff()` fires immediately and `onDone()` when the
+fade completes.
 
 ### `mobile/app/index.tsx` (modified)
 
-- Mounts `<HazeField>` as the bottom layer, inside `SafeAreaView`, behind
-  everything, `pointerEvents="none"`.
-- Holds an `introDone` state. While false, renders `<MusesIntro>` and withholds
-  the existing content. The existing entrance stagger starts 200ms before
-  `onSettled()` fires.
-- Everything else — the `Brain`, `TypedTagline`, the breath and sway loops, the
-  headline, both CTAs, all styles — is untouched.
+- Wraps the screen in a plain `View` so `<HazeField>` can sit behind the
+  `SafeAreaView` and fill the whole display rather than being inset by it.
+- Holds `contentIn` (start the entrance stagger, fired by `onHandoff`) and
+  `introDone` (retire the intro, reveal the wordmark, fired by `onDone`). Two
+  signals rather than one, because for 200ms the travelling word and the real
+  wordmark would otherwise both be on screen a few pixels apart.
+- Measures the wordmark's own layout box and passes it to the intro as the target.
+- `TypedTagline` gains a `start` prop so it types on the handoff instead of on
+  mount — otherwise it would have finished typing behind the intro.
+- Everything else — the `Brain`, the breath and sway loops, the headline, both
+  CTAs, all styles and copy — is untouched.
 
 The two `<Redirect>` checks for authenticated users stay at the top of the
 component and return before any of this mounts, so a signed-in user never sees a
@@ -185,12 +206,18 @@ justified by this change. Verification is manual, on the iOS simulator:
 cd mobile && EXPO_NO_DOCKER=1 npx expo start --ios -c
 ```
 
-Checklist:
+Verified on an iPhone 17 Pro simulator by capturing the sequence frame by frame:
 
-- [ ] Light mode: haze reads as faint warm speckle on paper, never as dirt
-- [ ] Dark mode: haze reads as a faint glow, never as noise
-- [ ] Full sequence plays through and the morph lands on the wordmark with no jump
-- [ ] Tap-to-skip during each of the three stages lands cleanly in slide two
-- [ ] Reduce Motion on: no intro, static haze, screen usable immediately
-- [ ] Navigate to sign-in and back: intro does not replay
-- [ ] CTA is tappable by ~4.6s and the drift does not stutter during the stagger
+- [x] Light mode: haze reads as a faint warm speckle on paper, never as dirt
+- [x] Dark mode: haze reads as a faint glow on warm ink, never as noise
+- [x] All three beats stage correctly, including the dim behind the closing line
+- [x] The morph travels and lands on the wordmark slot with no jump and no
+      double wordmark during the handoff
+- [x] Reduce Motion on: no intro, static haze, screen usable immediately
+- [x] Settled screen is unchanged from before this work
+
+Not verified by automation — the simulator has no tap injection, so these were
+checked by reading the code rather than by driving the UI:
+
+- [ ] Tap-to-skip during each of the three stages
+- [ ] Navigating to sign-in and back does not replay the intro
