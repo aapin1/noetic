@@ -4,56 +4,148 @@ import {
   Easing,
   Pressable,
   StyleSheet,
+  View,
   type LayoutRectangle,
 } from 'react-native';
-import { Spacing } from '@/constants/theme';
+import { FontFamily, FontSize, LetterSpacing, LineHeight, Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import {
+  Constellation,
+  DOT,
+  DOT_ALPHA,
+  DOT_SIZE,
+  SURVIVORS,
+} from '@/components/landing/Constellation';
 
 /**
- * The whole sequence runs off ONE driver counting milliseconds, so every beat
- * below is read straight off the same clock and the pacing lives in one place.
+ * Opacity beats read off ONE driver counting milliseconds, so the pacing is
+ * legible in one place. The two motions that carry the piece — the collapse and
+ * the morph — get their own eased drivers instead, because sampling a curve off
+ * a linear clock leaves visible kinks in the velocity.
  */
-const A_IN = 300;
-const A_DUR = 600;
-const B_IN = 1500;
-const B_DUR = 600;
-const DIM_AT = 2700;
-const DIM_DUR = 600;
-const C_IN = 2700;
-const C_DUR = 600;
-const MORPH_AT = 4000;
-const MORPH_DUR = 600;
-/** How long the lines that are leaving take to go, starting with the morph. */
-const LEAVE_DUR = 400;
-/** The screen behind starts rising just before the word lands, so it reads as
- * one continuous motion rather than as two scenes. */
-const HANDOFF_AT = 4400;
-const TOTAL = MORPH_AT + MORPH_DUR;
-const EXIT_MS = 220;
+const FIELD_IN = 700;
+const FIELD_FULL = 1500;
 
-/** How far Melete and Aoide drift apart as they go. */
-const PART_BY = 14;
+const L1_AT = 350;
+const L2_AT = 1250;
+const WORD_STAGGER = 105;
+const WORD_DUR = 500;
+
+const EDGES_OUT = 2050;
+const EXTRAS_OUT = 2150;
+const FIELD_OUT_DUR = 700;
+const COLLAPSE_AT = 2150;
+const COLLAPSE_DUR = 1050;
+
+const NAMES_AT = 3100;
+const NAME_STAGGER = 130;
+const NAME_DUR = 500;
+
+const DIM_AT = 4050;
+const DIM_DUR = 600;
+const L3_AT = 4100;
+
+/** The two who do not survive leave FIRST, and are gone before the last word
+ * moves. Overlapping them with the morph read as Mneme escaping rather than as
+ * the other two dissolving. */
+const PART_AT = 5700;
+const PART_DUR = 650;
+/** The statements clear next, so the word crosses an empty screen. */
+const TEXT_OUT = 5900;
+const TEXT_OUT_DUR = 550;
+
+const MORPH_AT = 6500;
+const MORPH_DUR = 1150;
+/** The screen behind starts rising before the word lands, so it reads as one
+ * continuous motion rather than as two scenes. */
+const HANDOFF_AT = MORPH_AT + MORPH_DUR - 250;
+const TOTAL = MORPH_AT + MORPH_DUR;
+const EXIT_MS = 260;
+
+/** How far the two who leave rise as they fade — back up towards the
+ * constellation they came down from. Drifting them sideways instead put Aoide
+ * straight through Mneme, which is the one word that must stay legible. */
+const PART_BY = 16;
+
+const LINE_1 = 'Before the nine muses';
+const LINE_2 = 'there were three.';
+const LINE_3 = 'This one is for mneme.';
+const NAMES = ['melete', 'aoide', 'mneme'];
+/** The one that survives, and the only one the morph cares about. */
+const MNEME = 2;
+
+/** Both statements are set at one size. Only colour separates them. */
+const LINE_SIZE = FontSize['2xl'];
+
+/** Long, soft settle — most of the distance early, then a slow arrival. */
+const SETTLE = Easing.bezier(0.16, 1, 0.3, 1);
+
+type Box = LayoutRectangle | null;
 
 interface Props {
   /** Where the real wordmark sits, in the coordinate space of the shared parent. */
   target: { x: number; y: number };
-  /** Fired just before the word lands, so the screen behind can start rising. */
+  /** Fired before the word lands, so the screen behind can start rising. */
   onHandoff: () => void;
   /** Fired once the word is home and this component can go. */
   onDone: () => void;
 }
 
-/** A fade-and-rise entrance, sampled off the shared clock. */
-function entrance(clock: Animated.Value, at: number, dur: number) {
-  return clock.interpolate({
-    inputRange: [at, at + dur * 0.25, at + dur * 0.5, at + dur],
-    outputRange: [10, 4.2, 1.25, 0],
-    extrapolate: 'clamp',
-  });
+/** A line that arrives a word at a time rather than as a block. */
+function Words({
+  clock,
+  at,
+  text,
+  color,
+}: {
+  clock: Animated.Value;
+  at: number;
+  text: string;
+  color: string;
+}) {
+  return (
+    <View style={styles.wordRow}>
+      {text.split(' ').map((word, i) => {
+        const start = at + i * WORD_STAGGER;
+        return (
+          <Animated.Text
+            key={i}
+            style={[
+              styles.word,
+              { color },
+              {
+                opacity: clock.interpolate({
+                  inputRange: [start, start + WORD_DUR],
+                  outputRange: [0, 1],
+                  extrapolate: 'clamp',
+                }),
+                transform: [
+                  {
+                    translateY: clock.interpolate({
+                      inputRange: [start, start + WORD_DUR * 0.35, start + WORD_DUR],
+                      outputRange: [9, 2.4, 0],
+                      extrapolate: 'clamp',
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            {word}
+          </Animated.Text>
+        );
+      })}
+    </View>
+  );
 }
 
 export function MusesIntro({ target, onHandoff, onDone }: Props) {
+  const c = useThemeColors();
   const clock = useRef(new Animated.Value(0)).current;
+  const collapse = useRef(new Animated.Value(0)).current;
+  const part = useRef(new Animated.Value(0)).current;
+  const morph = useRef(new Animated.Value(0)).current;
   const exit = useRef(new Animated.Value(0)).current;
   const started = useRef(false);
   const leaving = useRef(false);
@@ -66,23 +158,49 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
   handoffRef.current = onHandoff;
   doneRef.current = onDone;
 
-  // The morph is a pure translation: the names are already set in the wordmark
-  // variant, so the word that travels IS the wordmark by the time it arrives —
-  // no scale, no cross-fade, nothing to seam. Getting there needs the offset
-  // between where the word was laid out and where the real wordmark sits, and
-  // every box below is measured against the same parent so they subtract.
-  const [rootBox, setRootBox] = useState<LayoutRectangle | null>(null);
-  const [rowBox, setRowBox] = useState<LayoutRectangle | null>(null);
-  const [wordBox, setWordBox] = useState<LayoutRectangle | null>(null);
+  // Both motions land on measured boxes rather than assumed geometry. Every box
+  // resolves against the same parent, so they subtract cleanly — no assumption
+  // about how Yoga insets absolutely-positioned children by padding.
+  const [rootBox, setRootBox] = useState<Box>(null);
+  const [rowBox, setRowBox] = useState<Box>(null);
+  const [colBoxes, setColBoxes] = useState<Box[]>([null, null, null]);
+  const [dotBoxes, setDotBoxes] = useState<Box[]>([null, null, null]);
+  const [wordBox, setWordBox] = useState<Box>(null);
 
-  const delta =
-    rootBox && rowBox && wordBox
-      ? {
-          x: target.x - rootBox.x - (rowBox.x + wordBox.x),
-          y: target.y - rootBox.y - (rowBox.y + wordBox.y),
-        }
-      : null;
-  const ready = delta !== null;
+  const measureAt =
+    (setter: React.Dispatch<React.SetStateAction<Box[]>>, i: number) =>
+    (e: { nativeEvent: { layout: LayoutRectangle } }) => {
+      // Read the layout out of the event first: it is pooled, so by the time the
+      // state updater runs `nativeEvent` has already been recycled.
+      const box = e.nativeEvent.layout;
+      setter((prev) => (prev[i] ? prev : prev.map((v, j) => (j === i ? box : v))));
+    };
+
+  const ready =
+    rootBox !== null &&
+    rowBox !== null &&
+    wordBox !== null &&
+    colBoxes.every(Boolean) &&
+    dotBoxes.every(Boolean);
+
+  /** Where a survivor's dot starts: out on the constellation, relative to where
+   * the names row will finally put it. */
+  const scatterOffset = (i: number) => {
+    if (!ready) return { x: 0, y: 0 };
+    const restX = rowBox!.x + colBoxes[i]!.x + dotBoxes[i]!.x;
+    const restY = rowBox!.y + colBoxes[i]!.y + dotBoxes[i]!.y;
+    return {
+      x: SURVIVORS[i].x * rootBox!.width - DOT_SIZE / 2 - restX,
+      y: SURVIVORS[i].y * rootBox!.height - DOT_SIZE / 2 - restY,
+    };
+  };
+
+  const delta = ready
+    ? {
+        x: target.x - rootBox!.x - (rowBox!.x + colBoxes[MNEME]!.x + wordBox!.x),
+        y: target.y - rootBox!.y - (rowBox!.y + colBoxes[MNEME]!.y + wordBox!.y),
+      }
+    : { x: 0, y: 0 };
 
   useEffect(() => {
     if (!ready || started.current) return;
@@ -95,6 +213,22 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
       useNativeDriver: true,
     }).start();
 
+    const run = (value: Animated.Value, at: number, duration: number) =>
+      timers.current.push(
+        setTimeout(() => {
+          Animated.timing(value, {
+            toValue: 1,
+            duration,
+            easing: SETTLE,
+            useNativeDriver: true,
+          }).start();
+        }, at),
+      );
+
+    run(collapse, COLLAPSE_AT, COLLAPSE_DUR);
+    run(part, PART_AT, PART_DUR);
+    run(morph, MORPH_AT, MORPH_DUR);
+
     timers.current.push(setTimeout(() => handoffRef.current(), HANDOFF_AT));
     timers.current.push(
       setTimeout(() => {
@@ -102,7 +236,7 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
         doneRef.current();
       }, TOTAL),
     );
-  }, [clock, ready]);
+  }, [clock, collapse, morph, part, ready]);
 
   useEffect(
     () => () => {
@@ -118,6 +252,9 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
     timers.current.forEach(clearTimeout);
     timers.current = [];
     clock.stopAnimation();
+    collapse.stopAnimation();
+    part.stopAnimation();
+    morph.stopAnimation();
     handoffRef.current();
     Animated.timing(exit, {
       toValue: 1,
@@ -127,56 +264,77 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
     }).start(() => doneRef.current());
   };
 
-  // Opening lines: in, hold, dim behind the closing line, then out.
-  const openingOpacity = clock.interpolate({
-    inputRange: [A_IN, A_IN + A_DUR, DIM_AT, DIM_AT + DIM_DUR, MORPH_AT, MORPH_AT + LEAVE_DUR],
-    outputRange: [0, 1, 1, 0.3, 0.3, 0],
-    extrapolate: 'clamp',
-  });
+  const fadeField = (out: number) =>
+    clock.interpolate({
+      inputRange: [FIELD_IN, FIELD_FULL, out, out + FIELD_OUT_DUR],
+      outputRange: [0, 1, 1, 0],
+      extrapolate: 'clamp',
+    });
 
-  // The two muses who do not survive the myth.
-  const partingOpacity = clock.interpolate({
-    inputRange: [B_IN, B_IN + B_DUR, MORPH_AT, MORPH_AT + LEAVE_DUR],
-    outputRange: [0, 1, 1, 0],
+  // The opening statement holds, dims behind the closing line, then goes.
+  const openingOpacity = clock.interpolate({
+    inputRange: [0, DIM_AT, DIM_AT + DIM_DUR, TEXT_OUT, TEXT_OUT + TEXT_OUT_DUR],
+    outputRange: [1, 1, 0.3, 0.3, 0],
     extrapolate: 'clamp',
   });
 
   const closingOpacity = clock.interpolate({
-    inputRange: [C_IN, C_IN + C_DUR, MORPH_AT, MORPH_AT + LEAVE_DUR],
-    outputRange: [0, 1, 1, 0],
+    inputRange: [0, TEXT_OUT, TEXT_OUT + TEXT_OUT_DUR],
+    outputRange: [1, 1, 0],
     extrapolate: 'clamp',
   });
 
-  // Mneme arrives with the others and never leaves.
-  const mnemeOpacity = clock.interpolate({
-    inputRange: [B_IN, B_IN + B_DUR],
-    outputRange: [0, 1],
-    extrapolate: 'clamp',
-  });
-
-  const rise = entrance(clock, B_IN, B_DUR);
-
-  const parting = (direction: -1 | 1) =>
+  // Every dot arrives at the constellation's own weight. Two leave with their
+  // names; Mneme's goes early into the morph, so nothing trails the wordmark.
+  const dotOpacity = (i: number) =>
     clock.interpolate({
-      inputRange: [MORPH_AT, MORPH_AT + MORPH_DUR],
-      outputRange: [0, PART_BY * direction],
+      inputRange:
+        i === MNEME
+          ? [FIELD_IN, FIELD_FULL, MORPH_AT, MORPH_AT + 450]
+          : [FIELD_IN, FIELD_FULL, PART_AT, PART_AT + PART_DUR],
+      outputRange: [0, DOT_ALPHA, DOT_ALPHA, 0],
       extrapolate: 'clamp',
     });
 
-  // Sampled off an ease-out cubic, so the word leaves quickly and settles slowly.
-  const travel = clock.interpolate({
-    inputRange: [
-      MORPH_AT,
-      MORPH_AT + MORPH_DUR * 0.25,
-      MORPH_AT + MORPH_DUR * 0.5,
-      MORPH_AT + MORPH_DUR * 0.75,
-      MORPH_AT + MORPH_DUR,
-    ],
-    outputRange: [0, 0.578, 0.875, 0.984, 1],
-    extrapolate: 'clamp',
-  });
-  const travelTo = (distance: number) =>
-    travel.interpolate({ inputRange: [0, 1], outputRange: [0, distance] });
+  const nameOpacity = (i: number) => {
+    const at = NAMES_AT + i * NAME_STAGGER;
+    return i === MNEME
+      ? clock.interpolate({
+          inputRange: [at, at + NAME_DUR],
+          outputRange: [0, 1],
+          extrapolate: 'clamp',
+        })
+      : clock.interpolate({
+          inputRange: [at, at + NAME_DUR, PART_AT, PART_AT + PART_DUR],
+          outputRange: [0, 1, 1, 0],
+          extrapolate: 'clamp',
+        });
+  };
+
+  const nameRise = (i: number) => {
+    const at = NAMES_AT + i * NAME_STAGGER;
+    return clock.interpolate({
+      inputRange: [at, at + NAME_DUR * 0.35, at + NAME_DUR],
+      outputRange: [10, 2.6, 0],
+      extrapolate: 'clamp',
+    });
+  };
+
+  /** Melete and Aoide rise away on their own driver; Mneme heads for the corner
+   * on the morph, a beat later. */
+  const leave = (i: number, axis: 'x' | 'y') =>
+    i === MNEME
+      ? morph.interpolate({ inputRange: [0, 1], outputRange: [0, delta[axis]] })
+      : part.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0, axis === 'y' ? -PART_BY : 0],
+        });
+
+  const dotTravel = (i: number, axis: 'x' | 'y') =>
+    Animated.add(
+      collapse.interpolate({ inputRange: [0, 1], outputRange: [scatterOffset(i)[axis], 0] }),
+      leave(i, axis),
+    );
 
   return (
     <Animated.View
@@ -186,12 +344,19 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
         { opacity: exit.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) },
       ]}
       onLayout={(e) => {
-        // Read the layout out of the event first: it is pooled, so by the time
-        // the state updater runs `nativeEvent` has already been recycled.
         const box = e.nativeEvent.layout;
         setRootBox((prev) => prev ?? box);
       }}
     >
+      {rootBox && (
+        <Constellation
+          width={rootBox.width}
+          height={rootBox.height}
+          pointOpacity={fadeField(EXTRAS_OUT)}
+          edgeOpacity={fadeField(EDGES_OUT)}
+        />
+      )}
+
       <Pressable
         style={StyleSheet.absoluteFill}
         onPress={skip}
@@ -199,13 +364,9 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
         accessibilityRole="button"
       />
 
-      <Animated.View
-        style={{ opacity: openingOpacity, transform: [{ translateY: entrance(clock, A_IN, A_DUR) }] }}
-        pointerEvents="none"
-      >
-        <Text variant="h2" style={styles.line}>
-          Before the nine muses{'\n'}there were three.
-        </Text>
+      <Animated.View style={{ opacity: openingOpacity }} pointerEvents="none">
+        <Words clock={clock} at={L1_AT} text={LINE_1} color={c.text} />
+        <Words clock={clock} at={L2_AT} text={LINE_2} color={c.text} />
       </Animated.View>
 
       <Animated.View
@@ -216,51 +377,46 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
         }}
         pointerEvents="none"
       >
-        <Animated.View
-          style={[
-            styles.name,
-            { opacity: partingOpacity, transform: [{ translateX: parting(-1) }, { translateY: rise }] },
-          ]}
-        >
-          <Text variant="wordmark">melete</Text>
-        </Animated.View>
+        {NAMES.map((name, i) => (
+          <View key={name} style={styles.nameCol} onLayout={measureAt(setColBoxes, i)}>
+            <Animated.Text
+              onLayout={measureAt(setDotBoxes, i)}
+              style={[
+                styles.dot,
+                { color: c.text },
+                {
+                  opacity: dotOpacity(i),
+                  transform: [
+                    { translateX: dotTravel(i, 'x') },
+                    { translateY: dotTravel(i, 'y') },
+                  ],
+                },
+              ]}
+            >
+              {DOT}
+            </Animated.Text>
 
-        <Animated.View
-          style={[
-            styles.name,
-            { opacity: partingOpacity, transform: [{ translateX: parting(1) }, { translateY: rise }] },
-          ]}
-        >
-          <Text variant="wordmark">aoide</Text>
-        </Animated.View>
-
-        <Animated.View
-          onLayout={(e) => {
-            const box = e.nativeEvent.layout;
-            setWordBox((prev) => prev ?? box);
-          }}
-          style={[
-            styles.name,
-            {
-              opacity: mnemeOpacity,
-              transform: [
-                { translateX: travelTo(delta?.x ?? 0) },
-                { translateY: Animated.add(rise, travelTo(delta?.y ?? 0)) },
-              ],
-            },
-          ]}
-        >
-          <Text variant="wordmark">mneme</Text>
-        </Animated.View>
+            <Animated.View
+              onLayout={i === MNEME ? (e) => {
+                const box = e.nativeEvent.layout;
+                setWordBox((prev) => prev ?? box);
+              } : undefined}
+              style={{
+                opacity: nameOpacity(i),
+                transform: [
+                  { translateX: leave(i, 'x') },
+                  { translateY: Animated.add(nameRise(i), leave(i, 'y')) },
+                ],
+              }}
+            >
+              <Text variant="wordmark">{name}</Text>
+            </Animated.View>
+          </View>
+        ))}
       </Animated.View>
 
-      <Animated.View
-        style={{ opacity: closingOpacity, transform: [{ translateY: entrance(clock, C_IN, C_DUR) }] }}
-        pointerEvents="none"
-      >
-        <Text variant="serif" color="muted" style={styles.line}>
-          This one is for mneme.
-        </Text>
+      <Animated.View style={{ opacity: closingOpacity }} pointerEvents="none">
+        <Words clock={clock} at={L3_AT} text={LINE_3} color={c.muted} />
       </Animated.View>
     </Animated.View>
   );
@@ -272,12 +428,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: Spacing[6],
   },
-  line: { textAlign: 'center' },
+  wordRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  word: {
+    fontFamily: FontFamily.serif,
+    fontSize: LINE_SIZE,
+    lineHeight: LINE_SIZE * LineHeight.snug,
+    letterSpacing: LetterSpacing.tight,
+    marginHorizontal: 3.5,
+  },
   names: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: Spacing[6],
-    marginBottom: Spacing[6],
+    alignItems: 'flex-end',
+    marginTop: Spacing[8],
+    marginBottom: Spacing[8],
   },
-  name: { marginHorizontal: Spacing[3] },
+  nameCol: {
+    alignItems: 'center',
+    marginHorizontal: Spacing[3],
+  },
+  dot: {
+    fontFamily: FontFamily.mono,
+    fontSize: DOT_SIZE,
+    lineHeight: DOT_SIZE,
+    marginBottom: Spacing[3],
+  },
 });

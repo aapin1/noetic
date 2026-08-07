@@ -24,13 +24,22 @@ const { width: SCREEN_W } = Dimensions.get('window');
 const BRAIN_SIZE = Math.min(SCREEN_W * 0.8, 340);
 
 const TAGLINE = '> save. connect. remember.';
+const RETURNING = '> welcome back';
 const TYPE_MS = 55;
 
 /** Once the intro has handed off, the haze drops back so it never competes with the CTA. */
 const HAZE_SETTLED = 0.6;
 
-/** Types the tagline out one character at a time, then blinks a cursor. */
-function TypedTagline({ color, start }: { color: string; start: boolean }) {
+/** Types a line out one character at a time, then blinks a cursor. */
+function TypedTagline({
+  color,
+  start,
+  text = TAGLINE,
+}: {
+  color: string;
+  start: boolean;
+  text?: string;
+}) {
   const [chars, setChars] = useState(0);
   const cursor = useRef(new Animated.Value(1)).current;
 
@@ -38,12 +47,12 @@ function TypedTagline({ color, start }: { color: string; start: boolean }) {
     if (!start) return;
     const t = setInterval(() => {
       setChars((n) => {
-        if (n >= TAGLINE.length) { clearInterval(t); return n; }
+        if (n >= text.length) { clearInterval(t); return n; }
         return n + 1;
       });
     }, TYPE_MS);
     return () => clearInterval(t);
-  }, [start]);
+  }, [start, text]);
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -59,7 +68,7 @@ function TypedTagline({ color, start }: { color: string; start: boolean }) {
   return (
     <View style={styles.taglineRow}>
       <Text variant="monoSmall" style={{ color, letterSpacing: 1 }}>
-        {TAGLINE.slice(0, chars)}
+        {text.slice(0, chars)}
       </Text>
       <Animated.Text style={{ fontFamily: FontFamily.mono, fontSize: 12, color, opacity: cursor }}>
         _
@@ -91,7 +100,20 @@ export default function LandingScreen() {
   const enterCopy = useRef(new Animated.Value(0)).current;
   const enterCta = useRef(new Animated.Value(0)).current;
 
-  // A four-second full-screen motion piece is exactly what this setting is for.
+  // `getToken()` resolves in milliseconds and AuthContext flips `isAuthenticated`
+  // BEFORE the profile fetch, so within a frame we know which of these someone
+  // is. Gating on `isLoading` instead — which waits on the network round-trip —
+  // is what made a returning user watch the first line of the intro for two
+  // seconds before being redirected.
+  const returning = isAuthenticated && isLoading;
+  const signedOut = !isAuthenticated && !isLoading;
+
+  // The returning state borrows the same entrance the landing content uses.
+  useEffect(() => {
+    if (returning) setContentIn(true);
+  }, [returning]);
+
+  // A seven-second full-screen motion piece is exactly what this setting is for.
   useEffect(() => {
     let alive = true;
     AccessibilityInfo.isReduceMotionEnabled().then((on) => {
@@ -158,49 +180,60 @@ export default function LandingScreen() {
       <HazeField opacity={introDone ? HAZE_SETTLED : 1} reduceMotion={reduceMotion} />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.inner}>
-          <Text
-            variant="wordmark"
-            style={[styles.mark, { opacity: introDone ? 1 : 0 }]}
-            onLayout={(e) => {
-              const { x, y } = e.nativeEvent.layout;
-              setMarkBox((prev) => prev ?? { x, y });
-            }}
-          >
-            mneme
-          </Text>
+          {/* Mounted in both states, so a returning user whose profile fetch
+              fails does not watch the brain remount underneath them. */}
           <Animated.View style={[styles.brain, rise(enterBrain)]}>
             <Animated.View style={{ transform: [{ scale: breathScale }, { rotate: swayRotate }] }}>
               <Brain size={BRAIN_SIZE} density={72} intensity={0.85} />
             </Animated.View>
-            <TypedTagline color={c.muted} start={contentIn} />
-          </Animated.View>
-          <Animated.View style={rise(enterCopy)}>
-            <Text variant="h1" style={styles.line}>
-              Turn what catches your eye into a map of your mind.
-            </Text>
-          </Animated.View>
-          <Animated.View style={rise(enterCta)}>
-            <Button
-              label="Get started"
-              variant="primary"
-              size="lg"
-              fullWidth
-              onPress={() => router.push('/(auth)/sign-up')}
-              style={styles.cta}
+            <TypedTagline
+              color={c.muted}
+              start={contentIn}
+              text={returning ? RETURNING : TAGLINE}
             />
-            <Pressable onPress={() => router.push('/(auth)/sign-in')} style={styles.secondary}>
-              <Text variant="monoSmall" color="muted">
-                Sign in
-              </Text>
-            </Pressable>
           </Animated.View>
 
-          {!introDone && markBox && (
-            <MusesIntro
-              target={markBox}
-              onHandoff={() => setContentIn(true)}
-              onDone={() => setIntroDone(true)}
-            />
+          {!returning && (
+            <>
+              <Text
+                variant="wordmark"
+                style={[styles.mark, { opacity: introDone ? 1 : 0 }]}
+                onLayout={(e) => {
+                  const { x, y } = e.nativeEvent.layout;
+                  setMarkBox((prev) => prev ?? { x, y });
+                }}
+              >
+                mneme
+              </Text>
+              <Animated.View style={rise(enterCopy)}>
+                <Text variant="h1" style={styles.line}>
+                  Turn what catches your eye into a map of your mind.
+                </Text>
+              </Animated.View>
+              <Animated.View style={rise(enterCta)}>
+                <Button
+                  label="Get started"
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  onPress={() => router.push('/(auth)/sign-up')}
+                  style={styles.cta}
+                />
+                <Pressable onPress={() => router.push('/(auth)/sign-in')} style={styles.secondary}>
+                  <Text variant="monoSmall" color="muted">
+                    Sign in
+                  </Text>
+                </Pressable>
+              </Animated.View>
+
+              {signedOut && !introDone && markBox && (
+                <MusesIntro
+                  target={markBox}
+                  onHandoff={() => setContentIn(true)}
+                  onDone={() => setIntroDone(true)}
+                />
+              )}
+            </>
           )}
         </View>
       </SafeAreaView>
