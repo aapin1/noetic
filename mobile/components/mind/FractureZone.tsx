@@ -15,7 +15,7 @@ import Animated, {
 import { Spacing } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
 import type { ContradictionCard, IntelNode } from '@/types/api';
-import { DetailShell, stageInk } from './DetailShell';
+import { DETAIL_PAGE_BOTTOM, DetailShell, stageInk } from './DetailShell';
 
 // ─────────────────────────────────────────────────────────────────────────
 // FractureZone — the Contradictions detail view. No connecting lines: two
@@ -198,9 +198,16 @@ export function FractureZone({
   return (
     <DetailShell typeLabel="TENSION" accent={color} background={background} onClose={onClose}>
       {/* One continuous page: the rift scrolls away with the text */}
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.page}>
+      <ScrollView
+        style={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.page}
+      >
       <View style={styles.stage}>
-        <Svg width={SW} height={STAGE_H} style={StyleSheet.absoluteFill}>
+        {/* Decorative only — every capture is opened through the overlay
+            Pressables below. Without this the rift swallows the drag and the
+            page cannot be scrolled from the top half of the screen. */}
+        <Svg width={SW} height={STAGE_H} style={StyleSheet.absoluteFill} pointerEvents="none">
           {/* The chasm — a rift, not a link */}
           <Path d={chasmFill} fill="rgba(0,0,0,0.4)" />
           <Path d={chasmLeft} fill="none" stroke={color} strokeOpacity={0.35} strokeWidth={1.2} />
@@ -314,7 +321,8 @@ const styles = StyleSheet.create({
   },
   satHit: { position: 'absolute', width: 36, height: 36, borderRadius: 18 },
   poleLabel: { position: 'absolute' },
-  page: { paddingBottom: Spacing[12] },
+  scroll: { flex: 1 },
+  page: { paddingBottom: DETAIL_PAGE_BOTTOM },
   below: { paddingHorizontal: Spacing[6] },
   crux: {
     alignSelf: 'center',
