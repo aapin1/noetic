@@ -1,6 +1,8 @@
 import React, { useCallback, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { ChevronRightIcon, ExternalLinkIcon, LogOutIcon } from 'lucide-react-native';
@@ -136,6 +138,58 @@ export default function SettingsScreen() {
     ]);
   };
 
+  // Export writes both renderings to the cache dir, then lets the user pick a
+  // format — the share sheet can only carry one file at a time.
+  const [exporting, setExporting] = useState(false);
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const data = await api.account.export();
+      const dir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+      if (!dir) throw new Error('No writable directory on this device.');
+      const jsonPath = `${dir}mneme-export.json`;
+      const mdPath = `${dir}mneme-export.md`;
+      const { markdown, ...structured } = data;
+      await FileSystem.writeAsStringAsync(jsonPath, JSON.stringify(structured, null, 2));
+      await FileSystem.writeAsStringAsync(mdPath, markdown);
+      setExporting(false);
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert('Sharing unavailable', 'This device can’t open the share sheet.');
+        return;
+      }
+      const count = data.captureCount;
+      Alert.alert(
+        'Export ready',
+        `${count} capture${count === 1 ? '' : 's'}, yours to keep. Pick a format.`,
+        [
+          {
+            text: 'Markdown',
+            onPress: () =>
+              void Sharing.shareAsync(mdPath, {
+                mimeType: 'text/markdown',
+                UTI: 'net.daringfireball.markdown',
+                dialogTitle: 'Export your data',
+              }),
+          },
+          {
+            text: 'JSON',
+            onPress: () =>
+              void Sharing.shareAsync(jsonPath, {
+                mimeType: 'application/json',
+                UTI: 'public.json',
+                dialogTitle: 'Export your data',
+              }),
+          },
+          { text: 'Cancel', style: 'cancel' },
+        ],
+      );
+    } catch (e) {
+      setExporting(false);
+      Alert.alert('Could not export', e instanceof Error ? e.message : 'Something went wrong. Try again.');
+    }
+  };
+
   // Two-step confirm for permanent account deletion (App Store requires the
   // option; the double confirmation keeps a stray tap from ending a life's
   // worth of captures).
@@ -223,6 +277,11 @@ export default function SettingsScreen() {
                 }
               });
             }}
+          />
+          <SettingRow
+            label="Export my data"
+            description="Every capture you’ve saved, as a file you keep."
+            onPress={() => void handleExport()}
           />
           <SettingRow
             label="Delete account"
@@ -334,6 +393,11 @@ export default function SettingsScreen() {
       {deleting && (
         <View style={[StyleSheet.absoluteFill, styles.deletingOverlay, { backgroundColor: c.background }]}>
           <AsciiLoader fill size={100} message="deleting your account…" />
+        </View>
+      )}
+      {exporting && (
+        <View style={[StyleSheet.absoluteFill, styles.deletingOverlay, { backgroundColor: c.background }]}>
+          <AsciiLoader fill size={100} message="packing up your map…" />
         </View>
       )}
     </SafeAreaView>

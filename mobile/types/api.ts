@@ -205,6 +205,30 @@ export interface MemoryTrendsResponse {
   rising: { topicId: string; name: string } | null;
 }
 
+/** One capture in the full-account export. */
+export interface ExportCapture {
+  id: string;
+  title: string;
+  url: string | null;
+  kind: CaptureKind;
+  keyIdea: string | null;
+  userContext: string | null;
+  reaction: string | null;
+  summary: string | null;
+  capturedAt: string;
+  topics: { name: string; slug: string; weight: number }[];
+  insights: { type: string; headline: string; body: string; strength: number }[];
+  connections: { title: string; type: string; weight: number }[];
+}
+
+/** GET /api/me/export — everything the user has saved, plus a Markdown rendering. */
+export interface CaptureExport {
+  exportedAt: string;
+  captureCount: number;
+  captures: ExportCapture[];
+  markdown: string;
+}
+
 export interface UserPreference {
   id: string;
   userId: string;

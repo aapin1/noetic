@@ -149,6 +149,10 @@ export const api = {
     delete() {
       return request<{ deleted: true }>('/api/me/account', { method: 'DELETE' });
     },
+    /** Everything the user has saved, as structured JSON plus a Markdown rendering. */
+    export() {
+      return request<import('@/types/api').CaptureExport>('/api/me/export');
+    },
   },
 
   devices: {
