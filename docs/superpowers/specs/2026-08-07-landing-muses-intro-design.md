@@ -54,10 +54,11 @@ These override any other choice in this document:
 | t | Beat |
 |---|---|
 | 0.0s | Haze and the nine-point constellation fade up |
-| 0.25s | *In Greek mythology,* arrives a word at a time, quieter than what follows |
+| 0.25s | *In Greek mythology,* arrives a word at a time |
 | 0.9s | *before the nine muses* |
 | 1.6s | *there were three.* |
-| 2.35s | **The collapse.** Six points and all the edges dissolve; the three survivors glide down out of the sky |
+| 1.7s | The web lets go — every edge fades before anything moves, so no line is left pointing at a vertex its point has vacated |
+| 2.35s | **The collapse.** The other points wink out; the three survivors leave their own places in the constellation and glide down out of the sky |
 | 3.2s | The three names fade in beneath their points, staggered |
 | 3.6s | *for practice* / *for song* / *for memory* follow in smaller mono ink |
 | 4.1–6.3s | **The hold.** Everything stays still and is simply looked at |
@@ -111,13 +112,15 @@ preference is queried once, by the screen.
 
 ### `mobile/components/landing/Constellation.tsx` (new)
 
-Nine points across the upper third, joined by faint lines — deliberately the
-same visual language as Atlas, so the intro looks like the product rather than
-like a particle effect.
+Fourteen points joined by faint lines — deliberately the same visual language as
+Atlas, so the intro looks like the product rather than like a particle effect.
+Nine sit in an upper group (including the three survivors) and five in a lower
+one, so the sky is not empty below the fold. The two groups are unjoined: an
+edge between them would have to cross the words.
 
 Coordinates are fractions of the field and fixed, not random: the constellation
-has to be the same shape every launch, and a random nine eventually produces a
-bad one. Two things were tuned by looking at it on device:
+has to be the same shape every launch, and a random scatter eventually produces
+a bad one. Two things were tuned by looking at it on device:
 
 - **Every edge joins near neighbours.** Long edges cut across the field and turn
   the whole thing into a scribbled polygon. The final set is short-span and
@@ -126,9 +129,9 @@ bad one. Two things were tuned by looking at it on device:
   strokes and the lines dominated. Final: 20px marks at 0.5, strokes at 0.09 and
   0.6px wide.
 
-This component draws the **six that do not survive**, plus the edges between all
-nine. The three survivors are drawn by the intro, inside the names row, so only
-their coordinates are exported.
+This component draws the **eleven that do not survive**, plus every edge. The
+three survivors are drawn by the intro, inside the names row, so only their
+coordinates are exported.
 
 ### `mobile/components/landing/MusesIntro.tsx` (new)
 
@@ -149,10 +152,18 @@ letter-spacing seam, no cross-fade. It never shares the screen with the opening,
 so the size difference has nothing to clash with, and it rhymes with the three
 names, which are set the same way.
 
-**Everything lands on measured boxes.** The intro root, the names row, each name
-column, each survivor's dot, the closing overlay, its word row and its `mneme`
-all report an `onLayout` box, and the screen passes down the wordmark's own
-measured box. Every box resolves
+**Everything lands on measured boxes.** The intro root, the scene wrapper, the
+names row, each name column, each survivor's dot, the closing overlay, its word
+row and its `mneme` all report an `onLayout` box, and the screen passes down the
+wordmark's own measured box.
+
+*Every* level has to be in the sum, and missing one is silent. The scene wrapper
+that group-fades the first half is centred inside the root rather than filling
+it, and leaving its offset out put all three dots off their points — so instead
+of falling out of the constellation they appeared to slide down out of the text.
+For the same reason the root carries no padding: the constellation fills that
+box and the survivors' start points are fractions of it, so any inset would
+shift the field out from under the dots. The text carries its own padding. Every box resolves
 against the same parent, so they subtract cleanly — no assumption about how Yoga
 insets absolutely-positioned children by padding, which is the kind of thing
 that silently differs by platform. The timeline does not start until they are
@@ -162,8 +173,9 @@ all in.
 one per word, staggered 105ms with a fade and a small rise. Invisible words
 still occupy their layout, so nothing reflows as a line fills in.
 
-**Typography.** The three opening statements are all set at `FontSize['2xl']`;
-only colour separates them, with the clarifying line quietest. An early pass set
+**Typography.** The three opening statements are all set at `FontSize['2xl']`
+in one colour — an earlier pass set the clarifying line in `muted` and the shift
+in weight read as an error rather than as hierarchy. An early pass also set
 the third statement at `serif`/16px muted against 26px while they shared the
 screen, and the size drop read as a different element rather than as part of the
 same thought.
@@ -271,8 +283,11 @@ Verified on an iPhone 17 Pro simulator by capturing the sequence frame by frame:
 - [x] Light mode: haze as a faint warm speckle on paper, constellation legible
 - [x] Dark mode: reads as an actual night sky
 - [x] Word-at-a-time reveals, with no reflow as a line fills
-- [x] The collapse — six points and the edges dissolve, three glide down and
+- [x] The edges dissolve before anything moves; the three survivors leave their
+      own vertices in the constellation, converge inward as they descend, and
       land centred above their names
+- [x] The field spans the full screen, upper and lower groups, in both themes
+- [x] All three opening statements read as one colour
 - [x] The three names with their glosses, held still
 - [x] The scene clears and the dedication fades in alone, centred, as one line
       with the full stop hugging its word

@@ -6,23 +6,33 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 
 /**
  * Nine points, as fractions of the field, laid out across the upper third so
- * they never collide with the text beneath them. The first three are the muses
- * who survive: the intro draws THOSE dots itself, inside the names row, and
- * flies them here — which is why only their coordinates are exported.
+ * they clear the middle band the text sits in. The first three are the muses who
+ * survive: the intro draws THOSE dots itself, inside the names row, and flies
+ * them up here to start — which is why only their coordinates are exported.
  *
  * Fixed rather than random, like the haze: the constellation has to be the same
- * shape every launch, and a random nine will eventually produce a bad one.
+ * shape every launch, and a random scatter will eventually produce a bad one.
  */
 const POINTS = [
-  { x: 0.3, y: 0.13 }, // melete
-  { x: 0.5, y: 0.075 }, // aoide
-  { x: 0.68, y: 0.15 }, // mneme
-  { x: 0.19, y: 0.22 },
-  { x: 0.38, y: 0.235 },
-  { x: 0.6, y: 0.255 },
-  { x: 0.81, y: 0.1 },
-  { x: 0.47, y: 0.31 },
-  { x: 0.72, y: 0.285 },
+  // Upper field. The first three are the survivors, and they sit high so their
+  // fall to the names row is a real distance.
+  { x: 0.2, y: 0.13 }, // melete
+  { x: 0.5, y: 0.06 }, // aoide
+  { x: 0.8, y: 0.14 }, // mneme
+  { x: 0.09, y: 0.24 },
+  { x: 0.34, y: 0.235 },
+  { x: 0.63, y: 0.245 },
+  { x: 0.91, y: 0.075 },
+  { x: 0.44, y: 0.3 },
+  { x: 0.72, y: 0.29 },
+  // Lower field, so the bottom half is not bare. Kept clear of the middle band
+  // where the text sits, and unjoined to the upper group — an edge between them
+  // would have to cross the words.
+  { x: 0.15, y: 0.8 },
+  { x: 0.33, y: 0.87 },
+  { x: 0.55, y: 0.79 },
+  { x: 0.74, y: 0.9 },
+  { x: 0.88, y: 0.78 },
 ];
 
 export const SURVIVORS = POINTS.slice(0, 3);
@@ -35,15 +45,20 @@ const EXTRAS = POINTS.slice(3);
  */
 const EDGES: [number, number][] = [
   [3, 0],
-  [0, 1],
-  [1, 2],
-  [2, 6],
   [0, 4],
-  [4, 7],
-  [4, 5],
-  [5, 8],
-  [5, 2],
   [3, 4],
+  [4, 7],
+  [0, 1],
+  [1, 5],
+  [5, 2],
+  [2, 6],
+  [5, 8],
+  [7, 5],
+  [9, 10],
+  [10, 11],
+  [11, 12],
+  [12, 13],
+  [11, 13],
 ];
 
 const DOT = '⠐';

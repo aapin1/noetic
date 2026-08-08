@@ -33,7 +33,9 @@ const L2_AT = 1620;
 const WORD_STAGGER = 85;
 const WORD_DUR = 400;
 
-const EDGES_OUT = 2250;
+/** The web lets go BEFORE the three fall, so no edge is ever left pointing at a
+ * vertex its point has already vacated. */
+const EDGES_OUT = 1700;
 const EXTRAS_OUT = 2350;
 const FIELD_OUT_DUR = 650;
 const COLLAPSE_AT = 2350;
@@ -168,6 +170,7 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
   // resolves against the same parent, so they subtract cleanly — no assumption
   // about how Yoga insets absolutely-positioned children by padding.
   const [rootBox, setRootBox] = useState<Box>(null);
+  const [sceneBox, setSceneBox] = useState<Box>(null);
   const [namesBox, setNamesBox] = useState<Box>(null);
   const [colBoxes, setColBoxes] = useState<Box[]>([null, null, null]);
   const [dotBoxes, setDotBoxes] = useState<Box[]>([null, null, null]);
@@ -193,6 +196,7 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
 
   const ready =
     rootBox !== null &&
+    sceneBox !== null &&
     namesBox !== null &&
     closingBox !== null &&
     closingRowBox !== null &&
@@ -200,12 +204,19 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
     colBoxes.every(Boolean) &&
     dotBoxes.every(Boolean);
 
-  /** Where a survivor's dot starts: out on the constellation, relative to where
-   * the names row will finally put it. */
+  /**
+   * Where a survivor's dot starts: on its own point in the constellation,
+   * expressed relative to where the names row will finally put it.
+   *
+   * Every level between the two has to be in the sum. The scene wrapper in
+   * particular is centred inside the root rather than filling it, so leaving it
+   * out offsets all three dots off their points — which is exactly what made
+   * them look like they were merely sliding down out of the text.
+   */
   const scatterOffset = (i: number) => {
     if (!ready) return { x: 0, y: 0 };
-    const restX = namesBox!.x + colBoxes[i]!.x + dotBoxes[i]!.x;
-    const restY = namesBox!.y + colBoxes[i]!.y + dotBoxes[i]!.y;
+    const restX = sceneBox!.x + namesBox!.x + colBoxes[i]!.x + dotBoxes[i]!.x;
+    const restY = sceneBox!.y + namesBox!.y + colBoxes[i]!.y + dotBoxes[i]!.y;
     return {
       x: SURVIVORS[i].x * rootBox!.width - DOT_SIZE / 2 - restX,
       y: SURVIVORS[i].y * rootBox!.height - DOT_SIZE / 2 - restY,
@@ -362,8 +373,12 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
         accessibilityRole="button"
       />
 
-      <Animated.View style={{ opacity: sceneOpacity }} pointerEvents="none">
-        <Words clock={clock} at={L0_AT} text={LINE_0} color={c.muted} />
+      <Animated.View
+        style={[styles.scene, { opacity: sceneOpacity }]}
+        onLayout={measure(setSceneBox)}
+        pointerEvents="none"
+      >
+        <Words clock={clock} at={L0_AT} text={LINE_0} color={c.text} />
         <Words clock={clock} at={L1_AT} text={LINE_1} color={c.text} />
         <Words clock={clock} at={L2_AT} text={LINE_2} color={c.text} />
 
@@ -455,9 +470,16 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
 }
 
 const styles = StyleSheet.create({
+  // No padding here: the constellation fills this box, and the survivors' start
+  // points are expressed as fractions of it. Any inset would shift the field out
+  // from under the dots. The text carries its own padding instead.
   root: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  scene: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
     paddingHorizontal: Spacing[6],
   },
   closing: {
