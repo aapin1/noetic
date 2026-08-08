@@ -5,7 +5,7 @@ import { calculateFeedScore } from "@/server/feed-score";
 import { fetchMetadata, parseMetadataFromHtml, sourceSlug } from "@/server/metadata";
 import { buildIdentitySummary } from "@/server/profile-summary";
 import { normalizeRankingOrder } from "@/server/rankings";
-import { rankTextMatch } from "@/server/search-ranking";
+import { blendSearchScore, rankCaptureText, rankTextMatch, semanticScore } from "@/server/search-ranking";
 import { cosineSimilarity, overlappingWeights, scaleSimilarityScore } from "@/server/similarity";
 import { normalizeUrl } from "@/server/url";
 import { canViewerSeeVisibility } from "@/server/visibility";
@@ -282,5 +282,41 @@ describe("rankTextMatch", () => {
     expect(rankTextMatch("Mneme Journal", "mneme")).toBe(80);
     expect(rankTextMatch("The Mneme Journal", "mneme")).toBe(50);
     expect(rankTextMatch("Archive", "mneme")).toBe(0);
+  });
+});
+
+describe("semanticScore", () => {
+  it("contributes nothing below the relatedness floor", () => {
+    expect(semanticScore(0)).toBe(0);
+    expect(semanticScore(0.29)).toBe(0);
+  });
+
+  it("grows with similarity but never reaches a text tier's worth", () => {
+    const mid = semanticScore(0.5);
+    const high = semanticScore(0.8);
+    expect(mid).toBeGreaterThan(0);
+    expect(high).toBeGreaterThan(mid);
+    // The cap is the "exact matches still win" contract: even a perfect
+    // cosine stays below the contains tier (50).
+    expect(semanticScore(1)).toBeLessThan(50);
+  });
+});
+
+describe("rankCaptureText", () => {
+  it("takes the best match across fields and ignores empties", () => {
+    expect(rankCaptureText([null, "Archive", "Mneme Journal"], "mneme")).toBe(80);
+    expect(rankCaptureText([undefined, null], "mneme")).toBe(0);
+  });
+});
+
+describe("blendSearchScore", () => {
+  it("keeps the text ladder decisive over realistic semantic signal", () => {
+    // A prefix match with no semantic signal still beats a contains match
+    // with a strong one, and exact beats prefix at equal similarity.
+    expect(blendSearchScore(80, 0)).toBeGreaterThan(blendSearchScore(50, 0.7));
+    expect(blendSearchScore(100, 0.5)).toBeGreaterThan(blendSearchScore(80, 0.5));
+    // A pure semantic hit clears zero but not the contains tier.
+    expect(blendSearchScore(0, 0.8)).toBeGreaterThan(0);
+    expect(blendSearchScore(0, 0.8)).toBeLessThan(50);
   });
 });

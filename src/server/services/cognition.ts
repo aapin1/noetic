@@ -41,6 +41,7 @@ import {
 import { cosineSim } from "@/server/cognition/layout";
 import { describeImage, embedText, polishInsights, type Recommendation } from "@/server/cognition/llm";
 import { isPaidTranscriptHost, scoreContentConfidence } from "@/server/metadata";
+import { blendSearchScore, rankCaptureText, SEMANTIC_MIN_SIM } from "@/server/search-ranking";
 import { applyTopicWeights, incrementTasteProfileVersion } from "@/server/services/activity";
 import { scheduleIntelligenceWarm } from "@/server/services/intelligence";
 import { deleteStoredObjects } from "@/server/storage";
@@ -1387,6 +1388,12 @@ export function withLeadInsight(item: CaptureWithRelations & { insights: { id: s
   };
 }
 
+/** How far back the semantic layer looks. Recency-bounded for the same reason
+ * companion context is: embeddings are ~25KB a row, so an unbounded read is a
+ * memory incident, and a vague memory of something saved 300 captures ago is
+ * what the text tiers are for. */
+const SEMANTIC_SCAN_LIMIT = 300;
+
 export async function listCaptures(args: { userId: string; limit?: number; query?: string; cursor?: string; db?: DbClient }) {
   const db = args.db ?? prisma;
   const limit = Math.min(Math.max(args.limit ?? 20, 1), 80);
@@ -1424,5 +1431,76 @@ export async function listCaptures(args: { userId: string; limit?: number; query
     },
   });
 
-  return items.map(withLeadInsight);
+  // The diary (no query) and its keyset pages (query + cursor) stay purely
+  // chronological — a cursor is a position in a recency ordering, and a
+  // blended score would make the pages disagree about what that position is.
+  if (!query || args.cursor) return items.map(withLeadInsight);
+
+  // ── ranked search ─────────────────────────────────────────────────────────
+  // Blend the text tiers with embedding similarity so a vague-memory query
+  // ("that pasta thing") lands on the capture that never used the word. One
+  // embed call per search; on any failure the text results stand as-is.
+  const queryEmbedding = await embedText(query);
+
+  const simById = new Map<string, number>();
+  let semanticRows: typeof items = [];
+  if (queryEmbedding) {
+    const embedded = await db.capturedItem.findMany({
+      where: { userId: args.userId },
+      orderBy: [{ capturedAt: "desc" }, { id: "desc" }],
+      take: SEMANTIC_SCAN_LIMIT,
+      select: { id: true, embedding: true },
+    });
+    for (const row of embedded) {
+      if (row.embedding.length === 0) continue;
+      simById.set(row.id, cosineSim(queryEmbedding, row.embedding));
+    }
+
+    // Captures the text filter missed entirely but the embedding says are
+    // about this. Capped at `limit`: they compete on score below, never flood.
+    const textIds = new Set(items.map((item) => item.id));
+    const extraIds = embedded
+      .filter((row) => !textIds.has(row.id) && (simById.get(row.id) ?? 0) >= SEMANTIC_MIN_SIM)
+      .sort((a, b) => (simById.get(b.id) ?? 0) - (simById.get(a.id) ?? 0))
+      .slice(0, limit)
+      .map((row) => row.id);
+
+    if (extraIds.length > 0) {
+      semanticRows = await db.capturedItem.findMany({
+        where: { userId: args.userId, id: { in: extraIds } },
+        select: {
+          ...captureSummarySelect,
+          insights: {
+            select: { id: true, type: true, headline: true },
+            orderBy: { strength: "desc" },
+            take: 1,
+          },
+        },
+      });
+    }
+  }
+
+  return [...items, ...semanticRows]
+    .map((row) => ({
+      row,
+      score: blendSearchScore(
+        rankCaptureText(
+          [
+            row.userTitle,
+            row.contentItem?.title,
+            row.rawText,
+            row.summary,
+            row.caption,
+            row.userContext,
+            row.reaction,
+            ...row.topics.map((t) => t.topic.name),
+          ],
+          query,
+        ),
+        simById.get(row.id) ?? 0,
+      ),
+    }))
+    .sort((a, b) => b.score - a.score || b.row.capturedAt.getTime() - a.row.capturedAt.getTime())
+    .slice(0, limit)
+    .map((entry) => withLeadInsight(entry.row));
 }
