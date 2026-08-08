@@ -11,6 +11,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "app.mneme.mobile",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "Mneme uses your microphone so you can describe a capture in your own words."
@@ -32,6 +33,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-apple-authentication",
       "expo-secure-store",
       "expo-font",
       [

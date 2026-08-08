@@ -132,6 +132,10 @@ model User {
   name                   String?
   image                  String?
   passwordHash           String?
+  /// Apple's stable per-team user identifier (`sub` from a verified identity
+  /// token). Set on first Apple sign-in; accounts created this way have a null
+  /// passwordHash and must sign in with Apple.
+  appleUserId            String?            @unique
   plan                   UserPlan           @default(FREE)
   tasteProfileVersion    Int                @default(0)
   createdAt              DateTime           @default(now())

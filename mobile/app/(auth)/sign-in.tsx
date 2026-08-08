@@ -17,6 +17,7 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { AppleSignInButton } from '@/components/auth/AppleSignInButton';
 
 export default function SignInScreen() {
   const c = useThemeColors();
@@ -125,6 +126,8 @@ export default function SignInScreen() {
               style={styles.submitBtn}
               accessibilityLabel="Sign in to mneme"
             />
+
+            <AppleSignInButton onError={setError} onLoadingChange={setLoading} />
           </View>
 
           <View style={styles.footer}>

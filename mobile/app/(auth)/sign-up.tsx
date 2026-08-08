@@ -19,6 +19,7 @@ import { Text } from '@/components/ui/Text';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
+import { AppleSignInButton } from '@/components/auth/AppleSignInButton';
 
 export default function SignUpScreen() {
   const c = useThemeColors();
@@ -197,6 +198,8 @@ export default function SignUpScreen() {
                 .
               </Text>
             </View>
+
+            <AppleSignInButton onError={setError} onLoadingChange={setLoading} />
           </View>
 
           <View style={styles.footer}>

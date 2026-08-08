@@ -16,6 +16,10 @@ interface AuthState {
 
 interface AuthContextValue extends AuthState {
   signIn: (identifier: string, password: string) => Promise<void>;
+  signInWithApple: (args: {
+    identityToken: string;
+    fullName?: string;
+  }) => Promise<{ isNewUser: boolean; hasHandle: boolean }>;
   signUp: (name: string, email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -160,6 +164,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await loadProfile();
   }, [loadProfile]);
 
+  const signInWithApple = useCallback(
+    async ({ identityToken, fullName }: { identityToken: string; fullName?: string }) => {
+      const result = await api.auth.apple({ identityToken, fullName });
+      await storeToken(result.token);
+      await storeUserId(result.userId);
+      if (result.isNewUser) {
+        // Same reasoning as signUp: identify first so the signup event lands
+        // against the person, and "now" is the signup date by definition.
+        identifyUser(result.userId, new Date().toISOString());
+        track('signup', { method: 'apple' });
+      }
+      setState((prev) => ({ ...prev, token: result.token, isAuthenticated: true }));
+      await loadProfile();
+      // The caller routes on this: a brand-new account (or one that never
+      // finished onboarding — no handle yet) goes through the identity step,
+      // a returning account goes straight in.
+      return { isNewUser: result.isNewUser, hasHandle: result.user.handle != null };
+    },
+    [loadProfile],
+  );
+
   const signUp = useCallback(async (name: string, email: string, password: string) => {
     if (isDevFakeCredentials(email, password)) {
       await storeToken(DEV_FAKE_LOGIN.token);
@@ -209,7 +234,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ ...state, signIn, signUp, signOut, refreshProfile }}
+      value={{ ...state, signIn, signInWithApple, signUp, signOut, refreshProfile }}
     >
       {children}
     </AuthContext.Provider>

@@ -95,7 +95,7 @@ export function asInsightSource(value: unknown): InsightSource {
  */
 type EventProps = {
   session_start: { is_first_session: boolean };
-  signup: { method: 'email' };
+  signup: { method: 'email' | 'apple' };
   onboarding_step: { step: OnboardingStep; action: 'completed' | 'skipped' };
   capture_started: { kind: CaptureKind; source: CaptureSource };
   capture_succeeded: { kind: CaptureKind; source: CaptureSource; duration_ms: number };
