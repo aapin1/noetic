@@ -9,9 +9,11 @@ interface Props {
   onClose: () => void;
   title: string;
   body: string;
+  /** Optional single action rendered above "tap to close". */
+  action?: { label: string; onPress: () => void };
 }
 
-export function InfoModal({ visible, onClose, title, body }: Props) {
+export function InfoModal({ visible, onClose, title, body, action }: Props) {
   const c = useThemeColors();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -23,6 +25,17 @@ export function InfoModal({ visible, onClose, title, body }: Props) {
           <Text variant="serif" color="secondary" style={{ lineHeight: 26 }}>
             {body}
           </Text>
+          {action ? (
+            <Pressable
+              onPress={action.onPress}
+              accessibilityRole="button"
+              style={[styles.action, { borderTopColor: c.border }]}
+            >
+              <Text variant="monoSmall" style={{ color: c.text, letterSpacing: 1 }}>
+                {action.label}
+              </Text>
+            </Pressable>
+          ) : null}
           <Text variant="monoSmall" style={{ color: c.faint, marginTop: Spacing[5], textAlign: 'center', letterSpacing: 1 }}>
             tap to close
           </Text>
@@ -44,5 +57,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: Radius.lg,
     padding: Spacing[6],
+  },
+  action: {
+    marginTop: Spacing[5],
+    paddingTop: Spacing[4],
+    borderTopWidth: 1,
+    alignItems: 'center',
   },
 });

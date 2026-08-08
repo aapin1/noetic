@@ -92,6 +92,7 @@ function RootLayout() {
                 <Stack.Screen name="terrain" options={{ presentation: 'card' }} />
                 <Stack.Screen name="plus" options={{ presentation: 'modal', gestureEnabled: true }} />
                 <Stack.Screen name="share-recap" options={{ presentation: 'modal', gestureEnabled: true }} />
+                <Stack.Screen name="share-atlas" options={{ presentation: 'modal', gestureEnabled: true }} />
                 <Stack.Screen name="shareintent" options={{ presentation: 'modal', gestureEnabled: true }} />
                 <Stack.Screen name="+not-found" />
               </Stack>
