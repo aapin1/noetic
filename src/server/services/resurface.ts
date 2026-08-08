@@ -207,6 +207,44 @@ export async function selectResurfaceCandidate(args: {
     loadSeenKeys(args.userId, db),
   ]);
 
+  // ── 0. a challenge to a staked position ───────────────────────────────────
+  // Above every other tier, and above the corpus floor: the floor exists
+  // because a thin corpus can't support a true observation, but a challenge is
+  // not an observation — the user staked a statement, a capture collided with
+  // it, and evaluatePositionTension already judged the collision real. This is
+  // the one push that names a commitment rather than a pattern.
+  const challenge = await db.positionChallenge.findFirst({
+    where: { position: { userId: args.userId }, acknowledged: false },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      position: { select: { topicId: true, topic: { select: { name: true } } } },
+      capturedItem: { select: { rawText: true, contentItem: { select: { title: true } } } },
+    },
+  });
+
+  if (challenge) {
+    const key = `position-challenge:${challenge.id}`;
+    if (!seen.has(key)) {
+      const label = short(
+        challenge.capturedItem?.contentItem?.title
+          ?? challenge.capturedItem?.rawText
+          ?? "something you just saved",
+        40,
+      );
+      return {
+        type: NotificationType.CONTRADICTION_FOUND,
+        key,
+        title: `a new capture challenges your position on ${challenge.position.topic.name.toLowerCase()}`,
+        body: `“${label}” pushes against what you staked. revise or hold.`,
+        // The /today ritual, where the collision takes over the surface and
+        // carries its revise/hold response. Opening it credits the day.
+        deepLink: "/today",
+        payload: { resurfaceKey: key, challengeId: challenge.id, topicId: challenge.position.topicId },
+      };
+    }
+  }
+
   if (captures.length < MIN_CORPUS) return null;
 
   const byId = new Map(captures.map((c) => [c.id, c]));

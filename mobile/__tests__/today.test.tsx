@@ -28,6 +28,8 @@ const streak = (current: number): StreakSummary =>
   ({ current, longest: current, lastActiveDay: null }) as unknown as StreakSummary;
 
 const CAPTURE: TodayResponse = {
+  challenge: null,
+  collision: null,
   capture: {
     id: 'cap_1',
     title: 'The Dichotomy of Control',
@@ -46,7 +48,7 @@ beforeEach(() => {
 
 describe('today screen', () => {
   it('explains itself instead of showing an empty page before there is history', async () => {
-    todayGet.mockResolvedValue({ capture: null, connection: null });
+    todayGet.mockResolvedValue({ challenge: null, collision: null, capture: null, connection: null });
 
     await renderScreen(<TodayScreen />);
 

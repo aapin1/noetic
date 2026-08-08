@@ -1,3 +1,4 @@
+import { MemoryEdgeType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/server/db";
 import {
@@ -26,6 +27,16 @@ const ANNIVERSARIES = [30, 60, 90];
 const ANNIVERSARY_TOLERANCE_DAYS = 2;
 /** Same floor the insight screen's "connected memory" list uses. */
 const EDGE_MIN_WEIGHT = 0.45;
+/**
+ * A CONTRADICTS edge strong enough to take over the ritual. Edge weight is the
+ * pair's cosine similarity, and classifyEdgeSemantic only calls contradiction
+ * inside 0.40–0.62 — so 0.5 is the upper half of the band: clearly related
+ * content, genuinely diverging stance.
+ */
+const COLLISION_MIN_WEIGHT = 0.5;
+/** How long a strong contradiction holds the surface before the ritual resumes.
+ * The takeover has no dismissal state of its own, so freshness is the bound. */
+const COLLISION_FRESH_DAYS = 3;
 
 export type TodayConnection = {
   itemId: string;
@@ -34,7 +45,27 @@ export type TodayConnection = {
   weight: number;
 };
 
+/** An unacknowledged challenge to a staked position — the surface's lead when
+ * present, because it is the one thing here that demands an answer. */
+export type TodayChallenge = {
+  challengeId: string;
+  topicId: string;
+  topicName: string;
+  statement: string;
+  tension: string;
+  capture: { id: string; title: string } | null;
+};
+
+/** A fresh, strong CONTRADICTS pair — two things you saved that disagree. */
+export type TodayCollision = {
+  itemA: { id: string; title: string };
+  itemB: { id: string; title: string };
+};
+
 export type TodayPayload = {
+  /** The collision takeover. `challenge` outranks `collision`; at most one is set. */
+  challenge: TodayChallenge | null;
+  collision: TodayCollision | null;
   capture: (CapturedItemSummary & { whyNow: string }) | null;
   connection: TodayConnection | null;
 };
@@ -58,6 +89,79 @@ function anniversaryPhrase(days: number): string {
 
 type Row = Parameters<typeof serializeCapturedItem>[0];
 
+/** A display label without the full summary select — the takeover blocks only
+ * ever show a title. */
+function captureLabel(item: { rawText: string | null; contentItem: { title: string | null } | null } | null): string {
+  return item?.contentItem?.title ?? item?.rawText?.replace(/\s+/g, " ").trim().slice(0, 80) ?? "Untitled capture";
+}
+
+/**
+ * The collision takeover: an unanswered challenge to a staked position, or —
+ * failing that — a strong CONTRADICTS edge formed in the last few days. The
+ * challenge outranks the edge because it demands a response (revise or hold)
+ * where the edge only offers a look, and it holds the surface until answered
+ * where the edge merely expires.
+ */
+async function getCollision(
+  userId: string,
+  db: DbClient,
+  now: Date,
+): Promise<Pick<TodayPayload, "challenge" | "collision">> {
+  const challenge = await db.positionChallenge.findFirst({
+    where: { position: { userId }, acknowledged: false },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      tension: true,
+      position: {
+        select: { statement: true, topicId: true, topic: { select: { name: true } } },
+      },
+      capturedItem: {
+        select: { id: true, rawText: true, contentItem: { select: { title: true } } },
+      },
+    },
+  });
+
+  if (challenge) {
+    return {
+      challenge: {
+        challengeId: challenge.id,
+        topicId: challenge.position.topicId,
+        topicName: challenge.position.topic.name,
+        statement: challenge.position.statement,
+        tension: challenge.tension,
+        capture: challenge.capturedItem
+          ? { id: challenge.capturedItem.id, title: captureLabel(challenge.capturedItem) }
+          : null,
+      },
+      collision: null,
+    };
+  }
+
+  const edge = await db.memoryEdge.findFirst({
+    where: {
+      userId,
+      type: MemoryEdgeType.CONTRADICTS,
+      weight: { gte: COLLISION_MIN_WEIGHT },
+      createdAt: { gte: new Date(now.getTime() - COLLISION_FRESH_DAYS * DAY_MS) },
+    },
+    orderBy: { weight: "desc" },
+    select: {
+      fromItem: { select: { id: true, rawText: true, contentItem: { select: { title: true } } } },
+      toItem: { select: { id: true, rawText: true, contentItem: { select: { title: true } } } },
+    },
+  });
+
+  if (!edge) return { challenge: null, collision: null };
+  return {
+    challenge: null,
+    collision: {
+      itemA: { id: edge.fromItem.id, title: captureLabel(edge.fromItem) },
+      itemB: { id: edge.toItem.id, title: captureLabel(edge.toItem) },
+    },
+  };
+}
+
 function whyNowLine(summary: CapturedItemSummary, daysAgo: number, anniversary: number | null): string {
   if (anniversary !== null) {
     return `${anniversaryPhrase(anniversary)} today, you saved this. does it still hold?`;
@@ -77,6 +181,11 @@ export async function getToday(args: {
   const db = args.db ?? prisma;
   const now = args.now ?? new Date();
 
+  // The collision is loaded even below the corpus floor: the floor guards the
+  // ritual (there must be a past to hand back), but a challenge to a staked
+  // position is an event, not history.
+  const takeover = await getCollision(args.userId, db, now);
+
   const rows = await db.capturedItem.findMany({
     where: { userId: args.userId },
     orderBy: [{ capturedAt: "desc" }, { id: "desc" }],
@@ -84,12 +193,12 @@ export async function getToday(args: {
     select: captureSummarySelect,
   });
 
-  if (rows.length < MIN_CORPUS) return { capture: null, connection: null };
+  if (rows.length < MIN_CORPUS) return { ...takeover, capture: null, connection: null };
 
   const candidates = rows.filter(
     (row) => now.getTime() - row.capturedAt.getTime() >= MIN_AGE_DAYS * DAY_MS,
   );
-  if (candidates.length === 0) return { capture: null, connection: null };
+  if (candidates.length === 0) return { ...takeover, capture: null, connection: null };
 
   // An anniversary wins; otherwise a day-stable pick across everything old
   // enough, so the ritual rotates through the corpus instead of favouring
@@ -145,5 +254,5 @@ export async function getToday(args: {
     break;
   }
 
-  return { capture: { ...summary, whyNow: whyNowLine(summary, daysAgo, anniversary) }, connection };
+  return { ...takeover, capture: { ...summary, whyNow: whyNowLine(summary, daysAgo, anniversary) }, connection };
 }

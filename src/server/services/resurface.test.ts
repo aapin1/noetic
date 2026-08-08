@@ -48,10 +48,26 @@ function capture(
 /** A notification row as the engine writes and later reads it. */
 type Notif = { type: string; payload: Record<string, unknown>; createdAt: Date };
 
+/** An unacknowledged challenge row, as the tier-0 query selects it. */
+type Challenge = {
+  id: string;
+  position: { topicId: string; topic: { name: string } };
+  capturedItem: { rawText: string | null; contentItem: { title: string } | null } | null;
+};
+
+function challengeOn(id: string, topicName: string, captureTitle: string): Challenge {
+  return {
+    id,
+    position: { topicId: `t-${topicName}`, topic: { name: topicName } },
+    capturedItem: { rawText: null, contentItem: { title: captureTitle } },
+  };
+}
+
 function fakeDb(args: {
   captures: Capture[];
   edges?: Edge[];
   existing?: Notif[];
+  challenge?: Challenge;
 }) {
   const notifications: Notif[] = [...(args.existing ?? [])];
   const byId = new Map(args.captures.map((c) => [c.id, c]));
@@ -93,6 +109,9 @@ function fakeDb(args: {
             contentItem: { title: byId.get(e.toItemId)?.contentItem?.title ?? "b" },
           },
         })),
+    },
+    positionChallenge: {
+      findFirst: async () => args.challenge ?? null,
     },
     user: { findUnique: async () => null },
   } as unknown as DbClient;
@@ -139,6 +158,69 @@ describe("selectResurfaceCandidate", () => {
     // A single-source, single-topic burst is not a convergence and not a thread
     // worth interrupting someone for.
     expect(pick).toBeNull();
+  });
+
+  it("puts a challenge to a staked position above every other tier", async () => {
+    // A contradiction edge is also available — the strongest ordinary tier —
+    // and the challenge still wins: it names a commitment, not a pattern.
+    const { db } = fakeDb({
+      captures: richCorpus(),
+      edges: [{ fromItemId: "a1", toItemId: "a3" }],
+      challenge: challengeOn("ch1", "Attention", "Deep Work Is Overrated"),
+    });
+
+    const pick = await selectResurfaceCandidate({ userId: "u1", db, now: NOW });
+
+    expect(pick?.type).toBe("CONTRADICTION_FOUND");
+    expect(pick?.key).toBe("position-challenge:ch1");
+    expect(pick?.title).toBe("a new capture challenges your position on attention");
+    expect(pick?.body).toContain("revise or hold");
+    expect(pick?.deepLink).toBe("/today");
+  });
+
+  it("pushes a position challenge even below the corpus floor", async () => {
+    // One capture — every observational tier is silenced — but the collision
+    // with a staked position is an event, not an observation.
+    const { db } = fakeDb({
+      captures: [capture("c1", 1, ["attention"])],
+      challenge: challengeOn("ch1", "attention", "Deep Work Is Overrated"),
+    });
+
+    const pick = await selectResurfaceCandidate({ userId: "u1", db, now: NOW });
+
+    expect(pick?.key).toBe("position-challenge:ch1");
+  });
+
+  it("yields the day to a streak push even when a challenge is pending", async () => {
+    // The one-push-per-day guarantee sits above arbitration: the cap is
+    // checked before any tier — including the challenge — is consulted.
+    const { db, notifications } = fakeDb({
+      captures: richCorpus(),
+      challenge: challengeOn("ch1", "attention", "Deep Work Is Overrated"),
+      existing: [{ type: "STREAK_HELD", payload: {}, createdAt: NOW }],
+    });
+
+    expect(await enqueueResurfaceFor({ userId: "u1", db, now: NOW })).toBeNull();
+    expect(notifications).toHaveLength(1);
+  });
+
+  it("never pushes the same challenge twice", async () => {
+    const { db } = fakeDb({
+      captures: richCorpus(),
+      challenge: challengeOn("ch1", "attention", "Deep Work Is Overrated"),
+      existing: [
+        {
+          type: "CONTRADICTION_FOUND",
+          payload: { resurfaceKey: "position-challenge:ch1" },
+          createdAt: daysAgo(2),
+        },
+      ],
+    });
+
+    const pick = await selectResurfaceCandidate({ userId: "u1", db, now: NOW });
+
+    // The challenge is spent; selection falls through to the ordinary tiers.
+    expect(pick?.key).not.toBe("position-challenge:ch1");
   });
 
   it("prefers a fresh contradiction over everything else available", async () => {
