@@ -24,59 +24,66 @@ import {
  * the morph — get their own eased drivers instead, because sampling a curve off
  * a linear clock leaves visible kinks in the velocity.
  */
-const FIELD_IN = 700;
-const FIELD_FULL = 1500;
+const FIELD_IN = 600;
+const FIELD_FULL = 1400;
 
-const L1_AT = 350;
-const L2_AT = 1250;
-const WORD_STAGGER = 105;
-const WORD_DUR = 500;
+const L0_AT = 250;
+const L1_AT = 900;
+const L2_AT = 1620;
+const WORD_STAGGER = 85;
+const WORD_DUR = 400;
 
-const EDGES_OUT = 2050;
-const EXTRAS_OUT = 2150;
-const FIELD_OUT_DUR = 700;
-const COLLAPSE_AT = 2150;
-const COLLAPSE_DUR = 1050;
+const EDGES_OUT = 2250;
+const EXTRAS_OUT = 2350;
+const FIELD_OUT_DUR = 650;
+const COLLAPSE_AT = 2350;
+const COLLAPSE_DUR = 1000;
 
-const NAMES_AT = 3100;
-const NAME_STAGGER = 130;
-const NAME_DUR = 500;
+const NAMES_AT = 3200;
+const NAME_STAGGER = 120;
+const NAME_DUR = 450;
+/** The glosses follow their names, so the row reads name-then-meaning. */
+const MEANINGS_AT = 3600;
 
-const DIM_AT = 4050;
-const DIM_DUR = 600;
-const L3_AT = 4100;
+/** The three hold, still, long enough to actually be looked at. */
+const SCENE_OUT = 6300;
+const SCENE_OUT_DUR = 700;
 
-/** The two who do not survive leave FIRST, and are gone before the last word
- * moves. Overlapping them with the morph read as Mneme escaping rather than as
- * the other two dissolving. */
-const PART_AT = 5700;
-const PART_DUR = 650;
-/** The statements clear next, so the word crosses an empty screen. */
-const TEXT_OUT = 5900;
-const TEXT_OUT_DUR = 550;
+/** The closing line arrives alone, on an empty screen, as one slow fade —
+ * deliberately unlike the word-at-a-time openings. */
+const L3_AT = 7150;
+const L3_DUR = 1200;
 
-const MORPH_AT = 6500;
+/** The sentence lets go of its last word, which then travels on by itself. */
+const SENTENCE_OUT = 8950;
+const SENTENCE_OUT_DUR = 450;
+const MORPH_AT = 9250;
 const MORPH_DUR = 1150;
+
 /** The screen behind starts rising before the word lands, so it reads as one
  * continuous motion rather than as two scenes. */
 const HANDOFF_AT = MORPH_AT + MORPH_DUR - 250;
 const TOTAL = MORPH_AT + MORPH_DUR;
 const EXIT_MS = 260;
 
-/** How far the two who leave rise as they fade — back up towards the
- * constellation they came down from. Drifting them sideways instead put Aoide
- * straight through Mneme, which is the one word that must stay legible. */
-const PART_BY = 16;
-
-const LINE_1 = 'Before the nine muses';
+const LINE_0 = 'In Greek mythology,';
+// Lower case: the clarifying line ends in a comma, so this continues it.
+const LINE_1 = 'before the nine muses';
 const LINE_2 = 'there were three.';
-const LINE_3 = 'This one is for mneme.';
+const CLOSING = ['This', 'one', 'is', 'for'];
 const NAMES = ['melete', 'aoide', 'mneme'];
-/** The one that survives, and the only one the morph cares about. */
-const MNEME = 2;
+const MEANINGS = ['for practice', 'for song', 'for memory'];
 
-/** Both statements are set at one size. Only colour separates them. */
+/** The three opening statements are set at one size. Only colour separates them. */
 const LINE_SIZE = FontSize['2xl'];
+/**
+ * The closing line is set in the WORDMARK's own metrics instead — tracked out,
+ * a size down. It never shares the screen with the opening, so nothing clashes;
+ * it rhymes with the three names, which are set the same way; and it means the
+ * word that leaves it already IS the wordmark, so the morph is a pure
+ * translation with no scale to interpolate and no letter-spacing seam.
+ */
+const CLOSING_SIZE = FontSize.xl;
 
 /** Long, soft settle — most of the distance early, then a slow arrival. */
 const SETTLE = Easing.bezier(0.16, 1, 0.3, 1);
@@ -144,7 +151,6 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
   const c = useThemeColors();
   const clock = useRef(new Animated.Value(0)).current;
   const collapse = useRef(new Animated.Value(0)).current;
-  const part = useRef(new Animated.Value(0)).current;
   const morph = useRef(new Animated.Value(0)).current;
   const exit = useRef(new Animated.Value(0)).current;
   const started = useRef(false);
@@ -162,24 +168,35 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
   // resolves against the same parent, so they subtract cleanly — no assumption
   // about how Yoga insets absolutely-positioned children by padding.
   const [rootBox, setRootBox] = useState<Box>(null);
-  const [rowBox, setRowBox] = useState<Box>(null);
+  const [namesBox, setNamesBox] = useState<Box>(null);
   const [colBoxes, setColBoxes] = useState<Box[]>([null, null, null]);
   const [dotBoxes, setDotBoxes] = useState<Box[]>([null, null, null]);
-  const [wordBox, setWordBox] = useState<Box>(null);
+  const [closingBox, setClosingBox] = useState<Box>(null);
+  const [closingRowBox, setClosingRowBox] = useState<Box>(null);
+  const [mnemeBox, setMnemeBox] = useState<Box>(null);
+
+  // Layout events are pooled, so every handler reads the box out before the
+  // state updater runs — by then `nativeEvent` has already been recycled.
+  const measure =
+    (setter: React.Dispatch<React.SetStateAction<Box>>) =>
+    (e: { nativeEvent: { layout: LayoutRectangle } }) => {
+      const box = e.nativeEvent.layout;
+      setter((prev) => prev ?? box);
+    };
 
   const measureAt =
     (setter: React.Dispatch<React.SetStateAction<Box[]>>, i: number) =>
     (e: { nativeEvent: { layout: LayoutRectangle } }) => {
-      // Read the layout out of the event first: it is pooled, so by the time the
-      // state updater runs `nativeEvent` has already been recycled.
       const box = e.nativeEvent.layout;
       setter((prev) => (prev[i] ? prev : prev.map((v, j) => (j === i ? box : v))));
     };
 
   const ready =
     rootBox !== null &&
-    rowBox !== null &&
-    wordBox !== null &&
+    namesBox !== null &&
+    closingBox !== null &&
+    closingRowBox !== null &&
+    mnemeBox !== null &&
     colBoxes.every(Boolean) &&
     dotBoxes.every(Boolean);
 
@@ -187,8 +204,8 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
    * the names row will finally put it. */
   const scatterOffset = (i: number) => {
     if (!ready) return { x: 0, y: 0 };
-    const restX = rowBox!.x + colBoxes[i]!.x + dotBoxes[i]!.x;
-    const restY = rowBox!.y + colBoxes[i]!.y + dotBoxes[i]!.y;
+    const restX = namesBox!.x + colBoxes[i]!.x + dotBoxes[i]!.x;
+    const restY = namesBox!.y + colBoxes[i]!.y + dotBoxes[i]!.y;
     return {
       x: SURVIVORS[i].x * rootBox!.width - DOT_SIZE / 2 - restX,
       y: SURVIVORS[i].y * rootBox!.height - DOT_SIZE / 2 - restY,
@@ -197,8 +214,8 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
 
   const delta = ready
     ? {
-        x: target.x - rootBox!.x - (rowBox!.x + colBoxes[MNEME]!.x + wordBox!.x),
-        y: target.y - rootBox!.y - (rowBox!.y + colBoxes[MNEME]!.y + wordBox!.y),
+        x: target.x - rootBox!.x - (closingBox!.x + closingRowBox!.x + mnemeBox!.x),
+        y: target.y - rootBox!.y - (closingBox!.y + closingRowBox!.y + mnemeBox!.y),
       }
     : { x: 0, y: 0 };
 
@@ -226,7 +243,6 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
       );
 
     run(collapse, COLLAPSE_AT, COLLAPSE_DUR);
-    run(part, PART_AT, PART_DUR);
     run(morph, MORPH_AT, MORPH_DUR);
 
     timers.current.push(setTimeout(() => handoffRef.current(), HANDOFF_AT));
@@ -236,7 +252,7 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
         doneRef.current();
       }, TOTAL),
     );
-  }, [clock, collapse, morph, part, ready]);
+  }, [clock, collapse, morph, ready]);
 
   useEffect(
     () => () => {
@@ -253,7 +269,6 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
     timers.current = [];
     clock.stopAnimation();
     collapse.stopAnimation();
-    part.stopAnimation();
     morph.stopAnimation();
     handoffRef.current();
     Animated.timing(exit, {
@@ -271,70 +286,56 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
       extrapolate: 'clamp',
     });
 
-  // The opening statement holds, dims behind the closing line, then goes.
-  const openingOpacity = clock.interpolate({
-    inputRange: [0, DIM_AT, DIM_AT + DIM_DUR, TEXT_OUT, TEXT_OUT + TEXT_OUT_DUR],
-    outputRange: [1, 1, 0.3, 0.3, 0],
-    extrapolate: 'clamp',
-  });
-
-  const closingOpacity = clock.interpolate({
-    inputRange: [0, TEXT_OUT, TEXT_OUT + TEXT_OUT_DUR],
+  /** The whole first scene — the three statements and the three names — holds,
+   * then goes together, leaving the screen empty for the closing line. */
+  const sceneOpacity = clock.interpolate({
+    inputRange: [0, SCENE_OUT, SCENE_OUT + SCENE_OUT_DUR],
     outputRange: [1, 1, 0],
     extrapolate: 'clamp',
   });
 
-  // Every dot arrives at the constellation's own weight. Two leave with their
-  // names; Mneme's goes early into the morph, so nothing trails the wordmark.
-  const dotOpacity = (i: number) =>
-    clock.interpolate({
-      inputRange:
-        i === MNEME
-          ? [FIELD_IN, FIELD_FULL, MORPH_AT, MORPH_AT + 450]
-          : [FIELD_IN, FIELD_FULL, PART_AT, PART_AT + PART_DUR],
-      outputRange: [0, DOT_ALPHA, DOT_ALPHA, 0],
+  const dotOpacity = clock.interpolate({
+    inputRange: [FIELD_IN, FIELD_FULL],
+    outputRange: [0, DOT_ALPHA],
+    extrapolate: 'clamp',
+  });
+
+  const stagger = (at: number, i: number, dur: number) => ({
+    opacity: clock.interpolate({
+      inputRange: [at + i * NAME_STAGGER, at + i * NAME_STAGGER + dur],
+      outputRange: [0, 1],
       extrapolate: 'clamp',
-    });
-
-  const nameOpacity = (i: number) => {
-    const at = NAMES_AT + i * NAME_STAGGER;
-    return i === MNEME
-      ? clock.interpolate({
-          inputRange: [at, at + NAME_DUR],
-          outputRange: [0, 1],
+    }),
+    transform: [
+      {
+        translateY: clock.interpolate({
+          inputRange: [
+            at + i * NAME_STAGGER,
+            at + i * NAME_STAGGER + dur * 0.35,
+            at + i * NAME_STAGGER + dur,
+          ],
+          outputRange: [10, 2.6, 0],
           extrapolate: 'clamp',
-        })
-      : clock.interpolate({
-          inputRange: [at, at + NAME_DUR, PART_AT, PART_AT + PART_DUR],
-          outputRange: [0, 1, 1, 0],
-          extrapolate: 'clamp',
-        });
-  };
+        }),
+      },
+    ],
+  });
 
-  const nameRise = (i: number) => {
-    const at = NAMES_AT + i * NAME_STAGGER;
-    return clock.interpolate({
-      inputRange: [at, at + NAME_DUR * 0.35, at + NAME_DUR],
-      outputRange: [10, 2.6, 0],
-      extrapolate: 'clamp',
-    });
-  };
+  const closingOpacity = clock.interpolate({
+    inputRange: [L3_AT, L3_AT + L3_DUR],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
 
-  /** Melete and Aoide rise away on their own driver; Mneme heads for the corner
-   * on the morph, a beat later. */
-  const leave = (i: number, axis: 'x' | 'y') =>
-    i === MNEME
-      ? morph.interpolate({ inputRange: [0, 1], outputRange: [0, delta[axis]] })
-      : part.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0, axis === 'y' ? -PART_BY : 0],
-        });
+  /** Everything in the closing line except the word that leaves it. */
+  const sentenceOpacity = clock.interpolate({
+    inputRange: [0, SENTENCE_OUT, SENTENCE_OUT + SENTENCE_OUT_DUR],
+    outputRange: [1, 1, 0],
+    extrapolate: 'clamp',
+  });
 
-  const dotTravel = (i: number, axis: 'x' | 'y') =>
-    Animated.add(
-      collapse.interpolate({ inputRange: [0, 1], outputRange: [scatterOffset(i)[axis], 0] }),
-      leave(i, axis),
-    );
+  const travel = (axis: 'x' | 'y') =>
+    morph.interpolate({ inputRange: [0, 1], outputRange: [0, delta[axis]] });
 
   return (
     <Animated.View
@@ -343,10 +344,7 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
         styles.root,
         { opacity: exit.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) },
       ]}
-      onLayout={(e) => {
-        const box = e.nativeEvent.layout;
-        setRootBox((prev) => prev ?? box);
-      }}
+      onLayout={measure(setRootBox)}
     >
       {rootBox && (
         <Constellation
@@ -364,59 +362,93 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
         accessibilityRole="button"
       />
 
-      <Animated.View style={{ opacity: openingOpacity }} pointerEvents="none">
+      <Animated.View style={{ opacity: sceneOpacity }} pointerEvents="none">
+        <Words clock={clock} at={L0_AT} text={LINE_0} color={c.muted} />
         <Words clock={clock} at={L1_AT} text={LINE_1} color={c.text} />
         <Words clock={clock} at={L2_AT} text={LINE_2} color={c.text} />
+
+        <View style={styles.names} onLayout={measure(setNamesBox)}>
+          {NAMES.map((name, i) => (
+            <View key={name} style={styles.nameCol} onLayout={measureAt(setColBoxes, i)}>
+              <Animated.Text
+                onLayout={measureAt(setDotBoxes, i)}
+                style={[
+                  styles.dot,
+                  { color: c.text },
+                  {
+                    opacity: dotOpacity,
+                    transform: [
+                      {
+                        translateX: collapse.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [scatterOffset(i).x, 0],
+                        }),
+                      },
+                      {
+                        translateY: collapse.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [scatterOffset(i).y, 0],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                {DOT}
+              </Animated.Text>
+
+              <Animated.View style={stagger(NAMES_AT, i, NAME_DUR)}>
+                <Text variant="wordmark">{name}</Text>
+              </Animated.View>
+
+              <Animated.View style={[styles.meaning, stagger(MEANINGS_AT, i, NAME_DUR)]}>
+                <Text variant="monoSmall" color="muted">
+                  {MEANINGS[i]}
+                </Text>
+              </Animated.View>
+            </View>
+          ))}
+        </View>
       </Animated.View>
 
       <Animated.View
-        style={styles.names}
-        onLayout={(e) => {
-          const box = e.nativeEvent.layout;
-          setRowBox((prev) => prev ?? box);
-        }}
+        style={[StyleSheet.absoluteFill, styles.closing, { opacity: closingOpacity }]}
+        onLayout={measure(setClosingBox)}
         pointerEvents="none"
       >
-        {NAMES.map((name, i) => (
-          <View key={name} style={styles.nameCol} onLayout={measureAt(setColBoxes, i)}>
+        <View style={styles.wordRow} onLayout={measure(setClosingRowBox)}>
+          {CLOSING.map((word) => (
             <Animated.Text
-              onLayout={measureAt(setDotBoxes, i)}
-              style={[
-                styles.dot,
-                { color: c.text },
-                {
-                  opacity: dotOpacity(i),
-                  transform: [
-                    { translateX: dotTravel(i, 'x') },
-                    { translateY: dotTravel(i, 'y') },
-                  ],
-                },
-              ]}
+              key={word}
+              style={[styles.closingWord, { color: c.text }, { opacity: sentenceOpacity }]}
             >
-              {DOT}
+              {word}
             </Animated.Text>
+          ))}
 
-            <Animated.View
-              onLayout={i === MNEME ? (e) => {
-                const box = e.nativeEvent.layout;
-                setWordBox((prev) => prev ?? box);
-              } : undefined}
-              style={{
-                opacity: nameOpacity(i),
-                transform: [
-                  { translateX: leave(i, 'x') },
-                  { translateY: Animated.add(nameRise(i), leave(i, 'y')) },
-                ],
-              }}
-            >
-              <Text variant="wordmark">{name}</Text>
-            </Animated.View>
-          </View>
-        ))}
-      </Animated.View>
+          {/* No right margin: the word's own trailing letter-space is exactly
+              the gap a full stop wants, and the period below opens with none. */}
+          <Animated.View
+            onLayout={measure(setMnemeBox)}
+            style={[
+              styles.closingWordBox,
+              { marginRight: 0 },
+              { transform: [{ translateX: travel('x') }, { translateY: travel('y') }] },
+            ]}
+          >
+            <Text variant="wordmark">mneme</Text>
+          </Animated.View>
 
-      <Animated.View style={{ opacity: closingOpacity }} pointerEvents="none">
-        <Words clock={clock} at={L3_AT} text={LINE_3} color={c.muted} />
+          <Animated.Text
+            style={[
+              styles.closingWord,
+              { color: c.text },
+              { marginLeft: 0, opacity: sentenceOpacity },
+            ]}
+          >
+            .
+          </Animated.Text>
+        </View>
       </Animated.View>
     </Animated.View>
   );
@@ -428,9 +460,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: Spacing[6],
   },
+  closing: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing[6],
+  },
   wordRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignItems: 'center',
     justifyContent: 'center',
   },
   word: {
@@ -440,11 +478,20 @@ const styles = StyleSheet.create({
     letterSpacing: LetterSpacing.tight,
     marginHorizontal: 3.5,
   },
+  // The closing line, set in the wordmark's metrics so its last word can leave
+  // and land without changing shape.
+  closingWord: {
+    fontFamily: FontFamily.serif,
+    fontSize: CLOSING_SIZE,
+    lineHeight: CLOSING_SIZE * LineHeight.snug,
+    letterSpacing: LetterSpacing.wider,
+    marginHorizontal: 3.5,
+  },
+  closingWordBox: { marginHorizontal: 3.5 },
   names: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     marginTop: Spacing[8],
-    marginBottom: Spacing[8],
   },
   nameCol: {
     alignItems: 'center',
@@ -456,4 +503,5 @@ const styles = StyleSheet.create({
     lineHeight: DOT_SIZE,
     marginBottom: Spacing[3],
   },
+  meaning: { marginTop: Spacing[2] },
 });

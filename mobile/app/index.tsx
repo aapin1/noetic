@@ -30,6 +30,10 @@ const TYPE_MS = 55;
 /** Once the intro has handed off, the haze drops back so it never competes with the CTA. */
 const HAZE_SETTLED = 0.6;
 
+/** A fast profile fetch used to cut the welcome line off mid-word. Hold the
+ * redirect until it has finished typing, plus a beat to read it. */
+const WELCOME_MS = RETURNING.length * TYPE_MS + 420;
+
 /** Types a line out one character at a time, then blinks a cursor. */
 function TypedTagline({
   color,
@@ -88,6 +92,7 @@ export default function LandingScreen() {
   const [contentIn, setContentIn] = useState(false);
   const [introDone, setIntroDone] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
+  const [welcomeDone, setWelcomeDone] = useState(false);
   // Measured rather than assumed, so the intro's word has something exact to
   // travel to. Both are laid out by the same parent, so the boxes subtract.
   const [markBox, setMarkBox] = useState<{ x: number; y: number } | null>(null);
@@ -105,12 +110,18 @@ export default function LandingScreen() {
   // is. Gating on `isLoading` instead — which waits on the network round-trip —
   // is what made a returning user watch the first line of the intro for two
   // seconds before being redirected.
-  const returning = isAuthenticated && isLoading;
+  //
+  // It then stays true PAST the profile arriving, until the welcome line has
+  // finished writing itself — otherwise a fast fetch cut it off at "> welcome b".
+  const returning = isAuthenticated && (isLoading || !welcomeDone);
   const signedOut = !isAuthenticated && !isLoading;
 
   // The returning state borrows the same entrance the landing content uses.
   useEffect(() => {
-    if (returning) setContentIn(true);
+    if (!returning) return;
+    setContentIn(true);
+    const t = setTimeout(() => setWelcomeDone(true), WELCOME_MS);
+    return () => clearTimeout(t);
   }, [returning]);
 
   // A seven-second full-screen motion piece is exactly what this setting is for.
@@ -161,10 +172,11 @@ export default function LandingScreen() {
     return () => entrance.stop();
   }, [contentIn, reduceMotion, enterBrain, enterCopy, enterCta]);
 
-  if (!isLoading && isAuthenticated && hasProfile) {
+  // `returning` gates both, so nobody is thrown into the app mid-sentence.
+  if (!returning && !isLoading && isAuthenticated && hasProfile) {
     return <Redirect href="/(tabs)" />;
   }
-  if (!isLoading && isAuthenticated && !hasProfile) {
+  if (!returning && !isLoading && isAuthenticated && !hasProfile) {
     return <Redirect href="/(onboarding)/identity" />;
   }
 

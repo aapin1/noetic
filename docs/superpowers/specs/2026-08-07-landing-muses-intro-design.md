@@ -54,25 +54,31 @@ These override any other choice in this document:
 | t | Beat |
 |---|---|
 | 0.0s | Haze and the nine-point constellation fade up |
-| 0.35s | *Before the nine muses* arrives **a word at a time** |
-| 1.25s | *there were three.* arrives, word at a time |
-| 2.15s | **The collapse.** Six points and all the edges dissolve; the three survivors glide down out of the sky |
-| 3.1s | The three names fade in beneath their points, staggered |
-| 4.05s | The opening dims to 30% behind the closing line |
-| 4.1s | *This one is for mneme.* arrives, word at a time, at the same size as the opening |
-| 5.7s | Melete and Aoide rise away and fade, taking their points |
-| 5.9s | Both statements clear, so the screen is empty but for one word |
-| 6.5s | **The morph.** Mneme travels into the wordmark slot over 1150ms |
-| 7.4s | The brain, tagline, headline and CTAs run the existing stagger |
-| 7.65s | The word lands; the intro retires |
+| 0.25s | *In Greek mythology,* arrives a word at a time, quieter than what follows |
+| 0.9s | *before the nine muses* |
+| 1.6s | *there were three.* |
+| 2.35s | **The collapse.** Six points and all the edges dissolve; the three survivors glide down out of the sky |
+| 3.2s | The three names fade in beneath their points, staggered |
+| 3.6s | *for practice* / *for song* / *for memory* follow in smaller mono ink |
+| 4.1–6.3s | **The hold.** Everything stays still and is simply looked at |
+| 6.3s | The whole scene fades out together |
+| 7.15s | *This one is for mneme.* fades in **slowly**, alone, over 1.2s |
+| 8.95s | The sentence lets go — every word but one fades |
+| 9.25s | **The morph.** That `mneme` travels into the wordmark slot over 1150ms |
+| 10.15s | The brain, tagline, headline and CTAs run the existing stagger |
+| 10.4s | The word lands; the intro retires |
 
 Tap anywhere to skip. All timings are named constants at the top of
 `MusesIntro.tsx`, so the pacing is tunable in one place.
 
-Ordering matters here and was got wrong first time: overlapping the departure of
-Melete and Aoide with Mneme's travel read as *Mneme escaping* rather than as the
-other two dissolving. They now leave first, and the statements clear next, so
-the last word crosses an empty screen.
+The word that morphs is the one inside the closing sentence, not one from the
+names row — the three names now leave together during the hold's exit, and the
+dedication that follows is where the surviving name is finally spoken.
+
+Ordering matters, and cost two revisions. Overlapping the departing names with
+the travelling word read as *Mneme escaping* rather than as the other two
+dissolving; and running the dedication alongside the three names left it
+competing with them. Now each thing has the screen to itself in turn.
 
 ---
 
@@ -128,21 +134,25 @@ their coordinates are exported.
 
 The sequence, the collapse, and the morph.
 
-**One clock, three eased drivers.** Opacity beats interpolate off a single
+**One clock, two eased drivers.** Opacity beats interpolate off a single
 `Animated.Value` counting milliseconds, so the pacing is legible in one place.
-The three motions that carry the piece — `collapse`, `part`, `morph` — get their
-own `Animated.timing` with a real easing curve (`Easing.bezier(0.16, 1, 0.3, 1)`),
+The two motions that carry the piece — `collapse` and `morph` — get their own
+`Animated.timing` with a real easing curve (`Easing.bezier(0.16, 1, 0.3, 1)`),
 because sampling a curve off a linear clock leaves visible kinks in the
 velocity. That was the actual cause of the first version's morph feeling
 unsmooth; doubling its duration alone would not have fixed it.
 
-**The morph is a pure translation.** All three names are set in
-`variant="wordmark"` at its natural size, so the word that travels already *is*
-the wordmark — no scale, no cross-fade, no font seam.
+**The morph is a pure translation.** The closing line is set in the wordmark's
+own metrics — tracked out, a size down from the opening statements — so the word
+that leaves it already *is* the wordmark: no scale to interpolate, no
+letter-spacing seam, no cross-fade. It never shares the screen with the opening,
+so the size difference has nothing to clash with, and it rhymes with the three
+names, which are set the same way.
 
 **Everything lands on measured boxes.** The intro root, the names row, each name
-column, each survivor's dot, and Mneme's word all report an `onLayout` box, and
-the screen passes down the wordmark's own measured box. Every box resolves
+column, each survivor's dot, the closing overlay, its word row and its `mneme`
+all report an `onLayout` box, and the screen passes down the wordmark's own
+measured box. Every box resolves
 against the same parent, so they subtract cleanly — no assumption about how Yoga
 insets absolutely-positioned children by padding, which is the kind of thing
 that silently differs by platform. The timeline does not start until they are
@@ -152,24 +162,33 @@ all in.
 one per word, staggered 105ms with a fade and a small rise. Invisible words
 still occupy their layout, so nothing reflows as a line fills in.
 
-**Typography.** Both statements are set at `FontSize['2xl']`; only colour
-separates them. The first pass set the closing line at `serif`/16px muted
-against `h2`/26px, and the size drop read as a different element rather than as
-a coda.
+**Typography.** The three opening statements are all set at `FontSize['2xl']`;
+only colour separates them, with the clarifying line quietest. An early pass set
+the third statement at `serif`/16px muted against 26px while they shared the
+screen, and the size drop read as a different element rather than as part of the
+same thought.
+
+The closing dedication is deliberately different — see the morph above — because
+by then it is the only thing on screen.
 
 **Copy.** The names are lowercase and unpunctuated so the surviving one matches
-the wordmark exactly:
+the wordmark exactly. Each carries its meaning in smaller mono ink, because
+nobody outside a classics department knows what Melete and Aoide were for:
 
-1. `Before the nine muses` / `there were three.`
-2. `melete` `aoide` `mneme`
+1. `In Greek mythology,` / `before the nine muses` / `there were three.`
+2. `melete` `aoide` `mneme` — glossed `for practice` / `for song` / `for memory`
 3. `This one is for mneme.`
 
-**Departures.** Melete and Aoide rise 16px as they fade, back towards the
-constellation they came down from. Drifting them sideways instead put Aoide
-straight through Mneme, which is the one word that must stay legible.
+The second statement is lower case because the first ends in a comma and it
+continues the sentence. In the closing line the full stop is its own element, so
+it can stay behind when the word it follows leaves.
+
+**The hold.** After the glosses land, nothing moves for two seconds. It is the
+only still moment in the sequence and it is the point of the whole thing — the
+three of them, named and explained, simply sitting there.
 
 **Skip.** A full-screen `Pressable`. On press it clears the pending timers,
-stops all four drivers, and cross-fades the intro out over 260ms — the word does
+stops all three drivers, and cross-fades the intro out over 260ms — the word does
 not fly on a skip, because someone who tapped wants the screen, not the
 flourish.
 
@@ -202,8 +221,13 @@ a frame the screen knows which of three states it is in:
 | State | Condition | What renders |
 |---|---|---|
 | Unknown | `isLoading && !isAuthenticated` | Haze only. Lasts one or two frames — a keychain read. |
-| Returning | `isAuthenticated && isLoading` | The braille brain, breathing, and `> welcome back` typed beneath it. No intro. |
+| Returning | `isAuthenticated && (isLoading \|\| !welcomeDone)` | The braille brain, breathing, and `> welcome back` typed beneath it. No intro. |
 | Signed out | `!isAuthenticated && !isLoading` | The intro runs. |
+
+**It also outlasts the fetch.** A fast profile response used to cut the line off
+at `> welcome b` and drop the user into Atlas mid-word, so `returning` stays true
+until the line has finished typing plus a beat to read it — and both redirects
+are gated on it, so nobody is thrown into the app mid-sentence.
 
 The returning state reuses the brain block that the landing already renders —
 it is mounted in both states rather than swapped, so a returning user whose
@@ -216,7 +240,7 @@ the most pertinent thing available: it is literally their brain waking up.
 
 `AccessibilityInfo.isReduceMotionEnabled()` is read once on mount. When enabled
 the intro does not run, the screen renders immediately, and `HazeField` renders
-static. A seven-second full-screen motion piece is precisely what that setting
+static. A ten-second full-screen motion piece is precisely what that setting
 exists for, and the app does not currently honour it anywhere else.
 
 ---
@@ -249,9 +273,10 @@ Verified on an iPhone 17 Pro simulator by capturing the sequence frame by frame:
 - [x] Word-at-a-time reveals, with no reflow as a line fills
 - [x] The collapse — six points and the edges dissolve, three glide down and
       land centred above their names
-- [x] Both statements at one size, separated only by colour
-- [x] Melete and Aoide clear before the morph, with no collision into Mneme
-- [x] Mneme crosses an empty screen and lands on the wordmark slot
+- [x] The three names with their glosses, held still
+- [x] The scene clears and the dedication fades in alone, centred, as one line
+      with the full stop hugging its word
+- [x] `mneme` crosses an empty screen and lands exactly on the wordmark slot
 - [x] Handoff — brain, tagline, headline and CTAs rise; settled screen unchanged
 - [x] Returning state — brain plus `> welcome back`, no intro (checked by
       temporarily forcing the branch, then reverting)
@@ -261,5 +286,5 @@ checked by reading the code rather than by driving the UI:
 
 - [ ] Tap-to-skip during each beat
 - [ ] Navigating to sign-in and back does not replay the intro
-- [ ] A real returning user's ~2s profile fetch (the branch was forced, not
-      driven by an actual token)
+- [ ] A real returning user's profile fetch, and therefore the welcome-line hold
+      end to end (the branch was forced, not driven by an actual token)
