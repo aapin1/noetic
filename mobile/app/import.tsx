@@ -156,6 +156,7 @@ export default function ImportScreen() {
               autoCapitalize="none"
               autoCorrect={false}
               accessibilityLabel="Paste a list of links"
+              testID="import-paste"
             />
             <Button
               label={busy ? 'reading…' : 'map these links'}
