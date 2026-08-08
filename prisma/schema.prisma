@@ -132,6 +132,10 @@ model User {
   name                   String?
   image                  String?
   passwordHash           String?
+  /// Apple's stable per-team user identifier (`sub` from a verified identity
+  /// token). Set on first Apple sign-in; accounts created this way have a null
+  /// passwordHash and must sign in with Apple.
+  appleUserId            String?            @unique
   plan                   UserPlan           @default(FREE)
   tasteProfileVersion    Int                @default(0)
   createdAt              DateTime           @default(now())
@@ -171,6 +175,7 @@ model User {
   blocksReceived         UserBlock[]        @relation("BlocksReceived")
   reportsMade            UserReport[]       @relation("ReportsMade")
   reportsReceived        UserReport[]       @relation("ReportsReceived")
+  passwordResetCodes     PasswordResetCode[]
 }
 
 model Profile {
@@ -846,6 +851,24 @@ model RateLimitCounter {
 
   @@id([key, window])
   @@index([window])
+}
+
+/// A pending password-reset code. The 6-digit code itself is never stored —
+/// only a bcrypt hash — and never logged in production. At most one is live
+/// per user: issuing a new code deletes the old ones, and a successful reset
+/// deletes them all. `attempts` caps guesses against a single code (the
+/// online brute-force guard; the 15-minute expiry and per-IP limits do the
+/// rest).
+model PasswordResetCode {
+  id        String   @id @default(cuid())
+  userId    String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 /// Cached LLM prose for Mind (contradictions, syntheses, convergence).

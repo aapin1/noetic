@@ -30,6 +30,23 @@ export const tokenSchema = z.object({
   password: z.string().min(8).max(128),
 });
 
+export const appleAuthSchema = z.object({
+  identityToken: z.string().min(1).max(8192),
+  // Present only on Apple's very first authorization. Display nicety, never
+  // used for identity — same trust level as `name` on register.
+  fullName: z.string().min(1).max(120).optional(),
+});
+
+export const passwordResetRequestSchema = z.object({
+  email: z.string().email(),
+});
+
+export const passwordResetConfirmSchema = z.object({
+  email: z.string().email(),
+  code: z.string().regex(/^\d{6}$/),
+  newPassword: z.string().min(8).max(128),
+});
+
 export const insightStyleSchema = z.enum(["DIRECT", "REFLECTIVE", "ANALYTICAL"]);
 
 export const onboardingProfileSchema = z.object({

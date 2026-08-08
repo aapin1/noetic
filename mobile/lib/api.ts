@@ -227,6 +227,29 @@ export const api = {
         body: JSON.stringify(body),
       });
     },
+    apple(body: { identityToken: string; fullName?: string }) {
+      return request<{
+        token: string;
+        userId: string;
+        isNewUser: boolean;
+        user: { id: string; email: string; name: string | null; handle: string | null };
+      }>('/api/auth/apple', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+    },
+    requestPasswordReset(body: { email: string }) {
+      return request<{ sent: boolean }>('/api/auth/password-reset/request', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+    },
+    confirmPasswordReset(body: { email: string; code: string; newPassword: string }) {
+      return request<{ reset: boolean }>('/api/auth/password-reset/confirm', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+    },
   },
 
   profile: {
