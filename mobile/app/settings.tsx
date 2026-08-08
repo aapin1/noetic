@@ -315,6 +315,11 @@ export default function SettingsScreen() {
               pushGranted ? <ExternalLinkIcon size={16} color={c.muted} /> : undefined
             }
           />
+          <SettingRow
+            label="What arrives, and when"
+            description="Choose categories and quiet hours."
+            onPress={() => router.push('/notification-settings' as never)}
+          />
         </View>
 
         <SectionHeader title="Privacy" />

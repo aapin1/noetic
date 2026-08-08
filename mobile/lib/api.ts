@@ -268,7 +268,15 @@ export const api = {
     get() {
       return request<UserPreference>('/api/me/preferences');
     },
-    update(body: { insightStyle?: InsightStyle; preferences?: Record<string, unknown> }) {
+    update(body: {
+      insightStyle?: InsightStyle;
+      preferences?: Record<string, unknown>;
+      quietHoursStartHour?: number;
+      quietHoursEndHour?: number;
+      pushSocial?: boolean;
+      pushResurface?: boolean;
+      pushStreak?: boolean;
+    }) {
       return request<UserPreference>('/api/me/preferences', {
         method: 'PATCH',
         body: JSON.stringify(body),

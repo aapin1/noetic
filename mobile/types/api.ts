@@ -234,6 +234,13 @@ export interface UserPreference {
   userId: string;
   insightStyle: InsightStyle;
   preferences: unknown;
+  /** Whole local hours 0–23. start === end means quiet hours are off. */
+  quietHoursStartHour: number;
+  quietHoursEndHour: number;
+  pushSocial: boolean;
+  pushResurface: boolean;
+  pushStreak: boolean;
+  tzOffsetMinutes: number | null;
   createdAt: string;
   updatedAt: string;
 }
