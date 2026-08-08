@@ -61,6 +61,7 @@ import { PushPrimer } from '@/components/ui/PushPrimer';
 import { StreakMark } from '@/components/ui/StreakMark';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { hasAskedForPush, markAskedForPush } from '@/lib/storage';
+import { maybeRequestReview, noteCaptureForReview } from '@/lib/review';
 import { failureReason, track } from '@/lib/analytics';
 import { useTutorial, useTutorialTarget } from '@/contexts/TutorialContext';
 import { TUTORIAL_DEMO_NODE, TUTORIAL_EXAMPLE_LINK, TUTORIAL_TARGET } from '@/constants/tutorialSteps';
@@ -3481,6 +3482,37 @@ export default function MapScreen() {
     void requestPermission();
   }, [requestPermission]);
 
+  // ── app store rating ──────────────────────────────────────────────────────
+  // Armed by a successful capture, like the push primer, and fired on the same
+  // "genuinely quiet moment" terms — but always AFTER the primer: if both are
+  // armed the primer wins and the rating waits for a later capture. The gate
+  // itself (counts, account age, once per version) lives in lib/reviewGate.
+  const [reviewArmed, setReviewArmed] = useState(false);
+  useEffect(() => {
+    if (!reviewArmed) return;
+    if (savedPill || showCapture || drawerVisible || !screenFocused) return;
+    if (pushPrimerArmed || showPushPrimer) return;
+    if (tutorialActive) return;
+    const timer = setTimeout(() => {
+      setReviewArmed(false);
+      void maybeRequestReview({
+        accountCreatedAt: profileData?.profile.createdAt ?? null,
+        tutorialActive: false,
+      });
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [
+    reviewArmed,
+    savedPill,
+    showCapture,
+    drawerVisible,
+    screenFocused,
+    pushPrimerArmed,
+    showPushPrimer,
+    tutorialActive,
+    profileData?.profile.createdAt,
+  ]);
+
   // A capture shared in from the OS share sheet whose insight was never
   // opened: offer it again on the next visit to the map — including a cold
   // start hours later. Read-and-clear, so the pill shows exactly once.
@@ -3493,6 +3525,8 @@ export default function MapScreen() {
       // successful capture — without this, someone who starts that way is never
       // asked at all.
       maybeAskForPush();
+      noteCaptureForReview();
+      setReviewArmed(true);
     });
   }, [showSavedPill, maybeAskForPush]));
 
@@ -3579,6 +3613,8 @@ export default function MapScreen() {
         // describes something the user has just seen work. On launch it would be
         // a stranger asking for a permission the app hasn't earned yet.
         maybeAskForPush();
+        noteCaptureForReview();
+        setReviewArmed(true);
       })
       .catch((e) => {
         track('capture_failed', {

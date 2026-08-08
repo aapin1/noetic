@@ -14,7 +14,7 @@
     "db:push:test": "dotenv -e .env.test -- prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "test": "vitest run",
-    "test:unit": "vitest run src/server",
+    "test:unit": "vitest run src/server mobile/lib",
     "test:integration": "dotenv -e .env.test -- vitest run tests/integration",
     "test:e2e": "playwright test",
     "postinstall": "prisma generate"

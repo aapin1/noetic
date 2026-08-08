@@ -20,6 +20,7 @@ import {
   trackSessionStart,
   wrapRoot,
 } from '@/lib/analytics';
+import { noteSessionForReview } from '@/lib/review';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -45,6 +46,7 @@ function RootLayout() {
     // reason the splash stays up a moment longer.
     initAnalytics();
     trackSessionStart();
+    noteSessionForReview();
     void hydrateQueryCache().finally(() => {
       setHydrated(true);
       void SplashScreen.hideAsync();
