@@ -16,6 +16,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
+import { TopicPickerModal } from '@/components/ui/TopicPickerModal';
 import { SponsoredCard } from '@/components/ui/SponsoredCard';
 import { asInsightSource, track } from '@/lib/analytics';
 
@@ -153,6 +154,7 @@ export default function InsightDetailScreen() {
 
   // Renaming the capture — cosmetic, instant, never reruns the pipeline.
   const [editingTitle, setEditingTitle] = useState(false);
+  const [movePickerVisible, setMovePickerVisible] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [savingTitle, setSavingTitle] = useState(false);
 
@@ -282,6 +284,16 @@ export default function InsightDetailScreen() {
                   selected={t.kind === 'general'}
                 />
               ))}
+            <Pressable
+              onPress={() => setMovePickerVisible(true)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Move to another topic"
+            >
+              <Text variant="monoSmall" color="muted">
+                move to… →
+              </Text>
+            </Pressable>
           </View>
           {editingTitle ? (
             <View>
@@ -471,6 +483,17 @@ export default function InsightDetailScreen() {
           )}
         </Section>
       </ScrollView>
+
+      <TopicPickerModal
+        visible={movePickerVisible}
+        captureId={data.id}
+        currentTopicIds={data.topics.map((t) => t.topicId)}
+        onClose={() => setMovePickerVisible(false)}
+        onMoved={() => {
+          setMovePickerVisible(false);
+          void refetch();
+        }}
+      />
     </SafeAreaView>
   );
 }

@@ -370,6 +370,14 @@ export const api = {
         body: JSON.stringify({ userContext }),
       });
     },
+    /** "Move to…" — refile the capture under one topic, marked user-set so
+     * re-classification respects it. Exactly one of topicId/topicName. */
+    moveTopic(id: string, body: { topicId?: string; topicName?: string }) {
+      return request<CaptureDetail>(`/api/captures/${id}/topic`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+    },
     /** Cosmetic rename — the server never reruns the pipeline for this. */
     updateTitle(id: string, title: string) {
       return request<CaptureDetail>(`/api/captures/${id}`, {

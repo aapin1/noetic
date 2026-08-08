@@ -2,6 +2,7 @@ import { handleRoute, parseJson } from "@/lib/api";
 import { requireRequestUserId } from "@/lib/auth";
 import { captureUpdateSchema } from "@/server/contracts";
 import { deleteCapture, getCapture, updateCaptureContext, updateCaptureTitle } from "@/server/services/cognition";
+import { restoreUserSetTopics, snapshotUserSetTopics } from "@/server/services/topic-assign";
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   return handleRoute(async () => {
@@ -20,11 +21,20 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       await updateCaptureTitle({ userId, capturedItemId: params.id, title: input.title });
     }
     if (input.userContext !== undefined) {
-      return updateCaptureContext({
+      // The rebuild wipes and rewrites the topic rows from a fresh
+      // classification. A filing the user made by hand outranks that:
+      // snapshot the user-set rows first, re-pin them after.
+      const pinned = await snapshotUserSetTopics({ capturedItemId: params.id });
+      const result = await updateCaptureContext({
         userId,
         capturedItemId: params.id,
         userContext: input.userContext,
       });
+      if (pinned.length === 0) {
+        return result;
+      }
+      await restoreUserSetTopics({ userId, capturedItemId: params.id, rows: pinned });
+      return getCapture({ userId, capturedItemId: params.id });
     }
     return getCapture({ userId, capturedItemId: params.id });
   });

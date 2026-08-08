@@ -602,6 +602,10 @@ model CapturedItemTopic {
   capturedItemId String
   topicId        String
   weight         Float        @default(1)
+  /// True when the user filed this capture here by hand ("move to…"). A
+  /// user-set row survives re-classification: the userContext rebuild wipes
+  /// and rewrites machine rows but re-pins these (see services/topic-assign).
+  userSet        Boolean      @default(false)
   capturedItem   CapturedItem @relation(fields: [capturedItemId], references: [id], onDelete: Cascade)
   topic          Topic        @relation(fields: [topicId], references: [id], onDelete: Cascade)
 

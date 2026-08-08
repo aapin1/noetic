@@ -62,6 +62,7 @@ import { StreakMark } from '@/components/ui/StreakMark';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { hasAskedForPush, markAskedForPush } from '@/lib/storage';
 import { maybeRequestReview, noteCaptureForReview } from '@/lib/review';
+import { TopicPickerModal } from '@/components/ui/TopicPickerModal';
 import { failureReason, track } from '@/lib/analytics';
 import { useTutorial, useTutorialTarget } from '@/contexts/TutorialContext';
 import { TUTORIAL_DEMO_NODE, TUTORIAL_EXAMPLE_LINK, TUTORIAL_TARGET } from '@/constants/tutorialSteps';
@@ -3079,6 +3080,8 @@ export default function MapScreen() {
   // ── Node selection ────────────────────────────────────────────
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [deletingNode, setDeletingNode] = useState(false);
+  // "move to…" — the node whose filing is being corrected, null when closed.
+  const [moveTopicNode, setMoveTopicNode] = useState<GraphNode | null>(null);
   // Read inside the touch layer's onPress via a ref so selecting a node does
   // NOT rebuild every on-screen hit target (the targets are identical whether
   // or not a node is selected). Selecting used to rebuild the whole touchLayer
@@ -4655,6 +4658,15 @@ export default function MapScreen() {
                         <Text variant="monoSmall" color="muted">view insight →</Text>
                       </Pressable>
                     )}
+                    {selectedNode.id !== TUTORIAL_DEMO_NODE.id && (
+                      <Pressable
+                        onPress={() => setMoveTopicNode(selectedNode)}
+                        style={{ marginTop: Spacing[4] }}
+                        accessibilityLabel="Move this capture to another topic"
+                      >
+                        <Text variant="monoSmall" color="muted">move to… →</Text>
+                      </Pressable>
+                    )}
                     <Pressable
                       ref={deleteTarget.isActive ? deleteTarget.ref : undefined}
                       onLayout={deleteTarget.isActive ? deleteTarget.onLayout : undefined}
@@ -4817,6 +4829,23 @@ export default function MapScreen() {
           visible={showPushPrimer}
           onDecline={closePushPrimer}
           onAccept={acceptPushPrimer}
+        />
+
+        <TopicPickerModal
+          visible={moveTopicNode !== null}
+          captureId={moveTopicNode?.id ?? null}
+          currentTopicIds={moveTopicNode?.topics.map((t) => t.topicId) ?? []}
+          onClose={() => setMoveTopicNode(null)}
+          onMoved={() => {
+            // Same cross-surface invalidation as delete: the node's region,
+            // colour, and neighbours may all have changed.
+            setMoveTopicNode(null);
+            closeDrawer();
+            void refetchGraph();
+            refetchIntelligence();
+            refetchTrends();
+            refetchPulse();
+          }}
         />
 
       </View>
