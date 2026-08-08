@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/Button';
 import { EditableAvatar } from '@/components/profile/EditableAvatar';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { WrappedSection, wrappedAccent } from '@/components/wrapped/WrappedSection';
-import { ShareRecapEntry } from '@/components/share/ShareRecapEntry';
+import { ShareAtlasEntry, ShareRecapEntry } from '@/components/share/ShareRecapEntry';
 import type { OwnerProfile } from '@/types/api';
 
 export default function YouScreen() {
@@ -137,6 +137,8 @@ export default function YouScreen() {
         {/* Same accent the wrapped kicker is wearing, so the two shelves on
             this page read as one run rather than as two unrelated colours. */}
         <ShareRecapEntry accent={wrappedAccent(wrapped)} />
+        {/* Hidden on an empty map — an atlas with no points has nothing to share. */}
+        {(wrapped?.totalCaptures ?? 0) > 0 && <ShareAtlasEntry accent={wrappedAccent(wrapped)} />}
 
         <View style={styles.editButtonWrap}>
           {/* Untinted. An ochre wash on the one button at the foot of the page

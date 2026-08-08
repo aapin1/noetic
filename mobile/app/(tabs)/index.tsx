@@ -4324,6 +4324,14 @@ export default function MapScreen() {
           onClose={() => setInfoVisible(false)}
           title="atlas"
           body="Your knowledge map. Every node is something you saved. Lines appear when ideas share a topic, contradict each other, or grow out of one another. Switch lenses to sort the map by meaning or time."
+          // Hidden on an empty map — there is no atlas to share yet.
+          action={nodes.length > 0 ? {
+            label: 'share your atlas →',
+            onPress: () => {
+              setInfoVisible(false);
+              router.push('/share-atlas' as never);
+            },
+          } : undefined}
         />
 
         {/* Dismissing it opens the capture sheet, so the explanation and the
