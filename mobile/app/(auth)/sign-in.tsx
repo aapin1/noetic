@@ -86,6 +86,7 @@ export default function SignInScreen() {
             ) : null}
 
             <Input
+              testID="sign-in-identifier"
               label="Email or username"
               value={identifier}
               onChangeText={setIdentifier}
@@ -99,6 +100,7 @@ export default function SignInScreen() {
             />
 
             <Input
+              testID="sign-in-password"
               label="Password"
               value={password}
               onChangeText={setPassword}

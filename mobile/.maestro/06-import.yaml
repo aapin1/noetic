@@ -1,0 +1,76 @@
+# Import via the paste path: the screen renders, a pasted list reaches
+# POST /api/me/import, and the job card reports an outcome. The e2e backend
+# has no LLM keys, so per-URL captures may fail — "couldn't be read" is still
+# a passing end-to-end result for the screen + endpoint + job machinery.
+appId: app.mneme.mobile
+---
+# Relaunch first: a previous flow (especially a failed one) can leave the app
+# on any screen, and the deep link alone would meet it there.
+- launchApp:
+    stopApp: true
+- retry:
+    maxRetries: 2
+    commands:
+      - openLink: "exp+mneme://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+      - extendedWaitUntil:
+          visible:
+            text: "Continue|Get started|atlas"
+          timeout: 45000
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+      - tapOn: "Close"
+- runFlow:
+    when:
+      visible: "Get started"
+    file: subflows/sign-in.yaml
+
+- extendedWaitUntil:
+    visible:
+      text: "atlas"
+    timeout: 45000
+# A cold relaunch can open the dev client's own menu over the app — close it
+# before touching anything (its sheet swallows every tap underneath).
+- runFlow:
+    when:
+      visible: "Fast refresh"
+    commands:
+      - tapOn: "Close"
+# The dev client's floating tools gear sits exactly over the app's Settings
+# gear and eats the tap — go straight to the screen by app scheme instead.
+- openLink: "mneme://settings"
+# iOS confirms custom-scheme links opened from outside the app.
+- runFlow:
+    when:
+      visible: "Open"
+    commands:
+      - tapOn: "Open"
+- extendedWaitUntil:
+    visible:
+      text: "Delete account"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: "Import"
+    direction: DOWN
+- tapOn: "Import"
+
+- extendedWaitUntil:
+    visible:
+      text: "Paste links"
+    timeout: 20000
+- takeScreenshot: screenshots/06-import
+- tapOn:
+    id: "import-paste"
+- inputText: "https://example.com/e2e-one https://example.com/e2e-two"
+- pressKey: Enter
+- tapOn: "map these links"
+
+# Either the live progress card or a finished tally — both prove the job ran.
+- extendedWaitUntil:
+    visible:
+      text: ".*mapping your library.*|.*mapped .*|.*couldn't be read.*|.*nothing new to map.*"
+    timeout: 45000
+- takeScreenshot: screenshots/06-import-result

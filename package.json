@@ -16,8 +16,16 @@
     "test": "vitest run",
     "test:unit": "vitest run src/server mobile/lib",
     "test:integration": "dotenv -e .env.test -- vitest run tests/integration",
+    "test:db": "dotenv -e .env.test -- vitest run --config vitest.db.config.ts",
+    "test:db:record": "LLM_FIXTURES=record dotenv -e .env.test -e .env.local -- vitest run --config vitest.db.config.ts",
     "test:e2e": "playwright test",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test:mobile": "npm --prefix mobile test",
+    "e2e:seed": "dotenv -e .env.test -- tsx scripts/seed-e2e.ts",
+    "e2e:build": "bash scripts/e2e-build.sh",
+    "e2e": "bash scripts/e2e.sh",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run typecheck && npm run test:unit && npm run test:integration && npm run test:db && npm run test:mobile"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1079.0",

@@ -23,3 +23,7 @@ mobile/.expo/
 .agents/
 awesome-ux-skills/
 skills-lock.json
+
+# Maestro E2E artifacts (regenerated each run)
+tests/e2e-screenshots/
+mobile/screenshots/

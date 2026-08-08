@@ -1,0 +1,47 @@
+{
+  "request": {
+    "url": "https://api.openai.com/v1/chat/completions",
+    "endpoint": "chat",
+    "model": "gpt-4o-mini",
+    "summary": "{\"title\":\"The measurement problem in quantum mechanics asks why a superposition collapses \",\"content_text\":\"The measurement problem in quantum mechanics asks wh"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "chatcmpl-EAeqfX5cl4DpnArog5xfOOT5fMUwA",
+      "object": "chat.completion",
+      "created": 1786209009,
+      "model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"insights\":[{\"index\":0,\"headline\":\"This is your first entry in science.\",\"body\":\"Future captures in this area will connect back to this foundational point.\",\"open_question\":\"\"}]}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 538,
+        "completion_tokens": 40,
+        "total_tokens": 578,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "service_tier": "default",
+      "system_fingerprint": "fp_33a9b387c2"
+    }
+  }
+}

@@ -1,0 +1,80 @@
+# "Move to…" end to end: open a seeded capture's insight, refile it under
+# science, and see the badge change — reassignment endpoint, user-set pin,
+# and the refetch all in one pass.
+appId: app.mneme.mobile
+---
+# Relaunch first: a previous flow (especially a failed one) can leave the app
+# on any screen, and the deep link alone would meet it there.
+- launchApp:
+    stopApp: true
+- retry:
+    maxRetries: 2
+    commands:
+      - openLink: "exp+mneme://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+      - extendedWaitUntil:
+          visible:
+            text: "Continue|Get started|atlas"
+          timeout: 45000
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+      - tapOn: "Close"
+- runFlow:
+    when:
+      visible: "Get started"
+    file: subflows/sign-in.yaml
+
+- extendedWaitUntil:
+    visible:
+      text: "archive"
+    timeout: 45000
+# A cold relaunch can open the dev client's own menu over the app — close it
+# before touching anything (its sheet swallows every tap underneath).
+- runFlow:
+    when:
+      visible: "Fast refresh"
+    commands:
+      - tapOn: "Close"
+- tapOn: "archive"
+- extendedWaitUntil:
+    visible:
+      text: ".*Dichotomy of Control.*"
+    timeout: 30000
+- tapOn: ".*Dichotomy of Control.*"
+
+# The dev-build test-ad popover may cover the screen; dismiss it if present.
+- extendedWaitUntil:
+    visible:
+      text: "Dismiss|Move to another topic"
+    timeout: 30000
+- runFlow:
+    when:
+      visible: "Dismiss"
+    commands:
+      - tapOn: "Dismiss"
+# The action's accessibility label replaces its styled text in the AX tree.
+- extendedWaitUntil:
+    visible:
+      text: "Move to another topic"
+    timeout: 30000
+- tapOn: "Move to another topic"
+
+# The picker is an RN Modal — its window is invisible to Maestro's hierarchy
+# on iOS, so no text/label inside it can be asserted or tapped by name. The
+# seeded account (philosophy · science · general) makes the sheet layout
+# deterministic, so the science row is a fixed point on screen.
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: screenshots/07-move-picker
+- tapOn:
+    point: "50%,82%"
+
+# The refetched capture wears its new filing: the philosophy badge is
+# replaced by science on the insight screen underneath.
+- extendedWaitUntil:
+    visible:
+      text: "science"
+    timeout: 20000
+- takeScreenshot: screenshots/07-moved

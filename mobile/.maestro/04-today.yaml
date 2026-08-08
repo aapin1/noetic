@@ -1,0 +1,79 @@
+# The /today ritual against seeded history: the 30-day anniversary capture is
+# a deterministic pick, its CONTRADICTS edge a deterministic pair, and the
+# seeded 2-day streak renders the StreakMark — the real entry point.
+appId: app.mneme.mobile
+---
+# Relaunch first: a previous flow (especially a failed one) can leave the app
+# on any screen, and the deep link alone would meet it there.
+- launchApp:
+    stopApp: true
+- retry:
+    maxRetries: 2
+    commands:
+      - openLink: "exp+mneme://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+      - extendedWaitUntil:
+          visible:
+            text: "Continue|Get started|atlas"
+          timeout: 45000
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+      - tapOn: "Close"
+- runFlow:
+    when:
+      visible: "Get started"
+    file: subflows/sign-in.yaml
+
+- extendedWaitUntil:
+    visible:
+      text: "atlas"
+    timeout: 45000
+
+# A cold relaunch can open the dev client's own menu over the app — close it
+# before touching anything (its sheet swallows every tap underneath).
+- runFlow:
+    when:
+      visible: "Fast refresh"
+    commands:
+      - tapOn: "Close"
+
+# Prefer the real entry point (the streak mark); fall back to the app scheme
+# if the mark hasn't rendered (e.g. the streak query is still in flight).
+- runFlow:
+    when:
+      visible: ".*day streak.*"
+    commands:
+      - tapOn: ".*day streak.*"
+- runFlow:
+    when:
+      notVisible: "resurfaced"
+    commands:
+      - openLink: "mneme://today"
+
+- extendedWaitUntil:
+    visible:
+      text: "a month ago today, you saved this. does it still hold?"
+    timeout: 30000
+- assertVisible: "Memory Is Reconstructive"
+- assertVisible: "these two touch"
+- assertVisible: "The Extended Mind"
+- assertVisible: ".*opening this counted.*"
+- takeScreenshot: screenshots/04-today
+
+- tapOn: "open insight →"
+- extendedWaitUntil:
+    visible:
+      text: "Dismiss|.*rebuilds.*"
+    timeout: 30000
+- runFlow:
+    when:
+      visible: "Dismiss"
+    commands:
+      - tapOn: "Dismiss"
+- extendedWaitUntil:
+    visible:
+      text: ".*rebuilds.*"
+    timeout: 30000
+- takeScreenshot: screenshots/04-today-insight

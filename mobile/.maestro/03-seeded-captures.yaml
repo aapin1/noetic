@@ -1,0 +1,60 @@
+# The seeded map must actually reach the screen. This is the end-to-end proof
+# that the device, the backend, and the database line up — a passing API test
+# says nothing about whether the app renders what the API returned.
+appId: app.mneme.mobile
+---
+# The deep link both launches the app and forces the bundle to load from
+# Metro (the dev client only auto-connects if it remembers a server). Retried
+# because a link opened mid-launch can bounce to the home screen.
+- retry:
+    maxRetries: 2
+    commands:
+      - openLink: "exp+mneme://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+      # One of the three post-launch states: dev-client onboarding sheet,
+      # welcome screen, or the tab bar.
+      - extendedWaitUntil:
+          visible:
+            text: "Continue|Get started|atlas"
+          timeout: 45000
+# "Continue" finishes the dev-menu onboarding but leaves the dev menu open,
+# so close it too.
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+      - tapOn: "Close"
+- runFlow:
+    when:
+      visible: "Get started"
+    file: subflows/sign-in.yaml
+
+- extendedWaitUntil:
+    visible:
+      text: "archive"
+    timeout: 45000
+- tapOn: "archive"
+
+- extendedWaitUntil:
+    visible:
+      text: ".*Dichotomy of Control.*"
+    timeout: 30000
+- takeScreenshot: screenshots/03-archive-list
+
+- tapOn: ".*Dichotomy of Control.*"
+# In dev builds Google's test-ad validator popover can cover the key-idea
+# card — wait for either it or the card, dismiss it if present.
+- extendedWaitUntil:
+    visible:
+      text: "Dismiss|.*up to you.*"
+    timeout: 30000
+- runFlow:
+    when:
+      visible: "Dismiss"
+    commands:
+      - tapOn: "Dismiss"
+- extendedWaitUntil:
+    visible:
+      text: ".*up to you.*"
+    timeout: 30000
+- takeScreenshot: screenshots/03-capture-detail

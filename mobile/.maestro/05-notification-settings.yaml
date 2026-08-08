@@ -1,0 +1,73 @@
+# The notification preferences screen: reachable from Settings, renders the
+# three toggles and quiet hours, and a toggle tap survives (optimistic PATCH
+# against the real backend).
+appId: app.mneme.mobile
+---
+# Relaunch first: a previous flow (especially a failed one) can leave the app
+# on any screen, and the deep link alone would meet it there.
+- launchApp:
+    stopApp: true
+- retry:
+    maxRetries: 2
+    commands:
+      - openLink: "exp+mneme://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+      - extendedWaitUntil:
+          visible:
+            text: "Continue|Get started|atlas"
+          timeout: 45000
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+      - tapOn: "Close"
+- runFlow:
+    when:
+      visible: "Get started"
+    file: subflows/sign-in.yaml
+
+- extendedWaitUntil:
+    visible:
+      text: "atlas"
+    timeout: 45000
+# A cold relaunch can open the dev client's own menu over the app — close it
+# before touching anything (its sheet swallows every tap underneath).
+- runFlow:
+    when:
+      visible: "Fast refresh"
+    commands:
+      - tapOn: "Close"
+# The dev client's floating tools gear sits exactly over the app's Settings
+# gear and eats the tap — go straight to the screen by app scheme instead.
+- openLink: "mneme://settings"
+# iOS confirms custom-scheme links opened from outside the app.
+- runFlow:
+    when:
+      visible: "Open"
+    commands:
+      - tapOn: "Open"
+- extendedWaitUntil:
+    visible:
+      text: "Delete account"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: "What arrives, and when"
+    direction: DOWN
+- tapOn: "What arrives, and when"
+
+- extendedWaitUntil:
+    visible:
+      text: "Quiet hours"
+    timeout: 20000
+- assertVisible: "Resurfacing"
+- assertVisible: "Only the note that a freeze held your streak. Never a warning."
+- assertVisible: ".*21:00 to 09:00.*"
+- takeScreenshot: screenshots/05-notification-settings
+
+# Flip social off and back on — each tap is a PATCH; no crash and the control
+# still being present is the smoke assertion.
+- tapOn: "Social notifications"
+- tapOn: "Social notifications"
+- assertVisible: "Social"
+- takeScreenshot: screenshots/05-notification-toggled

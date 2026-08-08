@@ -1,0 +1,65 @@
+# Export: the row fetches the full account and offers a format. Cancelling at
+# the picker keeps the flow off the native share sheet, which Maestro cannot
+# reliably drive.
+appId: app.mneme.mobile
+---
+# Relaunch first: a previous flow (especially a failed one) can leave the app
+# on any screen, and the deep link alone would meet it there.
+- launchApp:
+    stopApp: true
+- retry:
+    maxRetries: 2
+    commands:
+      - openLink: "exp+mneme://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+      - extendedWaitUntil:
+          visible:
+            text: "Continue|Get started|atlas"
+          timeout: 45000
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+      - tapOn: "Close"
+- runFlow:
+    when:
+      visible: "Get started"
+    file: subflows/sign-in.yaml
+
+- extendedWaitUntil:
+    visible:
+      text: "atlas"
+    timeout: 45000
+# A cold relaunch can open the dev client's own menu over the app — close it
+# before touching anything (its sheet swallows every tap underneath).
+- runFlow:
+    when:
+      visible: "Fast refresh"
+    commands:
+      - tapOn: "Close"
+# The dev client's floating tools gear sits exactly over the app's Settings
+# gear and eats the tap — go straight to the screen by app scheme instead.
+- openLink: "mneme://settings"
+# iOS confirms custom-scheme links opened from outside the app.
+- runFlow:
+    when:
+      visible: "Open"
+    commands:
+      - tapOn: "Open"
+- extendedWaitUntil:
+    visible:
+      text: "Delete account"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: "Export my data"
+    direction: DOWN
+- tapOn: "Export my data"
+
+# "Export ready" proves the endpoint returned and both files were written.
+- extendedWaitUntil:
+    visible:
+      text: "Export ready"
+    timeout: 30000
+- takeScreenshot: screenshots/08-export-ready
+- tapOn: "Cancel"

@@ -1,0 +1,33 @@
+# Signs in as the seeded E2E account (see scripts/seed-e2e.ts).
+appId: app.mneme.mobile
+---
+# A signed-out app lands on the welcome screen; the form is one tap away.
+- runFlow:
+    when:
+      visible: "Sign in"
+    commands:
+      - tapOn: "Sign in"
+- extendedWaitUntil:
+    visible:
+      id: "sign-in-identifier"
+    timeout: 30000
+- tapOn:
+    id: "sign-in-identifier"
+- inputText: "e2e@mneme.test"
+- tapOn:
+    id: "sign-in-password"
+- inputText: "e2e-password-1234"
+# The password field submits on return (onSubmitEditing) — more reliable
+# than hideKeyboard, which often fails on iOS.
+- pressKey: Enter
+# iOS may offer to save the password once sign-in succeeds; either the
+# prompt or the app's atlas header appears next.
+- extendedWaitUntil:
+    visible:
+      text: "Not Now|atlas"
+    timeout: 45000
+- runFlow:
+    when:
+      visible: "Not Now"
+    commands:
+      - tapOn: "Not Now"

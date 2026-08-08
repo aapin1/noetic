@@ -1,0 +1,42 @@
+# The cold-launch path: a signed-out app must land on sign-in and get through
+# it. Everything downstream assumes this works, so it runs first.
+appId: app.mneme.mobile
+---
+- launchApp:
+    clearState: true
+# The dev client only auto-connects to Metro if it remembers a server, and
+# clearState wipes that memory — force the bundle to load via its deep link.
+# Opening the link right after launchApp can race the app's own startup and
+# bounce to the home screen, so retry the link+wait pair as a unit.
+- retry:
+    maxRetries: 2
+    commands:
+      - openLink: "exp+mneme://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+      # Either the dev client's one-time onboarding sheet or the welcome
+      # screen proves the bundle rendered.
+      - extendedWaitUntil:
+          visible:
+            text: "Continue|Get started"
+          timeout: 60000
+- takeScreenshot: screenshots/01-launch
+# "Continue" finishes the dev-menu onboarding but leaves the dev menu open,
+# so close it too.
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+      # The menu doesn't always stay open after Continue — close it only
+      # when it actually did.
+      - runFlow:
+          when:
+            visible: "Close"
+          commands:
+            - tapOn: "Close"
+- runFlow: subflows/sign-in.yaml
+# The atlas tab bar is the proof we're through the auth gate.
+- extendedWaitUntil:
+    visible:
+      text: "atlas"
+    timeout: 45000
+- takeScreenshot: screenshots/01-signed-in

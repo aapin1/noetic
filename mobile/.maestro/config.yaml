@@ -1,0 +1,13 @@
+# Run sign-in first: e2e.sh resets the keychain before the suite, so 01 is
+# the only flow guaranteed a signed-out app; 02/03 reuse its session.
+executionOrder:
+  continueOnFailure: true
+  flowsOrder:
+    - 01-sign-in
+    - 02-tabs
+    - 03-seeded-captures
+    - 04-today
+    - 05-notification-settings
+    - 06-import
+    - 07-move-topic
+    - 08-export

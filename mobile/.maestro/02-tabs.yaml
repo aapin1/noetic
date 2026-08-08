@@ -1,0 +1,64 @@
+# Every tab must open and render something. This is the cheapest guard against
+# the failure that hurts most: a screen that crashes or renders blank on a real
+# device while its unit tests stay green.
+appId: app.mneme.mobile
+---
+# The deep link both launches the app and forces the bundle to load from
+# Metro (the dev client only auto-connects if it remembers a server). Retried
+# because a link opened mid-launch can bounce to the home screen.
+- retry:
+    maxRetries: 2
+    commands:
+      - openLink: "exp+mneme://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+      # One of the three post-launch states: dev-client onboarding sheet,
+      # welcome screen, or the tab bar.
+      - extendedWaitUntil:
+          visible:
+            text: "Continue|Get started|atlas"
+          timeout: 45000
+# "Continue" finishes the dev-menu onboarding but leaves the dev menu open,
+# so close it too.
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+      - tapOn: "Close"
+- runFlow:
+    when:
+      visible: "Get started"
+    file: subflows/sign-in.yaml
+
+- extendedWaitUntil:
+    visible:
+      text: "atlas"
+    timeout: 45000
+- takeScreenshot: screenshots/02-atlas
+
+- tapOn: "mind"
+- extendedWaitUntil:
+    visible:
+      text: "mind"
+    timeout: 20000
+- takeScreenshot: screenshots/02-mind
+
+- tapOn: "archive"
+- extendedWaitUntil:
+    visible:
+      text: "archive"
+    timeout: 20000
+- takeScreenshot: screenshots/02-archive
+
+- tapOn: "pulse"
+- extendedWaitUntil:
+    visible:
+      text: "pulse"
+    timeout: 20000
+- takeScreenshot: screenshots/02-pulse
+
+- tapOn: "you"
+- extendedWaitUntil:
+    visible:
+      text: "you"
+    timeout: 20000
+- takeScreenshot: screenshots/02-you
