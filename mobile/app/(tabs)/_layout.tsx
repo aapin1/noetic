@@ -126,6 +126,9 @@ function TabsRoot() {
           name="index"
           options={{
             title: 'atlas',
+            // The bar hides labels (tabBarShowLabel: false), so without this
+            // the tabs are invisible to VoiceOver and UI tests alike.
+            tabBarAccessibilityLabel: 'atlas',
             tabBarIcon: ({ color, focused }) => (
               <TabBarIcon color={color} icon={GitGraphIcon} focused={focused} activeBg={c.tabBarActive} />
             ),
@@ -135,6 +138,7 @@ function TabsRoot() {
           name="mind"
           options={{
             title: 'mind',
+            tabBarAccessibilityLabel: 'mind',
             tabBarIcon: ({ color, focused }) => (
               <TabBarIcon color={color} icon={ZapIcon} focused={focused} activeBg={c.tabBarActive} />
             ),
@@ -144,6 +148,7 @@ function TabsRoot() {
           name="memory"
           options={{
             title: 'archive',
+            tabBarAccessibilityLabel: 'archive',
             tabBarIcon: ({ color, focused }) => (
               <TabBarIcon color={color} icon={ListIcon} focused={focused} activeBg={c.tabBarActive} />
             ),
@@ -153,6 +158,7 @@ function TabsRoot() {
           name="pulse"
           options={{
             title: 'pulse',
+            tabBarAccessibilityLabel: 'pulse',
             tabBarIcon: ({ color, focused }) => (
               <TabBarIcon color={color} icon={UsersIcon} focused={focused} activeBg={c.tabBarActive} />
             ),
@@ -162,6 +168,7 @@ function TabsRoot() {
           name="profile"
           options={{
             title: 'you',
+            tabBarAccessibilityLabel: 'you',
             tabBarIcon: ({ color, focused }) => (
               <TabBarIcon color={color} icon={UserIcon} focused={focused} activeBg={c.tabBarActive} />
             ),
