@@ -4515,7 +4515,7 @@ export default function MapScreen() {
 
         {/* Empty state */}
         {isEmpty && (
-          <View style={styles.emptyHint} pointerEvents="none">
+          <View style={styles.emptyHint} pointerEvents="box-none">
             <AsciiLoader idle size={100} color="rgba(240,232,214,0.57)" />
             <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[3], color: 'rgba(240,232,214,0.53)' }}>
               your map is waiting
@@ -4523,6 +4523,17 @@ export default function MapScreen() {
             <Text variant="monoSmall" style={{ color: 'rgba(240,232,214,0.42)', textAlign: 'center', lineHeight: 20 }}>
               {'tap + to chart your first thought.'}
             </Text>
+            <Pressable
+              onPress={() => router.push('/import' as never)}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Import your bookmarks"
+              style={{ marginTop: Spacing[4] }}
+            >
+              <Text variant="monoSmall" style={{ color: 'rgba(240,232,214,0.53)', textAlign: 'center' }}>
+                {'or bring your bookmarks →'}
+              </Text>
+            </Pressable>
           </View>
         )}
 

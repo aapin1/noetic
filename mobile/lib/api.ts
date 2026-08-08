@@ -155,6 +155,20 @@ export const api = {
     },
   },
 
+  importer: {
+    /** Ship raw pasted text or a file's contents; the server parses and maps. */
+    start(content: string, filename?: string) {
+      return request<{ job: import('@/types/api').ImportJob }>('/api/me/import', {
+        method: 'POST',
+        body: JSON.stringify({ content, filename }),
+      });
+    },
+    /** The user's latest import job — running or last finished. */
+    status() {
+      return request<{ job: import('@/types/api').ImportJob | null }>('/api/me/import');
+    },
+  },
+
   devices: {
     /**
      * Hand the backend this device's Expo push token. Idempotent — the server

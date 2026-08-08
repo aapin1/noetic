@@ -279,6 +279,11 @@ export default function SettingsScreen() {
             }}
           />
           <SettingRow
+            label="Import"
+            description="Bring your bookmarks or a Pocket export onto your map."
+            onPress={() => router.push('/import' as never)}
+          />
+          <SettingRow
             label="Export my data"
             description="Every capture you’ve saved, as a file you keep."
             onPress={() => void handleExport()}

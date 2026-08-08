@@ -205,6 +205,21 @@ export interface MemoryTrendsResponse {
   rising: { topicId: string; name: string } | null;
 }
 
+/** A bulk-import job's polled status. In-process server-side: a backend
+ * restart mid-import loses the tally (captures already made survive). */
+export interface ImportJob {
+  id: string;
+  total: number;
+  done: number;
+  failed: number;
+  duplicates: number;
+  invalid: number;
+  overCap: number;
+  status: 'running' | 'done';
+  startedAt: string;
+  finishedAt: string | null;
+}
+
 /** One capture in the full-account export. */
 export interface ExportCapture {
   id: string;
