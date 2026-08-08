@@ -66,6 +66,47 @@ type CapturePayload = {
   db?: RootDbClient;
 };
 
+/**
+ * The short "about this capture" line shown on the insight screen, derived from
+ * the cleaned excerpt.
+ *
+ * Three things are not excerpts and must never be shown as one:
+ * - a bare URL (the metadata scrape failed and the row is a stub),
+ * - the body/transcript echoed back into `description` (extractors used to do
+ *   this, so rows captured before that was fixed still carry it) — truncating
+ *   it produced the "about" section that was just the opening lines of a
+ *   YouTube transcript,
+ * - a blob with no sentence ending early enough to cut on.
+ *
+ * A long-but-real description (a lead paragraph on Wikipedia-style pages) is
+ * cut at its last full sentence rather than dropped: hard-rejecting on length
+ * left real captures with no summary at all.
+ */
+export function deriveCaptureSummary(
+  description: string | undefined | null,
+  bodyText?: string | null,
+): string | null {
+  const desc = description?.trim();
+  if (!desc || /^https?:\/\//i.test(desc)) return null;
+  if (desc.length <= 400) return desc;
+
+  // Past this length, a description that opens exactly like the body is the
+  // body — a transcript or article echoed into the description field, not an
+  // authored summary of it. Cutting one at a sentence boundary is what put the
+  // first few lines of a transcript in the "about" section.
+  const body = bodyText?.trim();
+  if (body && body.startsWith(desc.slice(0, 200))) return null;
+
+  const head = desc.slice(0, 400);
+  const lastSentenceEnd = Math.max(
+    head.lastIndexOf(". "),
+    head.lastIndexOf("! "),
+    head.lastIndexOf("? "),
+    head.lastIndexOf(".\n"),
+  );
+  return lastSentenceEnd >= 120 ? head.slice(0, lastSentenceEnd + 1) : null;
+}
+
 export type CapturedItemSummary = {
   id: string;
   title: string;
@@ -666,30 +707,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   }
 
   if (payload.kind === CaptureKind.LINK) {
-    // The cleaned excerpt is a 1-2 sentence gist; a bare URL (metadata scrape
-    // failed → stub) is not a summary, so skip it and let the user's own
-    // account fill in instead. A LONG description (a lead paragraph on big
-    // Wikipedia-style pages, or a transcript when the clean failed) is cut at
-    // its last full sentence inside the cap rather than dropped outright —
-    // hard-rejecting on length left real captures with no summary at all. If
-    // no sentence completes early enough it is a blob, not an excerpt: null.
-    captureSummary = null;
-    if (contentDescription && !/^https?:\/\//i.test(contentDescription)) {
-      if (contentDescription.length <= 400) {
-        captureSummary = contentDescription;
-      } else {
-        const head = contentDescription.slice(0, 400);
-        const lastSentenceEnd = Math.max(
-          head.lastIndexOf(". "),
-          head.lastIndexOf("! "),
-          head.lastIndexOf("? "),
-          head.lastIndexOf(".\n"),
-        );
-        if (lastSentenceEnd >= 120) {
-          captureSummary = head.slice(0, lastSentenceEnd + 1);
-        }
-      }
-    }
+    captureSummary = deriveCaptureSummary(contentDescription, contentBodyText);
   }
 
   // "Thin" = we have essentially only a title (e.g. a YouTube video whose

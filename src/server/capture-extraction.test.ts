@@ -178,6 +178,10 @@ describe("fetchMetadata source extractors", () => {
     const result = await fetchMetadata("https://www.youtube.com/watch?v=abc12345678");
     expect(result.metadata?.bodySource).toBe("transcript");
     expect(result.metadata?.bodyText).toContain("route information between tokens");
+    // The transcript is body text, never the description: the description is
+    // surfaced to the user as "about this capture", so echoing the transcript
+    // there leaks its opening lines whenever the metadata clean doesn't land.
+    expect(result.metadata?.description).toBeUndefined();
     const fetchedUrls = fetchMock.mock.calls.map((c) => String(c[0]));
     expect(fetchedUrls.some((u) => u.includes("lang=ar"))).toBe(false);
   });

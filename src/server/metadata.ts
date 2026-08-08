@@ -311,15 +311,20 @@ export function parseMetadataFromHtml(html: string, originalUrl: string): Extrac
     bodyText = jsonLd.articleBody;
     bodySource = "jsonld";
   }
+  // Show notes promoted to body text are body text, not a description:
+  // echoing them below would surface the whole blob as "about this capture"
+  // whenever the metadata clean doesn't land.
+  let jsonLdDescriptionIsBody = false;
   if (!bodyText && jsonLd.description) {
     bodyText = jsonLd.description;
     bodySource = "jsonld";
+    jsonLdDescriptionIsBody = true;
   }
   if (bodyText) bodyText = condenseToBudget(bodyText);
 
   return {
     title,
-    description: description ?? jsonLd.description,
+    description: description ?? (jsonLdDescriptionIsBody ? undefined : jsonLd.description),
     bodyText,
     bodySource,
     canonicalUrl: canonicalUrl ? normalizeUrl(canonicalUrl) : normalizeUrl(originalUrl),
@@ -905,7 +910,8 @@ async function fetchTikTokMetadata(
     const text = transcript?.text;
     return {
       title: title ?? (text!.length > 90 ? `${text!.slice(0, 87).trimEnd()}…` : text!),
-      description: text?.slice(0, 500) ?? title,
+      // Transcript stays out of the description — see the YouTube extractor.
+      description: text ? undefined : title,
       bodyText: text ?? title,
       bodySource: text ? "transcript" : "description",
       usedSupadata: transcript?.viaSupadata ? true : undefined,
@@ -1126,7 +1132,12 @@ export async function fetchMetadata(
         sourceName: clean(payload.provider_name) ?? "YouTube",
         sourceDomain: "youtube.com",
         contentType: "video",
-        description: body?.text,
+        // A transcript is body text, not a description. The description is
+        // surfaced verbatim as "about this capture", so echoing the transcript
+        // here leaks its opening lines whenever the metadata clean doesn't
+        // land. The creator's own description is a real description, capped so
+        // an unclean fallback can never surface a wall of it.
+        description: body?.source === "description" ? body.text.slice(0, 500) : undefined,
         bodyText: body?.text,
         bodySource: body?.source,
         usedProxy: body?.viaProxy || undefined,
@@ -1232,11 +1243,9 @@ export async function fetchMetadata(
     metadata.bodyText = instagramTranscript;
     metadata.bodySource = "transcript";
     metadata.usedSupadata = true;
-    metadata.description = metadata.description ?? instagramTranscript.slice(0, 500);
   } else if (instagramTranscript && !metadata) {
     metadata = {
       title: instagramTranscript.length > 90 ? `${instagramTranscript.slice(0, 87).trimEnd()}…` : instagramTranscript,
-      description: instagramTranscript.slice(0, 500),
       bodyText: instagramTranscript,
       bodySource: "transcript",
       usedSupadata: true,

@@ -1,10 +1,52 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { computeThreadContext } from "@/server/services/cognition";
+import { computeThreadContext, deriveCaptureSummary } from "@/server/services/cognition";
 import { generateRecommendations } from "@/server/cognition/llm";
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe("deriveCaptureSummary", () => {
+  const transcript =
+    "so today we're going to talk about attention and what it actually does inside a transformer. " +
+    "and the first thing to notice is that the model is not reading left to right the way you do. " +
+    "it's routing information between every pair of tokens at once, which is the whole trick here. ".repeat(20);
+
+  it("keeps a short cleaned excerpt", () => {
+    const excerpt = "A walkthrough of how attention routes information between tokens in a transformer.";
+    expect(deriveCaptureSummary(excerpt, transcript)).toBe(excerpt);
+  });
+
+  it("rejects a transcript echoed into the description", () => {
+    expect(deriveCaptureSummary(transcript, transcript)).toBeNull();
+  });
+
+  it("rejects a transcript prefix echoed into the description", () => {
+    expect(deriveCaptureSummary(transcript.slice(0, 500), transcript)).toBeNull();
+  });
+
+  it("rejects a URL-shaped stub description", () => {
+    expect(deriveCaptureSummary("https://example.com/a-video", undefined)).toBeNull();
+  });
+
+  it("cuts a long-but-real description at its last full sentence", () => {
+    const lead =
+      "Spaced repetition is a learning technique that schedules reviews at increasing intervals. " +
+      "It exploits the spacing effect, the finding that memory is better served by distributed practice than by massed practice. " +
+      "The technique is most often applied with flashcards, where each card carries its own schedule. " +
+      "Modern implementations derive their scheduling from the SuperMemo family of algorithms. " +
+      "This paragraph continues well past the display cap so the truncation path is exercised.";
+    const summary = deriveCaptureSummary(lead, "An entirely different article body about something else.");
+    expect(summary).not.toBeNull();
+    expect(summary!.length).toBeLessThanOrEqual(400);
+    expect(summary!.endsWith(".")).toBe(true);
+    expect(summary).toContain("spacing effect");
+  });
+
+  it("returns null for a long blob with no sentence to cut on", () => {
+    expect(deriveCaptureSummary("word ".repeat(200), undefined)).toBeNull();
+  });
 });
 
 describe("computeThreadContext", () => {
