@@ -39,10 +39,14 @@ export default function TerrainScreen() {
           message={['reading the long view…', 'measuring the drift…', 'tracing where you’ve moved…']}
         />
       ) : !data || !data.unlocked ? (
-        <EmptyState
-          title="not yet"
-          body="terrain opens once you’ve logged enough to have a past to look back on."
-        />
+        data?.forming ? (
+          <Forming data={data} accent={accent} />
+        ) : (
+          <EmptyState
+            title="not yet"
+            body="terrain opens once you’ve logged enough to have a past to look back on."
+          />
+        )
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <Text variant="serif" color="secondary" style={styles.lede}>
@@ -71,6 +75,77 @@ export default function TerrainScreen() {
         </ScrollView>
       )}
     </SafeAreaView>
+  );
+}
+
+/* --------------------------------------------------------------- forming --- */
+
+/**
+ * The pre-unlock glimpse: what is already true of a young corpus, with the
+ * full portrait as a countable horizon. Nothing era-based is faked — drift,
+ * eras and bridges are named as what the remaining captures buy.
+ */
+function Forming({ data, accent }: { data: TerrainResponse; accent: string }) {
+  const c = useThemeColors();
+  const forming = data.forming!;
+  const pct = Math.max(0.04, Math.min(1, data.captureCount / forming.target));
+
+  return (
+    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <Text variant="serif" color="secondary" style={styles.lede}>
+        {data.captureCount} captures{forming.chartingSince ? ` since ${forming.chartingSince}` : ''}. the
+        long view is forming.
+      </Text>
+
+      <Chapter kicker="terrain forming">
+        <View style={styles.formingCountRow}>
+          <Text variant="hero" style={{ color: accent }}>
+            {data.captureCount}
+          </Text>
+          <Text variant="serif" color="secondary" style={styles.formingOf}>
+            of {forming.target}
+          </Text>
+        </View>
+        <View style={[styles.formingTrack, { backgroundColor: c.elevated }]}>
+          <View style={[styles.formingFill, { width: `${pct * 100}%`, backgroundColor: accent }]} />
+        </View>
+        <Text variant="serif" color="secondary" style={styles.body}>
+          drift, eras and bridges need a past to measure against. keep charting — the full portrait
+          opens at {forming.target}.
+        </Text>
+      </Chapter>
+
+      {forming.distinctTopics > 0 || forming.fields.length > 0 ? (
+        <Chapter kicker="first contours">
+          {forming.distinctTopics > 0 ? (
+            <Text variant="h3" style={styles.rangeHeadline}>
+              {forming.distinctTopics === 1 ? 'one subject staked out' : `${forming.distinctTopics} subjects staked out`}
+            </Text>
+          ) : null}
+          {forming.fields.length > 0 ? (
+            <View style={styles.chipWrap}>
+              {forming.fields.map((f) => (
+                <View key={f.name} style={[styles.chip, { borderColor: c.borderSubtle }]}>
+                  <Text variant="monoSmall" style={{ color: c.faint, fontSize: 12 }}>
+                    {f.name} · {Math.round(f.share * 100)}%
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </Chapter>
+      ) : null}
+
+      {forming.topSources.length > 0 ? (
+        <Chapter kicker="what feeds it">
+          <BarList title="where your saves come from" items={forming.topSources} accent={accent} />
+        </Chapter>
+      ) : null}
+
+      <Text variant="monoSmall" color="faint" style={styles.footnote}>
+        an early sketch — the full terrain compares your first era to your latest.
+      </Text>
+    </ScrollView>
   );
 }
 
@@ -485,6 +560,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[3],
     paddingVertical: 5,
   },
+
+  formingCountRow: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing[2] },
+  formingOf: { fontSize: 16 },
+  formingTrack: { height: 8, borderRadius: Radius.full, marginVertical: Spacing[4], overflow: 'hidden' },
+  formingFill: { height: 8, borderRadius: Radius.full },
 
   convRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing[2] },
   convStat: { flex: 1, alignItems: 'center', gap: 2 },

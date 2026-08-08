@@ -344,9 +344,21 @@ export interface TerrainCount {
  * math over embeddings/topics/edges/positions/consumption) except `arc`, one
  * cached LLM line.
  */
+/** The early glimpse served while terrain is locked: only whole-corpus facts,
+ * with the unlock as a countable horizon. Era-based chapters are absent. */
+export interface TerrainForming {
+  target: number;
+  chartingSince: string | null;
+  fields: TerrainField[];
+  distinctTopics: number;
+  topSources: TerrainCount[];
+}
+
 export interface TerrainResponse {
   unlocked: boolean;
   captureCount: number;
+  /** Set only while locked with ≥15 captures; optional on older cached rows. */
+  forming?: TerrainForming | null;
   eraSize: number;
   earlyLabel: string;
   recentLabel: string;
