@@ -7,39 +7,36 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeftIcon } from 'lucide-react-native';
-import { useAuth } from '@/contexts/AuthContext';
+import { api } from '@/lib/api';
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import { AppleSignInButton } from '@/components/auth/AppleSignInButton';
 
-export default function SignInScreen() {
+export default function ForgotPasswordScreen() {
   const c = useThemeColors();
   const router = useRouter();
-  const { signIn } = useAuth();
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSignIn = async () => {
-    if (!identifier.trim() || !password) {
-      setError('Enter your email or username and password.');
+  const handleRequest = async () => {
+    if (!email.trim()) {
+      setError('Enter your email.');
       return;
     }
     setError('');
     setLoading(true);
     try {
-      await signIn(identifier.trim().toLowerCase(), password);
-      router.replace('/(tabs)');
+      const normalized = email.trim().toLowerCase();
+      await api.auth.requestPasswordReset({ email: normalized });
+      router.push({ pathname: '/(auth)/reset-password', params: { email: normalized } });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "That didn't work. Check your details and try again.");
+      setError(e instanceof Error ? e.message : "That didn't work. Try again.");
     } finally {
       setLoading(false);
     }
@@ -70,10 +67,10 @@ export default function SignInScreen() {
               mneme
             </Text>
             <Text variant="h1" style={styles.title}>
-              Welcome back.
+              Forgot your password?
             </Text>
             <Text variant="monoSmall" color="muted" style={styles.subtitle}>
-              your brain missed you.
+              we'll email you a six-digit code.
             </Text>
           </View>
 
@@ -87,82 +84,46 @@ export default function SignInScreen() {
             ) : null}
 
             <Input
-              testID="sign-in-identifier"
-              label="Email or username"
-              value={identifier}
-              onChangeText={setIdentifier}
-              placeholder="you@example.com or your_handle"
+              testID="forgot-email"
+              label="Email"
+              value={email}
+              onChangeText={setEmail}
+              placeholder="you@example.com"
+              keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
               spellCheck={false}
-              autoComplete="username"
-              textContentType="username"
-              returnKeyType="next"
-            />
-
-            <Input
-              testID="sign-in-password"
-              label="Password"
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Your password"
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              spellCheck={false}
-              autoComplete="password"
-              textContentType="password"
+              autoComplete="email"
+              textContentType="emailAddress"
               returnKeyType="done"
-              onSubmitEditing={handleSignIn}
+              onSubmitEditing={handleRequest}
             />
 
             <Button
-              label="Sign in"
-              onPress={handleSignIn}
+              label="Send code"
+              onPress={handleRequest}
               variant="primary"
               size="lg"
               fullWidth
               loading={loading}
               style={styles.submitBtn}
-              accessibilityLabel="Sign in to mneme"
+              accessibilityLabel="Email me a reset code"
             />
 
             <Pressable
-              onPress={() => router.push('/(auth)/forgot-password')}
-              style={styles.forgot}
+              onPress={() => router.push({ pathname: '/(auth)/reset-password', params: { email: email.trim().toLowerCase() } })}
+              style={styles.haveCode}
               hitSlop={8}
               accessibilityRole="link"
-              accessibilityLabel="Reset your password"
+              accessibilityLabel="I already have a code"
             >
               <Text variant="monoSmall" color="muted">
-                forgot password?
-              </Text>
-            </Pressable>
-
-            <AppleSignInButton onError={setError} onLoadingChange={setLoading} />
-          </View>
-
-          <View style={styles.footer}>
-            <Text variant="body" color="secondary">
-              New here?{' '}
-            </Text>
-            <Pressable
-              onPress={() => router.replace('/(auth)/sign-up')}
-              accessibilityRole="link"
-              accessibilityLabel="Create an account"
-            >
-              <Text variant="bodyMedium" color="accent">
-                Create →
+                already have a code?
               </Text>
             </Pressable>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-      {loading && (
-        <View style={[StyleSheet.absoluteFill, styles.loadingOverlay, { backgroundColor: c.background }]}>
-          <AsciiLoader fill size={110} message={['waking your brain…', 'finding your map…']} />
-        </View>
-      )}
     </SafeAreaView>
   );
 }
@@ -188,34 +149,19 @@ const styles = StyleSheet.create({
   mark: {
     marginBottom: Spacing[8],
   },
-  title: {
-    marginBottom: Spacing[2],
-  },
+  title: { marginBottom: Spacing[2] },
   subtitle: {},
-  form: {
-    flex: 1,
-  },
+  form: { flex: 1 },
   errorBanner: {
     borderWidth: 1,
     borderRadius: 12,
     padding: Spacing[4],
     marginBottom: Spacing[4],
   },
-  submitBtn: {
-    marginTop: Spacing[4],
-  },
-  forgot: {
+  submitBtn: { marginTop: Spacing[4] },
+  haveCode: {
     alignSelf: 'center',
     marginTop: Spacing[4],
     padding: Spacing[1],
-  },
-  loadingOverlay: {
-    zIndex: 10,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: Spacing[8],
   },
 });
