@@ -679,6 +679,11 @@ model UserPreference {
   streakFrozenDays    Int[]
   /// Local epoch day the last freeze was spent, for the weekly refill.
   streakLastFreezeDay Int?
+  /// Local epoch-day indices credited by a /today review visit. Counts toward
+  /// a streak exactly like a capture day (unlike streakFrozenDays, which only
+  /// bridges). Scalar column, not a `preferences` key, for the same
+  /// two-writers reason as the freeze columns. Pruned on the same horizon.
+  streakActivityDays  Int[]
 
   // Push policy. Scalar for the same reason as the streak columns, and the
   // reason is sharper here: these are the only fields a *user* edits that the

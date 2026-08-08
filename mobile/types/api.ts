@@ -205,6 +205,21 @@ export interface MemoryTrendsResponse {
   rising: { topicId: string; name: string } | null;
 }
 
+/** The strongest existing edge off today's resurfaced capture. */
+export interface TodayConnection {
+  itemId: string;
+  title: string;
+  type: MemoryEdgeType;
+  weight: number;
+}
+
+/** GET /api/me/today — one resurfaced capture with a rule-based "why now",
+ * or nulls when the account is too young to hand anything back. */
+export interface TodayResponse {
+  capture: (CaptureSummary & { whyNow: string }) | null;
+  connection: TodayConnection | null;
+}
+
 /** A bulk-import job's polled status. In-process server-side: a backend
  * restart mid-import loses the tally (captures already made survive). */
 export interface ImportJob {

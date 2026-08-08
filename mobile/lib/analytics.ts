@@ -74,12 +74,12 @@ export type TabName = 'atlas' | 'mind' | 'archive' | 'pulse' | 'you';
  * notification deep links route through NotificationContext, which is under
  * active development elsewhere and deliberately untouched by this change.
  */
-export type InsightSource = 'map' | 'archive' | 'mind' | 'share' | 'unknown';
+export type InsightSource = 'map' | 'archive' | 'mind' | 'share' | 'today' | 'unknown';
 
 /** Narrows an untrusted route param to the enum, so a hand-typed or stale
  *  deep link can't invent a new breakdown value in the dashboard. */
 export function asInsightSource(value: unknown): InsightSource {
-  return value === 'map' || value === 'archive' || value === 'mind' || value === 'share'
+  return value === 'map' || value === 'archive' || value === 'mind' || value === 'share' || value === 'today'
     ? value
     : 'unknown';
 }

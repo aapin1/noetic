@@ -169,6 +169,25 @@ export const api = {
     },
   },
 
+  today: {
+    /** Same clock as streak — the pick is stable within a local day. */
+    get() {
+      return request<import('@/types/api').TodayResponse>(
+        `/api/me/today?tzOffsetMinutes=${-new Date().getTimezoneOffset()}`,
+      );
+    },
+    /** Opening /today credits streak activity for the day. Idempotent. */
+    visit() {
+      return request<{ credited: boolean; streak: import('@/types/api').StreakSummary }>(
+        '/api/me/today/visit',
+        {
+          method: 'POST',
+          body: JSON.stringify({ tzOffsetMinutes: -new Date().getTimezoneOffset() }),
+        },
+      );
+    },
+  },
+
   devices: {
     /**
      * Hand the backend this device's Expo push token. Idempotent — the server

@@ -40,6 +40,7 @@ export function resolveDeepLink(deepLink: string | undefined | null): string {
   if (!deepLink || typeof deepLink !== 'string') return '/(tabs)';
 
   // Routes the app really has, passed through untouched.
+  if (deepLink === '/today') return '/today';
   if (/^\/insight\/[^/]+$/.test(deepLink)) return deepLink;
   if (/^\/archive\/[^/]+$/.test(deepLink)) return deepLink;
   if (/^\/position\/[^/]+$/.test(deepLink)) return deepLink;

@@ -349,7 +349,9 @@ export async function selectResurfaceCandidate(args: {
       key,
       title: `${anniversaryPhrase(days)}, you saved this`,
       body: `“${short(match.label)}”. does it still hold?`,
-      deepLink: `/insight/${match.id}`,
+      // The /today ritual screen, not the bare insight: it carries the same
+      // capture plus its strongest edge, and opening it credits the day.
+      deepLink: "/today",
       payload: { resurfaceKey: key, captureId: match.id },
     };
   }

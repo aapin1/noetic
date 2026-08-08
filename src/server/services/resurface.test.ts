@@ -284,7 +284,7 @@ describe("selectResurfaceCandidate", () => {
 
     expect(pick?.type).toBe("RESURFACE");
     expect(pick?.title).toBe("a month ago, you saved this");
-    expect(pick?.deepLink).toBe("/insight/c0");
+    expect(pick?.deepLink).toBe("/today");
   });
 
   it("withholds the anniversary tier from a corpus too small to earn it", async () => {

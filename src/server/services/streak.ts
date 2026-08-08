@@ -214,6 +214,49 @@ export async function rememberTzOffset(
   }
 }
 
+/**
+ * Credit today as streak activity because the user reviewed (/today), not
+ * captured. Same day-bucket unit as a capture day and counted identically by
+ * computeStreaks — unlike a frozen day, which only bridges. Idempotent per
+ * local day: the day index is set-unioned into its own scalar column, pruned
+ * on the same horizon as the freeze history.
+ */
+export async function recordReviewActivity(args: {
+  userId: string;
+  tzOffsetMinutes?: number;
+  db?: DbClient;
+  now?: Date;
+}): Promise<{ credited: boolean; dayIndex: number }> {
+  const db = args.db ?? prisma;
+  const now = args.now ?? new Date();
+  const today = localDayIndex(now, clampOffset(args.tzOffsetMinutes));
+
+  // Fail closed, like the freeze code: if the row can't be read, do not write —
+  // an upsert on top of an unread row would overwrite the array and erase
+  // previously credited days. Skipping the credit costs one day at worst.
+  let prefs: { streakActivityDays: number[] } | null;
+  try {
+    prefs = await db.userPreference.findUnique({
+      where: { userId: args.userId },
+      select: { streakActivityDays: true },
+    });
+  } catch {
+    return { credited: false, dayIndex: today };
+  }
+  const days = prefs?.streakActivityDays ?? [];
+  if (days.includes(today)) {
+    return { credited: false, dayIndex: today };
+  }
+
+  const kept = [...new Set([...days.filter((day) => day > today - FROZEN_DAY_RETENTION), today])];
+  await db.userPreference.upsert({
+    where: { userId: args.userId },
+    update: { streakActivityDays: kept },
+    create: { userId: args.userId, streakActivityDays: [today] },
+  });
+  return { credited: true, dayIndex: today };
+}
+
 export type StreakSummary = {
   current: number;
   longest: number;
@@ -238,12 +281,18 @@ export async function getStreakSummary(args: {
   const [captureDays, prefs] = await Promise.all([
     loadCaptureDays({ userId: args.userId, db, now, tzOffsetMinutes: offset }),
     db.userPreference
-      .findUnique({ where: { userId: args.userId }, select: { streakFrozenDays: true } })
+      .findUnique({
+        where: { userId: args.userId },
+        select: { streakFrozenDays: true, streakActivityDays: true },
+      })
       .catch(() => null),
   ]);
 
+  // Review-activity days (/today visits) count exactly like capture days.
+  const activeDays = [...new Set([...captureDays, ...(prefs?.streakActivityDays ?? [])])];
+
   const { current, longest, held } = computeStreaks(
-    captureDays,
+    activeDays,
     localDayIndex(now, offset),
     prefs?.streakFrozenDays ?? [],
   );
