@@ -82,16 +82,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         const code = (error as Error & { code?: string })?.code;
 
-        // Newly registered users have no profile yet until onboarding completes.
+        // No profile means an account from the era when onboarding could be
+        // abandoned between registration and the identity step (new accounts
+        // get one server-side at creation). Self-heal: mint the anonymous
+        // profile and retry, so these users land on the map like everyone
+        // else instead of being parked behind a dead onboarding route.
         if (code === 'PROFILE_NOT_FOUND') {
-          setState((prev) => ({
-            ...prev,
-            profile: null,
-            isAuthenticated: true,
-            hasProfile: false,
-            isLoading: false,
-          }));
-          return;
+          try {
+            await api.profile.onboarding({});
+            continue;
+          } catch {
+            setState((prev) => ({
+              ...prev,
+              profile: null,
+              isAuthenticated: true,
+              hasProfile: false,
+              isLoading: false,
+            }));
+            return;
+          }
         }
 
         // The only reason to end the session: the token itself is rejected.
@@ -117,6 +126,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setState((prev) => ({ ...prev, isAuthenticated: true, isLoading: false }));
       }
     }
+    // Reachable when the self-heal above succeeded on the final attempt and
+    // there was no attempt left to re-fetch: keep the session; the profile
+    // arrives on the next loadProfile.
+    setState((prev) => ({ ...prev, isAuthenticated: true, isLoading: false }));
   }, []);
 
   useEffect(() => {
@@ -177,9 +190,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setState((prev) => ({ ...prev, token: result.token, isAuthenticated: true }));
       await loadProfile();
-      // The caller routes on this: a brand-new account (or one that never
-      // finished onboarding — no handle yet) goes through the identity step,
-      // a returning account goes straight in.
       return { isNewUser: result.isNewUser, hasHandle: result.user.handle != null };
     },
     [loadProfile],

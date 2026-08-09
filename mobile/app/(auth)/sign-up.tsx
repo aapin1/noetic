@@ -53,7 +53,9 @@ export default function SignUpScreen() {
     setLoading(true);
     try {
       await signUp(name.trim(), email.trim().toLowerCase(), password);
-      router.replace('/(onboarding)/identity');
+      // Straight onto the map. The account already has its profile (anonymous
+      // handle server-side); identity editing surfaces later, in context.
+      router.replace('/(tabs)');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Registration failed. Please try again.');
     } finally {

@@ -9,9 +9,9 @@ import { Text } from '@/components/ui/Text';
 
 /**
  * The system Sign in with Apple button plus the whole native flow: authorize,
- * exchange the identity token with our backend, then route — new accounts (or
- * ones that never finished onboarding) into the identity step, returning ones
- * straight into the app.
+ * exchange the identity token with our backend, then straight onto the map —
+ * new accounts get their anonymous profile server-side, so there is no
+ * required step between authorization and the Atlas.
  *
  * Renders nothing on Android or when the capability is unavailable, so both
  * auth screens can include it unconditionally.
@@ -71,15 +71,14 @@ export function AppleSignInButton({
     onError('');
     onLoadingChange(true);
     try {
-      const { isNewUser, hasHandle } = await signInWithApple({
+      await signInWithApple({
         identityToken: credential.identityToken,
         fullName: fullName || undefined,
       });
-      if (isNewUser || !hasHandle) {
-        router.replace('/(onboarding)/identity');
-      } else {
-        router.replace('/(tabs)');
-      }
+      // New or returning, everyone lands on the map: new Apple accounts get
+      // their profile server-side, and profile-less legacy accounts self-heal
+      // in AuthContext.loadProfile.
+      router.replace('/(tabs)');
     } catch (e) {
       onError(e instanceof Error ? e.message : "that didn't work. try again.");
     } finally {

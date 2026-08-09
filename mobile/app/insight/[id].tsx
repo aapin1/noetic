@@ -16,6 +16,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
+import { VoiceStyleLine } from '@/components/ui/VoiceStyleLine';
 import { TopicPickerModal } from '@/components/ui/TopicPickerModal';
 import { SponsoredCard } from '@/components/ui/SponsoredCard';
 import { asInsightSource, track } from '@/lib/analytics';
@@ -442,6 +443,9 @@ export default function InsightDetailScreen() {
           {data.insights.map((ins) => (
             <InsightLine key={ins.id} insight={ins} />
           ))}
+          {/* The old onboarding voice picker, relocated to the first moment it
+              refers to something the user can see. */}
+          <VoiceStyleLine />
         </Section>
 
         {/* Between the read and the onward links, not after everything: at the

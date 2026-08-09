@@ -81,7 +81,6 @@ function RootLayout() {
               <Stack screenOptions={{ headerShown: false, animation: 'fade', gestureEnabled: false }}>
                 <Stack.Screen name="index" />
                 <Stack.Screen name="(auth)" />
-                <Stack.Screen name="(onboarding)" />
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="insight/[id]" options={{ presentation: 'card' }} />
                 <Stack.Screen name="archive/[topicId]" options={{ presentation: 'card' }} />

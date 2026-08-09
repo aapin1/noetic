@@ -3,6 +3,7 @@ import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { createApiToken } from "@/lib/auth";
 import type { RootDbClient } from "@/server/db";
+import { createOnboardingProfile } from "@/server/services/accounts";
 
 /**
  * Sign in with Apple.
@@ -142,6 +143,15 @@ export async function signInWithApple(args: {
     isNewUser = true;
   }
 
+  // New Apple accounts get their profile immediately, same as registration:
+  // no required onboarding step stands between sign-in and the map. The
+  // display name falls back through fullName → email local-part inside.
+  let handle = user.profile?.handle ?? null;
+  if (isNewUser) {
+    const profile = await createOnboardingProfile({ userId: user.id, topics: [], db });
+    handle = profile.handle;
+  }
+
   const token = await createApiToken(user.id);
 
   return {
@@ -152,7 +162,7 @@ export async function signInWithApple(args: {
       id: user.id,
       email: user.email,
       name: user.name,
-      handle: user.profile?.handle ?? null,
+      handle,
     },
   };
 }
