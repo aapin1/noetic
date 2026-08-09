@@ -10,14 +10,17 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { MoreHorizontalIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { promptModerationActions } from '@/lib/moderation';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { FontFamily, FontSize, Radius, Spacing, accentForKey } from '@/constants/theme';
+import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
+import { isAnonymousHandle } from '@/lib/disclosure';
 import { Text } from '@/components/ui/Text';
+import { Whisper } from '@/components/ui/Whisper';
 import { Avatar } from '@/components/ui/Avatar';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { InfoModal } from '@/components/ui/InfoModal';
@@ -216,6 +219,8 @@ function UserResult({
 
 export default function PulseScreen() {
   const c = useThemeColors();
+  const router = useRouter();
+  const { profile } = useAuth();
   const [infoVisible, setInfoVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
@@ -342,6 +347,15 @@ export default function PulseScreen() {
           reads as part of the header rather than as a pale sliver over it. */}
       <View style={[styles.header, { borderBottomColor: c.deepBorder, backgroundColor: c.deep }]}>
         <Text variant="wordmark" style={{ color: c.deepInk }}>pulse</Text>
+        {/* First touch of the social surface: the one moment a generated
+            handle is worth a line, since here it's about to be seen. */}
+        <Whisper
+          id="identity-claim"
+          when={isAnonymousHandle(profile?.handle)}
+          text={`you're @${profile?.handle ?? ''} — make it yours?`}
+          onPress={() => router.push('/profile/edit' as never)}
+          style={{ flex: 1, alignItems: 'center' }}
+        />
         <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About pulse">
           <Text style={{ color: c.deepInkFaint, fontSize: 16 }}>ⓘ</Text>
         </Pressable>

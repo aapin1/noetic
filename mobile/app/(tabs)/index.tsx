@@ -54,6 +54,9 @@ import {
   hashId,
 } from '@/constants/mapPalette';
 import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
+import { useDisclosure } from '@/contexts/DisclosureContext';
+import { EVENT_FLAGS } from '@/lib/disclosure';
+import { Whisper } from '@/components/ui/Whisper';
 import { useSocratic } from '@/contexts/SocraticContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
@@ -2041,6 +2044,19 @@ export default function MapScreen() {
   // Falls back to the rendered count for cached pre-totalCount responses.
   const totalCaptureCount = activeFocusGraph?.totalCount ?? graphData?.totalCount ?? 0;
 
+  // Progressive disclosure feeds off the UNFOCUSED graph only — a topic
+  // sub-map's totalCount describes the focus, not the corpus, and would
+  // wrongly rewind the reveal ladder.
+  const disclosure = useDisclosure();
+  const { setSignals: setDisclosureSignals } = disclosure;
+  useEffect(() => {
+    if (!graphData) return;
+    setDisclosureSignals({
+      captureCount: graphData.totalCount ?? graphData.nodes.length,
+      hasOwnEdge: (graphData.edges?.length ?? 0) > 0,
+    });
+  }, [graphData, setDisclosureSignals]);
+
   const fieldCount = useMemo(() => {
     const fieldIds = new Set<string>();
     for (const n of nodes) {
@@ -3618,6 +3634,9 @@ export default function MapScreen() {
         maybeAskForPush();
         noteCaptureForReview();
         setReviewArmed(true);
+        // First in-app link capture is the moment the share extension becomes
+        // the obvious thing to teach — the durable flag arms that whisper.
+        if (kind === 'LINK') disclosure.markSeen(EVENT_FLAGS.linkCaptured);
       })
       .catch((e) => {
         track('capture_failed', {
@@ -3632,7 +3651,7 @@ export default function MapScreen() {
           e instanceof Error ? e.message : 'Could not save that. Try again.',
         );
       });
-  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, tutorialActive, showSavedPill, maybeAskForPush]);
+  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, tutorialActive, showSavedPill, maybeAskForPush, disclosure]);
 
   const quickSave = useCallback(() => {
     if (!validatePayload()) return;
@@ -4513,6 +4532,31 @@ export default function MapScreen() {
           </RNAnimated.View>
         )}
 
+        {/* Whispers live just above the tab bar: each one points at where to
+            go next, and the bar is where that going happens. The disclosure
+            context guarantees only one speaks at a time. */}
+        {!showCapture && !drawerVisible && (
+          <View style={styles.whisperHost} pointerEvents="box-none">
+            <Whisper
+              id="mind-first-edge"
+              when={disclosure.glows.mind}
+              text="mneme noticed something →"
+              onPress={() => router.push('/(tabs)/mind' as never)}
+            />
+            <Whisper
+              id="share-extension"
+              when={disclosure.hasSeen(EVENT_FLAGS.linkCaptured)}
+              text="next time, save from anywhere — share → mneme"
+            />
+            <Whisper
+              id="pulse-intro"
+              when={disclosure.hasSeen(EVENT_FLAGS.sharedAtlas)}
+              text="pulse — minds you know →"
+              onPress={() => router.push('/(tabs)/pulse' as never)}
+            />
+          </View>
+        )}
+
         {/* First-load state: map is still fetching, show a clear signal */}
         {graphLoading && nodes.length === 0 && (
           <View style={styles.emptyHint} pointerEvents="none">
@@ -4979,6 +5023,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   discoveryClose: { paddingHorizontal: Spacing[2] },
+  whisperHost: {
+    position: 'absolute',
+    bottom: Spacing[3],
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
   emptyHint: {
     ...StyleSheet.absoluteFill,
     alignItems: 'center',
