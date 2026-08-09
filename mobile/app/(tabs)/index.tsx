@@ -80,6 +80,7 @@ import {
 } from '@/constants/ghostMap';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { FirstThoughtRitual } from '@/components/ritual/FirstThoughtRitual';
+import { ComebackPromise } from '@/components/ritual/ComebackPromise';
 import type { RitualEndReason } from '@/lib/firstSession';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
@@ -3487,6 +3488,25 @@ export default function MapScreen() {
     void requestPermission();
   }, [requestPermission]);
 
+  // ── the comeback promise ──────────────────────────────────────────────────
+  // The ritual's ending, and the push ask fused into it: with their own
+  // thoughts just landed (and usually connected), mneme states the spine
+  // concretely — "tomorrow morning i'll bring one of these back to you" —
+  // and THAT statement is the permission request. Same one-shot bookkeeping
+  // as the primer; whichever asks first spends the install's only prompt.
+  const [promiseState, setPromiseState] = useState<{ fragments: number } | null>(null);
+
+  const closePromise = useCallback(() => {
+    setPromiseState(null);
+    void markAskedForPush();
+  }, []);
+
+  const acceptPromise = useCallback(() => {
+    setPromiseState(null);
+    void markAskedForPush();
+    void requestPermission();
+  }, [requestPermission]);
+
   // ── app store rating ──────────────────────────────────────────────────────
   // Armed by a successful capture, like the push primer, and fired on the same
   // "genuinely quiet moment" terms — but always AFTER the primer: if both are
@@ -3986,10 +4006,16 @@ export default function MapScreen() {
       setRitualOn(true);
     }
   }, [ghostActive, disclosure, ritualOn]);
-  const ritualFragmentsRef = useRef<string[]>([]);
   const onRitualDone = useCallback((reason: RitualEndReason, fragmentIds: string[]) => {
-    ritualFragmentsRef.current = fragmentIds;
     setRitualOn(false);
+    // The promise needs material: at least one fragment on the map, and an
+    // unspent system prompt. A skip with nothing landed gets no ask at all —
+    // the post-capture primer still exists for later.
+    if (fragmentIds.length > 0) {
+      void hasAskedForPush().then((asked) => {
+        if (!asked) setPromiseState({ fragments: fragmentIds.length });
+      });
+    }
   }, []);
 
   const ghostLayer = useMemo(() => {
@@ -4996,6 +5022,13 @@ export default function MapScreen() {
           visible={showPushPrimer}
           onDecline={closePushPrimer}
           onAccept={acceptPushPrimer}
+        />
+
+        <ComebackPromise
+          visible={promiseState !== null}
+          fragmentCount={promiseState?.fragments ?? 0}
+          onDecline={closePromise}
+          onAccept={acceptPromise}
         />
 
         <TopicPickerModal

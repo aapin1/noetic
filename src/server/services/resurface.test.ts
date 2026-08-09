@@ -142,8 +142,57 @@ function richCorpus(): Capture[] {
 }
 
 describe("selectResurfaceCandidate", () => {
-  it("says nothing to a user with a thin corpus", async () => {
-    const { db } = fakeDb({ captures: [capture("c1", 1, ["attention"])] });
+  it("keeps the day-2 promise: a first fragment comes back the next morning", async () => {
+    // One capture from yesterday — every observational tier is silenced by the
+    // corpus floor, but the onboarding ritual promised this exact comeback.
+    const { db } = fakeDb({
+      captures: [capture("c1", 1, ["attention"], { title: "walking unsticks thinking" })],
+    });
+
+    const pick = await selectResurfaceCandidate({ userId: "u1", db, now: NOW });
+
+    expect(pick?.type).toBe("RESURFACE");
+    expect(pick?.key).toBe("first-thought:c1");
+    expect(pick?.title).toBe("still on your mind?");
+    expect(pick?.body).toContain("walking unsticks thinking");
+    expect(pick?.body).toContain("yesterday");
+    expect(pick?.deepLink).toBe("/today");
+  });
+
+  it("brings early fragments back oldest first, each exactly once, then goes quiet", async () => {
+    const { db } = fakeDb({
+      captures: [
+        capture("c1", 2, ["attention"], { title: "first thought" }),
+        capture("c2", 1, ["attention"], { title: "second thought" }),
+      ],
+    });
+
+    const keys: string[] = [];
+    for (let day = 0; day < 4; day += 1) {
+      const now = new Date(NOW.getTime() + day * DAY);
+      const picked = await enqueueResurfaceFor({ userId: "u1", db, now });
+      if (picked) keys.push(picked.key);
+    }
+
+    expect(keys).toEqual(["first-thought:c1", "first-thought:c2"]);
+  });
+
+  it("never brings back a capture from the same morning", async () => {
+    // Saved two hours ago: a comeback before lunch is an echo, not a promise.
+    const captures = [capture("c1", 0, ["attention"])];
+    captures[0]!.capturedAt = new Date(NOW.getTime() - 2 * 60 * 60 * 1000);
+    const { db } = fakeDb({ captures });
+
+    expect(await selectResurfaceCandidate({ userId: "u1", db, now: NOW })).toBeNull();
+  });
+
+  it("gives a stalled weeks-old thin account silence, not a random echo", async () => {
+    // Two captures, but the account's first save is three weeks old — the
+    // comeback window has passed and the observational floor still applies.
+    const { db } = fakeDb({
+      captures: [capture("c1", 21, ["attention"]), capture("c2", 20, ["attention"])],
+    });
+
     expect(await selectResurfaceCandidate({ userId: "u1", db, now: NOW })).toBeNull();
   });
 

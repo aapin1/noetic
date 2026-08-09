@@ -34,6 +34,10 @@ export const RESURFACE_TYPES = [
 
 /** Below this, a user has not written enough for us to say anything true. */
 const MIN_CORPUS = 5;
+/** The first-fragments comeback speaks only while the account is this young. */
+const EARLY_DAYS = 7;
+/** …and never about a capture from the same morning. */
+const EARLY_MIN_AGE_MS = 12 * 60 * 60 * 1000;
 /** The weakest tier (an old capture) needs a real corpus to not feel arbitrary. */
 const MIN_CORPUS_FOR_ANNIVERSARY = 12;
 const CAPTURE_SCAN_LIMIT = 200;
@@ -243,6 +247,41 @@ export async function selectResurfaceCandidate(args: {
         payload: { resurfaceKey: key, challengeId: challenge.id, topicId: challenge.position.topicId },
       };
     }
+  }
+
+  // ── 0.5. the first-fragments comeback ─────────────────────────────────────
+  // The corpus floor exists because a thin corpus can't support a true
+  // observation — but in an account's first days there is something truer to
+  // say than any observation: onboarding ends on "tomorrow morning i'll bring
+  // one of these back to you", and this tier is that promise kept. It speaks
+  // only while the corpus is both under the floor and younger than a week
+  // (a stalled months-old account gets silence, not a random echo), brings
+  // each early capture back at most once, oldest first — the first thought
+  // returns first — and skips anything under twelve hours old so a
+  // same-morning save can't come back before lunch.
+  if (captures.length > 0 && captures.length < MIN_CORPUS) {
+    const earliest = captures[captures.length - 1]!;
+    if (now.getTime() - earliest.capturedAt.getTime() <= EARLY_DAYS * DAY_MS) {
+      const oldestFirst = [...captures].reverse();
+      for (const item of oldestFirst) {
+        const age = now.getTime() - item.capturedAt.getTime();
+        if (age < EARLY_MIN_AGE_MS) continue;
+        const key = `first-thought:${item.id}`;
+        if (seen.has(key)) continue;
+        const when = age <= 2 * DAY_MS ? "yesterday" : "a few days ago";
+        return {
+          type: NotificationType.RESURFACE,
+          key,
+          title: "still on your mind?",
+          body: `you saved “${short(item.label)}” ${when}. see what it sits near now.`,
+          // The /today ritual, same as the anniversary tier: it carries the
+          // capture plus its strongest edge, and opening it credits the day.
+          deepLink: "/today",
+          payload: { resurfaceKey: key, captureId: item.id },
+        };
+      }
+    }
+    return null;
   }
 
   if (captures.length < MIN_CORPUS) return null;
