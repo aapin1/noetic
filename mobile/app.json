@@ -15,6 +15,9 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "Mneme uses your microphone so you can describe a capture in your own words."
+      },
+      "runtimeVersion": {
+        "policy": "appVersion"
       }
     },
     "android": {
@@ -124,6 +127,9 @@
       "eas": {
         "projectId": "40f91fac-13f5-44fa-b331-b3a85df60d6b"
       }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/40f91fac-13f5-44fa-b331-b3a85df60d6b"
     }
   }
 }

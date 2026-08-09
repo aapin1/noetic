@@ -6,14 +6,16 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "channel": "development"
     },
     "development-simulator": {
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
         "simulator": true
-      }
+      },
+      "channel": "development-simulator"
     },
     "preview": {
       "distribution": "internal",
@@ -24,7 +26,8 @@
         "EXPO_PUBLIC_POSTHOG_KEY": "phc_z6nhmgJdWuUc4Z7rrths5vyU8VMzZNCXXrREGnv9obnM",
         "EXPO_PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com",
         "EXPO_PUBLIC_SENTRY_DSN": "https://1c750fe2dc3c0de9d27849276f1a46ed@o4511833681362944.ingest.us.sentry.io/4511833709871104"
-      }
+      },
+      "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
@@ -35,7 +38,8 @@
         "EXPO_PUBLIC_POSTHOG_KEY": "phc_z6nhmgJdWuUc4Z7rrths5vyU8VMzZNCXXrREGnv9obnM",
         "EXPO_PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com",
         "EXPO_PUBLIC_SENTRY_DSN": "https://1c750fe2dc3c0de9d27849276f1a46ed@o4511833681362944.ingest.us.sentry.io/4511833709871104"
-      }
+      },
+      "channel": "production"
     }
   },
   "submit": {
