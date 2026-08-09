@@ -70,13 +70,14 @@ import { failureReason, track } from '@/lib/analytics';
 import { useTutorial, useTutorialTarget } from '@/contexts/TutorialContext';
 import { TUTORIAL_DEMO_NODE, TUTORIAL_EXAMPLE_LINK, TUTORIAL_TARGET } from '@/constants/tutorialSteps';
 import {
-  GHOST_ARRIVAL,
-  GHOST_ARRIVAL_EDGE,
+  GHOST_ARRIVAL_BASE,
+  GHOST_ARRIVAL_EDGES,
   GHOST_ARRIVE_MS,
-  GHOST_CONNECT_MS,
+  GHOST_CLUSTERS,
   GHOST_EDGES,
   GHOST_NODES,
-  GHOST_READ_MS,
+  GHOST_PROMPT_MS,
+  isGhostId,
 } from '@/constants/ghostMap';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { FirstThoughtRitual } from '@/components/ritual/FirstThoughtRitual';
@@ -2043,18 +2044,58 @@ export default function MapScreen() {
     if (!tutorialActive && demoNode) setDemoNode(null);
   }, [tutorialActive, demoNode]);
 
+  const reduceMotion = useReduceMotion();
+
+  // ── Ghost map ──────────────────────────────────────────────────
+  // A brand-new user's empty map is not empty: a curated demo constellation
+  // is injected into the real pipeline (same trick as the tutorial's demo
+  // node), so it looks exactly like a lived-in map — cluster colors, halos,
+  // native labels, drift. Gated on the UNFOCUSED corpus count, so the moment
+  // the first real capture lands the whole thing is gone; ghost nodes are
+  // also excluded from hit-testing, the summary strip, and sharing below.
+  const ghostCorpus = graphData ? (graphData.totalCount ?? graphData.nodes.length) : null;
+  const ghostActive =
+    ghostCorpus === 0 && !graphLoading && !activeFocusGraph && !tutorialActive;
+  // The performance: one more node arrives a beat after first paint. Its
+  // fresh timestamp gives it the real "recent" amber + ring, and the render
+  // tween eases it in from its nearest neighbour. Reduce Motion skips the
+  // entrance and shows the finished constellation.
+  const [ghostArrived, setGhostArrived] = useState(false);
+  const ghostArrivalNode = useMemo<GraphNode>(
+    () => ({ ...GHOST_ARRIVAL_BASE, capturedAt: new Date().toISOString() }),
+    [],
+  );
+  useEffect(() => {
+    if (!ghostActive || ghostArrived) return;
+    if (reduceMotion) {
+      setGhostArrived(true);
+      return;
+    }
+    const timer = setTimeout(() => setGhostArrived(true), GHOST_ARRIVE_MS);
+    return () => clearTimeout(timer);
+  }, [ghostActive, ghostArrived, reduceMotion]);
+
   const serverNodes = activeFocusGraph?.nodes ?? graphData?.nodes;
   const nodes = useMemo<GraphNode[]>(() => {
     const base = serverNodes ?? [];
-    return demoNode ? [...base, demoNode] : base;
-  }, [serverNodes, demoNode]);
-  const edges = activeFocusGraph?.edges ?? graphData?.edges ?? [];
-  const clusters = activeFocusGraph?.clusters ?? graphData?.clusters ?? [];
+    const withDemo = demoNode ? [...base, demoNode] : base;
+    if (!ghostActive) return withDemo;
+    return ghostArrived
+      ? [...withDemo, ...GHOST_NODES, ghostArrivalNode]
+      : [...withDemo, ...GHOST_NODES];
+  }, [serverNodes, demoNode, ghostActive, ghostArrived, ghostArrivalNode]);
+  const edges = useMemo(() => {
+    const base = activeFocusGraph?.edges ?? graphData?.edges ?? [];
+    if (!ghostActive) return base;
+    return ghostArrived ? [...base, ...GHOST_EDGES, ...GHOST_ARRIVAL_EDGES] : [...base, ...GHOST_EDGES];
+  }, [activeFocusGraph, graphData, ghostActive, ghostArrived]);
+  const clusters = useMemo(() => {
+    const base = activeFocusGraph?.clusters ?? graphData?.clusters ?? [];
+    return ghostActive ? [...base, ...GHOST_CLUSTERS] : base;
+  }, [activeFocusGraph, graphData, ghostActive]);
   // Total matching captures server-side (may exceed what's fetched/rendered).
   // Falls back to the rendered count for cached pre-totalCount responses.
   const totalCaptureCount = activeFocusGraph?.totalCount ?? graphData?.totalCount ?? 0;
-
-  const reduceMotion = useReduceMotion();
 
   // Progressive disclosure feeds off the UNFOCUSED graph only — a topic
   // sub-map's totalCount describes the focus, not the corpus, and would
@@ -3182,7 +3223,7 @@ export default function MapScreen() {
   // strip yields the bottom edge to any mode that owns it — the temporal rail,
   // search, and an active discovery selection all replace it.
   const stripVisible =
-    nodes.length > 0 && !showCapture && !drawerVisible && lensMode !== 'temporal' &&
+    nodes.length > 0 && !ghostActive && !showCapture && !drawerVisible && lensMode !== 'temporal' &&
     toolMode !== 'search' &&
     !(toolMode === 'discover' && (discoveryNodeIds.length > 0 || discoveryEdgeKeys.length > 0));
   // Deliberately independent of BOTH `infoCollapsed` and `stripVisible`: the
@@ -3643,6 +3684,9 @@ export default function MapScreen() {
         // First in-app link capture is the moment the share extension becomes
         // the obvious thing to teach — the durable flag arms that whisper.
         if (kind === 'LINK') disclosure.markSeen(EVENT_FLAGS.linkCaptured);
+        // A composer capture during the first session is a ritual fragment
+        // too — the prompt is an invitation, not the only door.
+        if (ritualOnRef.current) setRitualExternalIds((prev) => [...prev, res.id]);
       })
       .catch((e) => {
         track('capture_failed', {
@@ -3951,50 +3995,6 @@ export default function MapScreen() {
     getNodeOpacity, focusDimTopicId, edgeSalienceByKey, nodeGlowsOn,
   ]);
 
-  // ── Ghost map ──────────────────────────────────────────────────
-  // A brand-new user's empty map is not empty: a faint curated constellation
-  // shows the destination, and one ghost node performs the verb — arrives,
-  // gets read (the amber ring real captures wear), connects. Static SVG per
-  // phase: a handful of discrete re-rasters on an otherwise bare map, never a
-  // per-frame animation inside the raster (see the WorldBuffer contract).
-  // Gated on the UNFOCUSED corpus count so a topic sub-map can't summon it,
-  // and retired by dissolve the moment the first real node lands.
-  const ghostCorpus = graphData ? (graphData.totalCount ?? graphData.nodes.length) : null;
-  const ghostActive =
-    ghostCorpus === 0 && !graphLoading && !activeFocusGraph && !tutorialActive;
-  const [ghostPhase, setGhostPhase] = useState(0);
-  const [ghostFade, setGhostFade] = useState(1);
-  const ghostShownRef = useRef(false);
-
-  useEffect(() => {
-    if (!ghostActive || ghostShownRef.current) return;
-    ghostShownRef.current = true;
-    if (reduceMotion) {
-      // No performance under Reduce Motion — the completed constellation
-      // simply is, connection already drawn.
-      setGhostPhase(3);
-      return;
-    }
-    const t1 = setTimeout(() => setGhostPhase(1), GHOST_ARRIVE_MS);
-    const t2 = setTimeout(() => setGhostPhase(2), GHOST_READ_MS);
-    const t3 = setTimeout(() => setGhostPhase(3), GHOST_CONNECT_MS);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-  }, [ghostActive, reduceMotion]);
-
-  // The dissolve: only a real capture retires the ghost (corpus 0 → >0).
-  // Other reasons to be hidden (tutorial demo, focus) just unmount it.
-  useEffect(() => {
-    if (!ghostShownRef.current || (ghostCorpus ?? 0) === 0 || ghostFade < 1) return;
-    if (reduceMotion) {
-      setGhostFade(0);
-      return;
-    }
-    const a = setTimeout(() => setGhostFade(0.55), 60);
-    const b = setTimeout(() => setGhostFade(0.22), 320);
-    const c = setTimeout(() => setGhostFade(0), 600);
-    return () => { clearTimeout(a); clearTimeout(b); clearTimeout(c); };
-  }, [ghostCorpus, ghostFade, reduceMotion]);
-
   // ── First-session ritual ───────────────────────────────────────
   // Arms once, over the ghost map, for a user who has never captured and
   // never met the ritual. Latched: landing a fragment flips the corpus to 1,
@@ -4006,6 +4006,21 @@ export default function MapScreen() {
       setRitualOn(true);
     }
   }, [ghostActive, disclosure, ritualOn]);
+  // The map holds the stage alone first; the prompt joins a few seconds
+  // later, so a new user meets one thing at a time.
+  const [ritualCardReady, setRitualCardReady] = useState(false);
+  useEffect(() => {
+    if (!ritualOn) return;
+    const timer = setTimeout(() => setRitualCardReady(true), reduceMotion ? 0 : GHOST_PROMPT_MS);
+    return () => clearTimeout(timer);
+  }, [ritualOn, reduceMotion]);
+  // Captures made through the ordinary composer while the ritual is up count
+  // as ritual fragments — the prompt is an invitation, not the only door.
+  const [ritualExternalIds, setRitualExternalIds] = useState<string[]>([]);
+  const ritualOnRef = useRef(false);
+  useEffect(() => {
+    ritualOnRef.current = ritualOn;
+  }, [ritualOn]);
   // The clipboard door: while the map is still forming, notice a copied URL
   // on each return to the screen. Checked (hasUrlAsync), never read — reading
   // would raise the iOS paste banner for a link we might not use.
@@ -4026,80 +4041,6 @@ export default function MapScreen() {
       });
     }
   }, []);
-
-  const ghostLayer = useMemo(() => {
-    const dissolving = ghostFade < 1 && ghostFade > 0;
-    if (!(ghostActive || dissolving) || ghostFade <= 0) return null;
-    const px = (n: { x: number; y: number }) => ({
-      x: MAP_PAD + LAYOUT_W * n.x,
-      y: MAP_PAD + LAYOUT_H * n.y,
-    });
-    const ghostById = new Map(GHOST_NODES.map((n) => [n.id, n]));
-    ghostById.set(GHOST_ARRIVAL.id, GHOST_ARRIVAL);
-    const edgesShown = ghostPhase >= 3 ? [...GHOST_EDGES, GHOST_ARRIVAL_EDGE] : GHOST_EDGES;
-    const arrivalOn = ghostPhase >= 1;
-    const arrivalPerforming = ghostPhase >= 1 && ghostPhase < 3;
-    const arrivalPos = px(GHOST_ARRIVAL);
-    return (
-      <G opacity={ghostFade}>
-        {edgesShown.map((e) => {
-          const a = ghostById.get(e.from);
-          const b = ghostById.get(e.to);
-          if (!a || !b) return null;
-          const pa = px(a);
-          const pb = px(b);
-          return (
-            <Line
-              key={`ge-${e.from}-${e.to}`}
-              x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
-              stroke={MAP_LINE} strokeWidth={1} strokeOpacity={0.09}
-            />
-          );
-        })}
-        {GHOST_NODES.map((n) => {
-          const p = px(n);
-          return (
-            <G key={n.id}>
-              <Circle cx={p.x} cy={p.y} r={5} fill={MAP_NODE} fillOpacity={0.16} />
-              <SvgText
-                x={p.x} y={p.y + 26}
-                fill={MAP_NODE} fillOpacity={0.2}
-                fontFamily={FontFamily.mono} fontSize={24}
-                textAnchor="middle"
-              >
-                {n.label}
-              </SvgText>
-            </G>
-          );
-        })}
-        {arrivalOn && (
-          <G>
-            <Circle
-              cx={arrivalPos.x} cy={arrivalPos.y} r={5.5}
-              fill={RECENT_NODE_COLOR}
-              fillOpacity={arrivalPerforming ? 0.5 : 0.3}
-            />
-            {ghostPhase === 2 && (
-              <Circle
-                cx={arrivalPos.x} cy={arrivalPos.y} r={11}
-                fill="none"
-                stroke={RECENT_NODE_COLOR} strokeWidth={0.8} strokeOpacity={0.45}
-              />
-            )}
-            <SvgText
-              x={arrivalPos.x} y={arrivalPos.y + 26}
-              fill={RECENT_NODE_COLOR}
-              fillOpacity={arrivalPerforming ? 0.45 : 0.26}
-              fontFamily={FontFamily.mono} fontSize={24}
-              textAnchor="middle"
-            >
-              {GHOST_ARRIVAL.label}
-            </SvgText>
-          </G>
-        )}
-      </G>
-    );
-  }, [ghostActive, ghostPhase, ghostFade]);
 
   // Discovery (multi-select) highlights — the selected edges and nodes, drawn
   // ON TOP of the base graph in their own tiny layer. Kept out of graphLayer so
@@ -4149,11 +4090,10 @@ export default function MapScreen() {
     <G>
       {haloLayer}
       {labelLayer}
-      {ghostLayer}
       {graphLayer}
       {discoveryLayer}
     </G>
-  ), [haloLayer, labelLayer, ghostLayer, graphLayer, discoveryLayer]);
+  ), [haloLayer, labelLayer, graphLayer, discoveryLayer]);
 
   // ── Ambient glow — hoisted out of the re-rasterized layer ──────
   // A single smooth radial gradient anchored to the canvas. Drawn inside the
@@ -4192,6 +4132,8 @@ export default function MapScreen() {
           itself, not just its exact midpoint. The endpoints are left to
           the node targets (rendered after, so a node always wins). */}
       {toolMode === 'discover' && edges.flatMap((e, i) => {
+        // Demo edges are scenery, not content — nothing to select.
+        if (isGhostId(e.fromItemId)) return [];
         const a = pos[e.fromItemId];
         const b = pos[e.toItemId];
         if (!a || !b) return [];
@@ -4212,6 +4154,9 @@ export default function MapScreen() {
         });
       })}
       {nodes.map((node) => {
+        // Demo nodes can be looked at, never opened — no drawer, no insight,
+        // no delete for something that isn't theirs.
+        if (isGhostId(node.id)) return null;
         const p = pos[node.id];
         if (!p) return null;
         const screenX = (p.x - settledCam.x) * settledCam.zoom;
@@ -4487,8 +4432,9 @@ export default function MapScreen() {
           onClose={() => setInfoVisible(false)}
           title="atlas"
           body="Your knowledge map. Every node is something you saved. Lines appear when ideas share a topic, contradict each other, or grow out of one another. Switch lenses to sort the map by meaning or time."
-          // Hidden on an empty map — there is no atlas to share yet.
-          action={nodes.length > 0 ? {
+          // Hidden until there are real captures — the ghost demo map is
+          // scenery, not an atlas to share.
+          action={totalCaptureCount > 0 ? {
             label: 'share your atlas →',
             onPress: () => {
               setInfoVisible(false);
@@ -4667,12 +4613,14 @@ export default function MapScreen() {
           </RNAnimated.View>
         )}
 
-        {/* The first-session ritual: thought-first capture over the ghost
-            map. It bypasses the capture sheet entirely — one soft prompt,
-            type or hold-to-speak, guilt-free skip at every beat. */}
-        {ritualOn && !showCapture && !drawerVisible && (
+        {/* The first-session ritual: one soft prompt over the demo map,
+            arriving a beat after the map itself so a new user meets one
+            thing at a time. The + composer works too — its captures count
+            as fragments via ritualExternalIds. */}
+        {ritualOn && ritualCardReady && !showCapture && !drawerVisible && (
           <FirstThoughtRitual
             edges={graphData?.edges ?? []}
+            externalCaptureIds={ritualExternalIds}
             onCaptured={refetchMapData}
             onDone={onRitualDone}
           />
@@ -4725,17 +4673,14 @@ export default function MapScreen() {
           </View>
         )}
 
-        {/* Empty state. While the ghost constellation is on stage it IS the
-            visual — the chrome drops its loader and keeps to the lower third
-            so the two tell one story instead of competing for the centre. */}
+        {/* Empty state. Unreachable while the ghost demo map is injected
+            (nodes is non-empty then) — this covers the leftover cases, like
+            an empty account inside the tutorial. */}
         {isEmpty && !ritualOn && (
-          <View
-            style={[styles.emptyHint, ghostActive && styles.emptyHintLow]}
-            pointerEvents="box-none"
-          >
-            {!ghostActive && <AsciiLoader idle size={100} color="rgba(240,232,214,0.57)" />}
+          <View style={styles.emptyHint} pointerEvents="box-none">
+            <AsciiLoader idle size={100} color="rgba(240,232,214,0.57)" />
             <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[3], color: 'rgba(240,232,214,0.53)' }}>
-              {ghostActive ? 'a mind looks like this' : 'your map is waiting'}
+              your map is waiting
             </Text>
             <Text variant="monoSmall" style={{ color: 'rgba(240,232,214,0.42)', textAlign: 'center', lineHeight: 20 }}>
               {'tap + to chart your first thought.'}
@@ -5202,10 +5147,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  emptyHintLow: {
-    justifyContent: 'flex-end',
-    paddingBottom: 170,
   },
   centerBtn: {
     borderWidth: 1,

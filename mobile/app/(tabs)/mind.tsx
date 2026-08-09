@@ -249,8 +249,19 @@ export default function MindScreen() {
               Your mind is quiet for now
             </Text>
             <Text variant="monoSmall" style={styles.stateBody}>
-              Save a few more things and instruments surface here on their own: threads you're chasing, ideas in tension, topics converging or going dormant.
+              This page reads your map for patterns. Save two or three related things on the atlas and the first ones surface here on their own: threads you're chasing, ideas in tension, topics converging.
             </Text>
+            <Pressable
+              onPress={() => router.push('/(tabs)' as never)}
+              hitSlop={8}
+              style={{ marginTop: Spacing[5] }}
+              accessibilityRole="button"
+              accessibilityLabel="Go to the atlas"
+            >
+              <Text variant="monoSmall" style={{ color: stageInk(0.85) }}>
+                start on atlas →
+              </Text>
+            </Pressable>
           </View>
         </SafeAreaView>
       </MindStage>

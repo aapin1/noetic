@@ -44,7 +44,11 @@ export function ritualReduce(state: RitualState, event: RitualEvent): RitualStat
       return state.step === "waiting" ? { ...state, step: "prompt" } : state;
 
     case "CAPTURED": {
-      if (state.step !== "waiting" || state.fragments.includes(event.id)) {
+      // Accepted from "waiting" (this ritual's own submit resolving) AND from
+      // "prompt": a capture made through the ordinary composer while the
+      // ritual is up counts as a fragment — the prompt is an invitation, not
+      // the only door.
+      if (state.fragments.includes(event.id)) {
         return state;
       }
       const fragments = [...state.fragments, event.id];

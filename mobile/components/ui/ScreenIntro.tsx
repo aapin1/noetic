@@ -1,6 +1,7 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
@@ -12,6 +13,8 @@ interface Props {
   loading?: boolean;
   /** Which pet keeps the empty screen company. */
   art?: 'cat' | 'brain';
+  /** Where to go from here — an empty state should always point somewhere. */
+  actions?: { label: string; onPress: () => void }[];
 }
 
 /**
@@ -19,7 +22,8 @@ interface Props {
  * mind). An idle ASCII pet, serif title, and mono body — identical everywhere
  * so the screens read as one product instead of three.
  */
-export function ScreenIntro({ title, body, loading = false, art = 'cat' }: Props) {
+export function ScreenIntro({ title, body, loading = false, art = 'cat', actions }: Props) {
+  const c = useThemeColors();
   return (
     <View style={styles.wrap}>
       {loading ? (
@@ -37,6 +41,20 @@ export function ScreenIntro({ title, body, loading = false, art = 'cat' }: Props
       <Text variant="monoSmall" color="muted" style={styles.body}>
         {body}
       </Text>
+      {(actions ?? []).map((action) => (
+        <Pressable
+          key={action.label}
+          onPress={action.onPress}
+          hitSlop={8}
+          style={styles.action}
+          accessibilityRole="button"
+          accessibilityLabel={action.label}
+        >
+          <Text variant="monoSmall" style={{ color: c.text }}>
+            {action.label}
+          </Text>
+        </Pressable>
+      ))}
     </View>
   );
 }
@@ -58,5 +76,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     maxWidth: 300,
+  },
+  action: {
+    marginTop: Spacing[4],
+    paddingVertical: Spacing[1],
   },
 });

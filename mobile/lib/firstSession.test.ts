@@ -84,6 +84,16 @@ describe("ritualReduce", () => {
     }
   });
 
+  it("a composer capture counts as a fragment without a SUBMIT", () => {
+    const s = run([
+      { type: "CAPTURED", id: "via-composer" },
+      { type: "SUBMIT" },
+      { type: "CAPTURED", id: "via-ritual" },
+    ]);
+    expect(s.step).toBe("prompt");
+    expect(s.fragments).toEqual(["via-composer", "via-ritual"]);
+  });
+
   it("a duplicate capture id (retry race) is not counted twice", () => {
     const s = run([
       { type: "SUBMIT" },

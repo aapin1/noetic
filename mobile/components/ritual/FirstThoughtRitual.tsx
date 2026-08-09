@@ -8,7 +8,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { api } from '@/lib/api';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { GLASS_BG, GLASS_BORDER } from '@/constants/mapPalette';
@@ -25,7 +24,7 @@ import { failureReason, track } from '@/lib/analytics';
 import { noteCaptureForReview } from '@/lib/review';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { Text } from '@/components/ui/Text';
-import { HoldToSpeak } from '@/components/ui/HoldToSpeak';
+import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
 
 /** How long the aha line holds the stage before the ritual yields. */
 const AHA_HOLD_MS = 2600;
@@ -37,6 +36,12 @@ const INK_FAINT = 'rgba(240,232,214,0.42)';
 interface Props {
   /** Live graph edges — the aha detector watches these for a fragment↔fragment edge. */
   edges: readonly { fromItemId: string; toItemId: string }[];
+  /**
+   * Captures landed through other doors (the + composer) while the ritual is
+   * up. They count as fragments: the prompt is an invitation, not the only
+   * way in.
+   */
+  externalCaptureIds: readonly string[];
   /** Fired after each landed fragment so the host refetches the map. */
   onCaptured: () => void;
   /**
@@ -48,19 +53,27 @@ interface Props {
 }
 
 /**
- * The thought-first capture ritual, performed over the ghost map. One soft
- * prompt; each fragment lands as a real node; chain until the first edge
- * draws between the user's own thoughts, then stop — the ritual ends at the
- * aha and never milks. Skipping is guilt-free at every beat, and links are
- * never requested: people carry thoughts, not URLs.
+ * The thought-first capture ritual, performed over the demo map. Deliberately
+ * ONE small card: a question, an input, a mic — nothing else until there is
+ * something to save. Each fragment lands as a real node; then, gently, "what
+ * else?", chaining only until the first edge draws between the user's own
+ * thoughts. The ritual ends at the aha and never milks. The ✕ dismisses it
+ * guilt-free at any beat, and links are never requested — people carry
+ * thoughts, not URLs (the + composer is right there for everything else).
  */
-export function FirstThoughtRitual({ edges, onCaptured, onDone }: Props) {
-  const router = useRouter();
+export function FirstThoughtRitual({ edges, externalCaptureIds, onCaptured, onDone }: Props) {
   const { markSeen } = useDisclosure();
   const [state, dispatch] = useReducer(ritualReduce, undefined, ritualInitial);
   const [text, setText] = useState('');
   const [hint, setHint] = useState('');
   const finishedRef = useRef(false);
+
+  // Fragments that arrived through the composer rather than this card.
+  useEffect(() => {
+    for (const id of externalCaptureIds) {
+      dispatch({ type: 'CAPTURED', id });
+    }
+  }, [externalCaptureIds]);
 
   // The aha detector. Edges arrive with the graph refetch after a landed
   // fragment; the reducer ignores this before two own fragments exist.
@@ -97,7 +110,7 @@ export function FirstThoughtRitual({ edges, onCaptured, onDone }: Props) {
           duration_ms: Date.now() - startedAt,
           reason: failureReason(e),
         });
-        setHint("that didn't save — try again, or skip.");
+        setHint("that didn't save — try again.");
         dispatch({ type: 'CAPTURE_FAILED' });
       });
   }, [text, state.step, onCaptured]);
@@ -116,7 +129,7 @@ export function FirstThoughtRitual({ edges, onCaptured, onDone }: Props) {
     const reason = state.endReason ?? 'skipped';
     track('onboarding_step', {
       step: 'ritual',
-      action: reason === 'skipped' ? 'skipped' : 'completed',
+      action: reason === 'skipped' && state.fragments.length === 0 ? 'skipped' : 'completed',
     });
     if (reason === 'skipped') {
       onDone(reason, state.fragments);
@@ -161,9 +174,14 @@ export function FirstThoughtRitual({ edges, onCaptured, onDone }: Props) {
       pointerEvents="box-none"
     >
       <View style={styles.card}>
-        <Text variant="monoSmall" style={{ color: INK, letterSpacing: 0.5 }}>
-          {ritualPrompt(state)}
-        </Text>
+        <View style={styles.headerRow}>
+          <Text variant="monoSmall" style={{ color: INK, letterSpacing: 0.5, flex: 1 }}>
+            {ritualPrompt(state)}
+          </Text>
+          <Pressable onPress={skip} hitSlop={10} accessibilityRole="button" accessibilityLabel="Dismiss">
+            <Text variant="monoSmall" style={{ color: INK_FAINT }}>✕</Text>
+          </Pressable>
+        </View>
         <TextInput
           style={styles.input}
           value={text}
@@ -181,40 +199,26 @@ export function FirstThoughtRitual({ edges, onCaptured, onDone }: Props) {
           </Text>
         )}
         <View style={styles.row}>
-          <HoldToSpeak onText={(t) => setText((prev) => (prev.trim() ? `${prev.trim()} ${t}` : t))} onError={setHint} />
-          <View style={styles.actions}>
-            <Pressable onPress={skip} hitSlop={10} accessibilityRole="button" accessibilityLabel="Skip for now">
-              <Text variant="monoSmall" style={{ color: INK_FAINT }}>
-                {state.fragments.length === 0 ? 'later' : "that's plenty"}
-              </Text>
-            </Pressable>
+          <VoiceNoteButton
+            onText={(t) => setText((prev) => (prev.trim() ? `${prev.trim()} ${t}` : t))}
+            onError={setHint}
+          />
+          {/* The save action appears only once there is something to save —
+              until then the card is just a question and a place to answer. */}
+          {text.trim() ? (
             <Pressable
               onPress={submit}
               hitSlop={10}
-              disabled={!text.trim()}
               accessibilityRole="button"
               accessibilityLabel="Put this thought on the map"
             >
-              <Text variant="monoSmall" style={{ color: text.trim() ? INK : INK_FAINT }}>
+              <Text variant="monoSmall" style={{ color: INK }}>
                 save →
               </Text>
             </Pressable>
-          </View>
+          ) : null}
         </View>
       </View>
-      {/* An optional door, never a beat: present under the ritual for anyone
-          arriving with years of saves, ignorable by everyone else. */}
-      <Pressable
-        onPress={() => router.push('/import' as never)}
-        hitSlop={8}
-        style={styles.importDoor}
-        accessibilityRole="button"
-        accessibilityLabel="Import your saves"
-      >
-        <Text variant="monoSmall" style={{ color: INK_FAINT }}>
-          have years of saves? watch them become a map →
-        </Text>
-      </Pressable>
     </KeyboardAvoidingView>
   );
 }
@@ -243,6 +247,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: Spacing[4],
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[3],
+  },
   input: {
     color: 'rgba(240,232,214,0.9)',
     fontFamily: FontFamily.mono,
@@ -258,14 +267,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  actions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing[5],
-  },
-  importDoor: {
-    marginTop: Spacing[3],
-    paddingVertical: Spacing[1],
+    minHeight: 34,
   },
 });

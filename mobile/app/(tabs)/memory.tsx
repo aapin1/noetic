@@ -246,7 +246,11 @@ export default function ArchiveScreen() {
         {isEmpty && (
           <ScreenIntro
             title="Nothing here yet"
-            body="Capture something from the map and it'll show up here, organized into folders by topic."
+            body="Everything you save files itself here by topic, newest first. Start on the atlas — the + button takes anything: a thought, a link, an image."
+            actions={[
+              { label: 'start on atlas →', onPress: () => router.push('/(tabs)' as never) },
+              { label: 'have years of saves? watch them become a map →', onPress: () => router.push('/import' as never) },
+            ]}
           />
         )}
 
