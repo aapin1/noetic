@@ -69,6 +69,16 @@ import { TopicPickerModal } from '@/components/ui/TopicPickerModal';
 import { failureReason, track } from '@/lib/analytics';
 import { useTutorial, useTutorialTarget } from '@/contexts/TutorialContext';
 import { TUTORIAL_DEMO_NODE, TUTORIAL_EXAMPLE_LINK, TUTORIAL_TARGET } from '@/constants/tutorialSteps';
+import {
+  GHOST_ARRIVAL,
+  GHOST_ARRIVAL_EDGE,
+  GHOST_ARRIVE_MS,
+  GHOST_CONNECT_MS,
+  GHOST_EDGES,
+  GHOST_NODES,
+  GHOST_READ_MS,
+} from '@/constants/ghostMap';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { MapBackdrop } from '@/components/ui/MapBackdrop';
@@ -2044,6 +2054,8 @@ export default function MapScreen() {
   // Falls back to the rendered count for cached pre-totalCount responses.
   const totalCaptureCount = activeFocusGraph?.totalCount ?? graphData?.totalCount ?? 0;
 
+  const reduceMotion = useReduceMotion();
+
   // Progressive disclosure feeds off the UNFOCUSED graph only — a topic
   // sub-map's totalCount describes the focus, not the corpus, and would
   // wrongly rewind the reveal ladder.
@@ -3938,25 +3950,130 @@ export default function MapScreen() {
             );
           })}
 
-          {/* Empty state ghost dots */}
-          {isEmpty && [
-            [0.28, 0.28], [0.58, 0.22], [0.72, 0.45], [0.62, 0.60],
-            [0.36, 0.58], [0.48, 0.38], [0.42, 0.50], [0.68, 0.33],
-            [0.30, 0.42], [0.55, 0.52], [0.44, 0.30], [0.65, 0.55],
-          ].map(([rx, ry], i) => (
-            <Circle
-              key={`g${i}`}
-              cx={MAP_PAD + LAYOUT_W * rx!}
-              cy={MAP_PAD + LAYOUT_H * ry!}
-              r={2.5} fill={MAP_NODE} fillOpacity={0.07}
-            />
-          ))}
     </>
   ), [
     edges, nodes, pos, nodeById,
     nodeMetrics, nodeColor, isRecentNode, hasSearch, highlightedIds,
-    getNodeOpacity, isEmpty, focusDimTopicId, edgeSalienceByKey, nodeGlowsOn,
+    getNodeOpacity, focusDimTopicId, edgeSalienceByKey, nodeGlowsOn,
   ]);
+
+  // ── Ghost map ──────────────────────────────────────────────────
+  // A brand-new user's empty map is not empty: a faint curated constellation
+  // shows the destination, and one ghost node performs the verb — arrives,
+  // gets read (the amber ring real captures wear), connects. Static SVG per
+  // phase: a handful of discrete re-rasters on an otherwise bare map, never a
+  // per-frame animation inside the raster (see the WorldBuffer contract).
+  // Gated on the UNFOCUSED corpus count so a topic sub-map can't summon it,
+  // and retired by dissolve the moment the first real node lands.
+  const ghostCorpus = graphData ? (graphData.totalCount ?? graphData.nodes.length) : null;
+  const ghostActive =
+    ghostCorpus === 0 && !graphLoading && !activeFocusGraph && !tutorialActive;
+  const [ghostPhase, setGhostPhase] = useState(0);
+  const [ghostFade, setGhostFade] = useState(1);
+  const ghostShownRef = useRef(false);
+
+  useEffect(() => {
+    if (!ghostActive || ghostShownRef.current) return;
+    ghostShownRef.current = true;
+    if (reduceMotion) {
+      // No performance under Reduce Motion — the completed constellation
+      // simply is, connection already drawn.
+      setGhostPhase(3);
+      return;
+    }
+    const t1 = setTimeout(() => setGhostPhase(1), GHOST_ARRIVE_MS);
+    const t2 = setTimeout(() => setGhostPhase(2), GHOST_READ_MS);
+    const t3 = setTimeout(() => setGhostPhase(3), GHOST_CONNECT_MS);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [ghostActive, reduceMotion]);
+
+  // The dissolve: only a real capture retires the ghost (corpus 0 → >0).
+  // Other reasons to be hidden (tutorial demo, focus) just unmount it.
+  useEffect(() => {
+    if (!ghostShownRef.current || (ghostCorpus ?? 0) === 0 || ghostFade < 1) return;
+    if (reduceMotion) {
+      setGhostFade(0);
+      return;
+    }
+    const a = setTimeout(() => setGhostFade(0.55), 60);
+    const b = setTimeout(() => setGhostFade(0.22), 320);
+    const c = setTimeout(() => setGhostFade(0), 600);
+    return () => { clearTimeout(a); clearTimeout(b); clearTimeout(c); };
+  }, [ghostCorpus, ghostFade, reduceMotion]);
+
+  const ghostLayer = useMemo(() => {
+    const dissolving = ghostFade < 1 && ghostFade > 0;
+    if (!(ghostActive || dissolving) || ghostFade <= 0) return null;
+    const px = (n: { x: number; y: number }) => ({
+      x: MAP_PAD + LAYOUT_W * n.x,
+      y: MAP_PAD + LAYOUT_H * n.y,
+    });
+    const ghostById = new Map(GHOST_NODES.map((n) => [n.id, n]));
+    ghostById.set(GHOST_ARRIVAL.id, GHOST_ARRIVAL);
+    const edgesShown = ghostPhase >= 3 ? [...GHOST_EDGES, GHOST_ARRIVAL_EDGE] : GHOST_EDGES;
+    const arrivalOn = ghostPhase >= 1;
+    const arrivalPerforming = ghostPhase >= 1 && ghostPhase < 3;
+    const arrivalPos = px(GHOST_ARRIVAL);
+    return (
+      <G opacity={ghostFade}>
+        {edgesShown.map((e) => {
+          const a = ghostById.get(e.from);
+          const b = ghostById.get(e.to);
+          if (!a || !b) return null;
+          const pa = px(a);
+          const pb = px(b);
+          return (
+            <Line
+              key={`ge-${e.from}-${e.to}`}
+              x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
+              stroke={MAP_LINE} strokeWidth={1} strokeOpacity={0.09}
+            />
+          );
+        })}
+        {GHOST_NODES.map((n) => {
+          const p = px(n);
+          return (
+            <G key={n.id}>
+              <Circle cx={p.x} cy={p.y} r={5} fill={MAP_NODE} fillOpacity={0.16} />
+              <SvgText
+                x={p.x} y={p.y + 26}
+                fill={MAP_NODE} fillOpacity={0.2}
+                fontFamily={FontFamily.mono} fontSize={24}
+                textAnchor="middle"
+              >
+                {n.label}
+              </SvgText>
+            </G>
+          );
+        })}
+        {arrivalOn && (
+          <G>
+            <Circle
+              cx={arrivalPos.x} cy={arrivalPos.y} r={5.5}
+              fill={RECENT_NODE_COLOR}
+              fillOpacity={arrivalPerforming ? 0.5 : 0.3}
+            />
+            {ghostPhase === 2 && (
+              <Circle
+                cx={arrivalPos.x} cy={arrivalPos.y} r={11}
+                fill="none"
+                stroke={RECENT_NODE_COLOR} strokeWidth={0.8} strokeOpacity={0.45}
+              />
+            )}
+            <SvgText
+              x={arrivalPos.x} y={arrivalPos.y + 26}
+              fill={RECENT_NODE_COLOR}
+              fillOpacity={arrivalPerforming ? 0.45 : 0.26}
+              fontFamily={FontFamily.mono} fontSize={24}
+              textAnchor="middle"
+            >
+              {GHOST_ARRIVAL.label}
+            </SvgText>
+          </G>
+        )}
+      </G>
+    );
+  }, [ghostActive, ghostPhase, ghostFade]);
 
   // Discovery (multi-select) highlights — the selected edges and nodes, drawn
   // ON TOP of the base graph in their own tiny layer. Kept out of graphLayer so
@@ -4006,10 +4123,11 @@ export default function MapScreen() {
     <G>
       {haloLayer}
       {labelLayer}
+      {ghostLayer}
       {graphLayer}
       {discoveryLayer}
     </G>
-  ), [haloLayer, labelLayer, graphLayer, discoveryLayer]);
+  ), [haloLayer, labelLayer, ghostLayer, graphLayer, discoveryLayer]);
 
   // ── Ambient glow — hoisted out of the re-rasterized layer ──────
   // A single smooth radial gradient anchored to the canvas. Drawn inside the
@@ -4568,12 +4686,17 @@ export default function MapScreen() {
           </View>
         )}
 
-        {/* Empty state */}
+        {/* Empty state. While the ghost constellation is on stage it IS the
+            visual — the chrome drops its loader and keeps to the lower third
+            so the two tell one story instead of competing for the centre. */}
         {isEmpty && (
-          <View style={styles.emptyHint} pointerEvents="box-none">
-            <AsciiLoader idle size={100} color="rgba(240,232,214,0.57)" />
+          <View
+            style={[styles.emptyHint, ghostActive && styles.emptyHintLow]}
+            pointerEvents="box-none"
+          >
+            {!ghostActive && <AsciiLoader idle size={100} color="rgba(240,232,214,0.57)" />}
             <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[3], color: 'rgba(240,232,214,0.53)' }}>
-              your map is waiting
+              {ghostActive ? 'a mind looks like this' : 'your map is waiting'}
             </Text>
             <Text variant="monoSmall" style={{ color: 'rgba(240,232,214,0.42)', textAlign: 'center', lineHeight: 20 }}>
               {'tap + to chart your first thought.'}
@@ -5034,6 +5157,10 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  emptyHintLow: {
+    justifyContent: 'flex-end',
+    paddingBottom: 170,
   },
   centerBtn: {
     borderWidth: 1,
