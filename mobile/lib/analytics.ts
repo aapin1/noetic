@@ -64,13 +64,12 @@ const log = (...args: unknown[]) => {
  * the drift shows up as a hole in the data, not a compile error.
  */
 export type { CaptureKind } from '@/types/api';
-/** Captures arrive from three places and the difference matters: the share
- *  extension and the first-session ritual are different funnels with
- *  different failure profiles. */
-export type CaptureSource = 'composer' | 'share_extension' | 'ritual';
+/** Captures arrive from two places and the difference matters: the share
+ *  extension is a different funnel with a different failure profile. */
+export type CaptureSource = 'composer' | 'share_extension';
 /** identity/notifications/walkthrough are the retired 2026-07 flow — kept so
- *  historical dashboards still parse. New accounts only emit `ritual`. */
-export type OnboardingStep = 'identity' | 'notifications' | 'walkthrough' | 'ritual';
+ *  historical dashboards still parse. New accounts only emit `guide`. */
+export type OnboardingStep = 'identity' | 'notifications' | 'walkthrough' | 'guide';
 export type TabName = 'atlas' | 'mind' | 'archive' | 'pulse' | 'you';
 /**
  * Where an insight was opened from. `unknown` is reachable and intentional:

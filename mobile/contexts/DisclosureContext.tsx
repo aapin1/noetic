@@ -16,6 +16,7 @@ import {
   type TabGlowKey,
   type WhisperId,
 } from '@/lib/disclosure';
+import { visitedTabFlag } from '@/lib/guide';
 
 // Device-scoped, like the push-ask flag: a whisper teaches this install of the
 // app, and re-teaching the next account on the same phone is noise.
@@ -157,6 +158,10 @@ export function DisclosureProvider({ children }: { children: React.ReactNode }) 
 
   const noteTabFocus = useCallback(
     (tab: string) => {
+      // Every tab remembers its first visit — the onboarding guide advances
+      // off these, so a lesson about a place the user already found is never
+      // shown.
+      markSeen(visitedTabFlag(tab));
       if ((GLOW_TABS as string[]).includes(tab) && glows[tab as TabGlowKey]) {
         markSeen(glowSeenFlag(tab as TabGlowKey));
       }

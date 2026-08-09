@@ -80,9 +80,18 @@ import {
   isGhostId,
 } from '@/constants/ghostMap';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
-import { FirstThoughtRitual } from '@/components/ritual/FirstThoughtRitual';
 import { ComebackPromise } from '@/components/ritual/ComebackPromise';
-import type { RitualEndReason } from '@/lib/firstSession';
+import { GuidePill } from '@/components/ui/GuidePill';
+import {
+  GUIDE_DONE_FLAG,
+  GUIDE_MAX_CORPUS,
+  GUIDE_SIGNAL_FLAGS,
+  guideAckFlag,
+  nextGuideStep,
+  visitedTabFlag,
+  type GuideSignals,
+  type GuideStep,
+} from '@/lib/guide';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { MapBackdrop } from '@/components/ui/MapBackdrop';
@@ -1073,7 +1082,7 @@ function Divider({ c }: { c: AppThemeColors }) {
 }
 
 function StepOne({
-  mode, setMode, payload, setPayload, imageUri, uploading, onPickImage, error, onNext, onClose, onPaste, c,
+  mode, setMode, payload, setPayload, imageUri, uploading, onPickImage, error, onNext, onClose, onPaste, c, guided,
   onQuickSave, busy, clipboardHasUrl,
 }: {
   mode: CaptureMode; setMode: (m: CaptureMode) => void;
@@ -1081,6 +1090,8 @@ function StepOne({
   imageUri: string | null; uploading: boolean; onPickImage: (source: 'camera' | 'library') => void;
   error: string; onNext: () => boolean; onClose: () => void; onPaste: () => void;
   c: AppThemeColors;
+  /** The onboarding guide opened this sheet — first-capture training copy. */
+  guided?: boolean;
   onQuickSave: () => void; busy: boolean; clipboardHasUrl: boolean;
 }) {
   const nextTarget = useTutorialTarget(TUTORIAL_TARGET.captureNext);
@@ -1091,10 +1102,12 @@ function StepOne({
   return (
     <View>
       <Text variant="serifLg" color="primary" style={sh.heading}>
-        What are you saving?
+        {guided ? 'Your first capture.' : 'What are you saving?'}
       </Text>
       <Text variant="monoSmall" color="muted" style={sh.sub}>
-        A link, thought, or image.
+        {guided
+          ? 'a thought you haven’t finished having, a link, or a photo — anything in your head right now.'
+          : 'A link, thought, or image.'}
       </Text>
       <Divider c={c} />
       <View style={sh.modeRow}>
@@ -1427,8 +1440,11 @@ function Toolbar({
     return () => { alive = false; };
   }, []);
 
+  const { markSeen: markCompanionSeen } = useDisclosure();
   const openCompanion = () => {
     companionTarget.press();
+    // The guide's companion lesson completes on first real use.
+    markCompanionSeen(GUIDE_SIGNAL_FLAGS.openedCompanion);
     const tid = topicId ?? fallbackTopicRef.current;
     if (tid) {
       router.push({ pathname: '/socratic/[topicId]' as never, params: { topicId: tid } });
@@ -2790,6 +2806,7 @@ export default function MapScreen() {
   }, [discoveryNodeIds, discoveryEdgeKeys, edges]);
 
   const openDiscoveryCompanion = useCallback(() => {
+    disclosure.markSeen(GUIDE_SIGNAL_FLAGS.openedCompanion);
     const labelFor = (id: string) =>
       (nodes.find((n) => n.id === id)?.label ?? '').replace(/[,~]/g, ';');
 
@@ -2819,7 +2836,7 @@ export default function MapScreen() {
     });
     clearDiscovery();
     setToolMode('default');
-  }, [discoveryContextIds, discoveryEdgeKeys, edges, nodes, router, clearDiscovery]);
+  }, [discoveryContextIds, discoveryEdgeKeys, edges, nodes, router, clearDiscovery, disclosure]);
 
   // ── Timeline state (temporal lens) ────────────────────────────
   const [timelinePct, setTimelinePct] = useState(1.0);
@@ -3388,8 +3405,8 @@ export default function MapScreen() {
   }>();
   // (Shares from the OS share sheet used to arrive here as route params; they
   // now save directly on the shareintent screen. The old firstCapture param
-  // died with the onboarding walkthrough offer — the first-session ritual
-  // replaced it.)
+  // died with the onboarding walkthrough offer — the guide's pill opens the
+  // composer directly instead.)
 
   // Arriving from Mind's "View in Atlas" — pre-select the thread's captures in
   // the multi-select (discover) tool and fly the camera to fit them.
@@ -3530,11 +3547,12 @@ export default function MapScreen() {
   }, [requestPermission]);
 
   // ── the comeback promise ──────────────────────────────────────────────────
-  // The ritual's ending, and the push ask fused into it: with their own
-  // thoughts just landed (and usually connected), mneme states the spine
-  // concretely — "tomorrow morning i'll bring one of these back to you" —
-  // and THAT statement is the permission request. Same one-shot bookkeeping
-  // as the primer; whichever asks first spends the install's only prompt.
+  // The push ask, fused with the product's spine: with their own thoughts
+  // just landed on the map, mneme states it concretely — "tomorrow morning
+  // i'll bring one of these back to you" — and THAT statement is the
+  // permission request. Same one-shot bookkeeping as the primer; whichever
+  // asks first spends the install's only prompt. Armed by the corpus-watching
+  // effect further down, once two captures exist.
   const [promiseState, setPromiseState] = useState<{ fragments: number } | null>(null);
 
   const closePromise = useCallback(() => {
@@ -3678,15 +3696,15 @@ export default function MapScreen() {
         // landed is the only point where "we'll tell you when something surfaces"
         // describes something the user has just seen work. On launch it would be
         // a stranger asking for a permission the app hasn't earned yet.
-        maybeAskForPush();
+        // While the guide is teaching, the push ask belongs to the comeback
+        // promise (fires at two captures) — not to the generic post-capture
+        // primer, which would spend the install's one prompt a beat early.
+        if (!guideOnRef.current) maybeAskForPush();
         noteCaptureForReview();
         setReviewArmed(true);
         // First in-app link capture is the moment the share extension becomes
         // the obvious thing to teach — the durable flag arms that whisper.
         if (kind === 'LINK') disclosure.markSeen(EVENT_FLAGS.linkCaptured);
-        // A composer capture during the first session is a ritual fragment
-        // too — the prompt is an invitation, not the only door.
-        if (ritualOnRef.current) setRitualExternalIds((prev) => [...prev, res.id]);
       })
       .catch((e) => {
         track('capture_failed', {
@@ -3995,32 +4013,52 @@ export default function MapScreen() {
     getNodeOpacity, focusDimTopicId, edgeSalienceByKey, nodeGlowsOn,
   ]);
 
-  // ── First-session ritual ───────────────────────────────────────
-  // Arms once, over the ghost map, for a user who has never captured and
-  // never met the ritual. Latched: landing a fragment flips the corpus to 1,
-  // which must not unmount the ritual mid-conversation.
-  const [ritualOn, setRitualOn] = useState(false);
+  // ── Onboarding guide ───────────────────────────────────────────
+  // Guided but free: one small pill at a time (the capture pill's glass +
+  // ascii cat idiom), each with one line and at most one action. Steps
+  // complete off what the user actually does — through the pill or on their
+  // own — and ✕ always just moves on. Arms once for young accounts and
+  // never returns after GUIDE_DONE_FLAG.
+  const [guideOn, setGuideOn] = useState(false);
   useEffect(() => {
-    if (ritualOn) return;
-    if (ghostActive && disclosure.ready && !disclosure.hasSeen(EVENT_FLAGS.ritualDone)) {
-      setRitualOn(true);
-    }
-  }, [ghostActive, disclosure, ritualOn]);
-  // The map holds the stage alone first; the prompt joins a few seconds
-  // later, so a new user meets one thing at a time.
-  const [ritualCardReady, setRitualCardReady] = useState(false);
+    if (guideOn || !disclosure.ready || !graphData) return;
+    if (disclosure.hasSeen(GUIDE_DONE_FLAG)) return;
+    if ((graphData.totalCount ?? graphData.nodes.length) < GUIDE_MAX_CORPUS) setGuideOn(true);
+  }, [guideOn, disclosure, graphData]);
+  const guideOnRef = useRef(false);
   useEffect(() => {
-    if (!ritualOn) return;
-    const timer = setTimeout(() => setRitualCardReady(true), reduceMotion ? 0 : GHOST_PROMPT_MS);
-    return () => clearTimeout(timer);
-  }, [ritualOn, reduceMotion]);
-  // Captures made through the ordinary composer while the ritual is up count
-  // as ritual fragments — the prompt is an invitation, not the only door.
-  const [ritualExternalIds, setRitualExternalIds] = useState<string[]>([]);
-  const ritualOnRef = useRef(false);
+    guideOnRef.current = guideOn;
+  }, [guideOn]);
+
+  const guideSignals = useMemo<GuideSignals>(
+    () => ({
+      captureCount: graphData?.totalCount ?? 0,
+      openedNode: disclosure.hasSeen(GUIDE_SIGNAL_FLAGS.openedNode),
+      visitedMind: disclosure.hasSeen(visitedTabFlag('mind')),
+      visitedArchive: disclosure.hasSeen(visitedTabFlag('archive')),
+      visitedImport: disclosure.hasSeen(GUIDE_SIGNAL_FLAGS.visitedImport),
+      openedCompanion: disclosure.hasSeen(GUIDE_SIGNAL_FLAGS.openedCompanion),
+    }),
+    [graphData, disclosure],
+  );
+
+  const guideStep = guideOn ? nextGuideStep(guideSignals, disclosure.hasSeen) : null;
+
+  // Nothing left to teach: close the guide and retire the whispers it made
+  // redundant, so mind/share-extension are never taught twice.
   useEffect(() => {
-    ritualOnRef.current = ritualOn;
-  }, [ritualOn]);
+    if (!guideOn || guideStep !== null) return;
+    disclosure.markSeen('mind-first-edge');
+    disclosure.markSeen('share-extension');
+    disclosure.markSeen(GUIDE_DONE_FLAG);
+    track('onboarding_step', { step: 'guide', action: 'completed' });
+    setGuideOn(false);
+  }, [guideOn, guideStep, disclosure]);
+
+  // The pill waits for a genuinely quiet moment, and the very first lesson
+  // additionally waits out the demo map's opening beat, so a new user meets
+  // one thing at a time.
+  const [guidePillStep, setGuidePillStep] = useState<GuideStep | null>(null);
   // The clipboard door: while the map is still forming, notice a copied URL
   // on each return to the screen. Checked (hasUrlAsync), never read — reading
   // would raise the iOS paste banner for a link we might not use.
@@ -4030,17 +4068,89 @@ export default function MapScreen() {
     Clipboard.hasUrlAsync().then(setClipboardDoor).catch(() => {});
   }, [graphData?.totalCount]));
 
-  const onRitualDone = useCallback((reason: RitualEndReason, fragmentIds: string[]) => {
-    setRitualOn(false);
-    // The promise needs material: at least one fragment on the map, and an
-    // unspent system prompt. A skip with nothing landed gets no ask at all —
-    // the post-capture primer still exists for later.
-    if (fragmentIds.length > 0) {
-      void hasAskedForPush().then((asked) => {
-        if (!asked) setPromiseState({ fragments: fragmentIds.length });
-      });
+  useEffect(() => {
+    const quiet =
+      !savedPill && !showCapture && !drawerVisible && screenFocused &&
+      !promiseState && !showPushPrimer && !tutorialActive;
+    if (!guideOn || !guideStep || !quiet) {
+      setGuidePillStep(null);
+      return;
     }
-  }, []);
+    const delay = guideStep.id === 'first-capture' && (graphData?.totalCount ?? 0) === 0
+      ? GHOST_PROMPT_MS
+      : 1400;
+    const timer = setTimeout(() => setGuidePillStep(guideStep), delay);
+    return () => clearTimeout(timer);
+  }, [
+    guideOn, guideStep, savedPill, showCapture, drawerVisible, screenFocused,
+    promiseState, showPushPrimer, tutorialActive, graphData,
+  ]);
+
+  // The guided first capture: same composer, warmer heading. Cleared when
+  // the sheet closes so an ordinary capture never wears the training copy.
+  const [guidedCapture, setGuidedCapture] = useState(false);
+  useEffect(() => {
+    if (!showCapture) setGuidedCapture(false);
+  }, [showCapture]);
+
+  const runGuideCta = useCallback((step: GuideStep) => {
+    switch (step.id) {
+      case 'first-capture':
+        setGuidedCapture(true);
+        openCapture();
+        break;
+      case 'second-thought':
+        openCapture();
+        break;
+      case 'mind':
+        router.push('/(tabs)/mind' as never);
+        break;
+      case 'archive':
+        router.push('/(tabs)/memory' as never);
+        break;
+      case 'import':
+        router.push('/import' as never);
+        break;
+      default:
+        break;
+    }
+    if (step.kind === 'ack') disclosure.markSeen(guideAckFlag(step.id));
+  }, [openCapture, router, disclosure]);
+
+  const skipGuideStep = useCallback(
+    (step: GuideStep) => disclosure.markSeen(guideAckFlag(step.id)),
+    [disclosure],
+  );
+
+  // ── The comeback promise, re-armed ────────────────────────────────────────
+  // Fires once, at a quiet moment, when a young account reaches two captures
+  // with the install's one system prompt still unspent — the moment "i'll
+  // bring one of these back to you" is about things that actually exist.
+  const [promiseArmed, setPromiseArmed] = useState(false);
+  useEffect(() => {
+    if (!disclosure.ready || promiseArmed || promiseState) return;
+    if (disclosure.hasSeen(EVENT_FLAGS.promiseOffered)) return;
+    const count = graphData?.totalCount ?? 0;
+    if (count < 2 || count >= GUIDE_MAX_CORPUS) return;
+    void hasAskedForPush().then((asked) => {
+      if (asked) {
+        // The prompt is spent; the promise moment can never be honest again.
+        disclosure.markSeen(EVENT_FLAGS.promiseOffered);
+        return;
+      }
+      setPromiseArmed(true);
+    });
+  }, [disclosure, promiseArmed, promiseState, graphData]);
+  useEffect(() => {
+    if (!promiseArmed) return;
+    if (savedPill || showCapture || drawerVisible || !screenFocused) return;
+    const timer = setTimeout(() => {
+      setPromiseArmed(false);
+      disclosure.markSeen(EVENT_FLAGS.promiseOffered);
+      setPromiseState({ fragments: graphData?.totalCount ?? 2 });
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [promiseArmed, savedPill, showCapture, drawerVisible, screenFocused, disclosure, graphData]);
 
   // Discovery (multi-select) highlights — the selected edges and nodes, drawn
   // ON TOP of the base graph in their own tiny layer. Kept out of graphLayer so
@@ -4180,6 +4290,8 @@ export default function MapScreen() {
                 if (selectedNodeRef.current?.id === node.id) {
                   closeDrawer();
                 } else {
+                  // The guide's "tap your node" lesson completes here.
+                  disclosure.markSeen(GUIDE_SIGNAL_FLAGS.openedNode);
                   setSelectedNode(node);
                   setDrawerCluster(null);
                   openDrawer(null);
@@ -4613,23 +4725,24 @@ export default function MapScreen() {
           </RNAnimated.View>
         )}
 
-        {/* The first-session ritual: one soft prompt over the demo map,
-            arriving a beat after the map itself so a new user meets one
-            thing at a time. The + composer works too — its captures count
-            as fragments via ritualExternalIds. */}
-        {ritualOn && ritualCardReady && !showCapture && !drawerVisible && (
-          <FirstThoughtRitual
-            edges={graphData?.edges ?? []}
-            externalCaptureIds={ritualExternalIds}
-            onCaptured={refetchMapData}
-            onDone={onRitualDone}
+        {/* The onboarding guide's pill — same slot and idiom as the capture
+            confirmation pill, one short lesson at a time. */}
+        {guidePillStep && guidePillStep.id === guideStep?.id && (
+          <GuidePill
+            top={insets.top + 58}
+            text={guidePillStep.line}
+            cta={guidePillStep.cta}
+            onCta={() => runGuideCta(guidePillStep)}
+            onSkip={() => skipGuideStep(guidePillStep)}
           />
         )}
 
         {/* Whispers live just above the tab bar: each one points at where to
             go next, and the bar is where that going happens. The disclosure
-            context guarantees only one speaks at a time. */}
-        {!ritualOn && !showCapture && !drawerVisible && (
+            context guarantees only one speaks at a time; while the guide is
+            teaching, only the clipboard door (a notice, not a lesson) may
+            speak. */}
+        {!showCapture && !drawerVisible && (
           <View style={styles.whisperHost} pointerEvents="box-none">
             {/* The clipboard door: never a beat, just noticing. Tapping opens
                 the composer with the copied link already in place. */}
@@ -4642,23 +4755,27 @@ export default function MapScreen() {
                 void pasteFromClipboard();
               }}
             />
-            <Whisper
-              id="mind-first-edge"
-              when={disclosure.glows.mind}
-              text="mneme noticed something →"
-              onPress={() => router.push('/(tabs)/mind' as never)}
-            />
-            <Whisper
-              id="share-extension"
-              when={disclosure.hasSeen(EVENT_FLAGS.linkCaptured)}
-              text="next time, save from anywhere — share → mneme"
-            />
-            <Whisper
-              id="pulse-intro"
-              when={disclosure.hasSeen(EVENT_FLAGS.sharedAtlas)}
-              text="pulse — minds you know →"
-              onPress={() => router.push('/(tabs)/pulse' as never)}
-            />
+            {!guideOn && (
+              <>
+                <Whisper
+                  id="mind-first-edge"
+                  when={disclosure.glows.mind}
+                  text="mneme noticed something →"
+                  onPress={() => router.push('/(tabs)/mind' as never)}
+                />
+                <Whisper
+                  id="share-extension"
+                  when={disclosure.hasSeen(EVENT_FLAGS.linkCaptured)}
+                  text="next time, save from anywhere — share → mneme"
+                />
+                <Whisper
+                  id="pulse-intro"
+                  when={disclosure.hasSeen(EVENT_FLAGS.sharedAtlas)}
+                  text="pulse — minds you know →"
+                  onPress={() => router.push('/(tabs)/pulse' as never)}
+                />
+              </>
+            )}
           </View>
         )}
 
@@ -4676,7 +4793,7 @@ export default function MapScreen() {
         {/* Empty state. Unreachable while the ghost demo map is injected
             (nodes is non-empty then) — this covers the leftover cases, like
             an empty account inside the tutorial. */}
-        {isEmpty && !ritualOn && (
+        {isEmpty && (
           <View style={styles.emptyHint} pointerEvents="box-none">
             <AsciiLoader idle size={100} color="rgba(240,232,214,0.57)" />
             <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[3], color: 'rgba(240,232,214,0.53)' }}>
@@ -4922,6 +5039,7 @@ export default function MapScreen() {
                         onClose={closeCapture}
                         onPaste={() => void pasteFromClipboard()}
                         c={c}
+                        guided={guidedCapture}
                         onQuickSave={quickSave}
                         busy={busy}
                         clipboardHasUrl={clipboardHasUrl}

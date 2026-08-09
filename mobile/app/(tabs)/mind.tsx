@@ -249,7 +249,10 @@ export default function MindScreen() {
               Your mind is quiet for now
             </Text>
             <Text variant="monoSmall" style={styles.stateBody}>
-              This page reads your map for patterns. Save two or three related things on the atlas and the first ones surface here on their own: threads you're chasing, ideas in tension, topics converging.
+              Mind finds patterns in what you save.
+            </Text>
+            <Text variant="monoSmall" style={[styles.stateBody, { marginTop: Spacing[2] }]}>
+              Save 2–3 related things and the first ones appear.
             </Text>
             <Pressable
               onPress={() => router.push('/(tabs)' as never)}

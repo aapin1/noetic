@@ -8,6 +8,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { api } from '@/lib/api';
 import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
+import { useDisclosure } from '@/contexts/DisclosureContext';
+import { GUIDE_SIGNAL_FLAGS } from '@/lib/guide';
 import { Text } from '@/components/ui/Text';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
@@ -25,6 +27,12 @@ const POLL_MS = 2500;
 export default function ImportScreen() {
   const c = useThemeColors();
   const router = useRouter();
+  const { markSeen } = useDisclosure();
+
+  // Seeing this screen completes the onboarding guide's import lesson.
+  useEffect(() => {
+    markSeen(GUIDE_SIGNAL_FLAGS.visitedImport);
+  }, [markSeen]);
 
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);

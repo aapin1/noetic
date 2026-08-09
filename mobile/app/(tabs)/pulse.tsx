@@ -423,7 +423,7 @@ export default function PulseScreen() {
               {isEmpty && (
                 <ScreenIntro
                   title="Minds you know"
-                  body="Follow someone and a small living version of their atlas appears here, with what they've been saving. Search a handle above to find them — or send yours out first."
+                  body="Follow someone — their map and latest saves appear here. Find them by handle above."
                   actions={[
                     { label: 'share your atlas →', onPress: () => router.push('/share-atlas' as never) },
                   ]}

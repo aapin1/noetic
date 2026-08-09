@@ -6,7 +6,7 @@ import { Text } from '@/components/ui/Text';
 
 interface Props {
   visible: boolean;
-  /** How many fragments the ritual landed — the promise names them. */
+  /** How many captures exist — the promise speaks about them. */
   fragmentCount: number;
   /** Declined. We never show this again either way. */
   onDecline: () => void;
