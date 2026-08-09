@@ -79,6 +79,8 @@ import {
   GHOST_READ_MS,
 } from '@/constants/ghostMap';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
+import { FirstThoughtRitual } from '@/components/ritual/FirstThoughtRitual';
+import type { RitualEndReason } from '@/lib/firstSession';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { MapBackdrop } from '@/components/ui/MapBackdrop';
@@ -1069,7 +1071,7 @@ function Divider({ c }: { c: AppThemeColors }) {
 }
 
 function StepOne({
-  mode, setMode, payload, setPayload, imageUri, uploading, onPickImage, error, onNext, onClose, onPaste, c, firstCapture,
+  mode, setMode, payload, setPayload, imageUri, uploading, onPickImage, error, onNext, onClose, onPaste, c,
   onQuickSave, busy, clipboardHasUrl,
 }: {
   mode: CaptureMode; setMode: (m: CaptureMode) => void;
@@ -1077,7 +1079,6 @@ function StepOne({
   imageUri: string | null; uploading: boolean; onPickImage: (source: 'camera' | 'library') => void;
   error: string; onNext: () => boolean; onClose: () => void; onPaste: () => void;
   c: AppThemeColors;
-  firstCapture?: boolean;
   onQuickSave: () => void; busy: boolean; clipboardHasUrl: boolean;
 }) {
   const nextTarget = useTutorialTarget(TUTORIAL_TARGET.captureNext);
@@ -1088,12 +1089,10 @@ function StepOne({
   return (
     <View>
       <Text variant="serifLg" color="primary" style={sh.heading}>
-        {firstCapture ? 'Your first capture.' : 'What are you saving?'}
+        What are you saving?
       </Text>
       <Text variant="monoSmall" color="muted" style={sh.sub}>
-        {firstCapture
-          ? 'start with the last link that made you think — or any thought in your head.'
-          : 'A link, thought, or image.'}
+        A link, thought, or image.
       </Text>
       <Divider c={c} />
       <View style={sh.modeRow}>
@@ -3343,37 +3342,12 @@ export default function MapScreen() {
   }, [validatePayload, mode, payload, preflightIfNew]);
 
   const shareParams = useLocalSearchParams<{
-    selectIds?: string; firstCapture?: string;
+    selectIds?: string;
   }>();
-
-  // Fresh from onboarding (self-guided path): open the capture sheet
-  // immediately with a first-capture prompt, so the first thing a new user
-  // does is save something — not stare at an empty map.
-  const [firstCapturePrompt, setFirstCapturePrompt] = useState(false);
-  // Shown only on the self-guided path. Someone who took the walkthrough gets
-  // this explained in it; showing it to them too would be the same lesson twice.
-  const [captureIntroVisible, setCaptureIntroVisible] = useState(false);
-  useEffect(() => {
-    if (shareParams.firstCapture !== '1') return;
-    router.setParams({ firstCapture: '' });
-    setFirstCapturePrompt(true);
-    // A sentence about what "capture" means BEFORE the sheet, rather than an
-    // empty input on a blank map. Skipping the tutorial shouldn't mean being
-    // handed a text field with no idea what belongs in it.
-    setCaptureIntroVisible(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shareParams.firstCapture]);
-  // Clear the prompt only on a real open→close transition — on first mount
-  // this effect fires with the sheet still closed, and clearing there would
-  // race the effect above that just set the prompt.
-  const prevShowCaptureRef = useRef(false);
-  useEffect(() => {
-    if (prevShowCaptureRef.current && !showCapture) setFirstCapturePrompt(false);
-    prevShowCaptureRef.current = showCapture;
-  }, [showCapture]);
   // (Shares from the OS share sheet used to arrive here as route params; they
-  // now save directly on the shareintent screen, so only selectIds and
-  // firstCapture flow through params.)
+  // now save directly on the shareintent screen. The old firstCapture param
+  // died with the onboarding walkthrough offer — the first-session ritual
+  // replaced it.)
 
   // Arriving from Mind's "View in Atlas" — pre-select the thread's captures in
   // the multi-select (discover) tool and fly the camera to fit them.
@@ -4001,6 +3975,23 @@ export default function MapScreen() {
     return () => { clearTimeout(a); clearTimeout(b); clearTimeout(c); };
   }, [ghostCorpus, ghostFade, reduceMotion]);
 
+  // ── First-session ritual ───────────────────────────────────────
+  // Arms once, over the ghost map, for a user who has never captured and
+  // never met the ritual. Latched: landing a fragment flips the corpus to 1,
+  // which must not unmount the ritual mid-conversation.
+  const [ritualOn, setRitualOn] = useState(false);
+  useEffect(() => {
+    if (ritualOn) return;
+    if (ghostActive && disclosure.ready && !disclosure.hasSeen(EVENT_FLAGS.ritualDone)) {
+      setRitualOn(true);
+    }
+  }, [ghostActive, disclosure, ritualOn]);
+  const ritualFragmentsRef = useRef<string[]>([]);
+  const onRitualDone = useCallback((reason: RitualEndReason, fragmentIds: string[]) => {
+    ritualFragmentsRef.current = fragmentIds;
+    setRitualOn(false);
+  }, []);
+
   const ghostLayer = useMemo(() => {
     const dissolving = ghostFade < 1 && ghostFade > 0;
     if (!(ghostActive || dissolving) || ghostFade <= 0) return null;
@@ -4471,15 +4462,6 @@ export default function MapScreen() {
           } : undefined}
         />
 
-        {/* Dismissing it opens the capture sheet, so the explanation and the
-            thing it explains are one continuous motion. */}
-        <InfoModal
-          visible={captureIntroVisible}
-          onClose={() => { setCaptureIntroVisible(false); openCapture(); }}
-          title="capturing"
-          body="save anything that made you think — an article, a video, a screenshot, or a thought you haven't finished having. mneme reads the source itself, so you never have to summarize it. everything you save lands on this map, placed near the ideas it relates to."
-        />
-
         <InfoModal
           visible={unreadableInfoVisible}
           onClose={() => setUnreadableInfoVisible(false)}
@@ -4650,10 +4632,21 @@ export default function MapScreen() {
           </RNAnimated.View>
         )}
 
+        {/* The first-session ritual: thought-first capture over the ghost
+            map. It bypasses the capture sheet entirely — one soft prompt,
+            type or hold-to-speak, guilt-free skip at every beat. */}
+        {ritualOn && !showCapture && !drawerVisible && (
+          <FirstThoughtRitual
+            edges={graphData?.edges ?? []}
+            onCaptured={refetchMapData}
+            onDone={onRitualDone}
+          />
+        )}
+
         {/* Whispers live just above the tab bar: each one points at where to
             go next, and the bar is where that going happens. The disclosure
             context guarantees only one speaks at a time. */}
-        {!showCapture && !drawerVisible && (
+        {!ritualOn && !showCapture && !drawerVisible && (
           <View style={styles.whisperHost} pointerEvents="box-none">
             <Whisper
               id="mind-first-edge"
@@ -4689,7 +4682,7 @@ export default function MapScreen() {
         {/* Empty state. While the ghost constellation is on stage it IS the
             visual — the chrome drops its loader and keeps to the lower third
             so the two tell one story instead of competing for the centre. */}
-        {isEmpty && (
+        {isEmpty && !ritualOn && (
           <View
             style={[styles.emptyHint, ghostActive && styles.emptyHintLow]}
             pointerEvents="box-none"
@@ -4938,7 +4931,6 @@ export default function MapScreen() {
                         onClose={closeCapture}
                         onPaste={() => void pasteFromClipboard()}
                         c={c}
-                        firstCapture={firstCapturePrompt}
                         onQuickSave={quickSave}
                         busy={busy}
                         clipboardHasUrl={clipboardHasUrl}

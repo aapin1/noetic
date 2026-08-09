@@ -19,6 +19,8 @@ export const EVENT_FLAGS = {
   sharedAtlas: "event:shared-atlas",
   linkCaptured: "event:link-captured",
   voiceStyleChosen: "event:voice-style-chosen",
+  ritualDone: "event:ritual-done",
+  promiseMade: "event:promise-made",
 } as const;
 
 // Lower number = more important. Whispers about what the user is touching
