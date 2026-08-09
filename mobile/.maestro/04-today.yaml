@@ -1,6 +1,8 @@
-# The /today ritual against seeded history: the 30-day anniversary capture is
-# a deterministic pick, its CONTRADICTS edge a deterministic pair, and the
-# seeded 2-day streak renders the StreakMark — the real entry point.
+# The /today ritual against seeded history. The seeded position challenge is
+# the lead (the collision takeover); holding it in place clears it and the
+# fresh strong CONTRADICTS edge takes the slot, with the deterministic
+# 30-day anniversary pick and its edge pair rendering underneath. The seeded
+# 2-day streak renders the StreakMark — the real entry point.
 appId: app.mneme.mobile
 ---
 # Relaunch first: a previous flow (especially a failed one) can leave the app
@@ -48,20 +50,49 @@ appId: app.mneme.mobile
       - tapOn: ".*day streak.*"
 - runFlow:
     when:
-      notVisible: "resurfaced"
+      notVisible: "your position, challenged"
     commands:
       - openLink: "mneme://today"
 
+# The seeded unacknowledged challenge leads the surface.
 - extendedWaitUntil:
     visible:
-      text: "a month ago today, you saved this. does it still hold?"
+      text: "your position, challenged"
     timeout: 30000
+- assertVisible: ".*Every act should be examined.*"
+- assertVisible: "revise position →"
+- takeScreenshot: screenshots/04-today-challenge
+
+# Hold the position in place: the challenge clears, and the fresh strong
+# CONTRADICTS edge takes over the slot instead.
+- tapOn: "hold position"
+- extendedWaitUntil:
+    visible:
+      text: "two saves disagree"
+    timeout: 30000
+- takeScreenshot: screenshots/04-today-collision
+
+# The ritual still runs underneath the takeover.
+- scrollUntilVisible:
+    element:
+      text: "a month ago today, you saved this. does it still hold?"
+    direction: DOWN
 - assertVisible: "Memory Is Reconstructive"
-- assertVisible: "these two touch"
+- scrollUntilVisible:
+    element:
+      text: "these two touch"
+    direction: DOWN
 - assertVisible: "The Extended Mind"
-- assertVisible: ".*opening this counted.*"
+- scrollUntilVisible:
+    element:
+      text: ".*opening this counted.*"
+    direction: DOWN
 - takeScreenshot: screenshots/04-today
 
+- scrollUntilVisible:
+    element:
+      text: "open insight →"
+    direction: UP
 - tapOn: "open insight →"
 - extendedWaitUntil:
     visible:

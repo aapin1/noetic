@@ -100,6 +100,10 @@ export function TopicPickerModal({
               autoCorrect={false}
               maxLength={80}
               editable={!busy}
+              returnKeyType="done"
+              onSubmitEditing={() => {
+                if (newName.trim()) void apply({ topicName: newName });
+              }}
               accessibilityLabel="Name a new topic"
             />
             <Pressable

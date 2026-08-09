@@ -11,3 +11,4 @@ executionOrder:
     - 06-import
     - 07-move-topic
     - 08-export
+    - 09-terrain

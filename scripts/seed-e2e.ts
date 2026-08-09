@@ -102,6 +102,21 @@ const CAPTURES = [
     mapY: -0.1,
     daysAgo: 1,
   },
+  // Filler history to lift the account to 15 captures — the terrain "forming"
+  // floor — without disturbing the flows above: backdated 3+ days so the
+  // seeded 2-day streak stays 2 (the gap at day 2 ends it), clear of every
+  // anniversary window (30/60/90 ± 2), reusing existing topics so the topic
+  // picker gains no entries, and clustered far from the tap targets.
+  ...Array.from({ length: 8 }, (_, i) => ({
+    userTitle: `Field Note ${i + 1}`,
+    rawText: `Working note ${i + 1}: a short observation kept for the record.`,
+    keyIdea: `Observation ${i + 1}, kept for the record.`,
+    summary: `Field note ${i + 1}.`,
+    topic: i % 2 === 0 ? "philosophy" : "science",
+    mapX: 0.6 + (i % 4) * 0.09,
+    mapY: 0.55 + Math.floor(i / 4) * 0.14,
+    daysAgo: [3, 4, 5, 6, 8, 9, 11, 13][i],
+  })),
 ];
 
 function assertTestDatabase() {
@@ -124,6 +139,11 @@ async function main() {
     data: {
       email: E2E_USER.email,
       name: E2E_USER.displayName,
+      // PLUS so no ad slots render: the AdMob test-ad validator that ships in
+      // dev builds pops a bottom sheet over the app at unpredictable moments
+      // and swallows taps (its collapsed banner has no Dismiss to clear it).
+      // The flows assert Mneme's own UI, never the ads, so nothing is lost.
+      plan: "PLUS",
       passwordHash: await hash(E2E_USER.password, 12),
       profile: {
         create: {
@@ -189,6 +209,25 @@ async function main() {
       toItemId: itemIdsByTitle.get("Memory Is Reconstructive")!,
       type: "CONTRADICTS",
       weight: 0.82,
+    },
+  });
+
+  // A staked position with one unacknowledged challenge, so /today leads with
+  // the collision takeover and flow 04 can answer it (hold) end to end.
+  const philosophy = await prisma.topic.findUniqueOrThrow({ where: { slug: "philosophy" } });
+  await prisma.userPosition.create({
+    data: {
+      userId: user.id,
+      topicId: philosophy.id,
+      statement: "Every act should be examined; nothing left to autopilot.",
+      captureCountAtCreation: CAPTURES.length,
+      challenges: {
+        create: {
+          capturedItemId: itemIdsByTitle.get("Notes on Habit")!,
+          tension:
+            "Notes on Habit praises decisions made once and amortized — the opposite of examining every act.",
+        },
+      },
     },
   });
 
