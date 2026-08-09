@@ -55,7 +55,7 @@ import {
 } from '@/constants/mapPalette';
 import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
 import { useDisclosure } from '@/contexts/DisclosureContext';
-import { EVENT_FLAGS } from '@/lib/disclosure';
+import { ARCHIVE_REVEAL_COUNT, EVENT_FLAGS } from '@/lib/disclosure';
 import { Whisper } from '@/components/ui/Whisper';
 import { useSocratic } from '@/contexts/SocraticContext';
 import { Text } from '@/components/ui/Text';
@@ -4006,6 +4006,15 @@ export default function MapScreen() {
       setRitualOn(true);
     }
   }, [ghostActive, disclosure, ritualOn]);
+  // The clipboard door: while the map is still forming, notice a copied URL
+  // on each return to the screen. Checked (hasUrlAsync), never read — reading
+  // would raise the iOS paste banner for a link we might not use.
+  const [clipboardDoor, setClipboardDoor] = useState(false);
+  useFocusEffect(useCallback(() => {
+    if ((graphData?.totalCount ?? Number.MAX_SAFE_INTEGER) >= ARCHIVE_REVEAL_COUNT) return;
+    Clipboard.hasUrlAsync().then(setClipboardDoor).catch(() => {});
+  }, [graphData?.totalCount]));
+
   const onRitualDone = useCallback((reason: RitualEndReason, fragmentIds: string[]) => {
     setRitualOn(false);
     // The promise needs material: at least one fragment on the map, and an
@@ -4674,6 +4683,17 @@ export default function MapScreen() {
             context guarantees only one speaks at a time. */}
         {!ritualOn && !showCapture && !drawerVisible && (
           <View style={styles.whisperHost} pointerEvents="box-none">
+            {/* The clipboard door: never a beat, just noticing. Tapping opens
+                the composer with the copied link already in place. */}
+            <Whisper
+              id="clipboard-link"
+              when={clipboardDoor && (graphData?.totalCount ?? 0) < ARCHIVE_REVEAL_COUNT}
+              text="↳ you've got a link copied — put it on the map?"
+              onPress={() => {
+                openCapture();
+                void pasteFromClipboard();
+              }}
+            />
             <Whisper
               id="mind-first-edge"
               when={disclosure.glows.mind}
@@ -4728,7 +4748,7 @@ export default function MapScreen() {
               style={{ marginTop: Spacing[4] }}
             >
               <Text variant="monoSmall" style={{ color: 'rgba(240,232,214,0.53)', textAlign: 'center' }}>
-                {'or bring your bookmarks →'}
+                {'have years of saves? watch them become a map →'}
               </Text>
             </Pressable>
           </View>

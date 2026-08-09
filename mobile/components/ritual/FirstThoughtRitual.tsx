@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { api } from '@/lib/api';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { GLASS_BG, GLASS_BORDER } from '@/constants/mapPalette';
@@ -54,6 +55,7 @@ interface Props {
  * never requested: people carry thoughts, not URLs.
  */
 export function FirstThoughtRitual({ edges, onCaptured, onDone }: Props) {
+  const router = useRouter();
   const { markSeen } = useDisclosure();
   const [state, dispatch] = useReducer(ritualReduce, undefined, ritualInitial);
   const [text, setText] = useState('');
@@ -200,6 +202,19 @@ export function FirstThoughtRitual({ edges, onCaptured, onDone }: Props) {
           </View>
         </View>
       </View>
+      {/* An optional door, never a beat: present under the ritual for anyone
+          arriving with years of saves, ignorable by everyone else. */}
+      <Pressable
+        onPress={() => router.push('/import' as never)}
+        hitSlop={8}
+        style={styles.importDoor}
+        accessibilityRole="button"
+        accessibilityLabel="Import your saves"
+      >
+        <Text variant="monoSmall" style={{ color: INK_FAINT }}>
+          have years of saves? watch them become a map →
+        </Text>
+      </Pressable>
     </KeyboardAvoidingView>
   );
 }
@@ -248,5 +263,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing[5],
+  },
+  importDoor: {
+    marginTop: Spacing[3],
+    paddingVertical: Spacing[1],
   },
 });
