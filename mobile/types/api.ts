@@ -213,9 +213,29 @@ export interface TodayConnection {
   weight: number;
 }
 
+/** An unacknowledged challenge to a staked position — today's lead when present. */
+export interface TodayChallenge {
+  challengeId: string;
+  topicId: string;
+  topicName: string;
+  statement: string;
+  tension: string;
+  capture: { id: string; title: string } | null;
+}
+
+/** A fresh, strong CONTRADICTS pair — two saves that disagree. */
+export interface TodayCollision {
+  itemA: { id: string; title: string };
+  itemB: { id: string; title: string };
+}
+
 /** GET /api/me/today — one resurfaced capture with a rule-based "why now",
- * or nulls when the account is too young to hand anything back. */
+ * or nulls when the account is too young to hand anything back. A pending
+ * position challenge (or, failing that, a strong fresh contradiction) takes
+ * over the top of the surface; at most one of the two is set. */
 export interface TodayResponse {
+  challenge: TodayChallenge | null;
+  collision: TodayCollision | null;
   capture: (CaptureSummary & { whyNow: string }) | null;
   connection: TodayConnection | null;
 }
@@ -324,9 +344,21 @@ export interface TerrainCount {
  * math over embeddings/topics/edges/positions/consumption) except `arc`, one
  * cached LLM line.
  */
+/** The early glimpse served while terrain is locked: only whole-corpus facts,
+ * with the unlock as a countable horizon. Era-based chapters are absent. */
+export interface TerrainForming {
+  target: number;
+  chartingSince: string | null;
+  fields: TerrainField[];
+  distinctTopics: number;
+  topSources: TerrainCount[];
+}
+
 export interface TerrainResponse {
   unlocked: boolean;
   captureCount: number;
+  /** Set only while locked with ≥15 captures; optional on older cached rows. */
+  forming?: TerrainForming | null;
   eraSize: number;
   earlyLabel: string;
   recentLabel: string;

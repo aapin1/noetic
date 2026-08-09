@@ -42,13 +42,21 @@ appId: app.mneme.mobile
     visible:
       text: ".*Dichotomy of Control.*"
     timeout: 30000
-- tapOn: ".*Dichotomy of Control.*"
-
-# The dev-build test-ad popover may cover the screen; dismiss it if present.
-- extendedWaitUntil:
-    visible:
-      text: "Dismiss|Move to another topic"
-    timeout: 30000
+# The test-ad validator can rise over the list as the inline ad loads and
+# swallow the row tap — dismiss it if present, tap, retry if it didn't land.
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when:
+            visible: "Dismiss"
+          commands:
+            - tapOn: "Dismiss"
+      - tapOn: ".*Dichotomy of Control.*"
+      - extendedWaitUntil:
+          visible:
+            text: "Dismiss|Move to another topic"
+          timeout: 15000
 - runFlow:
     when:
       visible: "Dismiss"
@@ -62,14 +70,19 @@ appId: app.mneme.mobile
 - tapOn: "Move to another topic"
 
 # The picker is an RN Modal — its window is invisible to Maestro's hierarchy
-# on iOS, so no text/label inside it can be asserted or tapped by name. The
-# seeded account (philosophy · science · general) makes the sheet layout
-# deterministic, so the science row is a fixed point on screen.
+# on iOS, so no text/label inside it can be asserted or tapped by name, and
+# the row list renders from a cached archive read that silently revalidates,
+# so row positions are not stable between runs. The one fixed element is the
+# "somewhere new…" input at the sheet's bottom (the sheet is bottom-anchored):
+# tap it, type the destination, and submit from the keyboard — moving by name
+# upserts, so "science" lands on the existing topic.
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: screenshots/07-move-picker
 - tapOn:
-    point: "50%,82%"
+    point: "40%,95%"
+- inputText: "science"
+- pressKey: Enter
 
 # The refetched capture wears its new filing: the philosophy badge is
 # replaced by science on the insight screen underneath.

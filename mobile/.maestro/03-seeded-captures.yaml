@@ -41,13 +41,42 @@ appId: app.mneme.mobile
     timeout: 30000
 - takeScreenshot: screenshots/03-archive-list
 
-- tapOn: ".*Dichotomy of Control.*"
-# In dev builds Google's test-ad validator popover can cover the key-idea
-# card — wait for either it or the card, dismiss it if present.
+# Search exercises the ranked listCaptures path end to end. The e2e backend
+# has no LLM keys, so this also proves the semantic layer degrades cleanly:
+# a text match must come back exactly as before.
+- tapOn: "Search your captures"
+- inputText: "bat"
 - extendedWaitUntil:
     visible:
-      text: "Dismiss|.*up to you.*"
-    timeout: 30000
+      text: ".*What Is It Like to Be a Bat.*"
+    timeout: 20000
+- assertNotVisible: ".*Dichotomy of Control.*"
+- takeScreenshot: screenshots/03-archive-search
+# Erase the query in place rather than tapping the clear button: the dev
+# client's floating gear hovers near it and can eat the tap (opening the
+# dev menu over the app — same trap as the Settings gear in 06).
+- eraseText: 3
+- extendedWaitUntil:
+    visible:
+      text: ".*Dichotomy of Control.*"
+    timeout: 20000
+
+# In dev builds Google's test-ad validator popover can rise over the list as
+# the inline ad loads and swallow the row tap — dismiss it if present, tap,
+# and retry the pair if the tap still didn't land.
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when:
+            visible: "Dismiss"
+          commands:
+            - tapOn: "Dismiss"
+      - tapOn: ".*Dichotomy of Control.*"
+      - extendedWaitUntil:
+          visible:
+            text: "Dismiss|.*up to you.*"
+          timeout: 15000
 - runFlow:
     when:
       visible: "Dismiss"

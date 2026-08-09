@@ -51,7 +51,22 @@ function ActionRow({ label, onPress }: { label: string; onPress: () => void }) {
 export default function TodayScreen() {
   const c = useThemeColors();
   const router = useRouter();
-  const { data, loading } = useApiQuery(() => api.today.get(), [], { cacheKey: 'today' });
+  const { data, loading, refetch } = useApiQuery(() => api.today.get(), [], { cacheKey: 'today' });
+
+  // "Hold" answers the challenge in place; the refetch clears the takeover.
+  const [holding, setHolding] = useState(false);
+  const holdPosition = async (challengeId: string) => {
+    if (holding) return;
+    setHolding(true);
+    try {
+      await api.positions.acknowledge(challengeId);
+      await refetch();
+    } catch {
+      // Leave the challenge standing — it is still true.
+    } finally {
+      setHolding(false);
+    }
+  };
 
   // Opening the screen is the activity — credit it once per mount, quietly.
   // The response carries the fresh summary so the footer can tell the truth.
@@ -70,6 +85,8 @@ export default function TodayScreen() {
       .catch(() => {});
   }, []);
 
+  const challenge = data?.challenge ?? null;
+  const collision = data?.collision ?? null;
   const capture = data?.capture ?? null;
   const connection = data?.connection ?? null;
 
@@ -101,7 +118,7 @@ export default function TodayScreen() {
 
       {loading && !data ? (
         <AsciiLoader fill size={72} message={['leafing back…', 'finding the thread…']} />
-      ) : !capture ? (
+      ) : !capture && !challenge && !collision ? (
         <View style={styles.empty}>
           <Text variant="serif" color="muted" style={styles.emptyTitle}>
             not yet
@@ -113,6 +130,56 @@ export default function TodayScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          {challenge ? (
+            <Section kicker="your position, challenged" accent={Accents.clay}>
+              <Text variant="monoSmall" color="faint" style={styles.whyNow}>
+                you staked this on {challenge.topicName.toLowerCase()}:
+              </Text>
+              <Text variant="h3" style={styles.title}>
+                “{challenge.statement}”
+              </Text>
+              {challenge.capture ? (
+                <Text variant="monoSmall" color="faint" style={styles.reaction}>
+                  now colliding with: {challenge.capture.title}
+                </Text>
+              ) : null}
+              <Text variant="body" color="muted" style={styles.idea}>
+                {challenge.tension}
+              </Text>
+              <View style={styles.actions}>
+                <ActionRow
+                  label="revise position →"
+                  onPress={() => router.push(`/position/${challenge.topicId}` as never)}
+                />
+                <ActionRow
+                  label={holding ? 'holding…' : 'hold position'}
+                  onPress={() => void holdPosition(challenge.challengeId)}
+                />
+              </View>
+            </Section>
+          ) : null}
+
+          {collision ? (
+            <Section kicker="two saves disagree" accent={Accents.clay}>
+              <Text variant="bodyMedium" numberOfLines={3}>
+                {collision.itemA.title}
+              </Text>
+              <Text variant="monoSmall" color="faint" style={styles.edgeType}>
+                — pulls against —
+              </Text>
+              <Text variant="bodyMedium" numberOfLines={3}>
+                {collision.itemB.title}
+              </Text>
+              <View style={styles.actions}>
+                <ActionRow
+                  label="see where they split →"
+                  onPress={() => router.push(`/insight/${collision.itemA.id}?from=today` as never)}
+                />
+              </View>
+            </Section>
+          ) : null}
+
+          {capture ? (
           <Section kicker="resurfaced" accent={Accents.amber}>
             <Text variant="monoSmall" color="faint" style={styles.whyNow}>
               {capture.whyNow}
@@ -144,8 +211,9 @@ export default function TodayScreen() {
               <ActionRow label="continue in companion →" onPress={openCompanion} />
             </View>
           </Section>
+          ) : null}
 
-          {connection ? (
+          {capture && connection ? (
             <Section kicker="these two touch" accent={Accents.moss}>
               <Text variant="bodyMedium" numberOfLines={3}>
                 {capture.title}

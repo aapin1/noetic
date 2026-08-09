@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { DbClient } from "@/server/db";
-import { getTerrain, TERRAIN_MIN_CAPTURES } from "@/server/services/terrain";
+import { getTerrain, TERRAIN_FORMING_MIN, TERRAIN_MIN_CAPTURES } from "@/server/services/terrain";
 
 // No OpenAI key in tests → the narrative degrades to null, no network is touched.
 beforeEach(() => {
@@ -91,6 +91,43 @@ describe("getTerrain", () => {
     const terrain = await getTerrain("u1", {}, db);
     expect(terrain.unlocked).toBe(false);
     expect(terrain.captureCount).toBe(TERRAIN_MIN_CAPTURES - 1);
+  });
+
+  it("offers no glimpse below the forming floor", async () => {
+    const db = fakeDb(buildCaptures().slice(0, TERRAIN_FORMING_MIN - 1));
+    const terrain = await getTerrain("u1", {}, db);
+    expect(terrain.unlocked).toBe(false);
+    expect(terrain.forming).toBeNull();
+  });
+
+  it("serves an honest forming glimpse between the floors", async () => {
+    // 23 captures: philosophy throughout, specifics stoicism/ethics/logic,
+    // every one from Aeon, first captured January 2026.
+    const db = fakeDb(buildCaptures().slice(0, 23));
+    const terrain = await getTerrain("u1", {}, db);
+
+    expect(terrain.unlocked).toBe(false);
+    expect(terrain.captureCount).toBe(23);
+    expect(terrain.forming).not.toBeNull();
+    const forming = terrain.forming!;
+    expect(forming.target).toBe(TERRAIN_MIN_CAPTURES);
+    expect(forming.chartingSince).toBe("Jan 2026");
+    expect(forming.fields[0]?.name).toBe("philosophy");
+    expect(forming.distinctTopics).toBe(3); // stoicism, ethics, logic
+    expect(forming.topSources[0]).toEqual({ name: "Aeon", count: 23 });
+    // Nothing era-based is smuggled in: the locked shell stays empty.
+    expect(terrain.driftDegrees).toBeNull();
+    expect(terrain.emerged).toEqual([]);
+  });
+
+  it("keeps the glimpse exactly at the forming floor and drops it at unlock", async () => {
+    const atFloor = await getTerrain("u1", {}, fakeDb(buildCaptures().slice(0, TERRAIN_FORMING_MIN)));
+    expect(atFloor.unlocked).toBe(false);
+    expect(atFloor.forming).not.toBeNull();
+
+    const unlocked = await getTerrain("u1", {}, fakeDb(buildCaptures().slice(0, TERRAIN_MIN_CAPTURES)));
+    expect(unlocked.unlocked).toBe(true);
+    expect(unlocked.forming ?? null).toBeNull();
   });
 
   it("splits history into equal outer-third eras", async () => {

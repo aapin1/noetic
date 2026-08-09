@@ -1,0 +1,78 @@
+# The terrain teaser: with the seeded 15 captures the account sits between
+# the forming floor (15) and the unlock (50), so the You stack must show the
+# forming card and /terrain the forming glimpse — the horizon as a number,
+# not an invisible wall. Counts can drift (06-import may add captures), so
+# assertions match "of 50" rather than an exact tally.
+appId: app.mneme.mobile
+---
+# Relaunch first: a previous flow (especially a failed one) can leave the app
+# on any screen, and the deep link alone would meet it there.
+- launchApp:
+    stopApp: true
+- retry:
+    maxRetries: 2
+    commands:
+      - openLink: "exp+mneme://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+      - extendedWaitUntil:
+          visible:
+            text: "Continue|Get started|atlas"
+          timeout: 45000
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+      - tapOn: "Close"
+- runFlow:
+    when:
+      visible: "Get started"
+    file: subflows/sign-in.yaml
+
+- extendedWaitUntil:
+    visible:
+      text: "atlas"
+    timeout: 45000
+# A cold relaunch can open the dev client's own menu over the app — close it
+# before touching anything (its sheet swallows every tap underneath).
+- runFlow:
+    when:
+      visible: "Fast refresh"
+    commands:
+      - tapOn: "Close"
+
+- tapOn: "you"
+- extendedWaitUntil:
+    visible:
+      text: "you"
+    timeout: 20000
+
+# The forming teaser card sits deep in the wrapped stack. Its Pressable
+# carries an accessibilityLabel, which groups the card into one element on
+# iOS — the inner "forming — 17 of 50" text is not individually matchable,
+# so the label is the selector. The stack's cards translate in as they
+# reveal, so the tap must wait for the animation to settle or it lands on a
+# stale frame (once straight onto the tab bar); the retry re-enters the tab
+# in case a stray tap navigated away.
+- retry:
+    maxRetries: 3
+    commands:
+      - tapOn: "you"
+      - scrollUntilVisible:
+          element:
+            text: "Open terrain — forming.*"
+          direction: DOWN
+          timeout: 40000
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - takeScreenshot: screenshots/09-terrain-teaser
+      - tapOn: "Open terrain — forming.*"
+      # The forming screen: lede, the countable horizon, and the honest naming
+      # of what the remaining captures buy. (Chapter kickers render uppercase
+      # via textTransform, so assertions anchor on body text instead.)
+      - extendedWaitUntil:
+          visible:
+            text: ".*the long view is forming.*"
+          timeout: 15000
+- assertVisible: "of 50"
+- assertVisible: ".*drift, eras and bridges.*"
+- takeScreenshot: screenshots/09-terrain-forming

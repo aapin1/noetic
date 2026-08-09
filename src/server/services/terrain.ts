@@ -6,6 +6,14 @@ import { generateTerrainNarrative } from "@/server/cognition/llm";
 
 /** Below this, "terrain" stays locked — the era split needs real history to mean anything. */
 export const TERRAIN_MIN_CAPTURES = 50;
+/**
+ * From here the locked response carries a "forming" glimpse: the signals that
+ * are already true of a young corpus (what fields, how many subjects, which
+ * sources, since when) with the full unlock shown as a countable horizon.
+ * Everything era-based — drift, spread, emerged/faded, bridges — needs a past
+ * to compare against and is deliberately absent rather than approximated.
+ */
+export const TERRAIN_FORMING_MIN = 15;
 /** At/above this the eras tighten to the outer quarters so the contrast sharpens. */
 const TERRAIN_TIGHTEN_AT = 100;
 /**
@@ -53,9 +61,26 @@ export interface TerrainCount {
   count: number;
 }
 
+/** The early glimpse served while terrain is still locked. Only claims that
+ * are true without an era split; the missing chapters are the point. */
+export interface TerrainForming {
+  /** The unlock threshold — the horizon is `captureCount` of `target`. */
+  target: number;
+  /** Month of the first capture, e.g. "May 2026". Null on an empty corpus. */
+  chartingSince: string | null;
+  /** General-field shares across everything so far. */
+  fields: TerrainField[];
+  /** Distinct specific topics touched so far. */
+  distinctTopics: number;
+  topSources: TerrainCount[];
+}
+
 export interface TerrainResponse {
   unlocked: boolean;
   captureCount: number;
+  /** Set only while locked with enough history for an honest glimpse.
+   * Optional because cached rows predate the field. */
+  forming?: TerrainForming | null;
   eraSize: number;
   earlyLabel: string;
   recentLabel: string;
@@ -100,6 +125,7 @@ export interface TerrainResponse {
 const LOCKED = (captureCount: number): TerrainResponse => ({
   unlocked: false,
   captureCount,
+  forming: null,
   eraSize: 0,
   earlyLabel: "",
   recentLabel: "",
@@ -348,7 +374,15 @@ export async function getTerrain(
   const tzShiftMs = (Number.isFinite(options.tzOffsetMinutes) ? (options.tzOffsetMinutes as number) : 0) * 60_000;
 
   const captureCount = await db.capturedItem.count({ where: { userId } });
-  if (captureCount < TERRAIN_MIN_CAPTURES) return LOCKED(captureCount);
+  if (captureCount < TERRAIN_MIN_CAPTURES) {
+    const locked = LOCKED(captureCount);
+    // The glimpse is computed per view, never cached: at most 49 light rows,
+    // no embeddings, no LLM — the cache stays a property of the full portrait.
+    if (captureCount >= TERRAIN_FORMING_MIN) {
+      locked.forming = await computeForming(userId, db);
+    }
+    return locked;
+  }
 
   // Fold the schema into the version so a shape change invalidates old caches.
   const cacheVersion = Math.floor(captureCount / CACHE_BUCKET) * 100 + TERRAIN_SCHEMA;
@@ -388,6 +422,41 @@ export async function getTerrain(
   }
 
   return refreshTerrain(userId, tzShiftMs, captureCount, cacheVersion, null, db);
+}
+
+/** The forming glimpse: whole-corpus facts that need no era split. */
+async function computeForming(userId: string, db: DbClient): Promise<TerrainForming> {
+  const rows = await db.capturedItem.findMany({
+    where: { userId },
+    orderBy: { capturedAt: "asc" },
+    select: {
+      capturedAt: true,
+      topics: { select: { topic: { select: { name: true } } } },
+      contentItem: { select: { siteName: true, source: { select: { name: true } } } },
+    },
+  });
+
+  const fieldMentions: string[] = [];
+  const specifics = new Set<string>();
+  for (const row of rows) {
+    for (const link of row.topics) {
+      const name = link.topic.name;
+      if (isGeneralTopic(name)) fieldMentions.push(name);
+      else specifics.add(name);
+    }
+  }
+
+  const first = rows[0] ? new Date(rows[0].capturedAt) : null;
+  return {
+    target: TERRAIN_MIN_CAPTURES,
+    chartingSince: first ? `${MONTHS_SHORT[first.getUTCMonth()]} ${first.getUTCFullYear()}` : null,
+    fields: topShares(fieldMentions, 4),
+    distinctTopics: specifics.size,
+    topSources: countN(
+      rows.map((row) => row.contentItem?.source?.name ?? row.contentItem?.siteName ?? null),
+      3,
+    ),
+  };
 }
 
 async function refreshTerrain(

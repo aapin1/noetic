@@ -69,6 +69,9 @@ const GATE_ARCHETYPE = 5;
 const GATE_TIMELINE = 7;
 /** The flagship "terrain" self-portrait needs real history behind it. */
 const GATE_TERRAIN = 50;
+/** From here a "forming" teaser shows instead — the unlock as a visible
+ * horizon rather than an invisible wall. Matches TERRAIN_FORMING_MIN. */
+const GATE_TERRAIN_FORMING = 15;
 /**
  * An in-stream ad above every Nth wrapped card (FREE only; never after the
  * last). The cadence is phased so the first ad lands above card 3 — most
@@ -1520,6 +1523,42 @@ function TerrainCardBody({ data, accent }: { data: TerrainResponse; accent: stri
   );
 }
 
+/** The pre-unlock teaser: the horizon as a number, not an invisible wall. */
+function TerrainFormingCardBody({ data, accent }: { data: TerrainResponse; accent: string }) {
+  const c = useThemeColors();
+  const router = useRouter();
+  const target = data.forming?.target ?? GATE_TERRAIN;
+  const pct = Math.max(0.04, Math.min(1, data.captureCount / target));
+
+  return (
+    <Pressable
+      onPress={() => {
+        void Haptics.selectionAsync();
+        router.push('/terrain' as never);
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={`Open terrain — forming, ${data.captureCount} of ${target} captures`}
+      style={({ pressed }) => (pressed ? { opacity: 0.75 } : undefined)}
+    >
+      <Text variant="serif" style={styles.cardTitle}>
+        Terrain
+      </Text>
+      <Text variant="serif" color="secondary" style={styles.terrainHook}>
+        forming — {data.captureCount} of {target}
+      </Text>
+      <View style={[styles.terrainFormingTrack, { backgroundColor: c.elevated }]}>
+        <View style={[styles.terrainFormingFill, { width: `${pct * 100}%`, backgroundColor: accent }]} />
+      </View>
+      <View style={styles.terrainOpen}>
+        <Text variant="monoSmall" style={{ color: accent }}>
+          an early sketch
+        </Text>
+        <ChevronRight size={13} color={accent} strokeWidth={2.5} />
+      </View>
+    </Pressable>
+  );
+}
+
 /* ----------------------------------------------------------------- shell --- */
 
 /**
@@ -1553,11 +1592,13 @@ export function WrappedSection({
   const [streakActive, setStreakActive] = useState(false);
   const [confettiKey, setConfettiKey] = useState(0);
 
-  // Only fetched once you're past the terrain gate, so the extra (embedding-
-  // heavy, server-cached) endpoint never runs for lighter users.
+  // Only fetched once you're past the forming gate, so the endpoint never
+  // runs for brand-new accounts. Below the full unlock the server answers
+  // from a light topic read (no embeddings, no cache) — the expensive
+  // whole-history compute still starts at GATE_TERRAIN.
   const { data: terrain, refetch: refetchTerrain } = useApiQuery(() => api.memory.terrain(), [], {
     cacheKey: 'memory.terrain',
-    skip: (stats?.totalCaptures ?? 0) < GATE_TERRAIN,
+    skip: (stats?.totalCaptures ?? 0) < GATE_TERRAIN_FORMING,
   });
 
   // This tab stays mounted, so without a focus re-read the terrain fetched
@@ -1565,7 +1606,7 @@ export function WrappedSection({
   // rebuilds behind the response, so re-reading on focus is what actually
   // brings the refreshed portrait down.
   const focused = useIsFocused();
-  const terrainGated = (stats?.totalCaptures ?? 0) < GATE_TERRAIN;
+  const terrainGated = (stats?.totalCaptures ?? 0) < GATE_TERRAIN_FORMING;
   useEffect(() => {
     if (focused && !terrainGated) void refetchTerrain();
   }, [focused, terrainGated, refetchTerrain]);
@@ -1785,6 +1826,15 @@ export function WrappedSection({
       node: (
         <RevealCard {...cardProps} accent={cardAccentAt(8)}>
           <TerrainCardBody data={terrain} accent={accent} />
+        </RevealCard>
+      ),
+    });
+  } else if (w.totalCaptures >= GATE_TERRAIN_FORMING && terrain?.forming) {
+    cards.push({
+      key: 'terrain',
+      node: (
+        <RevealCard {...cardProps} accent={cardAccentAt(8)}>
+          <TerrainFormingCardBody data={terrain} accent={accent} />
         </RevealCard>
       ),
     });
@@ -2068,4 +2118,11 @@ const styles = StyleSheet.create({
     gap: 4,
     marginTop: Spacing[3],
   },
+  terrainFormingTrack: {
+    height: 6,
+    borderRadius: Radius.full,
+    marginTop: Spacing[4],
+    overflow: 'hidden',
+  },
+  terrainFormingFill: { height: 6, borderRadius: Radius.full },
 });
