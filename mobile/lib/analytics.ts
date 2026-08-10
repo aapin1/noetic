@@ -67,7 +67,9 @@ export type { CaptureKind } from '@/types/api';
 /** Captures arrive from two places and the difference matters: the share
  *  extension is a different funnel with a different failure profile. */
 export type CaptureSource = 'composer' | 'share_extension';
-export type OnboardingStep = 'identity' | 'notifications' | 'walkthrough';
+/** identity/notifications/walkthrough are the retired 2026-07 flow — kept so
+ *  historical dashboards still parse. New accounts only emit `guide`. */
+export type OnboardingStep = 'identity' | 'notifications' | 'walkthrough' | 'guide' | 'welcome-offer';
 export type TabName = 'atlas' | 'mind' | 'archive' | 'pulse' | 'you';
 /**
  * Where an insight was opened from. `unknown` is reachable and intentional:

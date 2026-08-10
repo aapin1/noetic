@@ -14,8 +14,11 @@ import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
+import { useDisclosure } from '@/contexts/DisclosureContext';
+import { EVENT_FLAGS, isAnonymousHandle } from '@/lib/disclosure';
 import { Radius, Spacing } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
+import { Whisper } from '@/components/ui/Whisper';
 import { Button } from '@/components/ui/Button';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { AtlasShareCard } from '@/components/share/AtlasCard';
@@ -56,10 +59,13 @@ export default function ShareAtlasScreen() {
   );
 
   const [variant, setVariant] = useState<RecapTemplateId>('ink');
-  const [showLabels, setShowLabels] = useState(false);
+  // Field names default ON — they're what makes the chart legible to a
+  // stranger. The toggle stays for anyone who'd rather share just the shape.
+  const [showLabels, setShowLabels] = useState(true);
   const [busy, setBusy] = useState(false);
 
   const frameRef = useRef<View | null>(null);
+  const { markSeen } = useDisclosure();
 
   const nodes = graph?.nodes ?? [];
   const edges = graph?.edges ?? [];
@@ -83,13 +89,17 @@ export default function ShareAtlasScreen() {
     setBusy(true);
     try {
       const view = frameRef.current;
-      if (view) await shareImage(await captureFrame(view));
+      if (view) {
+        await shareImage(await captureFrame(view));
+        // Sharing the atlas is the moment of strength Pulse reveals from.
+        markSeen(EVENT_FLAGS.sharedAtlas);
+      }
     } catch (e) {
       Alert.alert('Couldn’t make your image', e instanceof Error ? e.message : 'Something went wrong. Try again.');
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [markSeen]);
 
   const handleSave = useCallback(async () => {
     setBusy(true);
@@ -97,14 +107,17 @@ export default function ShareAtlasScreen() {
       const view = frameRef.current;
       if (view) {
         const saved = await saveFramesToPhotos([await captureFrame(view)]);
-        if (saved) Alert.alert('Saved to Photos', 'Your atlas is in your camera roll.');
+        if (saved) {
+          markSeen(EVENT_FLAGS.sharedAtlas);
+          Alert.alert('Saved to Photos', 'Your atlas is in your camera roll.');
+        }
       }
     } catch (e) {
       Alert.alert('Couldn’t save', e instanceof Error ? e.message : 'Something went wrong. Try again.');
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [markSeen]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
@@ -160,8 +173,8 @@ export default function ShareAtlasScreen() {
               ))}
             </View>
 
-            {/* Labels are opt-in: the shape of a mind is shareable by default,
-                what it's about is the owner's to reveal. */}
+            {/* Field names can be turned off for anyone who'd rather reveal
+                only the shape of their mind, not what it's about. */}
             <Pressable
               onPress={() => setShowLabels((v) => !v)}
               accessibilityRole="checkbox"
@@ -207,6 +220,16 @@ export default function ShareAtlasScreen() {
           </ScrollView>
 
           <View style={[styles.bar, { borderTopColor: c.border, backgroundColor: c.background }]}>
+            {/* First touch of sharing is the first time a generated handle is
+                about to be seen by someone else — the one moment identity
+                editing is worth a line. */}
+            <Whisper
+              id="identity-claim"
+              when={isAnonymousHandle(profile?.handle)}
+              text={`you're @${profile?.handle ?? ''} — make it yours?`}
+              onPress={() => router.push('/profile/edit' as never)}
+              style={{ alignSelf: 'center', marginBottom: Spacing[2] }}
+            />
             <Button label="Share image" fullWidth loading={busy} onPress={() => void handleShare()} />
             <Pressable onPress={() => void handleSave()} disabled={busy} style={styles.subAction}>
               <Text variant="monoSmall" color="muted">

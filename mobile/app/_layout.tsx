@@ -8,6 +8,7 @@ import { ShareIntentProvider } from 'expo-share-intent';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
+import { DisclosureProvider } from '@/contexts/DisclosureContext';
 import { TutorialProvider } from '@/contexts/TutorialContext';
 import { TutorialOverlay } from '@/components/ui/TutorialOverlay';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
@@ -67,6 +68,7 @@ function RootLayout() {
                 user and routes notification taps, so it needs to know both who
                 is signed in and whether anyone is. */}
             <NotificationProvider>
+            <DisclosureProvider>
             <TutorialProvider>
               <ThemedStatusBar />
               {/* gestureEnabled: false — navigation is fully button-driven
@@ -79,7 +81,6 @@ function RootLayout() {
               <Stack screenOptions={{ headerShown: false, animation: 'fade', gestureEnabled: false }}>
                 <Stack.Screen name="index" />
                 <Stack.Screen name="(auth)" />
-                <Stack.Screen name="(onboarding)" />
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="insight/[id]" options={{ presentation: 'card' }} />
                 <Stack.Screen name="archive/[topicId]" options={{ presentation: 'card' }} />
@@ -100,6 +101,7 @@ function RootLayout() {
               {/* After the overlay so it stays tappable mid-walkthrough. */}
               <KeyboardDismissButton />
             </TutorialProvider>
+            </DisclosureProvider>
             </NotificationProvider>
           </AuthProvider>
         </ThemeProvider>

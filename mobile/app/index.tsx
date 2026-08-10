@@ -172,12 +172,12 @@ export default function LandingScreen() {
     return () => entrance.stop();
   }, [contentIn, reduceMotion, enterBrain, enterCopy, enterCta]);
 
-  // `returning` gates both, so nobody is thrown into the app mid-sentence.
-  if (!returning && !isLoading && isAuthenticated && hasProfile) {
+  // `returning` gates this, so nobody is thrown into the app mid-sentence.
+  // Profile or not, an authenticated user belongs on the map: profiles are
+  // created with the account now, and legacy profile-less sessions self-heal
+  // in AuthContext.loadProfile.
+  if (!returning && !isLoading && isAuthenticated) {
     return <Redirect href="/(tabs)" />;
-  }
-  if (!returning && !isLoading && isAuthenticated && !hasProfile) {
-    return <Redirect href="/(onboarding)/identity" />;
   }
 
   const breathScale = breath.interpolate({ inputRange: [0, 1], outputRange: [0.985, 1.03] });

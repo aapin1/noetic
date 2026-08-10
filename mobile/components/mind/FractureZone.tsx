@@ -13,9 +13,10 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import type { ContradictionCard, IntelNode } from '@/types/api';
-import { DETAIL_PAGE_BOTTOM, DetailShell, stageInk } from './DetailShell';
+import { DETAIL_PAGE_BOTTOM, DetailShell, useStageInk } from './DetailShell';
 
 // ─────────────────────────────────────────────────────────────────────────
 // FractureZone — the Contradictions detail view. No connecting lines: two
@@ -89,6 +90,8 @@ export function FractureZone({
   onContinueCompanion,
   onViewAtlas,
 }: FractureZoneProps) {
+  const ink = useStageInk();
+  const c = useThemeColors();
   const masses = useMemo<{ a: Mass; b: Mass }>(
     () => ({
       a: {
@@ -159,12 +162,12 @@ export function FractureZone({
       >
         <Text
           variant="bodyMedium"
-          style={{ color: stageInk(0.85), textAlign: side === 'A' ? 'left' : 'right' }}
+          style={{ color: ink(0.85), textAlign: side === 'A' ? 'left' : 'right' }}
         >
           {mass.pole.label}
         </Text>
         {mass.satellites.length > 0 ? (
-          <Text variant="monoSmall" style={{ color: stageInk(0.38), marginTop: 2 }}>
+          <Text variant="monoSmall" style={{ color: ink(0.38), marginTop: 2 }}>
             +{mass.satellites.length} reinforcing
           </Text>
         ) : null}
@@ -233,34 +236,34 @@ export function FractureZone({
 
       {/* The crux sits at the base of the rift */}
       <View style={styles.below}>
-        <View style={[styles.crux, { borderColor: color }]}>
+        <View style={[styles.crux, { borderColor: color, backgroundColor: c.surface }]}>
           <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>THE CRUX</Text>
           <Text
             variant={data.crux ? 'h3' : 'body'}
-            style={{ color: stageInk(0.94), marginTop: Spacing[2] }}
+            style={{ color: ink(0.94), marginTop: Spacing[2] }}
           >
             {data.crux ?? data.tension}
           </Text>
         </View>
         {data.crux ? (
-          <Text variant="body" style={{ color: stageInk(0.75), marginTop: Spacing[4] }}>
+          <Text variant="body" style={{ color: ink(0.75), marginTop: Spacing[4] }}>
             {data.tension}
           </Text>
         ) : null}
         {data.test ? (
           <View style={[styles.testRow, { borderLeftColor: color }]}>
             <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>ONE WAY TO SETTLE IT</Text>
-            <Text variant="bodyMedium" style={{ color: stageInk(0.9), marginTop: 2 }}>
+            <Text variant="bodyMedium" style={{ color: ink(0.9), marginTop: 2 }}>
               {data.test}
             </Text>
           </View>
         ) : null}
-        <View style={styles.ctaRow}>
+        <View style={[styles.ctaRow, { borderTopColor: ink(0.18) }]}>
           <Pressable onPress={onContinueCompanion} hitSlop={8}>
-            <Text variant="monoSmall" style={{ color: stageInk(0.6) }}>Continue in companion →</Text>
+            <Text variant="monoSmall" style={{ color: ink(0.6) }}>Continue in companion →</Text>
           </Pressable>
           <Pressable onPress={onViewAtlas} hitSlop={8}>
-            <Text variant="monoSmall" style={{ color: stageInk(0.6) }}>View in Atlas →</Text>
+            <Text variant="monoSmall" style={{ color: ink(0.6) }}>View in Atlas →</Text>
           </Pressable>
         </View>
       </View>
@@ -328,7 +331,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: SW * 0.8,
     marginTop: -46,
-    backgroundColor: 'rgba(30,27,22,0.92)',
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 14,
     padding: Spacing[4],
@@ -345,6 +347,5 @@ const styles = StyleSheet.create({
     marginTop: Spacing[8],
     paddingTop: Spacing[4],
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(240,232,214,0.18)',
   },
 });

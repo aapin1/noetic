@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import Animated, {
   useAnimatedScrollHandler,
@@ -6,6 +6,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 import { SettingsIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
@@ -15,7 +16,7 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { EditableAvatar } from '@/components/profile/EditableAvatar';
-import { AsciiLoader } from '@/components/ui/AsciiLoader';
+import { ScreenIntro } from '@/components/ui/ScreenIntro';
 import { WrappedSection, wrappedAccent } from '@/components/wrapped/WrappedSection';
 import { ShareAtlasEntry, ShareRecapEntry } from '@/components/share/ShareRecapEntry';
 import type { OwnerProfile } from '@/types/api';
@@ -46,6 +47,18 @@ export default function YouScreen() {
   // Optimistic override so a freshly-changed avatar shows immediately.
   const [override, setOverride] = useState<OwnerProfile | null>(null);
   const p = override ?? profile ?? authProfile;
+
+  // Transient "copied" flash when the handle is tapped.
+  const [handleCopied, setHandleCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (copiedTimer.current) clearTimeout(copiedTimer.current); }, []);
+  const copyHandle = useCallback(async () => {
+    if (!p?.handle) return;
+    await Clipboard.setStringAsync(`@${p.handle}`);
+    setHandleCopied(true);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setHandleCopied(false), 2000);
+  }, [p?.handle]);
 
   // Captures can be deleted from anywhere in the app, so the stats are only
   // trustworthy if they're re-read every time this tab comes back into view.
@@ -112,9 +125,18 @@ export default function YouScreen() {
           <Text variant="h3" style={{ marginTop: Spacing[4] }}>
             {p?.displayName ?? '—'}
           </Text>
-          <Text variant="mono" color="muted">
-            @{p?.handle ?? '—'}
-          </Text>
+          {/* Tap-to-copy: the handle is the thing you hand a friend so they
+              can find you on pulse. */}
+          <Pressable
+            onPress={() => void copyHandle()}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Copy your handle"
+          >
+            <Text variant="mono" color="muted">
+              {handleCopied ? 'copied ✓' : `@${p?.handle ?? '—'}`}
+            </Text>
+          </Pressable>
           {p?.bio ? (
             <Text variant="serif" color="secondary" style={styles.bio}>
               {p.bio}
@@ -122,11 +144,18 @@ export default function YouScreen() {
           ) : null}
         </View>
 
-        {!wrapped && wrappedLoading ? (
-          <AsciiLoader
-            variant="cat"
-            size={72}
-            message={['counting your captures…', 'dusting the shelves…', 'adding it all up…']}
+        {/* No loader while the first read is in flight — the stats simply
+            arrive. */}
+        {!wrapped && wrappedLoading ? null : wrapped && wrapped.totalCaptures === 0 ? (
+          /* Before the first capture, the stats stack would be a page about
+             nobody — the standard empty box explains the screen instead. */
+          <ScreenIntro
+            art="chart"
+            title="Your numbers, once there are some"
+            body="You tracks what you save: totals, your daily streak, top topics, and a recap you can share. It starts counting from your first capture on the atlas."
+            actions={[
+              { label: 'save your first thing →', onPress: () => router.push('/(tabs)' as never) },
+            ]}
           />
         ) : (
           <WrappedSection scrollY={scrollY} stats={wrapped} settled={!wrappedLoading} />
@@ -134,10 +163,9 @@ export default function YouScreen() {
 
         {/* Ads are interleaved between the wrapped cards inside WrappedSection now,
             rather than a single card stranded at the bottom of the page. */}
-        {/* Same accent the wrapped kicker is wearing, so the two shelves on
-            this page read as one run rather than as two unrelated colours. */}
-        <ShareRecapEntry accent={wrappedAccent(wrapped)} />
-        {/* Hidden on an empty map — an atlas with no points has nothing to share. */}
+        {/* Both share shelves hide on an empty map — a recap of nothing and an
+            atlas with no points have nothing to share. */}
+        {(wrapped?.totalCaptures ?? 0) > 0 && <ShareRecapEntry accent={wrappedAccent(wrapped)} />}
         {(wrapped?.totalCaptures ?? 0) > 0 && <ShareAtlasEntry accent={wrappedAccent(wrapped)} />}
 
         <View style={styles.editButtonWrap}>

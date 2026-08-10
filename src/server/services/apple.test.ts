@@ -1,5 +1,5 @@
 import { SignJWT, generateKeyPair, type JWTVerifyGetKey } from "jose";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/lib/api";
 import type { RootDbClient } from "@/server/db";
 
@@ -7,6 +7,15 @@ vi.mock("@/lib/auth", () => ({
   createApiToken: vi.fn(async (userId: string) => `api-token-for-${userId}`),
 }));
 
+// Profile creation is accounts.ts's unit; here it only matters that new Apple
+// accounts get one and returning accounts don't.
+vi.mock("@/server/services/accounts", () => ({
+  createOnboardingProfile: vi.fn(async ({ userId }: { userId: string }) => ({
+    handle: `n_for_${userId}`,
+  })),
+}));
+
+import { createOnboardingProfile } from "@/server/services/accounts";
 import {
   APPLE_AUDIENCE,
   signInWithApple,
@@ -164,6 +173,10 @@ function fakeDb(seed: Partial<UserRow>[] = []) {
 }
 
 describe("signInWithApple", () => {
+  beforeEach(() => {
+    vi.mocked(createOnboardingProfile).mockClear();
+  });
+
   it("signs a returning Apple user straight in", async () => {
     const { db, users } = fakeDb([
       { id: "u1", email: "a@b.c", appleUserId: "apple-sub-1", profile: { handle: "handle_a" } },
@@ -179,6 +192,7 @@ describe("signInWithApple", () => {
     expect(result.token).toBe("api-token-for-u1");
     expect(result.user.handle).toBe("handle_a");
     expect(users).toHaveLength(1);
+    expect(createOnboardingProfile).not.toHaveBeenCalled();
   });
 
   it("links to an existing email/password account instead of duplicating it", async () => {
@@ -214,7 +228,11 @@ describe("signInWithApple", () => {
     expect(users[0]!.email).toBe("new@privaterelay.appleid.com");
     expect(users[0]!.name).toBe("Ada Lovelace");
     expect(users[0]!.passwordHash).toBeNull();
-    expect(result.user.handle).toBeNull();
+    // A new account walks away with a standing profile — no onboarding step.
+    expect(createOnboardingProfile).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: users[0]!.id, topics: [] }),
+    );
+    expect(result.user.handle).toBe(`n_for_${users[0]!.id}`);
   });
 
   it("creates without a name when Apple did not send one (non-first authorization)", async () => {

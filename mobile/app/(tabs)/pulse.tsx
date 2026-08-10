@@ -10,16 +10,19 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 import { MoreHorizontalIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { promptModerationActions } from '@/lib/moderation';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { FontFamily, FontSize, Radius, Spacing, accentForKey } from '@/constants/theme';
+import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
+import { isAnonymousHandle } from '@/lib/disclosure';
 import { Text } from '@/components/ui/Text';
+import { Whisper } from '@/components/ui/Whisper';
 import { Avatar } from '@/components/ui/Avatar';
-import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { ScreenIntro } from '@/components/ui/ScreenIntro';
 import { SponsoredCard } from '@/components/ui/SponsoredCard';
@@ -216,6 +219,8 @@ function UserResult({
 
 export default function PulseScreen() {
   const c = useThemeColors();
+  const router = useRouter();
+  const { profile } = useAuth();
   const [infoVisible, setInfoVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
@@ -225,6 +230,17 @@ export default function PulseScreen() {
   const [searching, setSearching] = useState(false);
   const [friends, setFriends] = useState<PulseFriend[]>([]);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Transient "copied" flash on the empty state's handle action.
+  const [handleCopied, setHandleCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (copiedTimer.current) clearTimeout(copiedTimer.current); }, []);
+  const copyHandle = useCallback(async () => {
+    if (!profile?.handle) return;
+    await Clipboard.setStringAsync(`@${profile.handle}`);
+    setHandleCopied(true);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setHandleCopied(false), 2000);
+  }, [profile?.handle]);
   const searchInputRef = useRef<TextInput>(null);
   // Monotonic counter: only the newest request may write to state, so a slow
   // reply for "a" can't land on top of the results for "aaron".
@@ -342,6 +358,15 @@ export default function PulseScreen() {
           reads as part of the header rather than as a pale sliver over it. */}
       <View style={[styles.header, { borderBottomColor: c.deepBorder, backgroundColor: c.deep }]}>
         <Text variant="wordmark" style={{ color: c.deepInk }}>pulse</Text>
+        {/* First touch of the social surface: the one moment a generated
+            handle is worth a line, since here it's about to be seen. */}
+        <Whisper
+          id="identity-claim"
+          when={isAnonymousHandle(profile?.handle)}
+          text={`you're @${profile?.handle ?? ''} — make it yours?`}
+          onPress={() => router.push('/profile/edit' as never)}
+          style={{ flex: 1, alignItems: 'center' }}
+        />
         <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About pulse">
           <Text style={{ color: c.deepInkFaint, fontSize: 16 }}>ⓘ</Text>
         </Pressable>
@@ -356,13 +381,9 @@ export default function PulseScreen() {
       {/* The page proper. The safe-area container above is `deep` for the
           header band; this puts the paper back under the content. */}
       <View style={[styles.body, { backgroundColor: c.canvas }]}>
-      {loading && !data ? (
-        <AsciiLoader
-          fill
-          size={88}
-          message={['taking the pulse…', 'ringing your friends…', 'listening in…']}
-        />
-      ) : error && !data ? (
+      {/* No loader on an unpopulated page — while the first read is in
+          flight the page simply shows its (empty) layout. */}
+      {error && !data ? (
         <View style={styles.centered}>
           <Text variant="monoSmall" style={{ color: c.muted }}>pulse unavailable</Text>
           <Pressable onPress={() => void refetch()} style={{ marginTop: Spacing[4] }}>
@@ -408,8 +429,15 @@ export default function PulseScreen() {
             <>
               {isEmpty && (
                 <ScreenIntro
-                  title="The pulse is quiet"
-                  body="Follow a few people and their maps and latest logs will show up here. Use the search above to find them by handle."
+                  art="person"
+                  title="Maps from people you know"
+                  body="Pulse shows the maps and latest saves of people you follow. Search a handle above to find someone, or send a friend your handle so they can find you."
+                  actions={[
+                    {
+                      label: handleCopied ? 'copied — send it to someone' : `copy your handle @${profile?.handle ?? ''} →`,
+                      onPress: () => void copyHandle(),
+                    },
+                  ]}
                 />
               )}
               {friends.map((friend, i) => (

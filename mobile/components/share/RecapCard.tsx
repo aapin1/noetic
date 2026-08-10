@@ -124,8 +124,10 @@ export function RecapNodeCard({
         ) : null}
 
         {/* Flex middle that clips its own overflow, so a long title/idea can
-            never push the footer off the fixed-height card (the cut-off bug). */}
-        <View style={styles.nodeMiddle}>
+            never push the footer off the fixed-height card (the cut-off bug).
+            Without an image the text centres — top-anchored it strands a
+            third of the card as dead space above the footer. */}
+        <View style={[styles.nodeMiddle, !image && styles.nodeMiddleCentered]}>
           <Text style={[styles.nodeTitle, { color: p.text }]} numberOfLines={image ? 3 : 4}>
             {item.title}
           </Text>
@@ -305,6 +307,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginTop: Spacing[3],
   },
+  nodeMiddleCentered: { justifyContent: 'center' },
   nodeTitle: {
     fontFamily: FontFamily.serif,
     fontSize: 20,

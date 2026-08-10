@@ -15,12 +15,12 @@ import Animated, {
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Spacing } from '@/constants/theme';
-import { useThemeColors } from '@/contexts/ThemeContext';
+import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
+import { darkenHex } from '@/lib/atlasShare';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
-import { AsciiLoader } from '@/components/ui/AsciiLoader';
+import { ScreenIntro } from '@/components/ui/ScreenIntro';
 import { SponsoredCard } from '@/components/ui/SponsoredCard';
-import { MapBackdrop } from '@/components/ui/MapBackdrop';
 import { TemporalSpine } from '@/components/mind/TemporalSpine';
 import { FractureZone } from '@/components/mind/FractureZone';
 import { KeystoneBridge } from '@/components/mind/KeystoneBridge';
@@ -32,7 +32,7 @@ import {
   SectionHeader,
   ThreadStrand,
 } from '@/components/mind/overviewSections';
-import { stageInk } from '@/components/mind/DetailShell';
+import { useStageInk } from '@/components/mind/DetailShell';
 import type {
   ContradictionCard,
   ConvergenceSignal,
@@ -47,21 +47,36 @@ import type {
 // threshold — a slow-breathing mark and the list of instruments with
 // something to say. Choosing one opens THAT instrument alone on its own
 // screen (a proper ← returns); "see everything" browses the full dossier.
-// Every surface sits on the same map background as Atlas.
+// Every surface sits on the app theme background, like the list tabs — only
+// the Atlas keeps the always-dark map surface.
 // ─────────────────────────────────────────────────────────────────────────
 
-// One hue per instrument. These sit on the dark map surface, so they are cut
-// like the Atlas cluster palette rather than like the app's Accents: enough
-// chroma to name the instrument at a glance, held mid-luminance so none of them
-// glares against the near-black.
-const ACCENT = {
+// One hue per instrument, cut like the Atlas cluster palette: enough chroma to
+// name the instrument at a glance, held mid-luminance. That tuning is for a
+// dark ground — on paper the same hues wash out, so light mode pulls each one
+// toward ink (same move the share card makes for its field names).
+const ACCENT_BASE = {
   threads: '#6E9AD1',
   contradictions: '#C4877A',
   convergence: '#9885C9',
   dormant: '#8A8A93',
 } as const;
 
-type SectionKey = keyof typeof ACCENT;
+type SectionKey = keyof typeof ACCENT_BASE;
+
+function useMindAccents(): Record<SectionKey, string> {
+  const { scheme } = useTheme();
+  return React.useMemo(() => {
+    if (scheme === 'dark') return ACCENT_BASE;
+    return {
+      threads: darkenHex(ACCENT_BASE.threads, 0.32),
+      contradictions: darkenHex(ACCENT_BASE.contradictions, 0.32),
+      convergence: darkenHex(ACCENT_BASE.convergence, 0.32),
+      dormant: darkenHex(ACCENT_BASE.dormant, 0.32),
+    };
+  }, [scheme]);
+}
+
 type ViewState = 'threshold' | 'all' | SectionKey;
 
 const SECTION_META: { key: SectionKey; name: string; whisper: string }[] = [
@@ -83,22 +98,40 @@ const EMPTY_INTEL: PersonalIntelligenceResponse = {
 };
 
 /**
- * Mind's stage. Every state this screen can be in — loading, error, empty,
- * threshold, dossier — sits on the Atlas backdrop, dots and all: Mind reports
- * on the map, so it has to look like it belongs to the map. Routing all of them
- * through one wrapper is what keeps that true as states get added.
+ * Mind's stage, cut exactly like the other list tabs (archive/pulse/you): a
+ * dark chrome band wearing the wordmark, with the page on `canvas` below it.
+ * Every state — loading, error, empty, threshold, dossier — renders through
+ * this wrapper, which is what keeps the tab reading as a sibling of the other
+ * three as states get added. Overlays (detail views, sheets) mount above the
+ * whole stage, header included, exactly as they did before.
  */
-function MindStage({ children }: { children: React.ReactNode }) {
+function MindStage({
+  header,
+  overlay,
+  children,
+}: {
+  header: React.ReactNode;
+  overlay?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const c = useThemeColors();
   return (
-    <View style={styles.root}>
-      <MapBackdrop />
-      {children}
+    <View style={[styles.root, { backgroundColor: c.canvas }]}>
+      {/* The safe-area strip takes `deep` too, so the notch region reads as
+          part of the header rather than as a pale sliver over it. */}
+      <SafeAreaView edges={['top']} style={{ backgroundColor: c.deep }}>
+        <View style={[styles.headerRow, { borderBottomColor: c.deepBorder }]}>{header}</View>
+      </SafeAreaView>
+      <View style={styles.body}>{children}</View>
+      {overlay}
     </View>
   );
 }
 
 export default function MindScreen() {
   const c = useThemeColors();
+  const ink = useStageInk();
+  const ACCENT = useMindAccents();
   const router = useRouter();
   const [infoVisible, setInfoVisible] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
@@ -200,59 +233,37 @@ export default function MindScreen() {
     }
   };
 
-  // ── Loading / error / empty — all on the Atlas map background ───────────
+  const wordmark = <Text variant="wordmark" style={{ color: c.deepInk }}>mind</Text>;
+
+  // ── Loading / error / empty ──────────────────────────────────────────────
   if (loading && !data) {
-    return (
-      <MindStage>
-        <SafeAreaView edges={['top']} style={styles.safe}>
-          <View style={styles.headerRow}>
-            <Text variant="wordmark" style={{ color: stageInk(0.92) }}>mind</Text>
-          </View>
-          <AsciiLoader
-            fill
-            size={96}
-            color={stageInk(0.8)}
-            message={['sifting your mind…', 'weighing tensions…', 'connecting the dots…']}
-          />
-        </SafeAreaView>
-      </MindStage>
-    );
+    // No loader animation on an unpopulated screen — the page simply arrives.
+    return <MindStage header={wordmark}>{null}</MindStage>;
   }
   if (error && !data) {
     return (
-      <MindStage>
-        <SafeAreaView edges={['top']} style={styles.safe}>
-          <View style={styles.headerRow}>
-            <Text variant="wordmark" style={{ color: stageInk(0.92) }}>mind</Text>
-          </View>
-          <View style={styles.stateBlock}>
-            <Text variant="serif" style={{ color: stageInk(0.92), textAlign: 'center' }}>Mind unavailable</Text>
-            <Text variant="monoSmall" style={styles.stateBody}>{error}</Text>
-            <Pressable onPress={() => void refetch()} style={{ marginTop: Spacing[5], alignSelf: 'center' }}>
-              <Text variant="monoSmall" style={{ color: stageInk(0.85) }}>retry</Text>
-            </Pressable>
-          </View>
-        </SafeAreaView>
+      <MindStage header={wordmark}>
+        <View style={styles.stateBlock}>
+          <Text variant="serif" style={{ color: ink(0.92), textAlign: 'center' }}>Mind unavailable</Text>
+          <Text variant="monoSmall" style={[styles.stateBody, { color: ink(0.57) }]}>{error}</Text>
+          <Pressable onPress={() => void refetch()} style={{ marginTop: Spacing[5], alignSelf: 'center' }}>
+            <Text variant="monoSmall" style={{ color: ink(0.85) }}>retry</Text>
+          </Pressable>
+        </View>
       </MindStage>
     );
   }
   if (!hasContent) {
     return (
-      <MindStage>
-        <SafeAreaView edges={['top']} style={styles.safe}>
-          <View style={styles.headerRow}>
-            <Text variant="wordmark" style={{ color: stageInk(0.92) }}>mind</Text>
-          </View>
-          <View style={styles.stateBlock}>
-            <BreathingMark color={stageInk(0.5)} />
-            <Text variant="serif" style={{ color: stageInk(0.92), textAlign: 'center', marginTop: Spacing[5] }}>
-              Your mind is quiet for now
-            </Text>
-            <Text variant="monoSmall" style={styles.stateBody}>
-              Save a few more things and instruments surface here on their own: threads you're chasing, ideas in tension, topics converging or going dormant.
-            </Text>
-          </View>
-        </SafeAreaView>
+      <MindStage header={wordmark}>
+        <ScreenIntro
+          art="brain"
+          title="Patterns from your saves"
+          body="Mind reads everything you save and reports what it finds: threads you keep pulling, ideas that clash, topics going quiet. Save 2 or 3 related things and the first patterns appear here."
+          actions={[
+            { label: 'start on atlas →', onPress: () => router.push('/(tabs)' as never) },
+          ]}
+        />
       </MindStage>
     );
   }
@@ -261,204 +272,209 @@ export default function MindScreen() {
     ? SECTION_META.find((s) => s.key === view)
     : null;
 
+  const infoButton = (
+    <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About mind">
+      <Text style={{ color: c.deepInkFaint, fontSize: 16 }}>ⓘ</Text>
+    </Pressable>
+  );
+  const header = view === 'threshold' ? (
+    <>
+      {wordmark}
+      {infoButton}
+    </>
+  ) : (
+    <>
+      <Pressable
+        onPress={() => setView('threshold')}
+        hitSlop={12}
+        style={styles.backBtn}
+        accessibilityLabel="Back to Mind overview"
+      >
+        <ChevronLeftIcon size={22} color={c.deepInk} />
+      </Pressable>
+      <Text variant="monoSmall" style={{ color: c.deepInkMuted, letterSpacing: 2 }}>
+        {view === 'all' ? 'everything' : currentMeta?.name}
+      </Text>
+      {infoButton}
+    </>
+  );
+
   return (
-    <MindStage>
-      <SafeAreaView edges={['top']} style={styles.safe}>
-        {view === 'threshold' ? (
-          <>
-            <View style={styles.headerRow}>
-              <Text variant="wordmark" style={{ color: stageInk(0.92) }}>mind</Text>
-              <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About mind">
-                <Text style={{ color: stageInk(0.5), fontSize: 16 }}>ⓘ</Text>
-              </Pressable>
-            </View>
-            <Animated.View
-              key="threshold"
-              entering={FadeIn.duration(300)}
-              exiting={FadeOut.duration(200)}
-              style={styles.threshold}
-            >
-              <BreathingMark color={stageInk(0.55)} />
-              <Text variant="serif" style={styles.thresholdTitle}>
-                A read of what your mind has been up to
-              </Text>
-              {/* No summary line here. It restated "3 threads · 2 dormant"
-                  immediately above a list that names each instrument and prints
-                  its own count on the right — the same numbers twice. */}
-              <View style={styles.thresholdList}>
-                {activeSections.map((s) => (
-                  <Pressable
-                    key={s.key}
-                    onPress={() => setView(s.key)}
-                    style={styles.thresholdRow}
-                    accessibilityLabel={`Open ${s.name}`}
-                  >
-                    <View style={[styles.thresholdTick, { backgroundColor: ACCENT[s.key] }]} />
-                    <View style={{ flex: 1 }}>
-                      <Text variant="bodyMedium" style={{ color: stageInk(0.9) }}>{s.name}</Text>
-                      <Text variant="monoSmall" style={{ color: stageInk(0.4), marginTop: 1 }}>{s.whisper}</Text>
-                    </View>
-                    <Text variant="monoSmall" style={{ color: ACCENT[s.key] }}>{counts[s.key]}</Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <Pressable onPress={() => setView('all')} style={styles.seeAll} accessibilityLabel="See everything">
-                <Text variant="monoSmall" style={{ color: stageInk(0.5), letterSpacing: 1 }}>see everything ↓</Text>
-              </Pressable>
-            </Animated.View>
-          </>
-        ) : (
-          <Animated.View key={view} entering={FadeIn.duration(280)} style={styles.safe}>
-            <View style={styles.headerRow}>
-              <Pressable
-                onPress={() => setView('threshold')}
-                hitSlop={12}
-                style={styles.backBtn}
-                accessibilityLabel="Back to Mind overview"
-              >
-                <ChevronLeftIcon size={22} color={stageInk(0.9)} />
-              </Pressable>
-              <Text variant="monoSmall" style={{ color: stageInk(0.55), letterSpacing: 2 }}>
-                {view === 'all' ? 'everything' : currentMeta?.name}
-              </Text>
-              <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About mind">
-                <Text style={{ color: stageInk(0.5), fontSize: 16 }}>ⓘ</Text>
-              </Pressable>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-              {view === 'all' ? (
-                activeSections.map((s) => (
-                  <View key={s.key}>
-                    <SectionHeader title={s.name.toUpperCase()} whisper={s.whisper} color={ACCENT[s.key]} />
-                    {renderSection(s.key)}
-                  </View>
-                ))
-              ) : (
-                <>
-                  {view === 'dormant' ? (
-                    <Text variant="monoSmall" style={styles.sectionWhisper}>
-                      {currentMeta?.whisper}
-                    </Text>
-                  ) : null}
-                  {renderSection(view)}
-                </>
+    <MindStage
+      header={header}
+      overlay={
+        <>
+          {/* ── Immersive detail views ──────────────────────────────────── */}
+          {selection?.type === 'thread' && (selection.d.timeline?.length ?? 0) >= 2 && (
+            <TemporalSpine
+              data={selection.d}
+              color={ACCENT.threads}
+              background={c.canvas}
+              onClose={() => setSelection(null)}
+              onOpenItem={openItem}
+              onContinueCompanion={() => continueInCompanion(
+                selection.d.itemIds,
+                selection.d.topicName,
+                `Here's where I seem to have landed on ${selection.d.topicName}: "${selection.d.position}"\n\n` +
+                  `The open question: ${selection.d.openQuestion}\n\n` +
+                  `My take: `,
               )}
+              onViewAtlas={() => viewInAtlas(selection.d.itemIds)}
+            />
+          )}
+          {selection?.type === 'contradiction' && (
+            <FractureZone
+              data={selection.d}
+              color={ACCENT.contradictions}
+              background={c.canvas}
+              onClose={() => setSelection(null)}
+              onOpenItem={openItem}
+              onContinueCompanion={() => continueInCompanion(
+                contradictionItemIds(selection.d),
+                `${selection.d.labelA} vs ${selection.d.labelB}`,
+                `Here's a tension I've been sitting with: "${selection.d.labelA}" versus "${selection.d.labelB}".\n\n` +
+                  (selection.d.crux ? `The crux: ${selection.d.crux}\n\n` : '') +
+                  `My take: `,
+              )}
+              onViewAtlas={() => viewInAtlas(contradictionItemIds(selection.d))}
+            />
+          )}
+          {selection?.type === 'convergence' && (selection.d.clusters?.length ?? 0) >= 2 && (
+            <KeystoneBridge
+              data={selection.d}
+              color={ACCENT.convergence}
+              background={c.canvas}
+              onClose={() => setSelection(null)}
+              onOpenItem={openItem}
+              onContinueCompanion={() => continueInCompanion(
+                convergenceItemIds(selection.d),
+                selection.d.topicName,
+                `Here's where different sources seem to be converging on ${selection.d.topicName}` +
+                  (selection.d.arrival ? `: "${selection.d.arrival}"` : '') + `.\n\n` +
+                  `My take: `,
+              )}
+              onViewAtlas={() => viewInAtlas(convergenceItemIds(selection.d))}
+            />
+          )}
+          {selection?.type === 'dormant' && (
+            <BankedEmber
+              data={selection.d}
+              color={ACCENT.dormant}
+              background={c.canvas}
+              onClose={() => setSelection(null)}
+              onContinueCompanion={() => continueInCompanion(
+                [],
+                selection.d.topicName,
+                `I went deep on ${selection.d.topicName} once — ${selection.d.captureCount} captures — ` +
+                  `and then it went quiet for ${selection.d.daysSilent} days.\n\n` +
+                  `What did I leave unfinished there?`,
+              )}
+              onOpenFolder={() => router.push(`/archive/${selection.d.topicId}` as never)}
+            />
+          )}
 
-              {/* Past the end of the instrument, so it never sits between two
-                  readings. Dark tone: Mind's stage stays dark in both themes. */}
-              <SponsoredCard tone="dark" />
-            </ScrollView>
-          </Animated.View>
-        )}
-      </SafeAreaView>
+          {/* ── Small sheet (pre-visualization fallbacks) ───────────────── */}
+          {selection && !immersive && (
+            <Animated.View
+              entering={FadeIn.duration(200)}
+              style={[styles.sheet, { backgroundColor: c.surface, borderColor: c.border }]}
+            >
+              <View style={[styles.sheetHandle, { backgroundColor: c.border }]} />
+              <View style={styles.sheetHead}>
+                <View style={styles.sheetHeadLeft}>
+                  <View style={[styles.sheetDot, { backgroundColor: ACCENT[selection.type === 'convergence' ? 'convergence' : 'threads'] }]} />
+                  <Text variant="monoSmall" style={{ letterSpacing: 2 }} color="muted">
+                    {selection.type.toUpperCase()}
+                  </Text>
+                </View>
+                <Pressable onPress={() => setSelection(null)} hitSlop={12}>
+                  <Text variant="monoSmall" color="faint">close</Text>
+                </Pressable>
+              </View>
+              {selection.type === 'thread' ? (
+                <Text variant="body" numberOfLines={5} style={{ marginTop: Spacing[2] }}>
+                  {selection.d.position}
+                </Text>
+              ) : selection.type === 'convergence' ? (
+                <Text variant="body" numberOfLines={5} style={{ marginTop: Spacing[2] }}>
+                  {selection.d.signal}
+                </Text>
+              ) : null}
+            </Animated.View>
+          )}
 
-      {/* ── Immersive detail views ──────────────────────────────────────── */}
-      {selection?.type === 'thread' && (selection.d.timeline?.length ?? 0) >= 2 && (
-        <TemporalSpine
-          data={selection.d}
-          color={ACCENT.threads}
-          background={c.mapBackground}
-          onClose={() => setSelection(null)}
-          onOpenItem={openItem}
-          onContinueCompanion={() => continueInCompanion(
-            selection.d.itemIds,
-            selection.d.topicName,
-            `Here's where I seem to have landed on ${selection.d.topicName}: "${selection.d.position}"\n\n` +
-              `The open question: ${selection.d.openQuestion}\n\n` +
-              `My take: `,
-          )}
-          onViewAtlas={() => viewInAtlas(selection.d.itemIds)}
-        />
-      )}
-      {selection?.type === 'contradiction' && (
-        <FractureZone
-          data={selection.d}
-          color={ACCENT.contradictions}
-          background={c.mapBackground}
-          onClose={() => setSelection(null)}
-          onOpenItem={openItem}
-          onContinueCompanion={() => continueInCompanion(
-            contradictionItemIds(selection.d),
-            `${selection.d.labelA} vs ${selection.d.labelB}`,
-            `Here's a tension I've been sitting with: "${selection.d.labelA}" versus "${selection.d.labelB}".\n\n` +
-              (selection.d.crux ? `The crux: ${selection.d.crux}\n\n` : '') +
-              `My take: `,
-          )}
-          onViewAtlas={() => viewInAtlas(contradictionItemIds(selection.d))}
-        />
-      )}
-      {selection?.type === 'convergence' && (selection.d.clusters?.length ?? 0) >= 2 && (
-        <KeystoneBridge
-          data={selection.d}
-          color={ACCENT.convergence}
-          background={c.mapBackground}
-          onClose={() => setSelection(null)}
-          onOpenItem={openItem}
-          onContinueCompanion={() => continueInCompanion(
-            convergenceItemIds(selection.d),
-            selection.d.topicName,
-            `Here's where different sources seem to be converging on ${selection.d.topicName}` +
-              (selection.d.arrival ? `: "${selection.d.arrival}"` : '') + `.\n\n` +
-              `My take: `,
-          )}
-          onViewAtlas={() => viewInAtlas(convergenceItemIds(selection.d))}
-        />
-      )}
-      {selection?.type === 'dormant' && (
-        <BankedEmber
-          data={selection.d}
-          color={ACCENT.dormant}
-          background={c.mapBackground}
-          onClose={() => setSelection(null)}
-          onContinueCompanion={() => continueInCompanion(
-            [],
-            selection.d.topicName,
-            `I went deep on ${selection.d.topicName} once — ${selection.d.captureCount} captures — ` +
-              `and then it went quiet for ${selection.d.daysSilent} days.\n\n` +
-              `What did I leave unfinished there?`,
-          )}
-          onOpenFolder={() => router.push(`/archive/${selection.d.topicId}` as never)}
-        />
-      )}
-
-      {/* ── Small sheet (pre-visualization fallbacks) ───────────────────── */}
-      {selection && !immersive && (
+          <InfoModal
+            visible={infoVisible}
+            onClose={() => setInfoVisible(false)}
+            title="mind"
+            body="A report of the forces in your thinking, not a map. Strands show where threads are heading; the fault wall shows where your saved ideas collide; streams show different sources arriving at one idea; embers show what's gone quiet. Tap any instrument to go inside it."
+          />
+        </>
+      }
+    >
+      {view === 'threshold' ? (
         <Animated.View
-          entering={FadeIn.duration(200)}
-          style={[styles.sheet, { backgroundColor: c.background, borderColor: c.border }]}
+          key="threshold"
+          entering={FadeIn.duration(300)}
+          exiting={FadeOut.duration(200)}
+          style={styles.threshold}
         >
-          <View style={[styles.sheetHandle, { backgroundColor: c.border }]} />
-          <View style={styles.sheetHead}>
-            <View style={styles.sheetHeadLeft}>
-              <View style={[styles.sheetDot, { backgroundColor: ACCENT[selection.type === 'convergence' ? 'convergence' : 'threads'] }]} />
-              <Text variant="monoSmall" style={{ letterSpacing: 2 }} color="muted">
-                {selection.type.toUpperCase()}
-              </Text>
-            </View>
-            <Pressable onPress={() => setSelection(null)} hitSlop={12}>
-              <Text variant="monoSmall" color="faint">close</Text>
-            </Pressable>
+          <BreathingMark color={ink(0.55)} />
+          <Text variant="serif" style={[styles.thresholdTitle, { color: ink(0.94) }]}>
+            A read of what your mind has been up to
+          </Text>
+          {/* No summary line here. It restated "3 threads · 2 dormant"
+              immediately above a list that names each instrument and prints
+              its own count on the right — the same numbers twice. */}
+          <View style={styles.thresholdList}>
+            {activeSections.map((s) => (
+              <Pressable
+                key={s.key}
+                onPress={() => setView(s.key)}
+                style={styles.thresholdRow}
+                accessibilityLabel={`Open ${s.name}`}
+              >
+                <View style={[styles.thresholdTick, { backgroundColor: ACCENT[s.key] }]} />
+                <View style={{ flex: 1 }}>
+                  <Text variant="bodyMedium" style={{ color: ink(0.9) }}>{s.name}</Text>
+                  <Text variant="monoSmall" style={{ color: ink(0.4), marginTop: 1 }}>{s.whisper}</Text>
+                </View>
+                <Text variant="monoSmall" style={{ color: ACCENT[s.key] }}>{counts[s.key]}</Text>
+              </Pressable>
+            ))}
           </View>
-          {selection.type === 'thread' ? (
-            <Text variant="body" numberOfLines={5} style={{ marginTop: Spacing[2] }}>
-              {selection.d.position}
-            </Text>
-          ) : selection.type === 'convergence' ? (
-            <Text variant="body" numberOfLines={5} style={{ marginTop: Spacing[2] }}>
-              {selection.d.signal}
-            </Text>
-          ) : null}
+
+          <Pressable onPress={() => setView('all')} style={styles.seeAll} accessibilityLabel="See everything">
+            <Text variant="monoSmall" style={{ color: ink(0.5), letterSpacing: 1 }}>see everything ↓</Text>
+          </Pressable>
+        </Animated.View>
+      ) : (
+        <Animated.View key={view} entering={FadeIn.duration(280)} style={styles.safe}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+            {view === 'all' ? (
+              activeSections.map((s) => (
+                <View key={s.key}>
+                  <SectionHeader title={s.name.toUpperCase()} whisper={s.whisper} color={ACCENT[s.key]} />
+                  {renderSection(s.key)}
+                </View>
+              ))
+            ) : (
+              <>
+                {view === 'dormant' ? (
+                  <Text variant="monoSmall" style={[styles.sectionWhisper, { color: ink(0.53) }]}>
+                    {currentMeta?.whisper}
+                  </Text>
+                ) : null}
+                {renderSection(view)}
+              </>
+            )}
+
+            {/* Past the end of the instrument, so it never sits between two
+                readings. Auto tone: Mind's stage follows the app theme. */}
+            <SponsoredCard />
+          </ScrollView>
         </Animated.View>
       )}
-
-      <InfoModal
-        visible={infoVisible}
-        onClose={() => setInfoVisible(false)}
-        title="mind"
-        body="A report of the forces in your thinking, not a map. Strands show where threads are heading; the fault wall shows where your saved ideas collide; streams show different sources arriving at one idea; embers show what's gone quiet. Tap any instrument to go inside it."
-      />
     </MindStage>
   );
 }
@@ -497,22 +513,24 @@ const bm = StyleSheet.create({
 const styles = StyleSheet.create({
   root: { flex: 1 },
   safe: { flex: 1 },
+  // The chrome band, in step with archive/pulse/you.
   headerRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing[6], paddingTop: Spacing[1], paddingBottom: Spacing[1],
+    paddingHorizontal: Spacing[6], paddingVertical: Spacing[2],
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  body: { flex: 1 },
   backBtn: { padding: Spacing[1], marginLeft: -Spacing[2] },
 
   stateBlock: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing[8], paddingBottom: Spacing[16] },
   stateBody: {
-    color: 'rgba(240,232,214,0.57)',
     textAlign: 'center',
     marginTop: Spacing[3],
     lineHeight: 20,
   },
 
   threshold: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing[8], paddingBottom: Spacing[12] },
-  thresholdTitle: { color: 'rgba(240,232,214,0.94)', textAlign: 'center', marginTop: Spacing[5] },
+  thresholdTitle: { textAlign: 'center', marginTop: Spacing[5] },
   thresholdList: { marginTop: Spacing[10], gap: Spacing[2] },
   thresholdRow: {
     flexDirection: 'row',
@@ -524,7 +542,6 @@ const styles = StyleSheet.create({
   seeAll: { alignSelf: 'center', marginTop: Spacing[10], padding: Spacing[2] },
 
   sectionWhisper: {
-    color: 'rgba(240,232,214,0.53)',
     paddingHorizontal: Spacing[6],
     marginTop: Spacing[2],
     marginBottom: Spacing[5],

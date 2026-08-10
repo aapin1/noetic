@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { Platform, StyleSheet, View, type ColorValue } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, Easing, Platform, StyleSheet, View, type ColorValue } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Redirect } from 'expo-router';
 import {
@@ -10,9 +10,12 @@ import {
   ZapIcon,
 } from 'lucide-react-native';
 import { Radius } from '@/constants/theme';
+import { RECENT_NODE_COLOR } from '@/constants/mapPalette';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
+import { useDisclosure } from '@/contexts/DisclosureContext';
 import { SocraticProvider } from '@/contexts/SocraticContext';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { api } from '@/lib/api';
 import { prefetchQuery } from '@/hooks/useApiQuery';
 import { track, type TabName } from '@/lib/analytics';
@@ -44,23 +47,66 @@ const TAB_NAMES: Record<string, TabName> = {
  * positions in a set. The radius matches the app's `Radius.lg` cards.
  */
 function TabBarIcon({
-  color, icon: Icon, focused, activeBg,
+  color, icon: Icon, focused, activeBg, glow,
 }: {
   color: ColorValue;
   icon: React.ElementType;
   focused: boolean;
   activeBg: string;
+  glow?: boolean;
 }) {
   return (
     <View style={[styles.iconSlot, focused && { backgroundColor: activeBg }]}>
       <Icon size={21} color={color as string} strokeWidth={focused ? 1.9 : 1.4} />
+      {glow && !focused ? <TabPulse /> : null}
     </View>
   );
+}
+
+/**
+ * The quiet glow that tells a user a tab has real content for the first time.
+ * A small breathing dot in the slot's corner — absolutely positioned so it
+ * never shifts icon geometry (the tutorial spotlight locates tabs by index ×
+ * column width, and Maestro taps them by accessibility label; both must keep
+ * working). The map's "recent" amber, because it means the same thing there:
+ * something new is here.
+ */
+function TabPulse() {
+  const reduceMotion = useReduceMotion();
+  const opacity = useRef(new Animated.Value(0.9)).current;
+
+  useEffect(() => {
+    if (reduceMotion) {
+      opacity.setValue(0.9);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.35,
+          duration: 1600,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.9,
+          duration: 1600,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [reduceMotion, opacity]);
+
+  return <Animated.View pointerEvents="none" style={[styles.tabPulse, { opacity }]} />;
 }
 
 function TabsRoot() {
   const c = useThemeColors();
   const { isAuthenticated, isLoading } = useAuth();
+  const { glows, noteTabFocus } = useDisclosure();
 
   // Warm the caches of tabs the user hasn't visited yet, so first-visit
   // screens render instantly instead of flashing a loader. The Atlas tab
@@ -86,7 +132,11 @@ function TabsRoot() {
         screenListeners={({ route }) => ({
           focus: () => {
             const tab = TAB_NAMES[route.name];
-            if (tab) track('tab_view', { tab });
+            if (tab) {
+              track('tab_view', { tab });
+              // Visiting a glowing tab is the acknowledgement that retires it.
+              noteTabFocus(tab);
+            }
           },
         })}
         screenOptions={{
@@ -140,7 +190,7 @@ function TabsRoot() {
             title: 'mind',
             tabBarAccessibilityLabel: 'mind',
             tabBarIcon: ({ color, focused }) => (
-              <TabBarIcon color={color} icon={ZapIcon} focused={focused} activeBg={c.tabBarActive} />
+              <TabBarIcon color={color} icon={ZapIcon} focused={focused} activeBg={c.tabBarActive} glow={glows.mind} />
             ),
           }}
         />
@@ -150,7 +200,7 @@ function TabsRoot() {
             title: 'archive',
             tabBarAccessibilityLabel: 'archive',
             tabBarIcon: ({ color, focused }) => (
-              <TabBarIcon color={color} icon={ListIcon} focused={focused} activeBg={c.tabBarActive} />
+              <TabBarIcon color={color} icon={ListIcon} focused={focused} activeBg={c.tabBarActive} glow={glows.archive} />
             ),
           }}
         />
@@ -160,7 +210,7 @@ function TabsRoot() {
             title: 'pulse',
             tabBarAccessibilityLabel: 'pulse',
             tabBarIcon: ({ color, focused }) => (
-              <TabBarIcon color={color} icon={UsersIcon} focused={focused} activeBg={c.tabBarActive} />
+              <TabBarIcon color={color} icon={UsersIcon} focused={focused} activeBg={c.tabBarActive} glow={glows.pulse} />
             ),
           }}
         />
@@ -170,7 +220,7 @@ function TabsRoot() {
             title: 'you',
             tabBarAccessibilityLabel: 'you',
             tabBarIcon: ({ color, focused }) => (
-              <TabBarIcon color={color} icon={UserIcon} focused={focused} activeBg={c.tabBarActive} />
+              <TabBarIcon color={color} icon={UserIcon} focused={focused} activeBg={c.tabBarActive} glow={glows.you} />
             ),
           }}
         />
@@ -195,5 +245,14 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  tabPulse: {
+    position: 'absolute',
+    top: 3,
+    right: 7,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: RECENT_NODE_COLOR,
   },
 });

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Dimensions, Easing, Platform, Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Defs, Mask, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Spacing, Radius } from '@/constants/theme';
@@ -23,13 +23,14 @@ const TAB_ICON_H = 32;
 const HOLE_PAD = 8;
 const HOLE_RADIUS = 14;
 // One darkness level, used on every step (hole or card) so nothing flickers
-// between slides — only the focus point moves.
-const AMBIENT_DIM = 0.55;
-// How long a freshly-opened step sits dimmed, with no card, before it fades
+// between slides — only the focus point moves. Light enough that the screen
+// underneath stays readable; the spotlight ring does the pointing.
+const AMBIENT_DIM = 0.42;
+// How long a freshly-opened step sits dimmed, with no card, before it comes
 // in — gives the user a beat to look at the real screen first. Also hides the
 // card re-anchoring that happens when a target's rect is measured late.
-const CARD_REVEAL_DELAY = 800;
-const CARD_FADE_MS = 420;
+const CARD_REVEAL_DELAY = 350;
+const CARD_FADE_MS = 220;
 // Rough worst-case card height (visual step included), used only to decide
 // which side of the spotlight the card fits on — never to size the card.
 const CARD_EST_H = 250;
@@ -129,7 +130,12 @@ export function TutorialOverlay() {
     cardOpacity.setValue(0);
     const t = setTimeout(() => {
       setRevealedStepId(step.id);
-      Animated.timing(cardOpacity, { toValue: 1, duration: CARD_FADE_MS, useNativeDriver: true }).start();
+      Animated.timing(cardOpacity, {
+        toValue: 1,
+        duration: CARD_FADE_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
     }, CARD_REVEAL_DELAY);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -242,7 +248,19 @@ export function TutorialOverlay() {
       )}
 
       <View pointerEvents="box-none" style={[styles.cardWrap, cardAnchor]}>
-        <Animated.View style={{ opacity: cardOpacity, width: '100%', alignItems: 'flex-end' }}>
+        {/* Each card rises a few pixels and settles as it fades in — quick
+            enough to read as one motion, not a transition. */}
+        <Animated.View
+          style={{
+            opacity: cardOpacity,
+            width: '100%',
+            alignItems: 'flex-end',
+            transform: [
+              { translateY: cardOpacity.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) },
+              { scale: cardOpacity.interpolate({ inputRange: [0, 1], outputRange: [0.98, 1] }) },
+            ],
+          }}
+        >
           {revealedStepId !== step.id ? null : collapsed ? (
             <Pressable
               onPress={() => setCollapsed(false)}

@@ -50,6 +50,14 @@ export async function registerUser(args: {
     },
   });
 
+  // A standing identity from the first second: anonymous handle, display name
+  // from the signup name or email local-part. There is no required onboarding
+  // step between account creation and the map — identity editing surfaces
+  // later, in context. Failure here fails registration as a whole, which is
+  // correct: an account without a profile is the broken state the old
+  // multi-step flow kept producing when people abandoned it.
+  await createOnboardingProfile({ userId: user.id, topics: [], db });
+
   const token = await createApiToken(user.id);
 
   return {

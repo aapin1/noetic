@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Dimensions, Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import type {
   ContradictionCard,
@@ -9,7 +10,7 @@ import type {
   DormantThread,
   ThreadSynthesis,
 } from '@/types/api';
-import { stageInk } from './DetailShell';
+import { useStageInk } from './DetailShell';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Mind's overview instruments. Each section's geometry IS its meaning:
@@ -38,13 +39,14 @@ export function SectionHeader({
   whisper: string;
   color: string;
 }) {
+  const ink = useStageInk();
   return (
     <View style={styles.sectionHead}>
       <View style={styles.sectionTitleRow}>
         <View style={[styles.tick, { backgroundColor: color }]} />
         <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>{title}</Text>
       </View>
-      <Text variant="monoSmall" style={{ color: stageInk(0.4), marginTop: 2 }}>{whisper}</Text>
+      <Text variant="monoSmall" style={{ color: ink(0.4), marginTop: 2 }}>{whisper}</Text>
     </View>
   );
 }
@@ -75,6 +77,7 @@ export function ThreadStrand({
   color: string;
   onPress: () => void;
 }) {
+  const ink = useStageInk();
   const seed = hashId(data.topicId) % 7;
   const path = useMemo(() => strandPath(seed), [seed]);
 
@@ -101,10 +104,10 @@ export function ThreadStrand({
     <Pressable onPress={onPress} style={styles.strandRow} accessibilityLabel={`Open thread: ${data.topicName}`}>
       {/* Title first, larger, so each strand clearly belongs to its name */}
       <View style={styles.strandTitleRow}>
-        <Text variant="h3" numberOfLines={1} style={{ color: stageInk(0.92), flex: 1 }}>
+        <Text variant="h3" numberOfLines={1} style={{ color: ink(0.92), flex: 1 }}>
           {data.topicName}
         </Text>
-        <Text variant="monoSmall" style={{ color: stageInk(0.35) }}>{data.captureCount} captures</Text>
+        <Text variant="monoSmall" style={{ color: ink(0.35) }}>{data.captureCount} captures</Text>
       </View>
       <Svg width={INNER_W} height={STRAND_H}>
         <Path d={path} fill="none" stroke={color} strokeOpacity={0.45} strokeWidth={thickness} />
@@ -160,8 +163,10 @@ export function FaultWall({
   color: string;
   onOpen: (card: ContradictionCard) => void;
 }) {
+  const ink = useStageInk();
+  const c = useThemeColors();
   const height = cards.length * FAULT_ROW_H;
-  const seed = useMemo(() => hashId(cards.map((c) => c.itemAId).join('')), [cards]);
+  const seed = useMemo(() => hashId(cards.map((card) => card.itemAId).join('')), [cards]);
   const crack = useMemo(() => crackPath(height, seed), [height, seed]);
 
   return (
@@ -172,7 +177,7 @@ export function FaultWall({
           <React.Fragment key={c.itemAId + c.itemBId}>
             {i > 0 && (
               <Line x1={PAD} y1={i * FAULT_ROW_H} x2={SW - PAD} y2={i * FAULT_ROW_H}
-                stroke={stageInk(0.07)} strokeWidth={1} />
+                stroke={ink(0.07)} strokeWidth={1} />
             )}
           </React.Fragment>
         ))}
@@ -187,14 +192,15 @@ export function FaultWall({
           accessibilityLabel={`Open tension: ${card.labelA} versus ${card.labelB}`}
         >
           <View style={styles.faultLabels}>
-            <Text variant="bodyMedium" numberOfLines={2} style={styles.faultLabelA}>
+            <Text variant="bodyMedium" numberOfLines={2} style={[styles.faultLabelA, { color: ink(0.91) }]}>
               {card.labelA}
             </Text>
-            <Text variant="bodyMedium" numberOfLines={2} style={styles.faultLabelB}>
+            <Text variant="bodyMedium" numberOfLines={2} style={[styles.faultLabelB, { color: ink(0.91) }]}>
               {card.labelB}
             </Text>
           </View>
-          <View style={[styles.cruxChip, { borderColor: color }]}>
+          {/* Opaque themed chip so the crack reads as passing BEHIND the crux. */}
+          <View style={[styles.cruxChip, { borderColor: color, backgroundColor: c.surface }]}>
             <Text variant="monoSmall" numberOfLines={2} style={{ color, textAlign: 'center' }}>
               {card.crux ?? 'Tap to see what this turns on'}
             </Text>
@@ -219,6 +225,7 @@ export function ConfluenceRow({
   color: string;
   onPress: () => void;
 }) {
+  const ink = useStageInk();
   const clusters = (data.clusters ?? []).slice(0, 3);
   const n = Math.max(2, Math.min(3, clusters.length || Math.min(3, data.sourceCount)));
   const nodeX = CONF_SVG_W - 12;
@@ -244,7 +251,7 @@ export function ConfluenceRow({
         <Circle cx={nodeX} cy={nodeY} r={5.5} fill={color} fillOpacity={0.95} />
       </Svg>
       <View style={styles.confMeta}>
-        <Text variant="bodyMedium" numberOfLines={1} style={{ color: stageInk(0.9) }}>
+        <Text variant="bodyMedium" numberOfLines={1} style={{ color: ink(0.9) }}>
           {data.topicName}
         </Text>
         {data.arrival ? (
@@ -252,7 +259,7 @@ export function ConfluenceRow({
             ⌾ {data.arrival}
           </Text>
         ) : null}
-        <Text variant="monoSmall" style={{ color: stageInk(0.35), marginTop: 2 }}>
+        <Text variant="monoSmall" style={{ color: ink(0.35), marginTop: 2 }}>
           {data.sourceCount} sources · {data.captureCount} captures
         </Text>
       </View>
@@ -277,6 +284,7 @@ export function EmberRow({
   color: string;
   onPress: () => void;
 }) {
+  const ink = useStageInk();
   const heat = emberHeat(data.daysSilent);
   return (
     <Pressable onPress={onPress} style={styles.emberRow} accessibilityLabel={`Dormant topic: ${data.topicName}`}>
@@ -284,10 +292,10 @@ export function EmberRow({
         <View style={[styles.emberOuter, { borderColor: color, opacity: heat * 0.6 }]} />
         <View style={[styles.emberInner, { backgroundColor: color, opacity: heat }]} />
       </View>
-      <Text variant="bodyMedium" numberOfLines={1} style={{ color: stageInk(0.28 + heat * 0.62), flex: 1 }}>
+      <Text variant="bodyMedium" numberOfLines={1} style={{ color: ink(0.28 + heat * 0.62), flex: 1 }}>
         {data.topicName}
       </Text>
-      <Text variant="monoSmall" style={{ color: stageInk(0.35) }}>
+      <Text variant="monoSmall" style={{ color: ink(0.35) }}>
         quiet {data.daysSilent}d
       </Text>
     </Pressable>
@@ -313,13 +321,11 @@ const styles = StyleSheet.create({
   faultLabels: { flexDirection: 'row' },
   faultLabelA: {
     flex: 1,
-    color: 'rgba(240,232,214,0.91)',
     textAlign: 'right',
     paddingRight: Spacing[6],
   },
   faultLabelB: {
     flex: 1,
-    color: 'rgba(240,232,214,0.91)',
     textAlign: 'left',
     paddingLeft: Spacing[6],
   },
@@ -331,7 +337,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[4],
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 999,
-    backgroundColor: 'rgba(30,27,22,0.92)',
   },
 
   confRow: { paddingHorizontal: PAD, marginBottom: Spacing[8], height: CONF_H },

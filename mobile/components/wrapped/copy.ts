@@ -30,14 +30,6 @@ export function formatHourCompact(h: number): string {
 
 /* ---------------------------------------------------------------- hero ---- */
 
-const EMPTY_TITLES = ['Nothing here yet', 'An empty shelf', 'A blank page, for now'];
-
-const EMPTY_BODIES = [
-  'Save one thing and this whole page turns into your greatest hits. No pressure. Fine, a little pressure.',
-  'Right now this is a page about nobody. One save fixes that.',
-  'Everything below wakes up the moment you keep something.',
-];
-
 /** Milestone bands. Each band gets its own voice, so 3 saves never reads like 300. */
 const MILESTONES: { min: number; lines: readonly string[] }[] = [
   {
@@ -122,14 +114,6 @@ const HERO_NOUNS = [
   'small rescues',
   'still here because of you',
 ];
-
-export function emptyTitle(seed: number): string {
-  return pick(EMPTY_TITLES, 'empty-title', seed);
-}
-
-export function emptyBody(seed: number): string {
-  return pick(EMPTY_BODIES, 'empty-body', seed);
-}
 
 export function milestoneLine(total: number): string {
   const band = MILESTONES.find((m) => total >= m.min);
