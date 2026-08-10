@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { LoadingDots } from '@/components/ui/LoadingDots';
@@ -9,60 +9,76 @@ import { AsciiLoader } from '@/components/ui/AsciiLoader';
 interface Props {
   title: string;
   body: string;
-  /** Show the animated loading dots instead of the idle cat. */
+  /** Show the animated loading dots instead of the idle art. */
   loading?: boolean;
-  /** Which pet keeps the empty screen company. */
-  art?: 'cat' | 'brain';
+  /** The screen's own mark: brain for mind, folder for archive, person for
+   * pulse, chart for you. The cat is the generic fallback. */
+  art?: 'cat' | 'brain' | 'folder' | 'person' | 'chart';
   /** Where to go from here — an empty state should always point somewhere. */
   actions?: { label: string; onPress: () => void }[];
 }
 
 /**
- * The shared empty / intro block used across the tab screens (pulse, drift,
- * mind). An idle ASCII pet, serif title, and mono body — identical everywhere
- * so the screens read as one product instead of three.
+ * THE empty-state box, identical on every tab (mind, archive, pulse, you):
+ * one bordered card with the idle ASCII pet, a serif title saying what the
+ * screen is, a mono body saying what will appear and how to make it appear,
+ * and action links that go do it. Keep the shape uniform — a new user reads
+ * this card four times and it should feel like one product speaking.
  */
 export function ScreenIntro({ title, body, loading = false, art = 'cat', actions }: Props) {
   const c = useThemeColors();
   return (
     <View style={styles.wrap}>
-      {loading ? (
-        <View style={styles.marker}>
-          <LoadingDots size={5} />
-        </View>
-      ) : (
-        <View style={styles.marker}>
-          <AsciiLoader idle variant={art} size={art === 'cat' ? 64 : 88} />
-        </View>
-      )}
-      <Text variant="serif" color="primary" style={styles.title}>
-        {title}
-      </Text>
-      <Text variant="monoSmall" color="muted" style={styles.body}>
-        {body}
-      </Text>
-      {(actions ?? []).map((action) => (
-        <Pressable
-          key={action.label}
-          onPress={action.onPress}
-          hitSlop={8}
-          style={styles.action}
-          accessibilityRole="button"
-          accessibilityLabel={action.label}
-        >
-          <Text variant="monoSmall" style={{ color: c.text }}>
-            {action.label}
-          </Text>
-        </Pressable>
-      ))}
+      <View style={[styles.card, { borderColor: c.borderSubtle, backgroundColor: c.surface }]}>
+        {loading ? (
+          <View style={styles.marker}>
+            <LoadingDots size={5} />
+          </View>
+        ) : (
+          <View style={styles.marker}>
+            {/* 'brain' here means the still line-brain — the braille brain
+                stays the app-wide loading mark. */}
+            <AsciiLoader idle variant={art === 'brain' ? 'brainStill' : art} size={art === 'cat' ? 64 : 72} />
+          </View>
+        )}
+        <Text variant="serif" color="primary" style={styles.title}>
+          {title}
+        </Text>
+        <Text variant="monoSmall" color="muted" style={styles.body}>
+          {body}
+        </Text>
+        {(actions ?? []).map((action) => (
+          <Pressable
+            key={action.label}
+            onPress={action.onPress}
+            hitSlop={8}
+            style={styles.action}
+            accessibilityRole="button"
+            accessibilityLabel={action.label}
+          >
+            <Text variant="monoSmall" style={{ color: c.text, textAlign: 'center' }}>
+              {action.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    paddingTop: Spacing[12],
-    paddingHorizontal: Spacing[8],
+    paddingTop: Spacing[10],
+    paddingHorizontal: Spacing[5],
+    alignItems: 'center',
+  },
+  card: {
+    width: '100%',
+    maxWidth: 420,
+    borderWidth: 1,
+    borderRadius: Radius.lg,
+    paddingVertical: Spacing[6],
+    paddingHorizontal: Spacing[6],
     alignItems: 'center',
   },
   marker: {
@@ -80,5 +96,6 @@ const styles = StyleSheet.create({
   action: {
     marginTop: Spacing[4],
     paddingVertical: Spacing[1],
+    alignSelf: 'center',
   },
 });

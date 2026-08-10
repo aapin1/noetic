@@ -39,8 +39,6 @@ import {
   archetypeFor,
   currentStreakLine,
   dormantStreakLine,
-  emptyBody,
-  emptyTitle,
   fieldsTitle,
   formatHourCompact,
   heroNoun,
@@ -1656,18 +1654,9 @@ export function WrappedSection({
       key: 'hero',
       node: (
         <RevealCard {...cardProps} onReveal={() => setHeroActive(true)} accent={cardAccentAt(0)} style={styles.hero}>
-          {w.totalCaptures === 0 ? (
-            <>
-              <Text variant="h2" style={styles.heroTitle}>
-                {emptyTitle(seed)}
-              </Text>
-              <Text variant="serif" color="secondary" style={styles.heroBody}>
-                {emptyBody(seed)}
-              </Text>
-            </>
-          ) : (
-            <Hero w={w} accent={accent} active={heroReady} onBurst={burst} />
-          )}
+          {/* Zero captures never reaches this section: the you screen shows
+              its standard empty box (ScreenIntro) instead. */}
+          <Hero w={w} accent={accent} active={heroReady} onBurst={burst} />
         </RevealCard>
       ),
     },

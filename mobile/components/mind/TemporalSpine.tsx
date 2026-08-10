@@ -11,9 +11,10 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import type { ThreadSynthesis } from '@/types/api';
-import { DETAIL_PAGE_BOTTOM, DetailShell, stageInk } from './DetailShell';
+import { DETAIL_PAGE_BOTTOM, DetailShell, useStageInk } from './DetailShell';
 
 // ─────────────────────────────────────────────────────────────────────────
 // TemporalSpine — the Threads detail view. A vertical spline runs down the
@@ -72,6 +73,8 @@ export function TemporalSpine({
   onContinueCompanion,
   onViewAtlas,
 }: TemporalSpineProps) {
+  const ink = useStageInk();
+  const c = useThemeColors();
   const timeline = data.timeline ?? [];
   const driftNotes = data.driftNotes ?? [];
   const [selected, setSelected] = useState<number | null>(null);
@@ -214,8 +217,8 @@ export function TemporalSpine({
       <Animated.ScrollView onScroll={onScroll} scrollEventThrottle={16} showsVerticalScrollIndicator={false}>
         {/* Thread header */}
         <View style={styles.head}>
-          <Text variant="h2" style={{ color: stageInk(0.94) }}>{data.topicName}</Text>
-          <Text variant="monoSmall" style={{ color: stageInk(0.42), marginTop: Spacing[1] }}>
+          <Text variant="h2" style={{ color: ink(0.94) }}>{data.topicName}</Text>
+          <Text variant="monoSmall" style={{ color: ink(0.42), marginTop: Spacing[1] }}>
             {data.captureCount} captures · oldest first
           </Text>
           <Text variant="monoSmall" style={{ color, marginTop: Spacing[1], opacity: 0.85 }}>
@@ -246,7 +249,7 @@ export function TemporalSpine({
                 <FadeInBlock key={`d-${i}`} top={row.y} height={row.height} side={row.side} scrollY={scrollY}>
                   <View style={[styles.drift, { borderLeftColor: color }]}>
                     <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>DRIFT</Text>
-                    <Text variant="body" style={{ color: stageInk(0.82), marginTop: Spacing[1] }}>
+                    <Text variant="body" style={{ color: ink(0.82), marginTop: Spacing[1] }}>
                       {row.text}
                     </Text>
                   </View>
@@ -259,7 +262,7 @@ export function TemporalSpine({
                 {/* date whispers under the point */}
                 <Text
                   variant="monoSmall"
-                  style={[styles.date, { left: row.x - 40, top: row.y + NODE_H / 2 + 16 }]}
+                  style={[styles.date, { color: ink(0.49), left: row.x - 40, top: row.y + NODE_H / 2 + 16 }]}
                 >
                   {fmtDate(row.capturedAt)}
                 </Text>
@@ -273,16 +276,16 @@ export function TemporalSpine({
                     entering={FadeIn.duration(160)}
                     style={[
                       styles.nodeCard,
-                      { top: row.y - 6 },
+                      { backgroundColor: c.surface, borderColor: c.border, top: row.y - 6 },
                       onLeft
                         ? { left: row.x + 30, right: Spacing[4] }
                         : { right: SW - row.x + 30, left: Spacing[4] },
                     ]}
                   >
-                    <Text variant="monoSmall" style={{ color: stageInk(0.4) }}>
+                    <Text variant="monoSmall" style={{ color: ink(0.4) }}>
                       {fmtDate(row.capturedAt)}
                     </Text>
-                    <Text variant="bodyMedium" numberOfLines={3} style={{ color: stageInk(0.92), marginTop: 2 }}>
+                    <Text variant="bodyMedium" numberOfLines={3} style={{ color: ink(0.92), marginTop: 2 }}>
                       {row.label}
                     </Text>
                     <Pressable onPress={() => onOpenItem(row.id)} hitSlop={8} style={{ marginTop: Spacing[2] }}>
@@ -300,21 +303,21 @@ export function TemporalSpine({
           <View style={styles.end}>
             <View style={[styles.endMarker, { backgroundColor: color }]} />
             <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>WHERE YOU'VE LANDED</Text>
-            <Text variant="h3" style={{ color: stageInk(0.94), marginTop: Spacing[3] }}>
+            <Text variant="h3" style={{ color: ink(0.94), marginTop: Spacing[3] }}>
               {data.position}
             </Text>
             <Text variant="monoSmall" style={{ color, letterSpacing: 2, marginTop: Spacing[6] }}>
               OPEN QUESTION
             </Text>
-            <Text variant="body" style={{ color: stageInk(0.78), marginTop: Spacing[2] }}>
+            <Text variant="body" style={{ color: ink(0.78), marginTop: Spacing[2] }}>
               {data.openQuestion}
             </Text>
-            <View style={styles.ctaRow}>
+            <View style={[styles.ctaRow, { borderTopColor: ink(0.18) }]}>
               <Pressable onPress={onContinueCompanion} hitSlop={8}>
-                <Text variant="monoSmall" style={{ color: stageInk(0.6) }}>Continue in companion →</Text>
+                <Text variant="monoSmall" style={{ color: ink(0.6) }}>Continue in companion →</Text>
               </Pressable>
               <Pressable onPress={onViewAtlas} hitSlop={8}>
-                <Text variant="monoSmall" style={{ color: stageInk(0.6) }}>View in Atlas →</Text>
+                <Text variant="monoSmall" style={{ color: ink(0.6) }}>View in Atlas →</Text>
               </Pressable>
             </View>
           </View>
@@ -376,14 +379,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 80,
     textAlign: 'center',
-    color: 'rgba(240,232,214,0.49)',
   },
   nodeHit: { position: 'absolute', width: 52, height: 52, borderRadius: 26 },
   nodeCard: {
     position: 'absolute',
-    backgroundColor: 'rgba(30,27,22,0.94)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(240,232,214,0.2)',
     borderRadius: 12,
     padding: Spacing[3],
     zIndex: 5,
@@ -401,6 +401,5 @@ const styles = StyleSheet.create({
     marginTop: Spacing[8],
     paddingTop: Spacing[4],
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(240,232,214,0.18)',
   },
 });

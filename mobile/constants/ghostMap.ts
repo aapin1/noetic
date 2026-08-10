@@ -29,8 +29,10 @@ export function isGhostId(id: string): boolean {
   return id.startsWith(GHOST_ID_PREFIX);
 }
 
-/** How long the map holds the stage alone before the prompt card appears. */
-export const GHOST_PROMPT_MS = 3500;
+/** How long the map holds the stage alone before the welcome pill speaks.
+ * Short on purpose: a brand-new user shouldn't sit staring at a map they
+ * don't understand yet. */
+export const GHOST_PROMPT_MS = 1500;
 /** When the arriving node performs its entrance. */
 export const GHOST_ARRIVE_MS = 1600;
 

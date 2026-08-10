@@ -69,7 +69,7 @@ export type { CaptureKind } from '@/types/api';
 export type CaptureSource = 'composer' | 'share_extension';
 /** identity/notifications/walkthrough are the retired 2026-07 flow — kept so
  *  historical dashboards still parse. New accounts only emit `guide`. */
-export type OnboardingStep = 'identity' | 'notifications' | 'walkthrough' | 'guide';
+export type OnboardingStep = 'identity' | 'notifications' | 'walkthrough' | 'guide' | 'welcome-offer';
 export type TabName = 'atlas' | 'mind' | 'archive' | 'pulse' | 'you';
 /**
  * Where an insight was opened from. `unknown` is reachable and intentional:

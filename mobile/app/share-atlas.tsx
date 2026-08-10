@@ -59,7 +59,9 @@ export default function ShareAtlasScreen() {
   );
 
   const [variant, setVariant] = useState<RecapTemplateId>('ink');
-  const [showLabels, setShowLabels] = useState(false);
+  // Field names default ON — they're what makes the chart legible to a
+  // stranger. The toggle stays for anyone who'd rather share just the shape.
+  const [showLabels, setShowLabels] = useState(true);
   const [busy, setBusy] = useState(false);
 
   const frameRef = useRef<View | null>(null);
@@ -171,8 +173,8 @@ export default function ShareAtlasScreen() {
               ))}
             </View>
 
-            {/* Labels are opt-in: the shape of a mind is shareable by default,
-                what it's about is the owner's to reveal. */}
+            {/* Field names can be turned off for anyone who'd rather reveal
+                only the shape of their mind, not what it's about. */}
             <Pressable
               onPress={() => setShowLabels((v) => !v)}
               accessibilityRole="checkbox"

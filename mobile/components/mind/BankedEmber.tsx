@@ -11,10 +11,11 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import type { DormantThread } from '@/types/api';
 import { emberHeat } from './overviewSections';
-import { DETAIL_PAGE_BOTTOM, DetailShell, stageInk } from './DetailShell';
+import { DETAIL_PAGE_BOTTOM, DetailShell, useStageInk } from './DetailShell';
 
 // ─────────────────────────────────────────────────────────────────────────
 // BankedEmber — the Dormant detail view. A fire that was fed and then left:
@@ -80,6 +81,8 @@ export function BankedEmber({
   onContinueCompanion,
   onOpenFolder,
 }: BankedEmberProps) {
+  const ink = useStageInk();
+  const c = useThemeColors();
   const heat = emberHeat(data.daysSilent);
   const motes = useMemo(() => motesFor(data.topicId, data.captureCount), [data]);
   // A fire that was fed more burns wider, even once it's down to coals.
@@ -140,7 +143,7 @@ export function BankedEmber({
               y1={HEARTH_Y}
               x2={SW - Spacing[6]}
               y2={HEARTH_Y}
-              stroke={stageInk(0.14)}
+              stroke={ink(0.14)}
               strokeWidth={1}
             />
 
@@ -158,7 +161,7 @@ export function BankedEmber({
 
           {/* The ember is named by the topic it burned through */}
           <View style={styles.chipWrap} pointerEvents="none">
-            <View style={styles.chip}>
+            <View style={[styles.chip, { backgroundColor: c.surface }]}>
               <Text
                 variant="monoSmall"
                 numberOfLines={2}
@@ -171,23 +174,23 @@ export function BankedEmber({
         </View>
 
         <View style={styles.below}>
-          <View style={[styles.card, { borderColor: color }]}>
+          <View style={[styles.card, { borderColor: color, backgroundColor: c.surface }]}>
             <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>QUIET FOR</Text>
-            <Text variant="h2" style={{ color: stageInk(0.94), marginTop: Spacing[2] }}>
+            <Text variant="h2" style={{ color: ink(0.94), marginTop: Spacing[2] }}>
               {data.daysSilent} {data.daysSilent === 1 ? 'day' : 'days'}
             </Text>
-            <Text variant="monoSmall" style={{ color: stageInk(0.45), marginTop: Spacing[2] }}>
+            <Text variant="monoSmall" style={{ color: ink(0.45), marginTop: Spacing[2] }}>
               {data.captureCount} {data.captureCount === 1 ? 'capture' : 'captures'} · last on {lastOn}
             </Text>
           </View>
 
           <SilenceRail daysSilent={data.daysSilent} heat={heat} color={color} burn={burn} />
           <View style={styles.railLabels}>
-            <Text variant="monoSmall" style={{ color: stageInk(0.42) }}>last spark</Text>
-            <Text variant="monoSmall" style={{ color: stageInk(0.42) }}>today</Text>
+            <Text variant="monoSmall" style={{ color: ink(0.42) }}>last spark</Text>
+            <Text variant="monoSmall" style={{ color: ink(0.42) }}>today</Text>
           </View>
 
-          <Text variant="body" style={{ color: stageInk(0.75), marginTop: Spacing[6] }}>
+          <Text variant="body" style={{ color: ink(0.75), marginTop: Spacing[6] }}>
             {data.captureCount} {data.captureCount === 1 ? 'capture' : 'captures'} went into this
             before it went quiet. Nothing has been lost — the folder is intact, and one new capture
             is enough to put it back in play.
@@ -195,18 +198,18 @@ export function BankedEmber({
 
           <View style={[styles.nextRow, { borderLeftColor: color }]}>
             <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>ONE WAY BACK IN</Text>
-            <Text variant="bodyMedium" style={{ color: stageInk(0.9), marginTop: 2 }}>
+            <Text variant="bodyMedium" style={{ color: ink(0.9), marginTop: 2 }}>
               Ask the companion what you left unfinished here, or reopen the folder and reread the
               last thing you saved.
             </Text>
           </View>
 
-          <View style={styles.ctaRow}>
+          <View style={[styles.ctaRow, { borderTopColor: ink(0.18) }]}>
             <Pressable onPress={onContinueCompanion} hitSlop={8}>
-              <Text variant="monoSmall" style={{ color: stageInk(0.6) }}>Continue in companion →</Text>
+              <Text variant="monoSmall" style={{ color: ink(0.6) }}>Continue in companion →</Text>
             </Pressable>
             <Pressable onPress={onOpenFolder} hitSlop={8}>
-              <Text variant="monoSmall" style={{ color: stageInk(0.6) }}>Open the folder →</Text>
+              <Text variant="monoSmall" style={{ color: ink(0.6) }}>Open the folder →</Text>
             </Pressable>
           </View>
         </View>
@@ -284,6 +287,7 @@ function SilenceRail({
   color: string;
   burn: SharedValue<number>;
 }) {
+  const ink = useStageInk();
   const dashes = useMemo(() => {
     const n = Math.max(6, Math.min(MAX_DASHES, daysSilent));
     const step = RAIL_W / n;
@@ -322,7 +326,7 @@ function SilenceRail({
         cy={RAIL_MID}
         r={3.5}
         fill="none"
-        stroke={stageInk(0.4)}
+        stroke={ink(0.4)}
         strokeWidth={1}
       />
       <AnimatedCircle cy={RAIL_MID} fill={color} animatedProps={headProps} />
@@ -344,7 +348,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   chip: {
-    backgroundColor: 'rgba(30,27,22,0.82)',
     borderRadius: 999,
     paddingHorizontal: Spacing[3],
     paddingVertical: 3,
@@ -355,7 +358,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: SW * 0.8,
     marginTop: -46,
-    backgroundColor: 'rgba(30,27,22,0.92)',
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 14,
     padding: Spacing[4],
@@ -374,6 +376,5 @@ const styles = StyleSheet.create({
     marginTop: Spacing[8],
     paddingTop: Spacing[4],
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(240,232,214,0.18)',
   },
 });

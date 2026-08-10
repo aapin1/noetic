@@ -3,16 +3,24 @@ import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
 import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
-import { MapBackdrop } from '@/components/ui/MapBackdrop';
 
-// Full-screen stage for a Mind detail visualization. Mind's canvas is dark in
-// both themes (Atlas convention), so the shell is too — on-stage text is light.
+// Full-screen stage for a Mind detail visualization. Mind sits on the app
+// theme like the list tabs — paper in light mode, ink in dark — so it reads
+// as one app with memory/pulse/you rather than as a second Atlas. Only the
+// Atlas keeps the always-dark map surface.
 //
-// Warm, matching MAP_CHROME_ICON and the rest of the ink that sits on a dark
-// map surface. A neutral grey here read as a different app the moment the
-// palette went warm, and Mind shares its backdrop with the Atlas.
-export const stageInk = (o: number) => `rgba(240,232,214,${o})`;
+// Ink for anything drawn on the stage: the theme's warm text family, taken at
+// the same opacity ramps the dark stage used. A hook rather than a constant
+// because the base flips with the scheme.
+export function useStageInk(): (o: number) => string {
+  const { scheme } = useTheme();
+  // Matches text: #EFEADE on ink, #241F18 on paper.
+  return scheme === 'dark'
+    ? (o: number) => `rgba(239,234,222,${o})`
+    : (o: number) => `rgba(36,31,24,${o})`;
+}
 
 // A detail view opens *inside* the Mind tab, so the tab bar floats over the
 // bottom of its page. Every scrolling detail view has to end above the bar —
@@ -34,19 +42,17 @@ export function DetailShell({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const ink = useStageInk();
   return (
     <Animated.View
       entering={FadeIn.duration(220)}
       exiting={FadeOut.duration(160)}
       style={[StyleSheet.absoluteFill, { backgroundColor: background }]}
     >
-      {/* Opaque over the Mind stage below, so it repaints the same backdrop —
-          otherwise going inside an instrument dropped the dot grid. */}
-      <MapBackdrop />
       <SafeAreaView edges={['top']} style={styles.safe}>
         <View style={styles.header}>
           <Pressable onPress={onClose} hitSlop={12} accessibilityLabel="Close detail view">
-            <Text variant="monoSmall" style={{ color: stageInk(0.55) }}>close</Text>
+            <Text variant="monoSmall" style={{ color: ink(0.55) }}>close</Text>
           </Pressable>
           <View style={styles.headLeft}>
             <View style={[styles.dot, { backgroundColor: accent }]} />

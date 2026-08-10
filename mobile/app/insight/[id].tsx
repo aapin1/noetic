@@ -20,6 +20,8 @@ import { VoiceStyleLine } from '@/components/ui/VoiceStyleLine';
 import { TopicPickerModal } from '@/components/ui/TopicPickerModal';
 import { SponsoredCard } from '@/components/ui/SponsoredCard';
 import { asInsightSource, track } from '@/lib/analytics';
+import { TUTORIAL_DEMO_CAPTURE, TUTORIAL_DEMO_NODE } from '@/constants/tutorialSteps';
+import type { CaptureDetail } from '@/types/api';
 
 /**
  * One block of the read: a kicker, a heading, and its body, on card stock.
@@ -68,9 +70,15 @@ export default function InsightDetailScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const { data, loading, refetch } = useApiQuery(() => api.captures.get(id), [id], {
-    cacheKey: `capture:${id}`,
-  });
+  const { data, loading, refetch } = useApiQuery(
+    // The walkthrough's practice node never touched the server; its insight
+    // is served canned so this screen renders it like any other capture.
+    () => (id === TUTORIAL_DEMO_NODE.id
+      ? Promise.resolve(TUTORIAL_DEMO_CAPTURE as unknown as CaptureDetail)
+      : api.captures.get(id)),
+    [id],
+    { cacheKey: `capture:${id}` },
+  );
 
   // A freshly committed capture arrives with draft insights; the server
   // polishes them in the background within a few seconds. Quietly re-read so

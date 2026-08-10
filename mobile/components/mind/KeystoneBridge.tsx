@@ -14,9 +14,10 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import type { ConvergenceSignal, IntelNode } from '@/types/api';
-import { DETAIL_PAGE_BOTTOM, DetailShell, stageInk } from './DetailShell';
+import { DETAIL_PAGE_BOTTOM, DetailShell, useStageInk } from './DetailShell';
 
 // ─────────────────────────────────────────────────────────────────────────
 // KeystoneBridge — the Convergence detail view. Two source clusters sit far
@@ -69,6 +70,8 @@ export function KeystoneBridge({
   onContinueCompanion,
   onViewAtlas,
 }: KeystoneBridgeProps) {
+  const ink = useStageInk();
+  const c = useThemeColors();
   const clusters = useMemo<ClusterGeom[]>(() => {
     const [a, b] = data.clusters ?? [];
     if (!a || !b) return [];
@@ -138,7 +141,7 @@ export function KeystoneBridge({
         {/* The keystone's name — kept to one compact chip so it never
             collides with the web; the arrival idea headlines the footer. */}
         <Animated.View style={[styles.keyLabel, labelStyle]} pointerEvents="none">
-          <View style={styles.keyChip}>
+          <View style={[styles.keyChip, { backgroundColor: c.surface }]}>
             <Text variant="monoSmall" style={{ color, letterSpacing: 2, textAlign: 'center' }}>
               {data.topicName.toUpperCase()}
             </Text>
@@ -161,33 +164,33 @@ export function KeystoneBridge({
       </View>
 
       <View style={styles.footer}>
-        <Text variant="monoSmall" style={{ color: stageInk(0.42) }}>
+        <Text variant="monoSmall" style={{ color: ink(0.42) }}>
           {data.sourceCount} sources · {data.captureCount} captures · one destination
         </Text>
         {data.arrival ? (
-          <Text variant="h3" style={{ color: stageInk(0.94), marginTop: Spacing[3] }}>
+          <Text variant="h3" style={{ color: ink(0.94), marginTop: Spacing[3] }}>
             {data.arrival}
           </Text>
         ) : null}
         <View style={[styles.signal, { borderLeftColor: color }]}>
-          <Text variant="body" style={{ color: stageInk(0.88) }}>
+          <Text variant="body" style={{ color: ink(0.88) }}>
             {data.signal}
           </Text>
         </View>
         {data.act ? (
           <View style={[styles.signal, { borderLeftColor: color, marginTop: Spacing[4] }]}>
             <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>WHERE THIS POINTS</Text>
-            <Text variant="bodyMedium" style={{ color: stageInk(0.9), marginTop: 2 }}>
+            <Text variant="bodyMedium" style={{ color: ink(0.9), marginTop: 2 }}>
               {data.act}
             </Text>
           </View>
         ) : null}
-        <View style={styles.ctaRow}>
+        <View style={[styles.ctaRow, { borderTopColor: ink(0.18) }]}>
           <Pressable onPress={onContinueCompanion} hitSlop={8}>
-            <Text variant="monoSmall" style={{ color: stageInk(0.6) }}>Continue in companion →</Text>
+            <Text variant="monoSmall" style={{ color: ink(0.6) }}>Continue in companion →</Text>
           </Pressable>
           <Pressable onPress={onViewAtlas} hitSlop={8}>
-            <Text variant="monoSmall" style={{ color: stageInk(0.6) }}>View in Atlas →</Text>
+            <Text variant="monoSmall" style={{ color: ink(0.6) }}>View in Atlas →</Text>
           </Pressable>
         </View>
       </View>
@@ -269,6 +272,7 @@ function ClusterOverlay({
   pull: SharedValue<number>;
   onOpenItem: (id: string) => void;
 }) {
+  const ink = useStageInk();
   // The whole overlay (label + hit areas) rides along with the pulled cluster.
   const style = useAnimatedStyle(() => ({
     transform: [{ translateX: (cluster.endX - cluster.startX) * pull.value }],
@@ -307,12 +311,12 @@ function ClusterOverlay({
         <Text
           variant="monoSmall"
           numberOfLines={2}
-          style={{ color: stageInk(0.6), textAlign: align === 'left' ? 'left' : 'right' }}
+          style={{ color: ink(0.6), textAlign: align === 'left' ? 'left' : 'right' }}
         >
           {cluster.items[0]?.label}
         </Text>
         {cluster.items.length > 1 ? (
-          <Text variant="monoSmall" style={{ color: stageInk(0.32) }}>
+          <Text variant="monoSmall" style={{ color: ink(0.32) }}>
             +{cluster.items.length - 1} more
           </Text>
         ) : null}
@@ -330,7 +334,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   keyChip: {
-    backgroundColor: 'rgba(30,27,22,0.82)',
     borderRadius: 999,
     paddingHorizontal: Spacing[3],
     paddingVertical: 3,
@@ -353,6 +356,5 @@ const styles = StyleSheet.create({
     marginTop: Spacing[8],
     paddingTop: Spacing[4],
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(240,232,214,0.18)',
   },
 });

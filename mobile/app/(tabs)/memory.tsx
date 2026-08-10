@@ -9,7 +9,6 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { ScreenIntro } from '@/components/ui/ScreenIntro';
-import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { FolderGrid } from '@/components/archive/FolderGrid';
 import { DiaryList } from '@/components/archive/DiaryList';
@@ -235,18 +234,11 @@ export default function ArchiveScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {loading && !folders && (
-          <AsciiLoader
-            variant="cat"
-            size={80}
-            message={['opening the stacks…', 'sorting your folders…', 'shooing dust bunnies…']}
-          />
-        )}
-
         {isEmpty && (
           <ScreenIntro
-            title="Nothing here yet"
-            body="Everything you save files itself here by topic."
+            art="folder"
+            title="Every save, filed"
+            body="Archive keeps everything you capture as a day-by-day diary and topic folders, with search through all of it. Save one thing on the atlas and it appears here."
             actions={[
               { label: 'save your first thing →', onPress: () => router.push('/(tabs)' as never) },
               { label: 'import years of saves →', onPress: () => router.push('/import' as never) },

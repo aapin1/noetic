@@ -54,6 +54,7 @@ import {
   hashId,
 } from '@/constants/mapPalette';
 import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useDisclosure } from '@/contexts/DisclosureContext';
 import { ARCHIVE_REVEAL_COUNT, EVENT_FLAGS } from '@/lib/disclosure';
 import { Whisper } from '@/components/ui/Whisper';
@@ -83,14 +84,11 @@ import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { ComebackPromise } from '@/components/ritual/ComebackPromise';
 import { GuidePill } from '@/components/ui/GuidePill';
 import {
-  GUIDE_DONE_FLAG,
   GUIDE_MAX_CORPUS,
-  GUIDE_SIGNAL_FLAGS,
-  guideAckFlag,
-  nextGuideStep,
-  visitedTabFlag,
-  type GuideSignals,
-  type GuideStep,
+  WELCOME_INTRO_LINE,
+  WELCOME_OFFER_LINE,
+  welcomeIntroFlag,
+  welcomeOfferFlag,
 } from '@/lib/guide';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
@@ -1082,7 +1080,7 @@ function Divider({ c }: { c: AppThemeColors }) {
 }
 
 function StepOne({
-  mode, setMode, payload, setPayload, imageUri, uploading, onPickImage, error, onNext, onClose, onPaste, c, guided,
+  mode, setMode, payload, setPayload, imageUri, uploading, onPickImage, error, onNext, onClose, onPaste, c,
   onQuickSave, busy, clipboardHasUrl,
 }: {
   mode: CaptureMode; setMode: (m: CaptureMode) => void;
@@ -1090,8 +1088,6 @@ function StepOne({
   imageUri: string | null; uploading: boolean; onPickImage: (source: 'camera' | 'library') => void;
   error: string; onNext: () => boolean; onClose: () => void; onPaste: () => void;
   c: AppThemeColors;
-  /** The onboarding guide opened this sheet — first-capture training copy. */
-  guided?: boolean;
   onQuickSave: () => void; busy: boolean; clipboardHasUrl: boolean;
 }) {
   const nextTarget = useTutorialTarget(TUTORIAL_TARGET.captureNext);
@@ -1102,12 +1098,10 @@ function StepOne({
   return (
     <View>
       <Text variant="serifLg" color="primary" style={sh.heading}>
-        {guided ? 'Your first capture.' : 'What are you saving?'}
+        What are you saving?
       </Text>
       <Text variant="monoSmall" color="muted" style={sh.sub}>
-        {guided
-          ? 'a thought you haven’t finished having, a link, or a photo — anything in your head right now.'
-          : 'A link, thought, or image.'}
+        A link, thought, or image.
       </Text>
       <Divider c={c} />
       <View style={sh.modeRow}>
@@ -1351,7 +1345,9 @@ function StepTwo({
             <Text variant="monoSmall" style={{ color: c.muted }}>← back</Text>
           </Pressable>
           <Pressable
-            onPress={() => { onCommit(); commitTarget.press(); }}
+            // The walkthrough advances from the parent's commit flow AFTER the
+            // demo node actually lands, not on the press itself.
+            onPress={() => { onCommit(); }}
             disabled={commitDisabled}
             style={[sh.primaryBtn, { backgroundColor: c.text, opacity: commitDisabled ? 0.55 : 1 }]}
           >
@@ -1440,11 +1436,8 @@ function Toolbar({
     return () => { alive = false; };
   }, []);
 
-  const { markSeen: markCompanionSeen } = useDisclosure();
   const openCompanion = () => {
     companionTarget.press();
-    // The guide's companion lesson completes on first real use.
-    markCompanionSeen(GUIDE_SIGNAL_FLAGS.openedCompanion);
     const tid = topicId ?? fallbackTopicRef.current;
     if (tid) {
       router.push({ pathname: '/socratic/[topicId]' as never, params: { topicId: tid } });
@@ -2061,6 +2054,12 @@ export default function MapScreen() {
   }, [tutorialActive, demoNode]);
 
   const reduceMotion = useReduceMotion();
+  const disclosure = useDisclosure();
+  // The welcome flags are scoped per account: the disclosure store is one
+  // per install, and an unscoped flag from a previous account would rob a
+  // brand-new one of its ghost map and welcome.
+  const { profile: authProfile } = useAuth();
+  const welcomeUid = authProfile?.id ?? null;
 
   // ── Ghost map ──────────────────────────────────────────────────
   // A brand-new user's empty map is not empty: a curated demo constellation
@@ -2070,7 +2069,21 @@ export default function MapScreen() {
   // the first real capture lands the whole thing is gone; ghost nodes are
   // also excluded from hit-testing, the summary strip, and sharing below.
   const ghostCorpus = graphData ? (graphData.totalCount ?? graphData.nodes.length) : null;
+  // The ghost's exit is owned by the welcome flow below: once the tour offer
+  // is answered (either way), the constellation fades out and never returns.
+  // 'pending' = offer not yet answered, 'fading' = bowing out right now.
+  const [ghostExit, setGhostExit] = useState<'pending' | 'fading' | 'gone' | null>(null);
+  const ghostFade = useRef(new RNAnimated.Value(1)).current;
+  useEffect(() => {
+    // Account changed: re-resolve against the new account's own flags.
+    setGhostExit(null);
+  }, [welcomeUid]);
+  useEffect(() => {
+    if (!disclosure.ready || !welcomeUid || ghostExit !== null) return;
+    setGhostExit(disclosure.hasSeen(welcomeOfferFlag(welcomeUid)) ? 'gone' : 'pending');
+  }, [disclosure, ghostExit, welcomeUid]);
   const ghostActive =
+    (ghostExit === 'pending' || ghostExit === 'fading') &&
     ghostCorpus === 0 && !graphLoading && !activeFocusGraph && !tutorialActive;
   // The performance: one more node arrives a beat after first paint. Its
   // fresh timestamp gives it the real "recent" amber + ring, and the render
@@ -2115,8 +2128,8 @@ export default function MapScreen() {
 
   // Progressive disclosure feeds off the UNFOCUSED graph only — a topic
   // sub-map's totalCount describes the focus, not the corpus, and would
-  // wrongly rewind the reveal ladder.
-  const disclosure = useDisclosure();
+  // wrongly rewind the reveal ladder. (The hook itself is called above the
+  // ghost-map section, which reads the welcome flags.)
   const { setSignals: setDisclosureSignals } = disclosure;
   useEffect(() => {
     if (!graphData) return;
@@ -2806,7 +2819,6 @@ export default function MapScreen() {
   }, [discoveryNodeIds, discoveryEdgeKeys, edges]);
 
   const openDiscoveryCompanion = useCallback(() => {
-    disclosure.markSeen(GUIDE_SIGNAL_FLAGS.openedCompanion);
     const labelFor = (id: string) =>
       (nodes.find((n) => n.id === id)?.label ?? '').replace(/[,~]/g, ';');
 
@@ -3624,17 +3636,16 @@ export default function MapScreen() {
     // no server write, no AI, nothing that can vary or fail. The landing ring
     // and ease-in animations are the same ones a real capture triggers.
     if (tutorialActive) {
-      // Long enough to actually read the card sitting over the saving state —
-      // at ~1.6s it was gone before the card had finished fading in. Also a
-      // more honest impression of how long a real source takes to read.
-      await new Promise((r) => setTimeout(r, 6000));
+      // A beat of the saving loader — an honest impression of a real read,
+      // short enough not to strand the tour.
+      await new Promise((r) => setTimeout(r, 3500));
       const worldX = savedVB.current.x + (SW / 2) / savedZoom.current;
       const worldY = savedVB.current.y + (SH / 2) / savedZoom.current;
       setDemoNode({
         id: TUTORIAL_DEMO_NODE.id,
         label: TUTORIAL_DEMO_NODE.label,
         kind: 'LINK',
-        topics: [],
+        topics: [...TUTORIAL_DEMO_NODE.topics],
         capturedAt: new Date().toISOString(),
         reaction: reaction.trim() || null,
         keyIdea: TUTORIAL_DEMO_NODE.keyIdea,
@@ -3644,6 +3655,9 @@ export default function MapScreen() {
       setNewNodeId(TUTORIAL_DEMO_NODE.id);
       setBusy(false);
       closeCapture();
+      // Only NOW advance to the "there it lands" card — the walkthrough must
+      // never talk about a node that isn't on the map yet.
+      notifyTargetPressed(TUTORIAL_TARGET.captureCommit);
       return;
     }
     // Detached commit: the sheet closes NOW and the pipeline finishes on the
@@ -3696,10 +3710,7 @@ export default function MapScreen() {
         // landed is the only point where "we'll tell you when something surfaces"
         // describes something the user has just seen work. On launch it would be
         // a stranger asking for a permission the app hasn't earned yet.
-        // While the guide is teaching, the push ask belongs to the comeback
-        // promise (fires at two captures) — not to the generic post-capture
-        // primer, which would spend the install's one prompt a beat early.
-        if (!guideOnRef.current) maybeAskForPush();
+        maybeAskForPush();
         noteCaptureForReview();
         setReviewArmed(true);
         // First in-app link capture is the moment the share extension becomes
@@ -3719,7 +3730,7 @@ export default function MapScreen() {
           e instanceof Error ? e.message : 'Could not save that. Try again.',
         );
       });
-  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, tutorialActive, showSavedPill, maybeAskForPush, disclosure]);
+  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, tutorialActive, notifyTargetPressed, showSavedPill, maybeAskForPush, disclosure]);
 
   const quickSave = useCallback(() => {
     if (!validatePayload()) return;
@@ -3758,10 +3769,11 @@ export default function MapScreen() {
     // so "saved" visibly means "it's on your map, right here". Aim at the
     // semantic target, not the live (tweened) position: the node is seeded at
     // its nearest neighbour and eases home over the next 600ms, so flying to
-    // where it starts leaves it drifting off-centre as it slides.
-    // The walkthrough manages its own framing, so the demo node never moves
-    // the camera.
-    if (!tutorialActive) {
+    // where it starts leaves it drifting off-centre as it slides. The
+    // walkthrough's demo node gets the same treatment — the "tap your new
+    // node" step needs it front and centre, not wherever the empty map's
+    // camera happened to be.
+    {
       const p = semanticPos[newNodeId]!;
       const targetZoom = Math.max(savedZoom.current, 1.5);
       animateCamera(p.x - (SW / targetZoom) / 2, p.y - (SH / targetZoom) / 2, targetZoom, 700);
@@ -3771,7 +3783,7 @@ export default function MapScreen() {
       RNAnimated.timing(landingAnim, { toValue: 1, duration: 450, useNativeDriver: true }),
       RNAnimated.timing(landingAnim, { toValue: 0, duration: 750, useNativeDriver: true }),
     ]).start(() => { animatingRef.current = false; setNewNodeId(null); });
-  }, [newNodeId, semanticPos, landingAnim, tutorialActive, animateCamera]);
+  }, [newNodeId, semanticPos, landingAnim, animateCamera]);
 
   const nodeColor = useCallback((node: GraphNode): string => {
     const clusterColor = node.topics.reduce<string | undefined>(
@@ -4013,52 +4025,68 @@ export default function MapScreen() {
     getNodeOpacity, focusDimTopicId, edgeSalienceByKey, nodeGlowsOn,
   ]);
 
-  // ── Onboarding guide ───────────────────────────────────────────
-  // Guided but free: one small pill at a time (the capture pill's glass +
-  // ascii cat idiom), each with one line and at most one action. Steps
-  // complete off what the user actually does — through the pill or on their
-  // own — and ✕ always just moves on. Arms once for young accounts and
-  // never returns after GUIDE_DONE_FLAG.
-  const [guideOn, setGuideOn] = useState(false);
+  // ── Welcome ────────────────────────────────────────────────────
+  // The whole spoken onboarding is two pills over the ghost map: what the
+  // map is, then the offer of the walkthrough. Answering the offer, yes or
+  // ✕, fades the constellation out (see retireGhost). After that the app
+  // explains nothing unprompted.
+  const welcomeStage: 'intro' | 'offer' | null =
+    disclosure.ready && welcomeUid && ghostActive && ghostExit === 'pending'
+      ? !disclosure.hasSeen(welcomeIntroFlag(welcomeUid)) ? 'intro' : 'offer'
+      : null;
+
+  // A user who ignored the pills and just started capturing has answered in
+  // their own way: retire the welcome silently so nothing stale can speak
+  // later (and so feature whispers below aren't held back forever).
   useEffect(() => {
-    if (guideOn || !disclosure.ready || !graphData) return;
-    if (disclosure.hasSeen(GUIDE_DONE_FLAG)) return;
-    if ((graphData.totalCount ?? graphData.nodes.length) < GUIDE_MAX_CORPUS) setGuideOn(true);
-  }, [guideOn, disclosure, graphData]);
-  const guideOnRef = useRef(false);
+    if (!disclosure.ready || !welcomeUid || ghostExit !== 'pending') return;
+    if ((graphData?.totalCount ?? 0) > 0) {
+      disclosure.markSeen(welcomeIntroFlag(welcomeUid));
+      disclosure.markSeen(welcomeOfferFlag(welcomeUid));
+      setGhostExit('gone');
+    }
+  }, [disclosure, ghostExit, graphData, welcomeUid]);
+
+  // The pill waits for a quiet moment; the first also waits out the ghost
+  // map's opening beat so the user meets one thing at a time.
+  const [welcomePill, setWelcomePill] = useState<'intro' | 'offer' | null>(null);
   useEffect(() => {
-    guideOnRef.current = guideOn;
-  }, [guideOn]);
+    const quiet =
+      !savedPill && !showCapture && !drawerVisible && screenFocused &&
+      !promiseState && !showPushPrimer && !tutorialActive;
+    if (!welcomeStage || !quiet) {
+      setWelcomePill(null);
+      return;
+    }
+    const delay = welcomeStage === 'intro' ? GHOST_PROMPT_MS : 250;
+    const timer = setTimeout(() => setWelcomePill(welcomeStage), delay);
+    return () => clearTimeout(timer);
+  }, [
+    welcomeStage, savedPill, showCapture, drawerVisible, screenFocused,
+    promiseState, showPushPrimer, tutorialActive,
+  ]);
 
-  const guideSignals = useMemo<GuideSignals>(
-    () => ({
-      captureCount: graphData?.totalCount ?? 0,
-      openedNode: disclosure.hasSeen(GUIDE_SIGNAL_FLAGS.openedNode),
-      visitedMind: disclosure.hasSeen(visitedTabFlag('mind')),
-      visitedArchive: disclosure.hasSeen(visitedTabFlag('archive')),
-      visitedImport: disclosure.hasSeen(GUIDE_SIGNAL_FLAGS.visitedImport),
-      openedCompanion: disclosure.hasSeen(GUIDE_SIGNAL_FLAGS.openedCompanion),
-    }),
-    [graphData, disclosure],
-  );
+  // The ghost's slow bow-out, run once the offer is answered. If the user
+  // asked for the tour, it starts as the last star goes dark.
+  const tourAfterFadeRef = useRef(false);
+  const retireGhost = useCallback((tour: boolean) => {
+    if (welcomeUid) disclosure.markSeen(welcomeOfferFlag(welcomeUid));
+    tourAfterFadeRef.current = tour;
+    setGhostExit('fading');
+    track('onboarding_step', { step: 'welcome-offer', action: tour ? 'completed' : 'skipped' });
+    RNAnimated.timing(ghostFade, {
+      toValue: 0,
+      duration: reduceMotion ? 0 : 1600,
+      useNativeDriver: true,
+    }).start(() => {
+      setGhostExit('gone');
+      if (tourAfterFadeRef.current) {
+        tourAfterFadeRef.current = false;
+        startTutorial();
+      }
+    });
+  }, [disclosure, ghostFade, reduceMotion, startTutorial, welcomeUid]);
 
-  const guideStep = guideOn ? nextGuideStep(guideSignals, disclosure.hasSeen) : null;
-
-  // Nothing left to teach: close the guide and retire the whispers it made
-  // redundant, so mind/share-extension are never taught twice.
-  useEffect(() => {
-    if (!guideOn || guideStep !== null) return;
-    disclosure.markSeen('mind-first-edge');
-    disclosure.markSeen('share-extension');
-    disclosure.markSeen(GUIDE_DONE_FLAG);
-    track('onboarding_step', { step: 'guide', action: 'completed' });
-    setGuideOn(false);
-  }, [guideOn, guideStep, disclosure]);
-
-  // The pill waits for a genuinely quiet moment, and the very first lesson
-  // additionally waits out the demo map's opening beat, so a new user meets
-  // one thing at a time.
-  const [guidePillStep, setGuidePillStep] = useState<GuideStep | null>(null);
   // The clipboard door: while the map is still forming, notice a copied URL
   // on each return to the screen. Checked (hasUrlAsync), never read — reading
   // would raise the iOS paste banner for a link we might not use.
@@ -4067,60 +4095,6 @@ export default function MapScreen() {
     if ((graphData?.totalCount ?? Number.MAX_SAFE_INTEGER) >= ARCHIVE_REVEAL_COUNT) return;
     Clipboard.hasUrlAsync().then(setClipboardDoor).catch(() => {});
   }, [graphData?.totalCount]));
-
-  useEffect(() => {
-    const quiet =
-      !savedPill && !showCapture && !drawerVisible && screenFocused &&
-      !promiseState && !showPushPrimer && !tutorialActive;
-    if (!guideOn || !guideStep || !quiet) {
-      setGuidePillStep(null);
-      return;
-    }
-    const delay = guideStep.id === 'first-capture' && (graphData?.totalCount ?? 0) === 0
-      ? GHOST_PROMPT_MS
-      : 1400;
-    const timer = setTimeout(() => setGuidePillStep(guideStep), delay);
-    return () => clearTimeout(timer);
-  }, [
-    guideOn, guideStep, savedPill, showCapture, drawerVisible, screenFocused,
-    promiseState, showPushPrimer, tutorialActive, graphData,
-  ]);
-
-  // The guided first capture: same composer, warmer heading. Cleared when
-  // the sheet closes so an ordinary capture never wears the training copy.
-  const [guidedCapture, setGuidedCapture] = useState(false);
-  useEffect(() => {
-    if (!showCapture) setGuidedCapture(false);
-  }, [showCapture]);
-
-  const runGuideCta = useCallback((step: GuideStep) => {
-    switch (step.id) {
-      case 'first-capture':
-        setGuidedCapture(true);
-        openCapture();
-        break;
-      case 'second-thought':
-        openCapture();
-        break;
-      case 'mind':
-        router.push('/(tabs)/mind' as never);
-        break;
-      case 'archive':
-        router.push('/(tabs)/memory' as never);
-        break;
-      case 'import':
-        router.push('/import' as never);
-        break;
-      default:
-        break;
-    }
-    if (step.kind === 'ack') disclosure.markSeen(guideAckFlag(step.id));
-  }, [openCapture, router, disclosure]);
-
-  const skipGuideStep = useCallback(
-    (step: GuideStep) => disclosure.markSeen(guideAckFlag(step.id)),
-    [disclosure],
-  );
 
   // ── The comeback promise, re-armed ────────────────────────────────────────
   // Fires once, at a quiet moment, when a young account reaches two captures
@@ -4290,8 +4264,6 @@ export default function MapScreen() {
                 if (selectedNodeRef.current?.id === node.id) {
                   closeDrawer();
                 } else {
-                  // The guide's "tap your node" lesson completes here.
-                  disclosure.markSeen(GUIDE_SIGNAL_FLAGS.openedNode);
                   setSelectedNode(node);
                   setDrawerCluster(null);
                   openDrawer(null);
@@ -4363,7 +4335,16 @@ export default function MapScreen() {
               (screen edges still clip at the root).
               The only transform here is the ambient drift, which applies to both
               buffers identically and so can never disturb their alignment. */}
-          <RNAnimated.View style={[StyleSheet.absoluteFill, { overflow: 'visible', transform: ambientDrift }]}>
+          {/* While the ghost constellation bows out, its fade rides this
+              wrapper. Real content never wears it: the style is only applied
+              during the exit, and by then the map holds nothing else. */}
+          <RNAnimated.View
+            style={[
+              StyleSheet.absoluteFill,
+              { overflow: 'visible', transform: ambientDrift },
+              ghostExit === 'fading' ? { opacity: ghostFade } : null,
+            ]}
+          >
             {/* The two world buffers. Buffer 0 is the always-opaque bottom
                 layer; buffer 1 is the top layer whose opacity the swap fades. A
                 re-commit paints the hidden one and the crossfade reveals it. */}
@@ -4725,23 +4706,37 @@ export default function MapScreen() {
           </RNAnimated.View>
         )}
 
-        {/* The onboarding guide's pill — same slot and idiom as the capture
-            confirmation pill, one short lesson at a time. */}
-        {guidePillStep && guidePillStep.id === guideStep?.id && (
+        {/* The welcome pills — the capture pill's glass-and-cat idiom, from
+            the right edge. Two beats: what the map is, then the tour offer.
+            Either answer to the offer retires the ghost constellation. */}
+        {welcomePill === 'intro' && (
           <GuidePill
-            top={insets.top + 58}
-            text={guidePillStep.line}
-            cta={guidePillStep.cta}
-            onCta={() => runGuideCta(guidePillStep)}
-            onSkip={() => skipGuideStep(guidePillStep)}
+            frame={{ top: insets.top + 58, right: Spacing[4] }}
+            enter="right"
+            art="cat"
+            text={WELCOME_INTRO_LINE}
+            cta="ok"
+            onCta={() => { if (welcomeUid) disclosure.markSeen(welcomeIntroFlag(welcomeUid)); }}
+            onSkip={() => { if (welcomeUid) disclosure.markSeen(welcomeIntroFlag(welcomeUid)); }}
+          />
+        )}
+        {welcomePill === 'offer' && (
+          <GuidePill
+            frame={{ top: insets.top + 58, right: Spacing[4] }}
+            enter="right"
+            art="cat"
+            text={WELCOME_OFFER_LINE}
+            cta="sure"
+            onCta={() => retireGhost(true)}
+            onSkip={() => retireGhost(false)}
           />
         )}
 
         {/* Whispers live just above the tab bar: each one points at where to
             go next, and the bar is where that going happens. The disclosure
-            context guarantees only one speaks at a time; while the guide is
-            teaching, only the clipboard door (a notice, not a lesson) may
-            speak. */}
+            context guarantees only one speaks at a time; while the welcome
+            pills are still speaking, only the clipboard door (a notice, not
+            a lesson) may join them. */}
         {!showCapture && !drawerVisible && (
           <View style={styles.whisperHost} pointerEvents="box-none">
             {/* The clipboard door: never a beat, just noticing. Tapping opens
@@ -4755,7 +4750,7 @@ export default function MapScreen() {
                 void pasteFromClipboard();
               }}
             />
-            {!guideOn && (
+            {ghostExit !== 'pending' && (
               <>
                 <Whisper
                   id="mind-first-edge"
@@ -4791,9 +4786,10 @@ export default function MapScreen() {
         )}
 
         {/* Empty state. Unreachable while the ghost demo map is injected
-            (nodes is non-empty then) — this covers the leftover cases, like
-            an empty account inside the tutorial. */}
-        {isEmpty && (
+            (nodes is non-empty then). Suppressed during the walkthrough:
+            its cards do the talking, and this text underneath them read as
+            two voices at once. */}
+        {isEmpty && !tutorialActive && (
           <View style={styles.emptyHint} pointerEvents="box-none">
             <AsciiLoader idle size={100} color="rgba(240,232,214,0.57)" />
             <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[3], color: 'rgba(240,232,214,0.53)' }}>
@@ -4925,15 +4921,15 @@ export default function MapScreen() {
                         </Text>
                       )}
                     </View>
-                    {/* The practice node has no server-side insight to open. */}
-                    {selectedNode.id !== TUTORIAL_DEMO_NODE.id && (
-                      <Pressable
-                        onPress={() => { closeDrawer(); router.push(`/insight/${selectedNode.id}?from=map` as never); }}
-                        style={{ marginTop: Spacing[2] }}
-                      >
-                        <Text variant="monoSmall" color="muted">view insight →</Text>
-                      </Pressable>
-                    )}
+                    {/* Present for the practice node too — the insight screen
+                        serves it a canned CaptureDetail, so the walkthrough
+                        shows the node's full anatomy, view insight included. */}
+                    <Pressable
+                      onPress={() => { closeDrawer(); router.push(`/insight/${selectedNode.id}?from=map` as never); }}
+                      style={{ marginTop: Spacing[2] }}
+                    >
+                      <Text variant="monoSmall" color="muted">view insight →</Text>
+                    </Pressable>
                     {selectedNode.id !== TUTORIAL_DEMO_NODE.id && (
                       <Pressable
                         onPress={() => setMoveTopicNode(selectedNode)}
@@ -5039,7 +5035,6 @@ export default function MapScreen() {
                         onClose={closeCapture}
                         onPaste={() => void pasteFromClipboard()}
                         c={c}
-                        guided={guidedCapture}
                         onQuickSave={quickSave}
                         busy={busy}
                         clipboardHasUrl={clipboardHasUrl}

@@ -3,10 +3,16 @@ import { describe, expect, it } from "vitest";
 // mobile alias would not resolve here. The framing math has no imports at all.
 import {
   MIN_FIT_SPREAD,
+  atlasMonthStamp,
   atlasNodeRadius,
   atlasStatLine,
+  convexHull,
+  darkenHex,
+  expandHull,
   fitAtlasFrame,
+  mstEdges,
   projectAtlasPoint,
+  smoothClosedPath,
   type AtlasSharePoint,
 } from "./atlasShare";
 
@@ -120,6 +126,87 @@ describe("atlasNodeRadius", () => {
     expect(atlasNodeRadius(3)).toBeGreaterThan(atlasNodeRadius(50));
     expect(atlasNodeRadius(500)).toBeCloseTo(2.4);
     expect(atlasNodeRadius(0)).toBe(0);
+  });
+});
+
+describe("mstEdges", () => {
+  it("spans n points with exactly n-1 edges", () => {
+    const pts = Array.from({ length: 12 }, (_, i) => ({ x: (i * 37) % 12, y: (i * 91) % 12 }));
+    const edges = mstEdges(pts);
+    expect(edges).toHaveLength(11);
+    // Every point is reachable: union of endpoints covers all indices.
+    const touched = new Set(edges.flat());
+    expect(touched.size).toBe(12);
+  });
+
+  it("handles degenerate sizes", () => {
+    expect(mstEdges([])).toEqual([]);
+    expect(mstEdges([{ x: 0, y: 0 }])).toEqual([]);
+    expect(mstEdges([{ x: 0, y: 0 }, { x: 1, y: 1 }])).toEqual([[0, 1]]);
+  });
+
+  it("prefers near neighbours: a chain connects sequentially", () => {
+    const pts = [0, 1, 2, 3].map((i) => ({ x: i * 10, y: 0 }));
+    const edges = mstEdges(pts).map(([a, b]) => [Math.min(a, b), Math.max(a, b)]);
+    expect(edges).toContainEqual([0, 1]);
+    expect(edges).toContainEqual([1, 2]);
+    expect(edges).toContainEqual([2, 3]);
+  });
+});
+
+describe("convexHull", () => {
+  it("drops interior points", () => {
+    const square = [
+      { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 },
+      { x: 5, y: 5 }, { x: 3, y: 7 },
+    ];
+    const hull = convexHull(square);
+    expect(hull).toHaveLength(4);
+    expect(hull).not.toContainEqual({ x: 5, y: 5 });
+  });
+
+  it("passes tiny clouds through", () => {
+    const two = [{ x: 0, y: 0 }, { x: 1, y: 1 }];
+    expect(convexHull(two)).toEqual(two);
+  });
+});
+
+describe("expandHull", () => {
+  it("pushes every vertex away from the centroid", () => {
+    const hull = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    const out = expandHull(hull, 3);
+    for (const p of out) {
+      const d = Math.hypot(p.x - 5, p.y - 5);
+      expect(d).toBeCloseTo(Math.hypot(5, 5) + 3);
+    }
+  });
+});
+
+describe("smoothClosedPath", () => {
+  it("emits a closed path with one quadratic per vertex", () => {
+    const d = smoothClosedPath([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 5, y: 8 }]);
+    expect(d.startsWith("M ")).toBe(true);
+    expect(d.endsWith(" Z")).toBe(true);
+    expect(d.match(/Q /g)).toHaveLength(3);
+  });
+
+  it("returns empty for fewer than 3 points", () => {
+    expect(smoothClosedPath([{ x: 0, y: 0 }, { x: 1, y: 1 }])).toBe("");
+  });
+});
+
+describe("darkenHex", () => {
+  it("mixes toward black and keeps the format", () => {
+    expect(darkenHex("#ffffff", 0.5)).toBe("#808080");
+    expect(darkenHex("#000000", 0.4)).toBe("#000000");
+    expect(darkenHex("#6E9AD1", 0)).toBe("#6e9ad1");
+  });
+});
+
+describe("atlasMonthStamp", () => {
+  it("formats the month + year", () => {
+    expect(atlasMonthStamp(new Date(2026, 7, 10))).toBe("AUG 2026");
+    expect(atlasMonthStamp(new Date(2027, 0, 1))).toBe("JAN 2027");
   });
 });
 
