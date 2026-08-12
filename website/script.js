@@ -282,45 +282,8 @@
     captureText.textContent = 'attention might be a moral act';
   }
 
-  /* ---------- waitlist ---------- */
-
-  // Hardcoded launch count. Each join is emailed to the inbox below via
-  // FormSubmit (activate it by submitting the form once on the live site and
-  // clicking the confirmation link FormSubmit emails you), and also recorded
-  // locally as a fallback.
-  const BASE_COUNT = 753;
-  const STORAGE_KEY = 'mnemeWaitlist';
-  const FORM_ENDPOINT = 'https://formsubmit.co/ajax/mneme.help@gmail.com';
-
-  const deliverJoin = (name, email) => {
-    // Fire-and-forget: the visitor's success moment never waits on the network.
-    fetch(FORM_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        name,
-        email,
-        _subject: `Mneme waitlist: ${name}`,
-        _template: 'table',
-        _captcha: 'false',
-      }),
-    }).catch(() => { /* recorded in localStorage regardless */ });
-  };
-
-  const readJoins = () => {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    } catch {
-      return [];
-    }
-  };
-
-  const countNum = document.getElementById('countNum');
-  const currentCount = () => BASE_COUNT + readJoins().length;
-  if (countNum) countNum.textContent = String(currentCount());
-
-  // App loader art (mobile/components/ui/AsciiLoader.tsx): the envelope opens,
-  // then the cat keeps you company.
+  // App loader art (mobile/components/ui/AsciiLoader.tsx): the cat keeps you
+  // company.
   const CAT_FRAMES = [
     ' /\\_/\\\n( o.o )\n > ^ <',
     ' /\\_/\\\n( o.o )\n > ^ <',
@@ -331,12 +294,6 @@
     ' /\\_/\\\n( o.- )\n > ^ <',
     ' /\\_/\\\n( -.- )\n > ^ <',
   ];
-  const ENVELOPE_FRAMES = [
-    ' _____ \n|\\   /|\n|__V__|',
-    ' _____ \n|  •  |\n|_____|',
-    ' _____ \n|     |\n|_____|',
-  ];
-
   const startCatLoop = (el) => {
     let fi = 0;
     setInterval(() => {
@@ -363,67 +320,4 @@
     catIo.observe(scrollCat);
   }
 
-  const form = document.getElementById('waitlistForm');
-  const successState = document.getElementById('successState');
-  const successArt = document.getElementById('successArt');
-  const successSub = document.getElementById('successSub');
-
-  const playSuccessArt = () => {
-    if (!successArt) return;
-    if (reduceMotion) {
-      successArt.textContent = CAT_FRAMES[0];
-      return;
-    }
-    let ei = 0;
-    const envelope = () => {
-      if (ei < ENVELOPE_FRAMES.length) {
-        successArt.textContent = ENVELOPE_FRAMES[ei];
-        ei += 1;
-        setTimeout(envelope, 240);
-      } else {
-        startCatLoop(successArt);
-      }
-    };
-    envelope();
-  };
-
-  if (form) {
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-
-      const nameInput = document.getElementById('name');
-      const emailInput = document.getElementById('email');
-      const nameError = document.getElementById('nameError');
-      const emailError = document.getElementById('emailError');
-
-      const name = nameInput.value.trim();
-      const email = emailInput.value.trim();
-      const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
-
-      nameError.hidden = name.length > 0;
-      nameInput.setAttribute('aria-invalid', String(name.length === 0));
-      emailError.hidden = emailOk;
-      emailInput.setAttribute('aria-invalid', String(!emailOk));
-      if (!name || !emailOk) return;
-
-      deliverJoin(name, email);
-
-      const joins = readJoins();
-      joins.push({ name, email, ts: Date.now() });
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(joins));
-      } catch {
-        /* private mode: the moment still works, it just isn't remembered */
-      }
-
-      const place = currentCount();
-      if (countNum) countNum.textContent = String(place);
-      form.hidden = true;
-      successState.hidden = false;
-      if (successSub) {
-        successSub.textContent = `#${place} · we'll write when it's your turn`;
-      }
-      playSuccessArt();
-    });
-  }
 })();

@@ -337,91 +337,44 @@ input:focus-visible {
   text-align: center;
 }
 
-/* ---------- waitlist ---------- */
+/* ---------- live ---------- */
 
-.waitlist {
+.hero-actions { margin-top: 1.8rem; }
+
+.live {
   max-width: 1140px;
   margin: 0 auto;
   padding: 0 1.5rem 8rem;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4rem;
-  align-items: center;
+  text-align: center;
 }
 
-.waitlist-h2 {
+.live-h2 {
+  margin-top: 1.1rem;
   font-family: var(--serif);
   font-weight: 400;
-  font-size: clamp(2.1rem, 4vw, 3rem);
+  font-size: clamp(2.4rem, 5vw, 3.4rem);
   letter-spacing: -0.015em;
 }
 
-.waitlist-sub {
-  margin-top: 1rem;
+.live-sub {
+  margin: 1rem auto 0;
   font-size: 1.02rem;
   line-height: 1.6;
   color: var(--secondary);
-  max-width: 40ch;
+  max-width: 44ch;
 }
 
-.waitlist-count {
-  margin-top: 2rem;
+.live-cta { margin-top: 2.2rem; }
+
+.live-note {
+  margin-top: 1.2rem;
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   letter-spacing: 0.14em;
   text-transform: lowercase;
-  color: var(--muted);
-}
-#countNum { color: var(--text); }
-
-.waitlist-panel {
-  background: var(--surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-panel);
-  padding: 2.4rem;
-}
-
-.field { margin-bottom: 1.3rem; }
-
-.field label {
-  display: block;
-  font-size: 0.82rem;
-  font-weight: 500;
-  margin-bottom: 0.45rem;
-}
-
-.field input {
-  width: 100%;
-  height: 48px;
-  padding: 0 0.95rem;
-  font-family: var(--sans);
-  font-size: 0.95rem;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-input);
-  transition: border-color 0.18s var(--ease);
-}
-.field input:focus { border-color: var(--text); outline: none; }
-.field input[aria-invalid="true"] { border-color: var(--danger); }
-
-.field-error {
-  margin-top: 0.4rem;
-  font-size: 0.8rem;
-  color: var(--danger);
-}
-
-.form-note {
-  margin-top: 1rem;
-  font-size: 0.8rem;
-  line-height: 1.5;
   color: var(--faint);
-  text-align: center;
 }
-.form-note a { color: var(--muted); }
-
-/* success */
-.success { text-align: center; padding: 1.5rem 0 0.5rem; }
+.live-note a { color: var(--muted); }
 
 .ascii {
   font-family: var(--mono);
@@ -429,21 +382,6 @@ input:focus-visible {
   line-height: 1.25;
   color: var(--muted);
   white-space: pre;
-}
-
-.success-title {
-  margin-top: 1.4rem;
-  font-family: var(--serif);
-  font-size: 1.8rem;
-}
-
-.success-sub {
-  margin-top: 0.7rem;
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  text-transform: lowercase;
-  color: var(--muted);
 }
 
 /* ---------- footer ---------- */
@@ -534,7 +472,7 @@ input:focus-visible {
 
   .bento { grid-template-columns: 1fr; }
 
-  .waitlist { grid-template-columns: 1fr; gap: 2.5rem; padding-bottom: 6rem; }
+  .live { padding-bottom: 6rem; }
   .beats { padding-bottom: 5rem; }
   .interlude { padding-bottom: 6rem; }
   .cat-strip { padding-bottom: 5rem; }
