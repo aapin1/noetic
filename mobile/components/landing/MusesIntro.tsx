@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -48,20 +48,20 @@ const NAME_DUR = 450;
 const MEANINGS_AT = 3600;
 
 /** The three hold, still, long enough to actually be READ — all three names and
- * all three glosses — not merely glimpsed. Six full seconds after the last gloss
- * lands, which is slow on purpose: this is the one screen that has to stick. */
-const SCENE_OUT = 10300;
+ * all three glosses — not merely glimpsed. Four seconds after the last gloss
+ * lands: slow on purpose, because this is the screen that has to stick. */
+const SCENE_OUT = 8300;
 const SCENE_OUT_DUR = 700;
 
 /** The closing line arrives alone, on an empty screen, as one slow fade —
  * deliberately unlike the word-at-a-time openings. */
-const L3_AT = 11150;
+const L3_AT = 9150;
 const L3_DUR = 1200;
 
 /** The sentence lets go of its last word, which then travels on by itself. */
-const SENTENCE_OUT = 12950;
+const SENTENCE_OUT = 10950;
 const SENTENCE_OUT_DUR = 450;
-const MORPH_AT = 13250;
+const MORPH_AT = 11250;
 const MORPH_DUR = 1150;
 
 /** The travelling word reads its own position and its destination off the
@@ -164,6 +164,8 @@ export function MusesIntro({ targetRef, onHandoff, onDone }: Props) {
   const exit = useRef(new Animated.Value(0)).current;
   const started = useRef(false);
   const leaving = useRef(false);
+  /** Which half of the piece is on screen — the opening, or the dedication. */
+  const atClosing = useRef(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // Held in refs so a re-render of the landing screen — which happens at the
@@ -232,52 +234,81 @@ export function MusesIntro({ targetRef, onHandoff, onDone }: Props) {
     };
   };
 
-  useEffect(() => {
-    if (!ready || started.current) return;
-    started.current = true;
+  /**
+   * Plays the timeline from `from` onward. Written to be re-entered rather than
+   * merely started, because a tap during the opening moves the piece ON to its
+   * dedication instead of throwing it away — the three muses are skippable, the
+   * line they are there to set up is not.
+   */
+  const schedule = useCallback(
+    (from: number) => {
+      timers.current.forEach(clearTimeout);
+      timers.current = [];
 
-    Animated.timing(clock, {
-      toValue: TOTAL,
-      duration: TOTAL,
-      easing: Easing.linear,
-      useNativeDriver: true,
-    }).start();
+      clock.stopAnimation();
+      clock.setValue(from);
+      Animated.timing(clock, {
+        toValue: TOTAL,
+        duration: TOTAL - from,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }).start();
 
-    const run = (value: Animated.Value, at: number, duration: number) =>
-      timers.current.push(
-        setTimeout(() => {
-          Animated.timing(value, {
+      const at = (ms: number, fn: () => void) =>
+        timers.current.push(setTimeout(fn, Math.max(0, ms - from)));
+
+      // The collapse belongs to the opening. Landing past it means it has
+      // already happened — not that it should now happen all at once.
+      if (from >= COLLAPSE_AT) {
+        collapse.setValue(1);
+      } else {
+        at(COLLAPSE_AT, () =>
+          Animated.timing(collapse, {
             toValue: 1,
-            duration,
+            duration: COLLAPSE_DUR,
             easing: SETTLE,
             useNativeDriver: true,
-          }).start();
-        }, at),
-      );
+          }).start(),
+        );
+      }
 
-    run(collapse, COLLAPSE_AT, COLLAPSE_DUR);
-    run(morph, MORPH_AT, MORPH_DUR);
+      at(L3_AT, () => {
+        atClosing.current = true;
+      });
 
-    // Both reads are native round-trips, so they are taken 300ms early and the
-    // morph keeps its own start time. If either node declines to answer the
-    // delta stays zero and the word simply leaves with the rest of the line —
-    // better than flying it to a position nobody measured.
-    timers.current.push(
-      setTimeout(() => {
+      // Both reads are native round-trips, so they are taken 300ms early and the
+      // morph keeps its own start time. If either node declines to answer the
+      // delta stays zero and the word simply leaves with the rest of the line —
+      // better than flying it to a position nobody measured.
+      at(MEASURE_AT, () => {
         targetRef.current?.measureInWindow((tx, ty) => {
           wordRef.current?.measureInWindow((wx, wy) => setDelta({ x: tx - wx, y: ty - wy }));
         });
-      }, MEASURE_AT),
-    );
+      });
 
-    timers.current.push(setTimeout(() => handoffRef.current(), HANDOFF_AT));
-    timers.current.push(
-      setTimeout(() => {
+      at(MORPH_AT, () =>
+        Animated.timing(morph, {
+          toValue: 1,
+          duration: MORPH_DUR,
+          easing: SETTLE,
+          useNativeDriver: true,
+        }).start(),
+      );
+
+      at(HANDOFF_AT, () => handoffRef.current());
+      at(TOTAL, () => {
         leaving.current = true;
         doneRef.current();
-      }, TOTAL),
-    );
-  }, [clock, collapse, morph, ready, targetRef]);
+      });
+    },
+    [clock, collapse, morph, targetRef],
+  );
+
+  useEffect(() => {
+    if (!ready || started.current) return;
+    started.current = true;
+    schedule(0);
+  }, [ready, schedule]);
 
   useEffect(
     () => () => {
@@ -302,6 +333,23 @@ export function MusesIntro({ targetRef, onHandoff, onDone }: Props) {
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
     }).start(() => doneRef.current());
+  };
+
+  /**
+   * A tap on the opening jumps to the dedication; a tap on the dedication
+   * leaves. So the three muses are skippable, but the line they exist to set up
+   * still gets said — and nobody is ever more than two taps from the app.
+   */
+  const advance = () => {
+    if (leaving.current) return;
+    if (atClosing.current) {
+      skip();
+      return;
+    }
+    // Set here rather than left to schedule's own 0ms cue, so a fast double tap
+    // reads as opening-then-dedication instead of jumping to L3_AT twice.
+    atClosing.current = true;
+    schedule(L3_AT);
   };
 
   const fadeField = (out: number) =>
@@ -382,8 +430,8 @@ export function MusesIntro({ targetRef, onHandoff, onDone }: Props) {
 
       <Pressable
         style={StyleSheet.absoluteFill}
-        onPress={skip}
-        accessibilityLabel="Skip the introduction"
+        onPress={advance}
+        accessibilityLabel="Skip ahead"
         accessibilityRole="button"
       />
 
