@@ -118,7 +118,14 @@ export function GuidePill({ frame, enter = 'right', text, cta, art = 'cat', onCt
             {typed ? '' : '▌'}
           </RNText>
         </View>
-        <Pressable onPress={onSkip} hitSlop={10} accessibilityRole="button" accessibilityLabel="Not now">
+        {/* Generous slop everywhere except toward the CTA below — a tap at or
+            near the ✕ must always read as "not now", never as the action. */}
+        <Pressable
+          onPress={onSkip}
+          hitSlop={{ top: 16, right: 16, left: 12, bottom: 6 }}
+          accessibilityRole="button"
+          accessibilityLabel="Not now"
+        >
           <RNText style={styles.close}>✕</RNText>
         </Pressable>
       </View>
@@ -127,7 +134,9 @@ export function GuidePill({ frame, enter = 'right', text, cta, art = 'cat', onCt
           <Pressable
             onPress={onCta}
             disabled={!typed}
-            hitSlop={8}
+            // No upward slop: the ✕ sits directly above, and any ambiguity
+            // between "dismiss" and "act" must resolve to dismiss.
+            hitSlop={{ top: 0, bottom: 8, left: 8, right: 8 }}
             style={styles.ctaBtn}
             accessibilityRole="button"
             accessibilityLabel={cta}
@@ -183,7 +192,8 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    marginTop: Spacing[2],
+    // Enough air below the ✕ that the two targets never crowd each other.
+    marginTop: Spacing[3],
   },
   ctaBtn: {
     borderWidth: 1,

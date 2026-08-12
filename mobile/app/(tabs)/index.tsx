@@ -3655,8 +3655,13 @@ export default function MapScreen() {
         y: Math.min(0.92, Math.max(0.08, (worldY - MAP_PAD) / LAYOUT_H)),
       });
       setNewNodeId(TUTORIAL_DEMO_NODE.id);
+      // Straight to the map: the sheet vanishes in one frame with the loader
+      // still covering it. The animated close re-showed the step-two form
+      // (and could flash the keyboard) for the length of the slide-down.
+      Keyboard.dismiss();
+      slideY.setValue(SH);
+      setShowCapture(false);
       setBusy(false);
-      closeCapture();
       // Only NOW move on to the "there it lands" card — the walkthrough must
       // never talk about a node that isn't on the map yet.
       nextTutorialStep();
@@ -3732,7 +3737,7 @@ export default function MapScreen() {
           e instanceof Error ? e.message : 'Could not save that. Try again.',
         );
       });
-  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, tutorialActive, notifyTargetPressed, nextTutorialStep, showSavedPill, maybeAskForPush, disclosure]);
+  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, slideY, tutorialActive, notifyTargetPressed, nextTutorialStep, showSavedPill, maybeAskForPush, disclosure]);
 
   const quickSave = useCallback(() => {
     if (!validatePayload()) return;
@@ -4808,7 +4813,7 @@ export default function MapScreen() {
               style={{ marginTop: Spacing[4] }}
             >
               <Text variant="monoSmall" style={{ color: 'rgba(240,232,214,0.53)', textAlign: 'center' }}>
-                {'have a bunch of logs already? bring them in all at once →'}
+                {'have a bunch of logs? save them all at once →'}
               </Text>
             </Pressable>
           </View>

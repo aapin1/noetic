@@ -144,7 +144,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'welcome',
     title: 'welcome to mneme',
-    body: 'log anything you find intellectually stimulating and mneme plots it on this map — spatially, the way your brain organizes concepts. this takes about a minute.',
+    body: 'log anything that catches your mind and mneme plots it on this map — spatially, the way your brain organizes concepts.',
     target: { kind: 'card' },
   },
   {
@@ -164,7 +164,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'capture-commit',
     title: 'make it yours',
-    body: 'you can leave a reaction — agree, disagree, a one-line review — and it saves alongside the article. always optional.',
+    body: 'you can leave a reaction — agree, disagree, a one-line review — and it saves along with what you logged. always optional.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.captureCommit },
     hint: 'tap commit',
   },
