@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Easing, Platform, Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Defs, Mask, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -35,6 +35,11 @@ const CARD_FADE_MS = 220;
 // Rough worst-case card height (visual step included), used only to decide
 // which side of the spotlight the card fits on — never to size the card.
 const CARD_EST_H = 250;
+// The stray-tap nudge: how wide its box may grow, how long it lingers, and
+// how far above the finger it appears (below, when the touch is near the top).
+const NUDGE_W = 230;
+const NUDGE_HOLD_MS = 1500;
+const NUDGE_LIFT = 64;
 // Walkthrough accent — matches the map's discovery/multi-select green so the
 // tutorial reads as part of the atlas rather than a bolt-on.
 const ACCENT = '#7EC8A0';
@@ -129,12 +134,41 @@ export function TutorialOverlay() {
   // being hidden and faded back in.
   const [revealedStepId, setRevealedStepId] = useState<string | null>(null);
 
+  // A stray tap — anything the absorbers swallow — answers with a small note
+  // at the finger: the way on is the lit control or the card, or exit. It
+  // fades on its own; a new stray tap moves it rather than stacking.
+  const [nudge, setNudge] = useState<{ x: number; y: number } | null>(null);
+  const nudgeOpacity = useRef(new Animated.Value(0)).current;
+  const nudgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showNudge = useCallback((pageX: number, pageY: number) => {
+    if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
+    setNudge({ x: pageX, y: pageY });
+    nudgeOpacity.setValue(0);
+    Animated.timing(nudgeOpacity, {
+      toValue: 1,
+      duration: 140,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+    nudgeTimer.current = setTimeout(() => {
+      Animated.timing(nudgeOpacity, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start(() => setNudge(null));
+    }, NUDGE_HOLD_MS);
+  }, [nudgeOpacity]);
+  useEffect(() => () => {
+    if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
+  }, []);
+
   // Let the dimmed screen sit alone for a moment before the card slides in —
   // abrupt cards covering a chunk of an unfamiliar screen feel jarring.
   useEffect(() => {
     if (!active) return;
     setCollapsed(false);
     setRevealedStepId(null);
+    setNudge(null);
     cardOpacity.setValue(0);
     // A deferred step hasn't started yet — hold the reveal until the user is
     // back where the card belongs, so it fades in on arrival instead of
@@ -186,6 +220,15 @@ export function TutorialOverlay() {
 
   const isLast = stepIndex === totalSteps - 1;
   const cardButtonLabel = isLast ? 'done' : stepIndex === 0 ? 'begin' : 'got it';
+
+  // What the stray-tap nudge tells the finger: always the one real way
+  // forward for THIS step — the card's button, the lit control, or (on the
+  // auto-advancing card) simply waiting.
+  const nudgeLine = step.autoAdvance
+    ? 'one moment — or tap exit'
+    : showCardButton
+      ? 'continue from the card — or exit'
+      : `${step.hint ?? 'tap the highlighted spot'} — or exit`;
 
   // Place the card adjacent to the spotlight, in whichever gap actually fits
   // it — so it can never sit on top of the control it's pointing at. Cards
@@ -246,19 +289,25 @@ export function TutorialOverlay() {
       </View>
 
       {hole ? (
-        // Four invisible panels framing the hole absorb stray taps. The hole
-        // itself has no view over it, so taps land on the real control(s)
-        // beneath it — the visual dimming above already lights that area.
+        // Four invisible panels framing the hole absorb stray taps — and
+        // answer each one with the nudge, so an accidental touch teaches
+        // instead of silently doing nothing. The hole itself has no view over
+        // it, so taps land on the real control(s) beneath it — the visual
+        // dimming above already lights that area.
         <>
-          <View pointerEvents="auto" style={[styles.absorb, { top: 0, left: 0, right: 0, height: Math.max(0, hole.y - HOLE_PAD) }]} />
-          <View pointerEvents="auto" style={[styles.absorb, { top: hole.y + hole.height + HOLE_PAD, left: 0, right: 0, bottom: 0 }]} />
-          <View pointerEvents="auto" style={[styles.absorb, { top: hole.y - HOLE_PAD, left: 0, width: Math.max(0, hole.x - HOLE_PAD), height: hole.height + HOLE_PAD * 2 }]} />
-          <View pointerEvents="auto" style={[styles.absorb, { top: hole.y - HOLE_PAD, left: hole.x + hole.width + HOLE_PAD, right: 0, height: hole.height + HOLE_PAD * 2 }]} />
+          <Pressable onPressIn={(e) => showNudge(e.nativeEvent.pageX, e.nativeEvent.pageY)} style={[styles.absorb, { top: 0, left: 0, right: 0, height: Math.max(0, hole.y - HOLE_PAD) }]} />
+          <Pressable onPressIn={(e) => showNudge(e.nativeEvent.pageX, e.nativeEvent.pageY)} style={[styles.absorb, { top: hole.y + hole.height + HOLE_PAD, left: 0, right: 0, bottom: 0 }]} />
+          <Pressable onPressIn={(e) => showNudge(e.nativeEvent.pageX, e.nativeEvent.pageY)} style={[styles.absorb, { top: hole.y - HOLE_PAD, left: 0, width: Math.max(0, hole.x - HOLE_PAD), height: hole.height + HOLE_PAD * 2 }]} />
+          <Pressable onPressIn={(e) => showNudge(e.nativeEvent.pageX, e.nativeEvent.pageY)} style={[styles.absorb, { top: hole.y - HOLE_PAD, left: hole.x + hole.width + HOLE_PAD, right: 0, height: hole.height + HOLE_PAD * 2 }]} />
         </>
       ) : (
         // Card-only step, or a registered target we haven't measured yet: a
-        // full-screen absorber that simply keeps the screen inert.
-        <View pointerEvents="auto" style={StyleSheet.absoluteFill} />
+        // full-screen absorber that keeps the screen inert — and still
+        // explains itself when touched.
+        <Pressable
+          onPressIn={(e) => showNudge(e.nativeEvent.pageX, e.nativeEvent.pageY)}
+          style={StyleSheet.absoluteFill}
+        />
       )}
 
       <View pointerEvents="box-none" style={[styles.cardWrap, cardAnchor]}>
@@ -332,6 +381,29 @@ export function TutorialOverlay() {
           )}
         </Animated.View>
       </View>
+
+      {nudge && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.nudge,
+            {
+              backgroundColor: c.surface,
+              borderColor: c.border,
+              opacity: nudgeOpacity,
+              left: Math.min(Math.max(nudge.x - NUDGE_W / 2, Spacing[3]), SW - NUDGE_W - Spacing[3]),
+              top:
+                nudge.y - NUDGE_LIFT < insets.top + Spacing[3]
+                  ? nudge.y + 28
+                  : nudge.y - NUDGE_LIFT,
+            },
+          ]}
+        >
+          <Text variant="monoSmall" style={{ color: c.muted, textAlign: 'center' }}>
+            {nudgeLine}
+          </Text>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -339,6 +411,19 @@ export function TutorialOverlay() {
 const styles = StyleSheet.create({
   absorb: {
     position: 'absolute',
+  },
+  nudge: {
+    position: 'absolute',
+    width: NUDGE_W,
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    paddingVertical: Spacing[2],
+    paddingHorizontal: Spacing[3],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
   },
   cardWrap: {
     position: 'absolute',
