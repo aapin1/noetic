@@ -124,7 +124,7 @@ export default function LandingScreen() {
     return () => clearTimeout(t);
   }, [returning]);
 
-  // A fourteen-second full-screen motion piece is exactly what this setting is for.
+  // A twelve-second full-screen motion piece is exactly what this setting is for.
   useEffect(() => {
     let alive = true;
     AccessibilityInfo.isReduceMotionEnabled().then((on) => {
