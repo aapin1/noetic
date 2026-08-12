@@ -93,9 +93,9 @@ export default function LandingScreen() {
   const [introDone, setIntroDone] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [welcomeDone, setWelcomeDone] = useState(false);
-  // Measured rather than assumed, so the intro's word has something exact to
-  // travel to. Both are laid out by the same parent, so the boxes subtract.
-  const [markBox, setMarkBox] = useState<{ x: number; y: number } | null>(null);
+  // Handed to the intro so its travelling word can read this node's real place
+  // on screen, rather than being aimed at where the layout says it ought to be.
+  const markRef = useRef<View>(null);
 
   // Gentle idle motion: the brain breathes and sways like it's thinking.
   const breath = useRef(new Animated.Value(0)).current;
@@ -124,7 +124,7 @@ export default function LandingScreen() {
     return () => clearTimeout(t);
   }, [returning]);
 
-  // A seven-second full-screen motion piece is exactly what this setting is for.
+  // A fourteen-second full-screen motion piece is exactly what this setting is for.
   useEffect(() => {
     let alive = true;
     AccessibilityInfo.isReduceMotionEnabled().then((on) => {
@@ -207,16 +207,12 @@ export default function LandingScreen() {
 
           {!returning && (
             <>
-              <Text
-                variant="wordmark"
-                style={[styles.mark, { opacity: introDone ? 1 : 0 }]}
-                onLayout={(e) => {
-                  const { x, y } = e.nativeEvent.layout;
-                  setMarkBox((prev) => prev ?? { x, y });
-                }}
-              >
-                mneme
-              </Text>
+              {/* The wordmark is wrapped so the intro has a node it can measure
+                  — and so what it measures is exactly the box the word has to
+                  come to rest in. */}
+              <View ref={markRef} style={[styles.mark, { opacity: introDone ? 1 : 0 }]}>
+                <Text variant="wordmark">mneme</Text>
+              </View>
               <Animated.View style={rise(enterCopy)}>
                 <Text variant="h1" style={styles.line}>
                   Turn what catches your eye into a map of your mind.
@@ -238,9 +234,9 @@ export default function LandingScreen() {
                 </Pressable>
               </Animated.View>
 
-              {signedOut && !introDone && markBox && (
+              {signedOut && !introDone && (
                 <MusesIntro
-                  target={markBox}
+                  targetRef={markRef}
                   onHandoff={() => setContentIn(true)}
                   onDone={() => setIntroDone(true)}
                 />

@@ -47,20 +47,27 @@ const NAME_DUR = 450;
 /** The glosses follow their names, so the row reads name-then-meaning. */
 const MEANINGS_AT = 3600;
 
-/** The three hold, still, long enough to actually be looked at. */
-const SCENE_OUT = 6300;
+/** The three hold, still, long enough to actually be READ — all three names and
+ * all three glosses — not merely glimpsed. Six full seconds after the last gloss
+ * lands, which is slow on purpose: this is the one screen that has to stick. */
+const SCENE_OUT = 10300;
 const SCENE_OUT_DUR = 700;
 
 /** The closing line arrives alone, on an empty screen, as one slow fade —
  * deliberately unlike the word-at-a-time openings. */
-const L3_AT = 7150;
+const L3_AT = 11150;
 const L3_DUR = 1200;
 
 /** The sentence lets go of its last word, which then travels on by itself. */
-const SENTENCE_OUT = 8950;
+const SENTENCE_OUT = 12950;
 const SENTENCE_OUT_DUR = 450;
-const MORPH_AT = 9250;
+const MORPH_AT = 13250;
 const MORPH_DUR = 1150;
+
+/** The travelling word reads its own position and its destination off the
+ * native tree a beat before it sets off, so the landing spot is the wordmark's
+ * real place on screen rather than a sum of assumed parent geometry. */
+const MEASURE_AT = MORPH_AT - 300;
 
 /** The screen behind starts rising before the word lands, so it reads as one
  * continuous motion rather than as two scenes. */
@@ -93,8 +100,8 @@ const SETTLE = Easing.bezier(0.16, 1, 0.3, 1);
 type Box = LayoutRectangle | null;
 
 interface Props {
-  /** Where the real wordmark sits, in the coordinate space of the shared parent. */
-  target: { x: number; y: number };
+  /** The real wordmark itself, so the word can be sent to where it actually is. */
+  targetRef: React.RefObject<View | null>;
   /** Fired before the word lands, so the screen behind can start rising. */
   onHandoff: () => void;
   /** Fired once the word is home and this component can go. */
@@ -149,7 +156,7 @@ function Words({
   );
 }
 
-export function MusesIntro({ target, onHandoff, onDone }: Props) {
+export function MusesIntro({ targetRef, onHandoff, onDone }: Props) {
   const c = useThemeColors();
   const clock = useRef(new Animated.Value(0)).current;
   const collapse = useRef(new Animated.Value(0)).current;
@@ -166,7 +173,7 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
   handoffRef.current = onHandoff;
   doneRef.current = onDone;
 
-  // Both motions land on measured boxes rather than assumed geometry. Every box
+  // The collapse lands on measured boxes rather than assumed geometry. Every box
   // resolves against the same parent, so they subtract cleanly — no assumption
   // about how Yoga insets absolutely-positioned children by padding.
   const [rootBox, setRootBox] = useState<Box>(null);
@@ -174,9 +181,14 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
   const [namesBox, setNamesBox] = useState<Box>(null);
   const [colBoxes, setColBoxes] = useState<Box[]>([null, null, null]);
   const [dotBoxes, setDotBoxes] = useState<Box[]>([null, null, null]);
-  const [closingBox, setClosingBox] = useState<Box>(null);
-  const [closingRowBox, setClosingRowBox] = useState<Box>(null);
-  const [mnemeBox, setMnemeBox] = useState<Box>(null);
+
+  // The morph does NOT: a chain of nested boxes is only ever as right as its
+  // weakest link, and one wrong term put the word down above the wordmark, so it
+  // visibly dropped into place the instant this component retired. Both nodes
+  // are read in window coordinates instead, at MEASURE_AT — nothing between them
+  // and the window is scaled or rotated, so the difference IS the translation.
+  const wordRef = useRef<View>(null);
+  const [delta, setDelta] = useState({ x: 0, y: 0 });
 
   // Layout events are pooled, so every handler reads the box out before the
   // state updater runs — by then `nativeEvent` has already been recycled.
@@ -198,9 +210,6 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
     rootBox !== null &&
     sceneBox !== null &&
     namesBox !== null &&
-    closingBox !== null &&
-    closingRowBox !== null &&
-    mnemeBox !== null &&
     colBoxes.every(Boolean) &&
     dotBoxes.every(Boolean);
 
@@ -222,13 +231,6 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
       y: SURVIVORS[i].y * rootBox!.height - DOT_SIZE / 2 - restY,
     };
   };
-
-  const delta = ready
-    ? {
-        x: target.x - rootBox!.x - (closingBox!.x + closingRowBox!.x + mnemeBox!.x),
-        y: target.y - rootBox!.y - (closingBox!.y + closingRowBox!.y + mnemeBox!.y),
-      }
-    : { x: 0, y: 0 };
 
   useEffect(() => {
     if (!ready || started.current) return;
@@ -256,6 +258,18 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
     run(collapse, COLLAPSE_AT, COLLAPSE_DUR);
     run(morph, MORPH_AT, MORPH_DUR);
 
+    // Both reads are native round-trips, so they are taken 300ms early and the
+    // morph keeps its own start time. If either node declines to answer the
+    // delta stays zero and the word simply leaves with the rest of the line —
+    // better than flying it to a position nobody measured.
+    timers.current.push(
+      setTimeout(() => {
+        targetRef.current?.measureInWindow((tx, ty) => {
+          wordRef.current?.measureInWindow((wx, wy) => setDelta({ x: tx - wx, y: ty - wy }));
+        });
+      }, MEASURE_AT),
+    );
+
     timers.current.push(setTimeout(() => handoffRef.current(), HANDOFF_AT));
     timers.current.push(
       setTimeout(() => {
@@ -263,7 +277,7 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
         doneRef.current();
       }, TOTAL),
     );
-  }, [clock, collapse, morph, ready]);
+  }, [clock, collapse, morph, ready, targetRef]);
 
   useEffect(
     () => () => {
@@ -428,10 +442,9 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
 
       <Animated.View
         style={[StyleSheet.absoluteFill, styles.closing, { opacity: closingOpacity }]}
-        onLayout={measure(setClosingBox)}
         pointerEvents="none"
       >
-        <View style={styles.wordRow} onLayout={measure(setClosingRowBox)}>
+        <View style={styles.wordRow}>
           {CLOSING.map((word) => (
             <Animated.Text
               key={word}
@@ -444,7 +457,7 @@ export function MusesIntro({ target, onHandoff, onDone }: Props) {
           {/* No right margin: the word's own trailing letter-space is exactly
               the gap a full stop wants, and the period below opens with none. */}
           <Animated.View
-            onLayout={measure(setMnemeBox)}
+            ref={wordRef}
             style={[
               styles.closingWordBox,
               { marginRight: 0 },
