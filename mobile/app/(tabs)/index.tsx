@@ -1940,7 +1940,7 @@ export default function MapScreen() {
   const { setMode: setThemeMode, scheme } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { start: startTutorial, active: tutorialActive, notifyTargetPressed } = useTutorial();
+  const { start: startTutorial, active: tutorialActive, notifyTargetPressed, next: nextTutorialStep } = useTutorial();
   const fabTarget = useTutorialTarget(TUTORIAL_TARGET.captureFab);
   // The node-management steps target the walkthrough's own demo node/delete
   // control specifically, not any node — reused below by id match.
@@ -3636,9 +3636,11 @@ export default function MapScreen() {
     // no server write, no AI, nothing that can vary or fail. The landing ring
     // and ease-in animations are the same ones a real capture triggers.
     if (tutorialActive) {
-      // A beat of the saving loader — an honest impression of a real read,
-      // short enough not to strand the tour.
-      await new Promise((r) => setTimeout(r, 3500));
+      // Advance to the "under 7 seconds" card the moment commit is pressed —
+      // it narrates the read the loader is performing, and card + loader hold
+      // together for exactly the seven seconds the copy promises.
+      notifyTargetPressed(TUTORIAL_TARGET.captureCommit);
+      await new Promise((r) => setTimeout(r, 7000));
       const worldX = savedVB.current.x + (SW / 2) / savedZoom.current;
       const worldY = savedVB.current.y + (SH / 2) / savedZoom.current;
       setDemoNode({
@@ -3655,9 +3657,9 @@ export default function MapScreen() {
       setNewNodeId(TUTORIAL_DEMO_NODE.id);
       setBusy(false);
       closeCapture();
-      // Only NOW advance to the "there it lands" card — the walkthrough must
+      // Only NOW move on to the "there it lands" card — the walkthrough must
       // never talk about a node that isn't on the map yet.
-      notifyTargetPressed(TUTORIAL_TARGET.captureCommit);
+      nextTutorialStep();
       return;
     }
     // Detached commit: the sheet closes NOW and the pipeline finishes on the
@@ -3730,7 +3732,7 @@ export default function MapScreen() {
           e instanceof Error ? e.message : 'Could not save that. Try again.',
         );
       });
-  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, tutorialActive, notifyTargetPressed, showSavedPill, maybeAskForPush, disclosure]);
+  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, tutorialActive, notifyTargetPressed, nextTutorialStep, showSavedPill, maybeAskForPush, disclosure]);
 
   const quickSave = useCallback(() => {
     if (!validatePayload()) return;
@@ -4806,7 +4808,7 @@ export default function MapScreen() {
               style={{ marginTop: Spacing[4] }}
             >
               <Text variant="monoSmall" style={{ color: 'rgba(240,232,214,0.53)', textAlign: 'center' }}>
-                {'have years of saves? watch them become a map →'}
+                {'have a bunch of logs already? bring them in all at once →'}
               </Text>
             </Pressable>
           </View>
@@ -4885,11 +4887,11 @@ export default function MapScreen() {
                 {/* Node detail */}
                 {selectedNode && (
                   <View>
-                    {/* The panel's read-only body, wrapped as one region so the
-                        walkthrough can light the text the user is meant to be
-                        reading. Deliberately excludes the actions below it, so
-                        the spotlight leaves room for the card underneath
-                        instead of forcing it up over the title. */}
+                    {/* The panel's read-only body plus "view insight", wrapped
+                        as one region so the walkthrough lights everything its
+                        card describes — source, date, topics, and the way into
+                        the full read. Move/delete stay outside the spotlight
+                        so the card keeps room underneath. */}
                     <View
                       ref={panelTarget.isActive ? panelTarget.ref : undefined}
                       onLayout={panelTarget.isActive ? panelTarget.onLayout : undefined}
@@ -4920,16 +4922,16 @@ export default function MapScreen() {
                           {selectedNode.topics.slice(0, 4).map((t) => t.name).join(' · ')}
                         </Text>
                       )}
+                      {/* Present for the practice node too — the insight screen
+                          serves it a canned CaptureDetail, so the walkthrough
+                          shows the node's full anatomy, view insight included. */}
+                      <Pressable
+                        onPress={() => { closeDrawer(); router.push(`/insight/${selectedNode.id}?from=map` as never); }}
+                        style={{ marginTop: Spacing[2] }}
+                      >
+                        <Text variant="monoSmall" color="muted">view insight →</Text>
+                      </Pressable>
                     </View>
-                    {/* Present for the practice node too — the insight screen
-                        serves it a canned CaptureDetail, so the walkthrough
-                        shows the node's full anatomy, view insight included. */}
-                    <Pressable
-                      onPress={() => { closeDrawer(); router.push(`/insight/${selectedNode.id}?from=map` as never); }}
-                      style={{ marginTop: Spacing[2] }}
-                    >
-                      <Text variant="monoSmall" color="muted">view insight →</Text>
-                    </Pressable>
                     {selectedNode.id !== TUTORIAL_DEMO_NODE.id && (
                       <Pressable
                         onPress={() => setMoveTopicNode(selectedNode)}

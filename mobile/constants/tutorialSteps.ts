@@ -33,6 +33,18 @@ export interface TutorialStep {
   // region purely so the user can read it — so the card's own button is the
   // way on. Without it such a step is a dead end.
   dismissible?: boolean;
+  // Footer instruction naming the actual control ("tap the +"). Shown in
+  // place of the generic "tap the highlighted spot", so the body never has
+  // to repeat the instruction.
+  hint?: string;
+  // A card with no button: the flow it narrates advances it programmatically.
+  // The guided commit holds its card up for exactly as long as the simulated
+  // read runs.
+  autoAdvance?: boolean;
+  // Held invisible until the user is back on the atlas. Used for the farewell
+  // card, which should greet the first return from the companion rather than
+  // paper over the companion itself.
+  deferUntilAtlas?: boolean;
   // An illustration rendered inside the card, above the body text.
   visual?: 'share';
 }
@@ -132,87 +144,104 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'welcome',
     title: 'welcome to mneme',
-    body: 'mneme turns what you read and watch into a map of your mind. this takes about a minute.',
+    body: 'log anything you find intellectually stimulating and mneme plots it on this map — spatially, the way your brain organizes concepts. this takes about a minute.',
     target: { kind: 'card' },
   },
   {
     id: 'capture',
     title: 'capture',
-    body: 'the + saves articles, videos, tweets, thoughts, and photos. we loaded an example link. tap the +.',
+    body: 'the + saves articles, videos, tweets, thoughts, and photos. we loaded an example link for you.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.captureFab },
+    hint: 'tap the +',
   },
   {
     id: 'capture-next',
     title: 'the source',
-    body: 'mneme reads the page itself, so you never have to summarize. tap next.',
+    body: 'mneme reads the page itself and understands it — an article, a video, a paper, anything you throw at it — so the tedious part of logging is never yours.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.captureNext },
+    hint: 'tap next',
   },
   {
     id: 'capture-commit',
     title: 'make it yours',
-    body: 'a reaction is optional. tap commit to put it on your map.',
+    body: 'you can leave a reaction — agree, disagree, a one-line review — and it saves alongside the article. always optional.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.captureCommit },
+    hint: 'tap commit',
+  },
+  {
+    id: 'seven-seconds',
+    title: 'under 7 seconds',
+    body: 'mneme is reading the page right now. everything you log — articles, videos, podcasts — takes under 7 seconds, start to finish.',
+    target: { kind: 'card' },
+    autoAdvance: true,
   },
   {
     id: 'atlas',
     title: 'your first node',
-    body: 'there it lands. related ideas sit close, and lines form between them as you save more.',
+    body: 'there it lands. as you log more, related ideas settle close together — and the connections, contradictions, and tensions between them surface as insights for you to review.',
     target: { kind: 'card' },
   },
   {
     id: 'node-manage-prompt',
     title: 'open a node',
-    body: "tap your new node to see what's inside.",
+    body: 'every node keeps everything mneme learned about that save.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.nodeTap },
+    hint: 'tap your new node',
   },
   {
     id: 'node-manage-info',
     title: 'the detail panel',
-    body: 'the source, its topics, and your reaction. view insight opens the full read: what it says and how it fits what you save.',
+    body: 'here you see the source, the date you logged it, and the topics mneme filed it under. view insight opens the full read — what it says, and how it fits everything else you save.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.nodePanel },
     dismissible: true,
   },
   {
     id: 'node-delete',
     title: "you're in control",
-    body: 'this node was practice. tap delete, then confirm.',
+    body: 'this node was practice — clear it and the map is yours.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.nodeDelete },
+    hint: 'tap delete, then confirm',
   },
   {
     id: 'lenses',
     title: 'two lenses',
-    body: 'semantic groups ideas by meaning. time replays them in order. tap either one.',
+    body: 'semantic groups ideas by meaning. time replays them in the order you saved them.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.atlasLenses },
+    hint: 'tap either one',
   },
   {
     id: 'recenter',
     title: 'recenter',
-    body: 'lost? this snaps the map back into view. tap it.',
+    body: 'lost? this snaps the map back into view.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.atlasRecenter },
+    hint: 'tap recenter',
   },
   {
     id: 'multi-select',
     title: 'multi-select',
-    body: 'the crosshair selects a few nodes to explore together. the magnifier searches. tap the crosshair.',
+    body: 'the crosshair selects several nodes at once, so mneme can show you what runs between them — a connection, a contradiction, an insight. the magnifier searches.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.atlasDiscover },
+    hint: 'tap the crosshair',
   },
   {
     id: 'share',
     title: 'the fast way in',
-    body: 'from your browser or youtube, hit share and pick mneme. it saves without opening the app.',
+    body: "from an article in your browser, a youtube video, anything you want to log — hit share and scroll until you find mneme. it saves without pulling you out of what you're reading, and mneme handles the rest.",
     target: { kind: 'card' },
     visual: 'share',
   },
   {
     id: 'companion',
     title: 'companion',
-    body: 'the speech bubble is a chat that knows everything you saved. tap it to say hello.',
+    body: 'the speech bubble is a chat that knows everything you saved.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.companionFab },
+    hint: 'tap the speech bubble',
   },
   {
     id: 'done',
     title: "that's mneme",
-    body: 'save one real thing today. replay this tour any time from the ⓣ.',
+    body: "you're on your own now. go save something real today — and replay this tour any time from the ⓣ.",
     target: { kind: 'card' },
+    deferUntilAtlas: true,
   },
 ];

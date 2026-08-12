@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Easing, Platform, Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Defs, Mask, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSegments } from 'expo-router';
 import { Spacing, Radius } from '@/constants/theme';
 import type { AppThemeColors } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
@@ -112,6 +113,13 @@ export function TutorialOverlay() {
   const { active, step, stepIndex, totalSteps, targetRects, next, stop } = useTutorial();
   const c = useThemeColors();
   const insets = useSafeAreaInsets();
+  const segments = useSegments();
+  // A deferred step waits for the user to be back on the atlas (the tab
+  // group's index route reports the group segment '(tabs)') — the overlay
+  // disappears entirely in the meantime, leaving the screen they navigated
+  // to fully usable. The farewell card uses this to greet the first return
+  // from the companion instead of covering the companion itself.
+  const deferred = !!step?.deferUntilAtlas && segments[segments.length - 1] !== '(tabs)';
   const [collapsed, setCollapsed] = useState(false);
   const cardOpacity = useRef(new Animated.Value(0)).current;
   // Which step's card has been released to render. Compared against the
@@ -128,6 +136,10 @@ export function TutorialOverlay() {
     setCollapsed(false);
     setRevealedStepId(null);
     cardOpacity.setValue(0);
+    // A deferred step hasn't started yet — hold the reveal until the user is
+    // back where the card belongs, so it fades in on arrival instead of
+    // already sitting at full opacity.
+    if (deferred) return;
     const t = setTimeout(() => {
       setRevealedStepId(step.id);
       Animated.timing(cardOpacity, {
@@ -139,9 +151,9 @@ export function TutorialOverlay() {
     }, CARD_REVEAL_DELAY);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, step.id]);
+  }, [active, step.id, deferred]);
 
-  if (!active) return null;
+  if (!active || deferred) return null;
 
   // Resolve the spotlight hole for this step, if any.
   let hole: TutorialRect | null = null;
@@ -167,8 +179,10 @@ export function TutorialOverlay() {
   // the touch IS the lesson. Two exceptions get the card's own button: a step
   // that lights a region with nothing to tap (`dismissible`), and a registered
   // target whose rect never resolved, where there is no lit control to tap and
-  // the step would otherwise be a dead end.
-  const showCardButton = isCard || !!step.dismissible || (step.target.kind === 'registered' && !hole);
+  // the step would otherwise be a dead end. Auto-advance cards get no button
+  // at all — the flow they narrate moves them along.
+  const showCardButton =
+    (isCard && !step.autoAdvance) || !!step.dismissible || (step.target.kind === 'registered' && !hole);
 
   const isLast = stepIndex === totalSteps - 1;
   const cardButtonLabel = isLast ? 'done' : stepIndex === 0 ? 'begin' : 'got it';
@@ -308,9 +322,9 @@ export function TutorialOverlay() {
                 </Pressable>
                 {showCardButton ? (
                   <Button label={cardButtonLabel} variant="primary" size="sm" onPress={isLast ? stop : next} />
-                ) : (
+                ) : step.autoAdvance ? null : (
                   <Text variant="monoSmall" style={{ color: ACCENT, letterSpacing: 0.5 }}>
-                    tap the highlighted spot
+                    {step.hint ?? 'tap the highlighted spot'}
                   </Text>
                 )}
               </View>
