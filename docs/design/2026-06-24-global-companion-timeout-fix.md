@@ -1,7 +1,6 @@
 # Spec: Global AI Companion + Capture Pipeline Timeout Fix
 
-**Date:** 2026-06-24  
-**Status:** Approved
+**Date:** 2026-06-24
 
 ---
 

@@ -1,8 +1,6 @@
 # Mobile product analytics + crash reporting
 
 **Date:** 2026-07-31
-**Branch:** `analytics-and-crash-reporting` (worktree at `../mneme-analytics`)
-**Status:** approved, implementing
 
 ## Problem
 
@@ -189,9 +187,8 @@ those two files clean.
 
 ## Conflict containment
 
-Concurrent work on the notifications and API surface is in progress on `main`
-with a dirty working tree. This work happens in a separate worktree on its own
-branch, so that tree is untouched.
+Concurrent work on the notifications and API surface is in progress on `main`.
+This work happens on its own branch so that tree is untouched.
 
 Exactly one file overlaps: `mobile/app/(tabs)/index.tsx`. The edit there is an
 import plus three `track()` calls in the capture handler — small enough to

@@ -1,20 +1,14 @@
+# Dotfiles and dot-directories (git, env, local tool state) — the build needs none of them
+.*
+!.env.example
 node_modules
-.next
-.git
-.gitignore
 mobile
 tests
 docs
-.planning
-.claude
-.agents
-awesome-ux-skills
-skills-lock.json
+website
 *.md
-.env
-.env.*
-!.env.example
 Dockerfile
-.dockerignore
+docker-compose.yml
+render.yaml
 npm-debug.log*
 tsconfig.tsbuildinfo

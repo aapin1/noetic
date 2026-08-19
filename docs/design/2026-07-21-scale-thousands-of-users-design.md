@@ -1,7 +1,6 @@
 # Scaling the Mneme backend to thousands of users
 
 Date: 2026-07-21
-Status: approved, ready for implementation
 
 ## Problem
 

@@ -1,7 +1,6 @@
 # Thin-capture flagging — design
 
 **Date:** 2026-07-21
-**Status:** approved, pending implementation plan
 
 ## Problem
 

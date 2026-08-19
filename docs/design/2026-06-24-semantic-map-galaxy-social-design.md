@@ -1,7 +1,6 @@
 # Design: Semantic Map Fix · Topic Galaxy · Social Pulse · Socratic FAB
 
-**Date:** 2026-06-24  
-**Status:** Approved  
+**Date:** 2026-06-24
 **Scope:** Mobile-only changes except one new backend API route (`/api/social/feed`)
 
 ---

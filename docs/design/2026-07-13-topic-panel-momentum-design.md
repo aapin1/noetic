@@ -1,7 +1,6 @@
 # Topic panel, pulse card, and topic momentum — design
 
 Date: 2026-07-13
-Branch: `worktree-topic-panel-momentum-fixes`
 
 ## Problem
 

@@ -4,7 +4,6 @@ import { clearQueryCache } from '@/hooks/useApiQuery';
 import { clearAuth, getToken, storeToken, storeUserId } from '@/lib/storage';
 import { identifyUser, resetIdentity, track } from '@/lib/analytics';
 import type { OwnerProfile } from '@/types/api';
-import { DEV_FAKE_LOGIN } from '@/dev/fake-login';
 
 interface AuthState {
   token: string | null;
@@ -27,18 +26,6 @@ interface AuthContextValue extends AuthState {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function isDevFakeCredentials(identifier: string, password: string) {
-  return (
-    DEV_FAKE_LOGIN.enabled &&
-    identifier.trim().toLowerCase() === DEV_FAKE_LOGIN.credentials.email.toLowerCase() &&
-    password === DEV_FAKE_LOGIN.credentials.password
-  );
-}
-
-function isDevFakeToken(token: string | null) {
-  return DEV_FAKE_LOGIN.enabled && token === DEV_FAKE_LOGIN.token;
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
     token: null,
@@ -49,17 +36,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   const loadProfile = useCallback(async () => {
-    const token = await getToken();
-    if (isDevFakeToken(token)) {
-      setState((prev) => ({
-        ...prev,
-        profile: DEV_FAKE_LOGIN.profile,
-        hasProfile: true,
-        isLoading: false,
-      }));
-      return;
-    }
-
     // A valid token can still hit a flaky profile fetch (network blip, 5xx,
     // cold serverless start). Retry transient failures instead of tearing down
     // the session — otherwise a just-issued, correct login gets silently undone.
@@ -135,18 +111,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     getToken().then((token) => {
       if (token) {
-        if (isDevFakeToken(token)) {
-          setState((prev) => ({
-            ...prev,
-            token,
-            isAuthenticated: true,
-            profile: DEV_FAKE_LOGIN.profile,
-            hasProfile: true,
-            isLoading: false,
-          }));
-          return;
-        }
-
         setState((prev) => ({ ...prev, token, isAuthenticated: true }));
         void loadProfile();
       } else {
@@ -156,20 +120,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadProfile]);
 
   const signIn = useCallback(async (identifier: string, password: string) => {
-    if (isDevFakeCredentials(identifier, password)) {
-      await storeToken(DEV_FAKE_LOGIN.token);
-      await storeUserId(DEV_FAKE_LOGIN.profile.id);
-      setState((prev) => ({
-        ...prev,
-        token: DEV_FAKE_LOGIN.token,
-        profile: DEV_FAKE_LOGIN.profile,
-        isLoading: false,
-        isAuthenticated: true,
-        hasProfile: true,
-      }));
-      return;
-    }
-
     const result = await api.auth.token({ identifier, password });
     await storeToken(result.token);
     await storeUserId(result.userId ?? result.user.id);
@@ -196,19 +146,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signUp = useCallback(async (name: string, email: string, password: string) => {
-    if (isDevFakeCredentials(email, password)) {
-      await storeToken(DEV_FAKE_LOGIN.token);
-      await storeUserId(DEV_FAKE_LOGIN.profile.id);
-      setState((prev) => ({
-        ...prev,
-        token: DEV_FAKE_LOGIN.token,
-        profile: DEV_FAKE_LOGIN.profile,
-        isLoading: false,
-        isAuthenticated: true,
-        hasProfile: true,
-      }));
-      return;
-    }
     const { token, user } = await api.auth.register({ name, email, password });
     await storeToken(token);
     await storeUserId(user.id);

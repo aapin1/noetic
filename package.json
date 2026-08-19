@@ -12,7 +12,6 @@
     "db:down": "docker compose down",
     "db:push": "sh -c \"if [ -f .env.local ]; then dotenv -e .env.local -- prisma db push; else dotenv -e .env.example -- prisma db push; fi\"",
     "db:push:test": "dotenv -e .env.test -- prisma db push",
-    "db:seed": "tsx prisma/seed.ts",
     "test": "vitest run",
     "test:unit": "vitest run src/server mobile/lib",
     "test:integration": "dotenv -e .env.test -- vitest run tests/integration",

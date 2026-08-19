@@ -107,4 +107,4 @@ In `mobile/app/(tabs)/index.tsx`, next to the existing info `Pressable` (lines ~
 ## Testing
 
 - Unit test `TutorialContext` reducer-like logic: `start` resets to step 0, `next`/`back` clamp correctly, `next` on the last step calls `stop`.
-- Manual verification (per CLAUDE.md, this is a UI change): run the mobile app, sign up a fresh account, confirm the tutorial auto-starts on Atlas after `preview.tsx`'s Start button; step through Next/Back across all six tabs; confirm Skip stops it at an arbitrary step; sign out, sign back in, confirm it does *not* auto-start; tap the new `ⓣ` button on Atlas and confirm it restarts from step 1.
+- Manual verification (UI change): run the mobile app, sign up a fresh account, confirm the tutorial auto-starts on Atlas after `preview.tsx`'s Start button; step through Next/Back across all six tabs; confirm Skip stops it at an arbitrary step; sign out, sign back in, confirm it does *not* auto-start; tap the new `ⓣ` button on Atlas and confirm it restarts from step 1.
