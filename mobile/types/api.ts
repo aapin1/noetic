@@ -666,6 +666,30 @@ export interface PulseResponse {
   friends: PulseFriend[];
 }
 
+/** One row of a followed person's capture history: content metadata only —
+ *  their own insights (key idea, summary, reaction) never cross the wire. */
+export interface PersonCapture {
+  id: string;
+  title: string;
+  kind: CaptureKind;
+  capturedAt: string;
+  author: string | null;
+  source: string | null;
+}
+
+export interface PersonCapturesResponse {
+  user: {
+    id: string;
+    handle: string;
+    displayName: string;
+    avatarUrl: string | null;
+    identitySummary: string | null;
+  };
+  captureCount: number;
+  captures: PersonCapture[];
+  nextCursor: string | null;
+}
+
 export interface PersonalIntelligenceResponse {
   contradictionCards: ContradictionCard[];
   threadSyntheses: ThreadSynthesis[];
