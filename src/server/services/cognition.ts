@@ -10,7 +10,7 @@ import {
 import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import type { DbClient, RootDbClient } from "@/server/db";
-import { ingestOrStubUrl } from "@/server/services/content";
+import { ingestOrStubUrl, repairMissingExcerpt } from "@/server/services/content";
 import { tryConsumeUsage } from "@/server/services/usage";
 import {
   cosine,
@@ -702,9 +702,13 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
 
   // Adopt the cleaned title/excerpt for everything downstream (drafts, polish,
   // response) — the ContentItem row itself was already updated by the clean.
+  // No falling back to the raw scraped description when the clean produced no
+  // excerpt: that value is an og:description teaser (a Substack subtitle, say),
+  // and passing it off as the summary is worse than having none. The repair
+  // pass below fills it in properly.
   if (cleaned) {
     contentTitle = cleaned.title;
-    contentDescription = cleaned.description ?? contentDescription;
+    contentDescription = cleaned.description ?? undefined;
   }
 
   if (payload.kind === CaptureKind.LINK) {
@@ -881,6 +885,23 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     `[capture] timings content=${contentDoneAt - startedAt}ms classify+embed+clean=${classifyDoneAt - contentDoneAt}ms ` +
     `neighbors=${neighborsDoneAt - classifyDoneAt}ms tx=${txDoneAt - neighborsDoneAt}ms total=${txDoneAt - startedAt}ms`,
   );
+
+  // Background: the clean is one LLM call, and when it comes back empty the
+  // capture lands with no "about this capture" at all. Re-attempt it once the
+  // response is on its way — never inline, since the clean sits on the capture
+  // path and a second timeout would be paid by the user — and write the result
+  // onto both the shared ContentItem and this capture's own summary snapshot.
+  // The insight screen re-reads a few seconds later and picks it up, the same
+  // way it picks up polished insights.
+  if (!captureSummary && contentItemId && contentBodyText) {
+    void repairMissingExcerpt(contentItemId, db)
+      .then(async (excerpt) => {
+        const repaired = deriveCaptureSummary(excerpt, contentBodyText);
+        if (!repaired) return;
+        await db.capturedItem.update({ where: { id: txResult.id }, data: { summary: repaired } });
+      })
+      .catch((err) => console.error("[capture] excerpt repair failed", err));
+  }
 
   // Background: bookkeeping the response never reads — cognitive events (Pulse
   // and trends surfaces), taste-profile weights, and the profile version bump.

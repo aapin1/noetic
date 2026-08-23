@@ -96,6 +96,40 @@ type IngestOpts = {
 /** Final (post-clean) display metadata, mirroring what the row was updated to. */
 export type CleanedContentFields = { title: string; description: string | null };
 
+/**
+ * Re-run the metadata clean for a row that has real content but no excerpt,
+ * and return the excerpt if one lands.
+ *
+ * The clean is a single LLM call, and every way it can fail — timeout,
+ * non-2xx, unparseable JSON — resolves to `null` silently. That left the row
+ * excerpt-less for good: the body backfill in `ingestUrl` only retries when
+ * `bodyText` is missing, so a page that scraped perfectly but failed its clean
+ * was never revisited, and every later capture of that URL reused the same
+ * empty row.
+ */
+export async function repairMissingExcerpt(
+  contentItemId: string,
+  db: DbClient = prisma,
+): Promise<string | null> {
+  const row = await db.contentItem.findUnique({
+    where: { id: contentItemId },
+    select: { title: true, description: true, bodyText: true, authorName: true, siteName: true },
+  });
+  if (!row?.bodyText || row.description) return null;
+
+  const clean = await cleanContentMetadata({
+    rawTitle: row.title,
+    rawAuthor: row.authorName ?? undefined,
+    siteName: row.siteName ?? undefined,
+    bodyText: row.bodyText,
+  });
+  const excerpt = clean?.excerpt ?? null;
+  if (!excerpt) return null;
+
+  await db.contentItem.update({ where: { id: contentItemId }, data: { description: excerpt } });
+  return excerpt;
+}
+
 export async function ingestUrl(url: string, db: DbClient = prisma, opts: IngestOpts = {}) {
   // Before anything else: this is the single point where a user-supplied URL
   // becomes a server-side fetch. Both the fresh-scrape path below and the
@@ -154,15 +188,17 @@ export async function ingestUrl(url: string, db: DbClient = prisma, opts: Ingest
               bodySource: refetched.metadata?.bodySource,
               ...(isStubTitle ? { title: refetched.metadata!.title } : {}),
               // Never let description become the full body/transcript — it is
-              // surfaced as a short gist. Leave it null if we have no real
-              // excerpt; the capture pipeline derives its own summary.
-              ...(isStubDescription ? { description: refetched.metadata?.description ?? null } : {}),
+              // surfaced as a short gist — and never the raw og:description
+              // either, which is a teaser rather than an excerpt. Clear it and
+              // let the re-clean below derive a real one from the body we just
+              // recovered.
+              ...(isStubDescription ? { description: null } : {}),
             },
           });
           existing.bodyText = body;
           existing.bodySource = refetched.metadata?.bodySource ?? null;
           if (isStubTitle) existing.title = refetched.metadata!.title!;
-          if (isStubDescription) existing.description = refetched.metadata?.description ?? null;
+          if (isStubDescription) existing.description = null;
         } else {
           // Failed again: touch updatedAt so the cooldown restarts — otherwise
           // a permanently thin URL would retry the paid ladder on every capture.
@@ -176,10 +212,24 @@ export async function ingestUrl(url: string, db: DbClient = prisma, opts: Ingest
       }
     }
 
+    // A row with real content but no excerpt never got a usable clean: the
+    // one LLM call on the capture path failed, and nothing re-ran it — the
+    // body backfill above only fires when `bodyText` is missing, which it
+    // isn't. Re-attempt it here, under the same cooldown. Returned as a
+    // promise so the caller overlaps it with its own work rather than paying
+    // for it serially, exactly like the freshly-created path below.
+    const cleaned =
+      existing.bodyText && !existing.description && retryDue
+        ? repairMissingExcerpt(existing.id, db)
+            .then((excerpt) => (excerpt ? { title: existing.title, description: excerpt } : null))
+            .catch(() => null)
+        : undefined;
+
     return {
       status: "existing" as const,
       requiresManualInput: false,
       contentItem: existing,
+      cleaned,
     };
   }
 
@@ -275,10 +325,15 @@ export async function ingestUrl(url: string, db: DbClient = prisma, opts: Ingest
     bodyText: metadata.bodyText,
   })
     .then(async (clean) => {
-      if (!clean) return null;
-      const title = clean.title ?? metadata.title!;
-      const description = clean.excerpt ?? metadata.description ?? null;
-      const authorName = clean.author ?? metadata.authorName;
+      // `description` is surfaced as the short "about this capture" gist, so
+      // it holds a cleaned excerpt or nothing at all. A raw og:description is
+      // a teaser, not an excerpt — Substack puts the post's subtitle there —
+      // and standing one in when the clean came back empty is what showed a
+      // two-word "about" line on a 12,000-character essay. Null instead, and
+      // let `repairMissingExcerpt` fill it once a clean actually lands.
+      const title = clean?.title ?? metadata.title!;
+      const description = clean?.excerpt ?? null;
+      const authorName = clean?.author ?? metadata.authorName;
       await db.contentItem.update({
         where: { id: created.id },
         data: { title, description, authorName },
