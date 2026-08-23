@@ -675,7 +675,6 @@ function SlideshowPreview({
             <RecapNodeCard
               p={resolveTemplate(template, i)}
               width={cardW}
-              handle={handle}
               item={item}
               index={i}
               total={items.length}

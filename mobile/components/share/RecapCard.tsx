@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { FontFamily, LetterSpacing, LineHeight, Radius, Spacing } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
-import { RECAP_ASPECT, nodeIdea, nodeImage, primaryTopic } from '@/lib/recap';
+import { RECAP_ASPECT, SHARE_CTA, nodeIdea, nodeImage, primaryTopic } from '@/lib/recap';
 import type { TemplatePalette } from '@/lib/recapTemplates';
 import type { CaptureSummary } from '@/types/api';
 
@@ -30,10 +30,18 @@ const KIND_WORD: Record<CaptureSummary['kind'], string> = {
 /** The Mono template's minimal flourish — the same blinking cat from loaders. */
 const ASCII_CAT = ' /\\_/\\\n( o.o )\n > ^ <';
 
-function BrandFooter({ p, handle }: { p: TemplatePalette; handle: string | null }) {
+/**
+ * The single brand line a frame carries: wordmark + where to get it, once.
+ * The handle rides along only where it's passed (the cover and the poster) —
+ * a slideshow should not sign every slide.
+ */
+function BrandFooter({ p, handle }: { p: TemplatePalette; handle?: string | null }) {
   return (
     <View style={styles.brandRow}>
-      <Text style={[styles.wordmarkSm, { color: p.text }]}>mneme</Text>
+      <Text variant="monoSmall" style={[styles.cta, { color: p.textSecondary }]} numberOfLines={1}>
+        <Text style={[styles.wordmarkSm, { color: p.text }]}>mneme</Text>
+        {` · ${SHARE_CTA}`}
+      </Text>
       {handle ? (
         <Text variant="monoSmall" style={{ color: p.faint }} numberOfLines={1}>
           @{handle}
@@ -59,15 +67,6 @@ export function RecapCoverCard({
     <View style={[styles.card, { width, height, backgroundColor: p.surface, borderColor: p.border }]}>
       {p.barHeight > 0 ? <View style={{ height: p.barHeight, backgroundColor: p.accent }} /> : null}
       <View style={styles.coverBody}>
-        <View style={styles.headerRow}>
-          <Text style={[styles.wordmark, { color: p.text }]}>mneme</Text>
-          {dateRange ? (
-            <Text variant="monoSmall" style={{ color: p.faint }}>
-              {dateRange}
-            </Text>
-          ) : null}
-        </View>
-
         <View style={styles.coverCenter}>
           {p.ascii ? <Text style={[styles.ascii, { color: p.faint }]}>{ASCII_CAT}</Text> : null}
           <Text variant="label" style={{ color: p.accent, marginBottom: Spacing[3] }}>
@@ -93,11 +92,10 @@ export function RecapCoverCard({
 export function RecapNodeCard({
   p,
   width,
-  handle,
   item,
   index,
   total,
-}: CardBase & { item: CaptureSummary; index: number; total: number }) {
+}: Omit<CardBase, 'handle'> & { item: CaptureSummary; index: number; total: number }) {
   const height = width * RECAP_ASPECT;
   const image = nodeImage(item);
   const topic = primaryTopic(item);
@@ -163,7 +161,7 @@ export function RecapNodeCard({
           </Text>
         </View>
 
-        <BrandFooter p={p} handle={handle} />
+        <BrandFooter p={p} />
       </View>
     </View>
   );
@@ -184,15 +182,6 @@ export function RecapPoster({
     <View style={[styles.card, { width, backgroundColor: p.surface, borderColor: p.border }]}>
       {p.barHeight > 0 ? <View style={{ height: p.barHeight, backgroundColor: p.accent }} /> : null}
       <View style={styles.posterBody}>
-        <View style={styles.headerRow}>
-          <Text style={[styles.wordmark, { color: p.text }]}>mneme</Text>
-          {dateRange ? (
-            <Text variant="monoSmall" style={{ color: p.faint }}>
-              {dateRange}
-            </Text>
-          ) : null}
-        </View>
-
         {p.ascii ? <Text style={[styles.ascii, styles.posterAscii, { color: p.faint }]}>{ASCII_CAT}</Text> : null}
 
         <Text style={[styles.posterTitle, { color: p.titleColor }]} numberOfLines={3}>
@@ -200,6 +189,7 @@ export function RecapPoster({
         </Text>
         <Text variant="mono" style={{ color: p.faint, marginTop: Spacing[2] }}>
           {items.length} {items.length === 1 ? 'save' : 'saves'}
+          {dateRange ? ` · ${dateRange}` : ''}
         </Text>
 
         <View style={[styles.posterRule, { backgroundColor: p.border }]} />
@@ -255,28 +245,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
   },
-  wordmark: {
-    fontFamily: FontFamily.serif,
-    fontSize: 17,
-    letterSpacing: LetterSpacing.wider,
-  },
   wordmarkSm: {
     fontFamily: FontFamily.serif,
     fontSize: 13,
     letterSpacing: LetterSpacing.wide,
-    opacity: 0.75,
   },
+  cta: { flex: 1, marginRight: Spacing[3] },
   ascii: {
     fontFamily: FontFamily.mono,
     fontSize: 13,
     lineHeight: 15,
     textAlign: 'center',
     marginBottom: Spacing[5],
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
   },
   brandRow: {
     flexDirection: 'row',
@@ -334,13 +314,13 @@ const styles = StyleSheet.create({
   nodeSource: { flex: 1, marginRight: Spacing[3] },
 
   posterBody: { padding: CARD_PAD },
-  posterAscii: { marginTop: Spacing[5], marginBottom: 0, alignSelf: 'center' },
+  posterAscii: { marginTop: 0, marginBottom: 0, alignSelf: 'center' },
   posterTitle: {
     fontFamily: FontFamily.serif,
     fontSize: 30,
     lineHeight: 30 * LineHeight.tight,
     letterSpacing: LetterSpacing.tight,
-    marginTop: Spacing[6],
+    marginTop: Spacing[2],
   },
   posterRule: {
     height: 1,
