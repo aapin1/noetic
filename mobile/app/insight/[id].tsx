@@ -524,7 +524,16 @@ const styles = StyleSheet.create({
   content: { paddingBottom: Spacing[16] },
   cover: { width: '100%', height: 200, backgroundColor: 'transparent' },
   block: { paddingHorizontal: Spacing[6], paddingTop: Spacing[6] },
-  badges: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[2], marginBottom: Spacing[3] },
+  // alignItems matters: the row mixes padded chips with the bare "move to…"
+  // text, and the default `stretch` pinned that text to the top of the line
+  // while the chips centred their own labels — so it sat a few px high.
+  badges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: Spacing[2],
+    marginBottom: Spacing[3],
+  },
   linkRow: { flexDirection: 'row', alignItems: 'center' },
   section: {
     marginHorizontal: Spacing[4],
