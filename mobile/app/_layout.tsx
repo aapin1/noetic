@@ -84,6 +84,7 @@ function RootLayout() {
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="insight/[id]" options={{ presentation: 'card' }} />
                 <Stack.Screen name="archive/[topicId]" options={{ presentation: 'card' }} />
+                <Stack.Screen name="person/[id]" options={{ presentation: 'card' }} />
                 <Stack.Screen name="profile/edit" options={{ presentation: 'modal', gestureEnabled: true }} />
                 <Stack.Screen name="settings" options={{ presentation: 'card' }} />
                 <Stack.Screen name="blocked" options={{ presentation: 'card' }} />

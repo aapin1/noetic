@@ -7,7 +7,7 @@ import { createNotification } from "@/server/services/notifications";
 import { applyTopicWeights, getPublicTopicIdsForUser, incrementTasteProfileVersion, recordActivityEvent } from "@/server/services/activity";
 import { blockedUserIds } from "@/server/services/moderation";
 import { recomputeProfileSummary } from "@/server/services/profile";
-import { getMemoryGraph } from "@/server/services/memory";
+import { getMemoryGraph, nodeLabel } from "@/server/services/memory";
 
 export async function followUser(userId: string, targetUserId: string, db: DbClient = prisma) {
   if (userId === targetUserId) {
@@ -508,6 +508,125 @@ export async function getPulse(args: { userId: string; db?: DbClient }) {
   );
 
   return { friends };
+}
+
+const PERSON_CAPTURES_PAGE = 40;
+
+/** "fs.blog", not "https://www.fs.blog/x" — a source name, not a link. */
+function sourceHost(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A followed person's capture history for their detail page. Followers-only:
+ * the page exists only along a live follow edge, and a block severs it in both
+ * directions — every failure is the same non-committal 404, for the same
+ * reason followUser's block message stays vague.
+ *
+ * Words-only rule, tightened: only content metadata (title, author, source)
+ * crosses the wire. Nothing the pipeline or the owner wrote about the content
+ * (keyIdea, summary, reaction, userContext) does.
+ */
+export async function getPersonCaptures(args: {
+  userId: string;
+  targetUserId: string;
+  cursor?: string;
+  db?: DbClient;
+}) {
+  const db = args.db ?? prisma;
+
+  const hidden = await blockedUserIds(args.userId, db);
+  const follow = hidden.includes(args.targetUserId)
+    ? null
+    : await db.follow.findUnique({
+        where: {
+          followerId_followingId: {
+            followerId: args.userId,
+            followingId: args.targetUserId,
+          },
+        },
+      });
+  if (!follow) {
+    throw new AppError("PERSON_NOT_FOUND", "Person not found", 404);
+  }
+
+  const target = await db.user.findUnique({
+    where: { id: args.targetUserId },
+    select: {
+      id: true,
+      profile: {
+        select: {
+          handle: true,
+          displayName: true,
+          avatarUrl: true,
+          identitySummary: true,
+        },
+      },
+    },
+  });
+  if (!target) {
+    throw new AppError("PERSON_NOT_FOUND", "Person not found", 404);
+  }
+
+  const [captureCount, rows] = await Promise.all([
+    db.capturedItem.count({ where: { userId: args.targetUserId } }),
+    db.capturedItem.findMany({
+      where: { userId: args.targetUserId },
+      orderBy: [{ capturedAt: "desc" }, { id: "desc" }],
+      take: PERSON_CAPTURES_PAGE + 1,
+      ...(args.cursor ? { cursor: { id: args.cursor }, skip: 1 } : {}),
+      select: {
+        id: true,
+        kind: true,
+        capturedAt: true,
+        userTitle: true,
+        rawText: true,
+        caption: true,
+        contentItem: {
+          select: {
+            title: true,
+            authorName: true,
+            siteName: true,
+            canonicalUrl: true,
+          },
+        },
+      },
+    }),
+  ]);
+
+  const page = rows.slice(0, PERSON_CAPTURES_PAGE);
+  const captures = page.map((row) => ({
+    id: row.id,
+    title: nodeLabel({
+      userTitle: row.userTitle,
+      contentTitle: row.contentItem?.title ?? null,
+      rawText: row.rawText,
+      caption: row.caption,
+      kind: row.kind,
+    }),
+    kind: row.kind,
+    capturedAt: row.capturedAt.toISOString(),
+    author: row.contentItem?.authorName ?? null,
+    source: row.contentItem?.siteName ?? sourceHost(row.contentItem?.canonicalUrl ?? null),
+  }));
+
+  return {
+    user: {
+      id: target.id,
+      handle: target.profile?.handle ?? target.id,
+      displayName: target.profile?.displayName ?? "Unknown",
+      avatarUrl: target.profile?.avatarUrl ?? null,
+      identitySummary: target.profile?.identitySummary ?? null,
+    },
+    captureCount,
+    captures,
+    nextCursor: rows.length > PERSON_CAPTURES_PAGE ? page[page.length - 1]!.id : null,
+  };
 }
 
 export async function commentOnReview(args: {

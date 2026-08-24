@@ -140,7 +140,7 @@ type GraphCluster = {
   itemIds: string[];
 };
 
-function nodeLabel(input: {
+export function nodeLabel(input: {
   userTitle?: string | null;
   contentTitle?: string | null;
   rawText?: string | null;

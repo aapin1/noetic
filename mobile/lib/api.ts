@@ -23,6 +23,7 @@ import type {
   TerrainResponse,
   WrappedStats,
   PersonalIntelligenceResponse,
+  PersonCapturesResponse,
   PulseResponse,
   UserPreference,
   UserPosition,
@@ -518,6 +519,11 @@ export const api = {
     },
     pulse() {
       return request<PulseResponse>('/api/social/pulse');
+    },
+    personCaptures(targetUserId: string, cursor?: string) {
+      return request<PersonCapturesResponse>(
+        `/api/social/users/${targetUserId}/captures${buildQuery(cursor ? { cursor } : {})}`,
+      );
     },
     follow(targetUserId: string) {
       return request<{ following: boolean }>('/api/social/follow', {

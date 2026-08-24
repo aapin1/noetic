@@ -71,6 +71,7 @@ function FriendCard({
   onBlocked: () => void;
 }) {
   const c = useThemeColors();
+  const router = useRouter();
   const { user, map, latest, captureCount } = friend;
   const topRegions = [...map.clusters]
     .filter((cl) => cl.count >= 2)
@@ -87,8 +88,35 @@ function FriendCard({
     fieldCount > 0 ? `${fieldCount} ${fieldCount === 1 ? 'field' : 'fields'}` : null,
   ].filter(Boolean).join(' · ');
 
+  // The whole card is the doorway to the person's page; the header buttons
+  // (unfollow, report) sit on top and win their own taps. Header fields ride
+  // along as params so the page paints its masthead before the fetch returns.
+  const openPerson = () => {
+    router.push({
+      pathname: '/person/[id]',
+      params: {
+        id: user.id,
+        handle: user.handle,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl ?? '',
+        identitySummary: user.identitySummary ?? '',
+        captureCount: String(captureCount),
+        regions: topRegions,
+      },
+    } as never);
+  };
+
   return (
-    <View style={[styles.card, { borderColor: c.border, backgroundColor: c.surface }]}>
+    <Pressable
+      onPress={openPerson}
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${user.displayName}'s captures`}
+      style={({ pressed }) => [
+        styles.card,
+        { borderColor: c.border, backgroundColor: c.surface },
+        pressed && styles.cardPressed,
+      ]}
+    >
       <View style={[styles.cardAccent, { backgroundColor: accentForKey(user.id) }]} />
       <View style={styles.cardHeader}>
         <Avatar uri={user.avatarUrl} displayName={user.displayName} size="sm" />
@@ -148,7 +176,7 @@ function FriendCard({
           ))}
         </View>
       )}
-    </View>
+    </Pressable>
   );
 }
 
@@ -168,13 +196,18 @@ function UserResult({
   const c = useThemeColors();
   const [followed, setFollowed] = useState(false);
 
-  const handleFollow = () => {
+  const handleFollow = async () => {
     if (followed) return;
     setFollowed(true);
+    // The button flips instantly, but the parent's refetch must wait for the
+    // follow to actually land — firing them together was a race the refetch
+    // usually lost, so the new friend only appeared after a manual refresh.
+    try {
+      await api.social.follow(user.id);
+    } catch {
+      // "already following" lands here too; the refetch shows the truth either way.
+    }
     onFollow(user.id);
-    void api.social.follow(user.id).catch(() => {
-      // already following is fine
-    });
   };
 
   return (
@@ -185,7 +218,7 @@ function UserResult({
         <Text variant="monoSmall" style={{ color: c.muted }}>@{user.handle}</Text>
       </View>
       <Pressable
-        onPress={handleFollow}
+        onPress={() => void handleFollow()}
         disabled={followed}
         hitSlop={8}
         style={({ pressed }) => [
@@ -491,6 +524,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: 3,
   },
+  cardPressed: { opacity: 0.7 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
   cardMeta: { flex: 1, gap: 2 },
   unfollowBtn: { borderWidth: 1, borderRadius: Radius.xs, paddingVertical: Spacing[1], paddingHorizontal: Spacing[2] },
