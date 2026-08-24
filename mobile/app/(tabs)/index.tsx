@@ -19,6 +19,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { PendingFindsPill, type PendingPillPhase } from '@/components/ui/PendingFindsPill';
+import { ActivityPill } from '@/components/ui/ActivityPill';
+import type { PendingFinds } from '@/types/api';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -89,6 +92,7 @@ import {
   WELCOME_OFFER_LINE,
   welcomeIntroFlag,
   welcomeOfferFlag,
+  visitedTabFlag,
 } from '@/lib/guide';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
@@ -1536,7 +1540,7 @@ const tb = StyleSheet.create({
 // ── Info strip (bottom map summary) ───────────────────────────────
 
 function InfoStrip({
-  collapsed, onToggle, onLayout, mapBg, pointCount, totalPointCount, fieldCount, connectionCount,
+  collapsed, onToggle, onLayout, mapBg, pointCount, totalPointCount, fieldCount, connectionCount, hints,
 }: {
   collapsed: boolean;
   onToggle: () => void;
@@ -1548,7 +1552,37 @@ function InfoStrip({
   totalPointCount: number;
   fieldCount: number;
   connectionCount: number;
+  /** Undiscovered-feature lines the strip slowly trades the counts for. */
+  hints: { key: string; text: string; onPress: () => void }[];
 }) {
+  // The ticker: counts hold the floor, then one hint takes it for a beat,
+  // then the counts return — a slow crossfade, never a scroll. Collapsing the
+  // strip parks it back on the counts.
+  const [hintIdx, setHintIdx] = useState(-1);
+  const hintCursor = useRef(0);
+  const tickerFade = useRef(new RNAnimated.Value(1)).current;
+  useEffect(() => {
+    if (collapsed || hints.length === 0) {
+      setHintIdx(-1);
+      tickerFade.setValue(1);
+      return;
+    }
+    const hold = hintIdx === -1 ? 14000 : 8000;
+    const timer = setTimeout(() => {
+      RNAnimated.timing(tickerFade, { toValue: 0, duration: 450, useNativeDriver: true }).start(({ finished }) => {
+        if (!finished) return;
+        if (hintIdx === -1) {
+          setHintIdx(hintCursor.current % hints.length);
+          hintCursor.current += 1;
+        } else {
+          setHintIdx(-1);
+        }
+        RNAnimated.timing(tickerFade, { toValue: 1, duration: 450, useNativeDriver: true }).start();
+      });
+    }, hold);
+    return () => clearTimeout(timer);
+  }, [collapsed, hints.length, hintIdx, tickerFade]);
+  const hint = hintIdx >= 0 && hintIdx < hints.length ? hints[hintIdx] : null;
   // Standalone counts only. This is baseline information, not navigation — the
   // strip used to also carry two tappable lines (a "rising theme" link and a
   // tensions link), which made it a third place to route from and pushed it
@@ -1602,9 +1636,17 @@ function InfoStrip({
             </Defs>
             <Rect x="0" y="0" width="100%" height="100%" fill="url(#stripFade)" />
           </Svg>
-          <View style={infoStripStyles.row} pointerEvents="box-none">
-            {items}
-          </View>
+          <RNAnimated.View style={[infoStripStyles.row, { opacity: tickerFade }]} pointerEvents="box-none">
+            {hint ? (
+              <Pressable onPress={hint.onPress} hitSlop={8} accessibilityRole="button" pointerEvents="auto">
+                <Text variant="monoSmall" style={infoStripStyles.hint}>
+                  {hint.text}
+                </Text>
+              </Pressable>
+            ) : (
+              items
+            )}
+          </RNAnimated.View>
         </>
       )}
       <Pressable
@@ -1666,6 +1708,9 @@ const infoStripStyles = StyleSheet.create({
   },
   item: {
     color: 'rgba(240,232,214,0.57)',
+  },
+  hint: {
+    color: 'rgba(240,232,214,0.72)',
   },
 });
 
@@ -3247,6 +3292,37 @@ export default function MapScreen() {
   const [userContext, setUserContext] = useState('');
   const preflightSeq = useRef(0);
 
+  // ── Feature hints for the summary strip ─────────────────────────
+  // The strip's counts are baseline furniture; when there's a feature the
+  // person hasn't met yet, the strip slowly trades the counts for one line
+  // about it. Every hint is condition-gated, and acting on one retires it
+  // for good — nothing here nags.
+  const { data: linkedAccountCount } = useApiQuery(
+    () => api.connections.list().then((r) => r.connections.length),
+    [],
+    { cacheKey: 'connections.count' },
+  );
+  const stripHints = useMemo(() => {
+    const out: { key: string; text: string; onPress: () => void }[] = [];
+    const go = (flag: string, path: string) => () => {
+      disclosure.markSeen(flag);
+      router.push(path as never);
+    };
+    if (linkedAccountCount === 0 && totalCaptureCount >= 3 && !disclosure.hasSeen('hint:connections')) {
+      out.push({ key: 'connections', text: 'letterboxd, goodreads & more can feed this map →', onPress: go('hint:connections', '/connections') });
+    }
+    if (totalCaptureCount >= 5 && !disclosure.hasSeen('hint:import')) {
+      out.push({ key: 'import', text: 'a pile of bookmarks? bring them all at once →', onPress: go('hint:import', '/import') });
+    }
+    if (totalCaptureCount >= 10 && !disclosure.hasSeen(EVENT_FLAGS.sharedAtlas) && !disclosure.hasSeen('hint:share-atlas')) {
+      out.push({ key: 'share-atlas', text: 'your atlas is becoming worth sharing →', onPress: go('hint:share-atlas', '/share-atlas') });
+    }
+    if (disclosure.hasSeen(EVENT_FLAGS.sharedAtlas) && !disclosure.hasSeen(visitedTabFlag('pulse'))) {
+      out.push({ key: 'pulse', text: 'minds you know are charting too →', onPress: go('hint:pulse', '/(tabs)/pulse') });
+    }
+    return out;
+  }, [linkedAccountCount, totalCaptureCount, disclosure, router]);
+
   // Single source of truth for the bottom summary strip: the render below and
   // everything stacked above it must agree, or the FAB floats over a gap. The
   // strip yields the bottom edge to any mode that owns it — the temporal rail,
@@ -3478,6 +3554,122 @@ export default function MapScreen() {
   // node visibly arrives first and the insight is offered second.
   type CapturePill = { phase: 'logging' } | { phase: 'saved'; id: string };
   const [savedPill, setSavedPill] = useState<CapturePill | null>(null);
+
+  // Connected accounts in "ask me first" mode: finds wait on the server until
+  // the person answers from here. Fetched on every focus (one cheap read),
+  // shown once per session — a ✕ means "not now", not "never".
+  const [pendingFinds, setPendingFinds] = useState<PendingFinds | null>(null);
+  const [pendingPhase, setPendingPhase] = useState<PendingPillPhase>('ask');
+  const [pendingAdded, setPendingAdded] = useState(0);
+  const pendingDismissed = useRef(false);
+  const pendingPoll = useRef<ReturnType<typeof setInterval> | null>(null);
+  useFocusEffect(useCallback(() => {
+    if (pendingDismissed.current || pendingFinds) return;
+    void api.connections.pending().then((finds) => {
+      if (finds.total > 0 && !finds.adding) setPendingFinds(finds);
+    }).catch(() => {});
+  }, [pendingFinds]));
+  useEffect(() => () => { if (pendingPoll.current) clearInterval(pendingPoll.current); }, []);
+  const closePendingPill = useCallback(() => {
+    if (pendingPoll.current) clearInterval(pendingPoll.current);
+    pendingPoll.current = null;
+    setPendingFinds(null);
+    setPendingPhase('ask');
+  }, []);
+  const addPendingFinds = useCallback(() => {
+    if (!pendingFinds) return;
+    const total = pendingFinds.total;
+    setPendingPhase('adding');
+    void api.connections.resolvePending('add').catch(() => closePendingPill());
+    pendingPoll.current = setInterval(() => {
+      void api.connections.pending().then((finds) => {
+        if (finds.adding) return;
+        if (pendingPoll.current) clearInterval(pendingPoll.current);
+        pendingPoll.current = null;
+        setPendingAdded(total - finds.total);
+        setPendingPhase('done');
+        pendingDismissed.current = true;
+        refetchMapData();
+        setTimeout(closePendingPill, 6000);
+      }).catch(() => {});
+    }, 2500);
+  }, [pendingFinds, closePendingPill, refetchMapData]);
+  const declinePendingFinds = useCallback(() => {
+    pendingDismissed.current = true;
+    void api.connections.resolvePending('decline').catch(() => {});
+    closePendingPill();
+  }, [closePendingPill]);
+
+  // ── Background activity, narrated ───────────────────────────────
+  // A first connection sync (or a big import) reads up to a hundred entries
+  // through the full pipeline; without a voice that's minutes of points
+  // trickling in from nowhere. While anything is running server-side, the
+  // cat narrates from the usual corner; when it finishes, the map refreshes
+  // and, in ask-me-first mode, the "waiting for a yes" pill takes over.
+  type MapActivity = { phase: 'busy' | 'done'; line: string; sub?: string };
+  const [activity, setActivity] = useState<MapActivity | null>(null);
+  const activitySaw = useRef<Set<string>>(new Set());
+  const activityMuted = useRef(false);
+  const activityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const checkActivity = useCallback(async (): Promise<boolean> => {
+    try {
+      const [conns, imp] = await Promise.all([
+        api.connections.list().then((r) => r.connections).catch(() => []),
+        api.importer.status().then((r) => r.job).catch(() => null),
+      ]);
+      const syncing = conns.filter((conn) => conn.syncing);
+      const importing = imp?.status === 'running' ? imp : null;
+      if (importing || syncing.length > 0) {
+        syncing.forEach((conn) => activitySaw.current.add(conn.provider));
+        if (importing) activitySaw.current.add('import');
+        if (!activityMuted.current) {
+          const line = importing
+            ? 'reading your file…'
+            : `reading your ${syncing.map((conn) => conn.provider).slice(0, 2).join(' & ')}…`;
+          const sub = importing
+            ? `${importing.done} of ${importing.total} on your map`
+            : 'finds land as points while it reads';
+          setActivity({ phase: 'busy', line, sub });
+        }
+        return true;
+      }
+      if (activitySaw.current.size > 0) {
+        const watched = activitySaw.current;
+        activitySaw.current = new Set();
+        activityMuted.current = false;
+        refetchMapData();
+        const finds = await api.connections.pending().catch(() => null);
+        if (finds && finds.total > 0 && !finds.adding && !pendingDismissed.current) {
+          setActivity(null);
+          setPendingFinds(finds);
+          return false;
+        }
+        const mapped =
+          (watched.has('import') && imp ? imp.done : 0) +
+          conns.filter((conn) => watched.has(conn.provider)).reduce((n, conn) => n + (conn.lastSync?.mapped ?? 0), 0);
+        setActivity({ phase: 'done', line: mapped > 0 ? `${mapped} landed on your map ✓` : 'all caught up ✓' });
+        setTimeout(() => setActivity((a) => (a?.phase === 'done' ? null : a)), 6000);
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refetchMapData]);
+  useFocusEffect(
+    useCallback(() => {
+      let stopped = false;
+      const tick = async () => {
+        const active = await checkActivity();
+        if (!stopped && active) activityTimer.current = setTimeout(() => void tick(), 3500);
+      };
+      void tick();
+      return () => {
+        stopped = true;
+        if (activityTimer.current) clearTimeout(activityTimer.current);
+      };
+    }, [checkActivity]),
+  );
   // Slides in from the right edge on arrival. Driven by the pill's PRESENCE,
   // not its contents — 'logging' → 'saved' is the same pill changing its mind,
   // and re-running the entrance there would look like a second thing arrived.
@@ -4563,6 +4755,7 @@ export default function MapScreen() {
             totalPointCount={totalCaptureCount}
             fieldCount={fieldCount}
             connectionCount={edges.length}
+            hints={stripHints}
           />
         )}
 
@@ -4713,6 +4906,36 @@ export default function MapScreen() {
           </RNAnimated.View>
         )}
 
+        {/* Background reading (a syncing connection, a running import),
+            narrated from the usual corner. Lowest priority: any other pill
+            silences it. */}
+        {activity && !pendingFinds && !savedPill && !showCapture && !drawerVisible && !tutorialActive && welcomePill === null && (
+          <ActivityPill
+            top={insets.top + 58}
+            phase={activity.phase}
+            line={activity.line}
+            sub={activity.sub}
+            onClose={() => {
+              activityMuted.current = true;
+              setActivity(null);
+            }}
+          />
+        )}
+
+        {/* Finds from connected accounts, waiting for a yes. Same glass-and-cat
+            idiom, same corner; speaks only when nothing else is. */}
+        {pendingFinds && !savedPill && !showCapture && !drawerVisible && !tutorialActive && welcomePill === null && (
+          <PendingFindsPill
+            top={insets.top + 58}
+            finds={pendingFinds}
+            phase={pendingPhase}
+            added={pendingAdded}
+            onAdd={addPendingFinds}
+            onDecline={declinePendingFinds}
+            onClose={() => { pendingDismissed.current = true; closePendingPill(); }}
+          />
+        )}
+
         {/* The welcome pills — the capture pill's glass-and-cat idiom, from
             the right edge. Two beats: what the map is, then the tour offer.
             Either answer to the offer retires the ghost constellation. */}
@@ -4776,6 +4999,12 @@ export default function MapScreen() {
                   text="pulse — minds you know →"
                   onPress={() => router.push('/(tabs)/pulse' as never)}
                 />
+                <Whisper
+                  id="connections-intro"
+                  when={nodes.length >= 5}
+                  text="write elsewhere? it can land here →"
+                  onPress={() => router.push('/connections' as never)}
+                />
               </>
             )}
           </View>
@@ -4805,15 +5034,36 @@ export default function MapScreen() {
             <Text variant="monoSmall" style={{ color: 'rgba(240,232,214,0.42)', textAlign: 'center', lineHeight: 20 }}>
               {'tap + to chart your first thought.'}
             </Text>
+            {/* The services themselves, drawn small — the option is shown,
+                not explained. One line of words underneath; import and the
+                rest live behind the same door. */}
             <Pressable
-              onPress={() => router.push('/import' as never)}
+              onPress={() => router.push('/connections' as never)}
               hitSlop={10}
               accessibilityRole="button"
-              accessibilityLabel="Import your bookmarks"
-              style={{ marginTop: Spacing[4] }}
+              accessibilityLabel="Bring over what you write on Letterboxd, Goodreads, Readwise and more"
+              style={{ marginTop: Spacing[5], alignItems: 'center', gap: Spacing[2] }}
             >
-              <Text variant="monoSmall" style={{ color: 'rgba(240,232,214,0.53)', textAlign: 'center' }}>
-                {'have a bunch of logs? save them all at once →'}
+              <View style={{ flexDirection: 'row', gap: Spacing[2] }}>
+                <View style={styles.emptyChip}>
+                  <View style={{ flexDirection: 'row' }}>
+                    {['#FF8000', '#00E054', '#40BCF4'].map((d) => (
+                      <View key={d} style={{ width: 10, height: 10, borderRadius: 5, marginHorizontal: -1.5, backgroundColor: d }} />
+                    ))}
+                  </View>
+                </View>
+                <View style={styles.emptyChip}>
+                  <Text style={{ fontFamily: FontFamily.serif, fontSize: 16, color: '#D9B36C' }}>g</Text>
+                </View>
+                <View style={styles.emptyChip}>
+                  <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 14, color: '#7FA8D9' }}>R</Text>
+                </View>
+                <View style={styles.emptyChip}>
+                  <Text style={{ fontSize: 13 }}>🦋</Text>
+                </View>
+              </View>
+              <Text variant="monoSmall" style={{ color: 'rgba(240,232,214,0.5)' }}>
+                {'or bring your words over →'}
               </Text>
             </Pressable>
           </View>
@@ -5267,6 +5517,16 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  emptyChip: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,214,0.16)',
+    backgroundColor: 'rgba(240,232,214,0.05)',
   },
   centerBtn: {
     borderWidth: 1,

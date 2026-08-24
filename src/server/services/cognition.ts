@@ -64,6 +64,16 @@ type CapturePayload = {
    * Treated as ground truth alongside whatever was scraped. */
   userContext?: string;
   topicHints?: string[];
+  /**
+   * A ContentItem already made by the caller (connected-account sync builds
+   * one from the feed, since those pages can't be scraped). Skips the
+   * extraction ladder entirely; `url` is still required for LINK.
+   */
+  contentItemId?: string;
+  /** Provenance: "import" or a connection provider. Null means by hand. */
+  origin?: string;
+  /** When it actually happened (a synced read/watch date). Defaults to now. */
+  capturedAt?: Date;
   db?: RootDbClient;
 };
 
@@ -117,6 +127,8 @@ export type CapturedItemSummary = {
   reaction: string | null;
   userContext: string | null;
   kind: CaptureKind;
+  /** "import", a connected account's provider, or null when saved by hand. */
+  origin: string | null;
   topics: { topicId: string; name: string; slug: string; weight: number; kind: TopicKind }[];
   contentItem: {
     id: string;
@@ -159,6 +171,7 @@ export const captureSummarySelect = {
   summary: true,
   keyIdea: true,
   userTitle: true,
+  origin: true,
   contentItem: {
     select: {
       id: true,
@@ -219,6 +232,7 @@ export function serializeCapturedItem(item: CaptureWithRelations): CapturedItemS
     reaction: item.reaction,
     userContext: item.userContext,
     kind: item.kind,
+    origin: item.origin,
     topics: item.topics.map((row) => ({
       topicId: row.topicId,
       name: row.topic.name,
@@ -254,12 +268,24 @@ async function ensureUserPreference(db: DbClient, userId: string): Promise<Insig
     return existing.insightStyle;
   }
 
-  const created = await db.userPreference.create({
-    data: { userId },
-    select: { insightStyle: true },
-  });
-
-  return created.insightStyle;
+  // A sync or import runs two captures at once, and a brand-new user's first
+  // two race on this row. Prisma's upsert is find-then-insert on a pooled
+  // connection, so the loser still sees the unique constraint — read again.
+  try {
+    const created = await db.userPreference.upsert({
+      where: { userId },
+      create: { userId },
+      update: {},
+      select: { insightStyle: true },
+    });
+    return created.insightStyle;
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002") {
+      const row = await db.userPreference.findUnique({ where: { userId }, select: { insightStyle: true } });
+      if (row) return row.insightStyle;
+    }
+    throw error;
+  }
 }
 
 function sourceTokens(args: {
@@ -540,6 +566,20 @@ async function loadImageForVision(mediaUrl: string): Promise<{ base64: string; m
   }
 }
 
+/** Content kinds that are works a person writes ABOUT (vs. things they read/keep). */
+const MEDIA_KINDS = new Set(["film", "tv", "book", "anime", "game", "music", "album", "paper"]);
+
+/**
+ * The polish prompt's "this is a review OF something" context: only for
+ * captures that arrived from a connection or import (origin set) whose
+ * content row names a known kind of work.
+ */
+function mediaContextFor(args: { origin?: string | null; kind?: string; title?: string; siteName?: string }):
+  { kind: string; title: string; siteName?: string } | undefined {
+  if (!args.origin || !args.kind || !args.title || !MEDIA_KINDS.has(args.kind)) return undefined;
+  return { kind: args.kind, title: args.title, siteName: args.siteName };
+}
+
 export async function captureItem(payload: CapturePayload): Promise<CapturedItemSummary & {
   insights: { id: string; type: string; headline: string; body: string; strength: number; evidence: unknown }[];
   related: CapturedItemSummary[];
@@ -552,7 +592,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   // so keep the evidence of where the time actually goes.
   const startedAt = Date.now();
 
-  if (payload.kind === CaptureKind.LINK && !payload.url) {
+  if (payload.kind === CaptureKind.LINK && !payload.url && !payload.contentItemId) {
     throw new AppError("INVALID_CAPTURE", "URL is required for link captures", 422);
   }
 
@@ -597,7 +637,26 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   // scraped body/transcript. Shown on the insight screen as the AI summary.
   let captureSummary: string | null = null;
 
-  if (payload.kind === CaptureKind.LINK && payload.url) {
+  // The kind of work this content IS ("film", "book"), when known — set for
+  // pre-built content (connections, imports) and used to steer the insight
+  // polish toward reading the person's words in relation to the work.
+  let contentKind: string | undefined;
+  let contentSiteName: string | undefined;
+  if (payload.contentItemId) {
+    const row = await db.contentItem.findUnique({
+      where: { id: payload.contentItemId },
+      select: { id: true, title: true, description: true, bodyText: true, siteName: true, contentType: { select: { name: true } } },
+    });
+    if (!row) {
+      throw new AppError("INVALID_CAPTURE", "Content not found", 422);
+    }
+    contentItemId = row.id;
+    contentTitle = row.title;
+    contentDescription = row.description ?? undefined;
+    contentBodyText = row.bodyText ?? undefined;
+    contentKind = row.contentType?.name ?? undefined;
+    contentSiteName = row.siteName ?? undefined;
+  } else if (payload.kind === CaptureKind.LINK && payload.url) {
     // TikTok/Instagram body text costs Supadata credits (AI transcription) —
     // metered per user. Over the cap the capture still succeeds; it just
     // falls back to oEmbed caption/og-tags like any thin scrape.
@@ -785,6 +844,8 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
         mediaUrl: payload.mediaUrl ?? null,
         reaction: payload.reaction ?? null,
         userContext: payload.userContext ?? null,
+        origin: payload.origin ?? null,
+        ...(payload.capturedAt ? { capturedAt: payload.capturedAt } : {}),
         // A short "what this is about" gist shown on the insight screen as the
         // AI summary — never the raw scraped body/transcript. keyIdea stays
         // unused; the reading surfaces show title, summary, reaction, insight.
@@ -955,6 +1016,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
       contentText: combinedText,
       contentGrounding,
       userContext: payload.userContext,
+      mediaContext: mediaContextFor({ origin: payload.origin, kind: contentKind, title: contentTitle, siteName: contentSiteName }),
       topicNames: classified.map((topic) => topic.name),
       neighborContext: neighborInfo.neighbors.map((n) => ({
         title: n.title,
@@ -1009,7 +1071,8 @@ export async function updateCaptureContext(args: {
       reaction: true,
       // bodyText IS wanted here — reprocessing re-derives topics and insights
       // from the full source text. The embedding is not: it gets recomputed.
-      contentItem: { select: { title: true, description: true, bodyText: true } },
+      origin: true,
+      contentItem: { select: { title: true, description: true, bodyText: true, siteName: true, contentType: { select: { name: true } } } },
       topics: { select: { topicId: true } },
     },
   });
@@ -1188,6 +1251,7 @@ export async function updateCaptureContext(args: {
     contentText: combinedText,
     contentGrounding,
     userContext,
+    mediaContext: mediaContextFor({ origin: item.origin, kind: item.contentItem?.contentType?.name, title: item.contentItem?.title, siteName: item.contentItem?.siteName ?? undefined }),
     topicNames: classified.map((topic) => topic.name),
     neighborContext: neighborInfo.neighbors.map((n) => ({
       title: n.title,

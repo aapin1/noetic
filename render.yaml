@@ -150,3 +150,31 @@ services:
           name: mneme-backend
           type: web
           envVarKey: MNEME_BASE_URL
+
+  # Connected accounts (Letterboxd, Goodreads, Readwise): the same shape as the
+  # notification clock, half an hour offset so the two never share a minute. The
+  # job behind it refreshes each connection about once a day and decides
+  # everything else — see src/server/services/connections.ts.
+  - type: cron
+    name: mneme-connections
+    runtime: image
+    image:
+      url: docker.io/curlimages/curl:latest
+    region: oregon
+    plan: starter
+    schedule: "30 * * * *"
+    dockerCommand: >-
+      /bin/sh -c 'curl --fail-with-body --silent --show-error --max-time 3000
+      -X POST -H "Authorization: Bearer $NOTIFICATIONS_DISPATCH_SECRET"
+      "$MNEME_BASE_URL/api/connections/sync"'
+    envVars:
+      - key: NOTIFICATIONS_DISPATCH_SECRET
+        fromService:
+          name: mneme-backend
+          type: web
+          envVarKey: NOTIFICATIONS_DISPATCH_SECRET
+      - key: MNEME_BASE_URL
+        fromService:
+          name: mneme-backend
+          type: web
+          envVarKey: MNEME_BASE_URL

@@ -35,6 +35,8 @@ export const WHISPERS = {
   "pulse-intro": { priority: 40 },
   // "you're @n_1a2b — make it yours?" (first touch of Pulse or share)
   "identity-claim": { priority: 50 },
+  // "write reviews on letterboxd or goodreads? bring them over" (after a few link captures)
+  "connections-intro": { priority: 60 },
 } as const;
 
 export type WhisperId = keyof typeof WHISPERS;

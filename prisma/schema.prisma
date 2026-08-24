@@ -125,6 +125,54 @@ enum SocraticRole {
   COMPANION
 }
 
+enum ConnectionProvider {
+  LETTERBOXD
+  GOODREADS
+  READWISE
+  ANILIST
+  TRAKT
+  HARDCOVER
+  RAINDROP
+  INSTAPAPER
+  YOUTUBE
+  MASTODON
+  BLUESKY
+  TUMBLR
+  MEDIUM
+  SUBSTACK
+  BOOKWYRM
+  HACKERNEWS
+  REDDIT
+  PINBOARD
+  ARENA
+  ZOTERO
+  GITHUB
+  KITSU
+  STEAM
+  BACKLOGGD
+  RAWG
+  LISTENBRAINZ
+  BANDCAMP
+}
+
+enum ConnectionStatus {
+  OK
+  ERROR
+}
+
+/// What a connected account's new finds do: land on the map by themselves,
+/// or wait in the ledger until the person says yes from the Atlas pill.
+enum ConnectionsMode {
+  ASK
+  AUTO
+}
+
+enum ConnectionItemStatus {
+  PENDING
+  ADDED
+  DECLINED
+}
+
 model User {
   id                     String             @id @default(cuid())
   email                  String             @unique
@@ -161,6 +209,7 @@ model User {
   comparisonCacheLeft    ComparisonCache[]  @relation("ComparisonLeft")
   comparisonCacheRight   ComparisonCache[]  @relation("ComparisonRight")
   capturedItems          CapturedItem[]
+  connections            Connection[]
   insights               Insight[]
   memoryEdges            MemoryEdge[]
   cognitiveEvents        CognitiveEvent[]
@@ -581,6 +630,8 @@ model CapturedItem {
   userContext        String?             @db.Text
   /// User-chosen display title. Cosmetic only — never fed to the pipeline; wins over the content title on every read surface.
   userTitle          String?
+  /// Where the capture came from: null (by hand), "import", or a connected account's provider ("letterboxd", "goodreads", "readwise").
+  origin             String?
   summary            String?             @db.Text
   keyIdea            String?             @db.Text
   terms              Json
@@ -598,6 +649,7 @@ model CapturedItem {
   cognitiveEvents    CognitiveEvent[]
   topics             CapturedItemTopic[]
   positionChallenges PositionChallenge[]
+  connectionItems    ConnectionItem[]
 
   @@index([userId, capturedAt])
   @@index([userId, kind])
@@ -717,6 +769,8 @@ model UserPreference {
   pushResurface       Boolean @default(true)
   /// STREAK_HELD, and nothing else — the guard never warns.
   pushStreak          Boolean @default(true)
+  /// Connected accounts: ASK stages new finds for the Atlas pill; AUTO maps them.
+  connectionsMode     ConnectionsMode @default(ASK)
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -737,6 +791,67 @@ model JobLease {
   /// release the claim that replaced it.
   heldBy    String
   updatedAt DateTime @updatedAt
+}
+
+/// A linked outside account (Letterboxd, Goodreads, Readwise) that feeds the
+/// map on its own. One per provider per user. See
+/// docs/design/2026-08-23-account-connections-design.md.
+model Connection {
+  id           String             @id @default(cuid())
+  userId       String
+  provider     ConnectionProvider
+  /// What the person gave us, normalised: a username or numeric id. For
+  /// token providers this is a fixed marker ("token").
+  handle       String
+  /// Display label — the feed's own name for the account.
+  label        String?
+  /// Provider secret (Readwise token), AES-256-GCM under a key derived from
+  /// NEXTAUTH_SECRET. Never returned to the client.
+  secret       String?
+  /// Provider-side cursor (Readwise updatedAfter). Null means a full pass.
+  cursor       String?
+  status       ConnectionStatus   @default(OK)
+  /// A sentence the person can act on. Cleared by the next good sync.
+  lastError    String?
+  lastSyncedAt DateTime?
+  /// Tally of the last sync: { seen, withWords, mapped, failed }.
+  lastSync     Json?
+  /// Set while a sync is in flight, so the client can show progress and a
+  /// second sync does not start on top of it. Stale after SYNC_STALE_MS.
+  syncingSince DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items        ConnectionItem[]
+
+  @@unique([userId, provider])
+  @@index([lastSyncedAt])
+}
+
+/// Ledger of provider entries already handled and which capture each became.
+/// Keyed on the provider's own id so a sync is idempotent across restarts,
+/// and a capture the person deleted is not re-created (the row stays,
+/// pointing at nothing).
+model ConnectionItem {
+  id             String        @id @default(cuid())
+  connectionId   String
+  externalId     String
+  capturedItemId String?
+  /// ADDED is the default because AUTO mode writes the row after capturing.
+  /// PENDING rows carry the find itself in `payload` so "add" needs no refetch;
+  /// DECLINED rows are kept so the find is never offered again.
+  status         ConnectionItemStatus @default(ADDED)
+  /// The item's full external id — one Readwise item spans several rows (one
+  /// per highlight), and only the first carries the payload.
+  group          String?
+  title          String?
+  payload        Json?
+  createdAt      DateTime      @default(now())
+  connection     Connection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  capturedItem   CapturedItem? @relation(fields: [capturedItemId], references: [id], onDelete: SetNull)
+
+  @@unique([connectionId, externalId])
+  @@index([connectionId, status])
 }
 
 model UserPosition {

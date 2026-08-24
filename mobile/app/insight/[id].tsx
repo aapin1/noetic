@@ -358,6 +358,11 @@ export default function InsightDetailScreen() {
               <Text variant="monoSmall" color="primary" style={{ marginLeft: 6 }}>
                 Source
               </Text>
+              {data.origin && data.origin !== 'import' ? (
+                <Text variant="monoSmall" color="faint" style={{ marginLeft: 8 }}>
+                  {`via ${data.origin}`}
+                </Text>
+              ) : null}
             </Pressable>
           ) : null}
           {showRawText ? (

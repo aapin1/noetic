@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:letterboxd="https://letterboxd.com" xmlns:tmdb="https://themoviedb.org">
+	<channel>
+		<title>Letterboxd - mia lee vicino</title>
+		<link>https://letterboxd.com/brat/</link>
+		<description>Letterboxd - mia lee vicino</description>
+		<atom:link rel="self" href="https://letterboxd.com/brat/rss/" type="application/rss+xml"/>
+		
+		
+			<item> <title>The Odyssey, 2026 (contains spoilers)</title> <link>https://letterboxd.com/brat/film/the-odyssey-2026/</link> <guid isPermaLink="false">letterboxd-review-1401548119</guid> <pubDate>Sat, 18 Jul 2026 22:54:59 +1200</pubDate> <letterboxd:watchedDate>2026-07-17</letterboxd:watchedDate> <letterboxd:rewatch>No</letterboxd:rewatch> <letterboxd:filmTitle>The Odyssey</letterboxd:filmTitle> <letterboxd:filmYear>2026</letterboxd:filmYear> <letterboxd:memberLike>No</letterboxd:memberLike> <tmdb:movieId>1368337</tmdb:movieId> <description><![CDATA[ <p><img src="https://a.ltrbxd.com/resized/film-poster/1/2/5/5/3/9/4/1255394-the-odyssey-2026-0-600-0-900-crop.jpg?v=1eed046d0c"/></p> <p><em>This review may contain spoilers.</em></p> <p>Chris Nolan introducing Robert Pattinson’s character by having him spit and then killing him off by having him swallow. didn’t know he had that freak in him. yet he still wasn’t freaky enough to let the cyclops show hog… speaking of hog… #TeamCirce!!!</p> ]]></description> <dc:creator>mia lee vicino</dc:creator> </item>
+<item> <title>Idiots, 2026</title> <link>https://letterboxd.com/brat/film/idiots-2026/1/</link> <guid isPermaLink="false">letterboxd-watch-1459606785</guid> <pubDate>Thu, 20 Aug 2026 19:33:43 +1200</pubDate> <letterboxd:watchedDate>2026-08-19</letterboxd:watchedDate> <letterboxd:rewatch>Yes</letterboxd:rewatch> <letterboxd:filmTitle>Idiots</letterboxd:filmTitle> <letterboxd:filmYear>2026</letterboxd:filmYear> <letterboxd:memberLike>Yes</letterboxd:memberLike> <tmdb:movieId>445466</tmdb:movieId> <description><![CDATA[ <p><img src="https://a.ltrbxd.com/resized/film-poster/3/7/7/9/2/4/377924-idiots-2026-0-600-0-900-crop.jpg?v=637a3b7a0a"/></p> <p>Watched on Wednesday August 19, 2026.</p> ]]></description> <dc:creator>mia lee vicino</dc:creator> </item>
+		
+
+		
+		
+
+	</channel>
+</rss>

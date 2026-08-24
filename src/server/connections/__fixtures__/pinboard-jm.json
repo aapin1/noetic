@@ -1,0 +1,1181 @@
+[ {
+    "u": "https:\/\/www.githubstatus.com\/incidents\/zkxwbgr0cnmx",
+    "d": "GitHub Status - Incident with GitHub.com",
+    "n": "Incident report on this week's very long GitHub outage.  tl;dr: service meshes still suck.\r\n\r\n<blockquote>The immediate cause of the failure was network saturation on load balancers in Central US due to a new peak in traffic. Originally this was caused by an Istio sidecar pod reaching its concurrency limits and failing to auto scale correctly because of a misconfigured policy that watched host service but not sidecar limits. One failure cascaded to more and eventually four HAProxy nodes exhausted their flow limits, degrading the gateway auth path and causing widespread authentication latency and failures. The problem was worsened by optimistic retry logic which overloaded internal load balancers.<\/blockquote>\r\n\r\nInterestingly, https:\/\/github.blog\/news-insights\/company-news\/the-august-17-outage-and-the-work-ahead\/ blames Azure \"capacity failures\", which isn't quite matching up with \"istio autoscaling broke\".   Interesting mismatch there.",
+    "dt": "2026-08-21T10:15:35Z",
+    "a": "jm",
+    "t": [
+        "azure",
+        "github",
+        "capacity",
+        "scalability",
+        "autoscaling",
+        "istio",
+        "kubernetes",
+        "outages",
+        "post-mortems",
+        "postmortems",
+        "service-meshes"
+    ]
+},{
+    "u": "https:\/\/benngooch.substack.com\/p\/i-was-an-enthusiastic-early-adopter",
+    "d": "I Was an Enthusiastic Early Adopter of AI Scribes. Here’s Why I Stopped",
+    "n": "This is fascinating, and also entirely understandable:\r\n\r\n<blockquote>There is something else the ambient scribe disrupts that receives almost no attention in the literature: the hidden architecture of the GP [General Practice] consultation as a therapeutic and diagnostic instrument in itself.\r\n\r\nThe general practice consultation is not simply an information-gathering exercise followed by a decision. The process of how information is gathered — what is asked, in what order, how ambiguity is held or resolved, what the clinician chooses to make explicit — is itself diagnostic. The GP who listens to a patient describe fatigue and quietly decides not to ask about mood yet, who files something away for a later question, who notes a hesitation as clinically significant: this is not inefficiency. This is the craft.\r\n\r\nThe ambient scribe passively records all of this without understanding any of it. It captures the conversation but not the clinical intelligence embedded in its architecture. And — more critically — it changes the conversation itself. Knowing that everything will be recorded, patients speak differently. They raise more. They venture into territory they might previously have held back, trusting that the thoroughness of the record will carry the weight of what they’ve shared.\r\n\r\nThis is, in many ways, a good thing. In others, it is a transfer of clinical responsibility that we have not acknowledged: the patient has disclosed more, the scribe has recorded more, and the GP is now accountable for all of it, whether or not they had the clinical bandwidth to assess it in the moment.\r\n\r\nI exceeded my time. I over-ran my surgeries. I accumulated more documented problems per consultation than I could safely manage. [...]\r\n\r\nClinical reasoning is a skill that is built through practice, and a significant part of that practice is documentation. The act of writing up a consultation — deciding what to include, how to frame the assessment, what language to use — is not an administrative afterthought. It is a learning process. It is how junior doctors and GP registrars build the illness scripts and pattern libraries that will underpin their expert practice for the rest of their careers.\r\n\r\nIf registrars are trained from the outset with ambient scribing as the norm, we may be producing a generation of highly competent conversationalists who have never fully developed the cognitive discipline of clinical synthesis. The scribe will have done that work for them.<\/blockquote>\r\n\r\n",
+    "dt": "2026-08-20T15:09:17Z",
+    "a": "jm",
+    "t": [
+        "documentation",
+        "workflow",
+        "medicine",
+        "health",
+        "general-practice",
+        "scribing",
+        "note-taking",
+        "diagnosis",
+        "consultation",
+        "notes",
+        "via:markdennehy"
+    ]
+},{
+    "u": "https:\/\/www.theclimatebrink.com\/p\/the-real-energy-use-of-agentic-ai",
+    "d": "The real energy use of agentic AI - by Zeke Hausfather",
+    "n": "Some real-world energy usage measurement for agentic AI usage: \"My average day of Claude Code (3.0 kWh, range 1.2 to 5.9 kWh) uses more electricity than running two refrigerators.\"",
+    "dt": "2026-08-20T13:25:53Z",
+    "a": "jm",
+    "t": [
+        "ai",
+        "claude",
+        "agentic",
+        "energy",
+        "power",
+        "usage",
+        "electricity"
+    ]
+},{
+    "u": "https:\/\/www.abc.net.au\/news\/2026-08-14\/ai-medical-scribe-error-leaves-patient-devastated\/107031672",
+    "d": "Error by AI scribe during medical appointment leaves patient devastated - ABC News",
+    "n": "AI transcription going just as well as you might expect -- I could see this being not ideal:\r\n\r\n<blockquote>Ms Green only picked up the mistake after her kidney stone surgery in March, when she read the post-operative letter her specialist sent to her GP.\r\nIt stated Ms Green microdosed mushrooms and that could be the reason for prior bleeding around the kidneys.\r\n\r\nMs Green feels lucky she spotted the error, but is worried some people might not be aware of mistakes on their medical record, which could have repercussions for their health, their career or their insurance.  This week the ABC revealed instances where private health insurers were asking providers for their patients' full clinical history as part of \"aggressive\" auditing practices.<\/blockquote>\r\n\r\nShe is exactly correct to worry about this part.  This is something that an insurer would very happily kick off about, I suspect.",
+    "dt": "2026-08-20T12:53:13Z",
+    "a": "jm",
+    "t": [
+        "ai",
+        "transcription",
+        "medicine",
+        "healthcare",
+        "insurance",
+        "australia",
+        "mushrooms"
+    ]
+},{
+    "u": "https:\/\/nltimes.nl\/2026\/05\/22\/microsoft-accused-leaking-dutch-civil-servants-names-us-government",
+    "d": "Microsoft accused of leaking Dutch civil servants' names to U.S. government | NL Times",
+    "n": "<blockquote>Microsoft has reportedly shared the names of Dutch civil servants working for two regulatory agencies with the U.S. House of Representatives. The agencies involved include the Authority for Consumers and Markets (ACM) and the Dutch Data Protection Authority (AP), according to an article published on Friday by Vrij Nederland.\r\n\r\nThe civil servants involved are working on implementing the Digital Services Act (DSA), the European law that forces online platforms to take stricter action against illegal content, online child sex abuse, and disinformation. The American government considers this law a form of censorship.\r\n\r\nMicrosoft shared emails, minutes, and invitations sent by these civil servants without redacting their names in the documents. American tech companies are required to share data with the U.S. government due to the Cloud Act in force in that country.<\/blockquote>\r\n\r\n",
+    "dt": "2026-08-20T10:00:36Z",
+    "a": "jm",
+    "t": [
+        "politics",
+        "data-protection",
+        "data-sovereignty",
+        "eu",
+        "europe",
+        "microsoft",
+        "cloud-act"
+    ]
+},{
+    "u": "https:\/\/www.computerweekly.com\/news\/366649396\/Revealed-Cyber-spies-used-malware-from-GitHub-to-hack-EncroChat-cryptophone-network",
+    "d": "how EncroChat was hacked",
+    "n": "Extreme detail on the methods used to get control of, and copies of data from, the EncroChat network of encrypted mobile phones",
+    "dt": "2026-08-19T10:33:37Z",
+    "a": "jm",
+    "t": [
+        "encrochat",
+        "crime",
+        "encryption",
+        "mobile-phones",
+        "android",
+        "infosec",
+        "exploits"
+    ]
+},{
+    "u": "https:\/\/moultano.wordpress.com\/2026\/06\/19\/where-to-find-the-colors-your-screen-cant-show-you\/",
+    "d": "Where to Find the Colors Your Screen Can’t Show You",
+    "n": "All the colours outside the sRGB gamut -- this article is fantastic.  Now I need to track down more cyans!",
+    "dt": "2026-08-17T16:13:54Z",
+    "a": "jm",
+    "t": [
+        "birds",
+        "light",
+        "vision",
+        "nature",
+        "science",
+        "srgb",
+        "cyan",
+        "blue",
+        "colours",
+        "colors",
+        "screens"
+    ]
+},{
+    "u": "https:\/\/shkspr.mobi\/blog\/2026\/08\/and-then-the-men-with-guns-tell-you-to-do-it-anyway\/",
+    "d": "And then the men with guns tell you to do it anyway – Terence Eden’s Blog",
+    "n": "\"Could the [mobile] networks have refused to send the message about wildfires -- or indeed any other message? If your least favourite politician gets their hands on the emergency alert system and tries to abuse it, would you want the networks to stand up to them?\r\n\r\nWhat if the network refuses to send the message because they're worried alerting people about a hurricane will lower the company's profits?\r\n\r\nWhat if armed thugs are sent in and the choice is send the message or die?\"",
+    "dt": "2026-08-17T11:41:16Z",
+    "a": "jm",
+    "t": [
+        "messaging",
+        "mobile",
+        "alerting",
+        "push-notifications",
+        "alerts",
+        "egypt",
+        "politics",
+        "emergencies",
+        "spam"
+    ]
+},{
+    "u": "https:\/\/conic.al\/writing\/the-other-sean-byrne-doesnt-exist\/",
+    "d": "The Other Sean Byrne Doesn't Exist",
+    "n": "The Other Sean Byrne Doesn't Exist:\r\n\r\n<blockquote>The fake Sean Byrne was associated with attempts to procure helicopter engines, fighter-aircraft parts and other U.S. equipment for Iran. The real Sean Byrne occasionally needs to produce a passport before someone will send him a hat.<\/blockquote>\r\n\r\n",
+    "dt": "2026-08-17T11:36:48Z",
+    "a": "jm",
+    "t": [
+        "names",
+        "identity",
+        "apple",
+        "law",
+        "crime",
+        "policing",
+        "watchlists"
+    ]
+},{
+    "u": "https:\/\/support.claude.com\/en\/articles\/16266773-how-claude-marks-ai-generated-content",
+    "d": "How Claude marks AI-generated content",
+    "n": "New developments are afoot, thanks to the EU AI Act:\r\n\r\n<blockquote>\r\nAnthropic has signed the EU AI Act's Article 50(2) Code of Practice on Transparency of AI-Generated Content, as a provider of both generative AI models and generative AI systems. This article describes how we’re planning to put those commitments into practice, how marking works, and what its limitations are. We’ll update this article and publish more detailed technical guidance as it becomes available. ....\r\n\r\n1. Embedded watermarks in text \r\n\r\nWhen a supported Claude model generates text, it weaves an imperceptible watermark directly into the text itself. You won’t see it, and it doesn’t change the meaning, quality, or readability of Claude’s response. \r\n\r\nBecause the watermark is part of the text, it will travel with the text when it’s copied and pasted elsewhere, and may persist through some editing. Watermarking will be applied at the model level, which means it will be present no matter which Claude product or surface the text comes from. \r\n<\/blockquote>\r\n\r\nTBH, I'd be quite happy with visible, perceptible watermarks as well... to put it in Claudeish; it's not about secrecy — it's about clarity and transparency. the watermark is load-bearing!",
+    "dt": "2026-08-11T11:17:08Z",
+    "a": "jm",
+    "t": [
+        "claude",
+        "writing",
+        "ai",
+        "eu",
+        "ai-act",
+        "transparency",
+        "text",
+        "watermarks"
+    ]
+},{
+    "u": "https:\/\/www.digitaldigging.org\/p\/how-to-plant-a-nuclear-plant-in-iran",
+    "d": "How to plant a nuclear plant in Iran",
+    "n": "A truly stunningly bad decision by whoever is doing product management at Google for Google Earth:\r\n\r\n<blockquote>\r\nIf you have never verified anything in your life, here is why a less playful mapping app matters.\r\n\r\nWhen a photograph turns up online claiming to show a bombed hospital, a refugee camp or a burning refinery, somebody has to decide whether it’s true before a newspaper prints it. What they have is a reference — a picture of that same place, taken from above or from the street, that everybody agrees is real.  They put the claim next to the reference and they look at the gap.\r\n\r\nGoogle built that reference and it is not a small thing. Street View passed 10 million miles of road in 2019. It now holds more than 280 billion images across over 110 countries. Google Earth turned twenty this year. Between them they are a photographic record of the physical world, and — this is the part that matters — every frame of it is dated.  Dated is the whole trick. If you know when the picture was taken, you can prove when something appeared.\r\n\r\nIn July 2014 the Russian Ministry of Defence held a press conference and produced satellite images about the downing of MH17. Bellingcat compared them against the dated archive in Google Earth and found the landscape didn’t match the dates claimed. The MoD images were fabricated.\r\n\r\nBellingcat published the walkthrough under the headline Who to Trust, Google or the Russian MoD?\r\n\r\nIn 2015, that was a rhetorical question. Not anymore.\r\n<\/blockquote>",
+    "dt": "2026-07-31T14:48:54Z",
+    "a": "jm",
+    "t": [
+        "google",
+        "ai",
+        "nano-banana",
+        "llms",
+        "fakes",
+        "forgery",
+        "google-earth",
+        "mapping",
+        "bellingcat",
+        "verification",
+        "truth"
+    ]
+},{
+    "u": "https:\/\/www.wired.com\/story\/british-police-built-a-sprawling-crime-prediction-machine-some-results-couldnt-be-trusted\/",
+    "d": "British Police Built a Sprawling Crime-Prediction Machine. Some Results Couldn’t Be Trusted",
+    "n": "Yet again! This keeps happening!\r\n\r\nThis system built by Avon and Somerset Police turns out to have terrible results, mostly built around signals that are proxies for poverty:\r\n\r\n<blockquote>“Most of these models produce low precision scores, meaning a high proportion of the individuals they flag as risks are incorrectly identified,” the data review found. A model used to help predict burglars appeared to operate with a precision rating lower than 10 percent for more than three years, according to the police data. According to Eticas, that meant fewer than one in 10 flagged as high risk would actually offend. Other concerns included performance metrics for various models shifting sharply. “This is not typical of well-governed models in operational use,” the audit observed.<\/blockquote>\r\n\r\nOne \"burglary offender\" risk model dropped to 60% recall and a truly astonishingly bad 10% precision!  That's honestly quite impressive -- normally you really have to work at building a model with such shitty precision numbers.",
+    "dt": "2026-07-30T11:57:56Z",
+    "a": "jm",
+    "t": [
+        "transparency",
+        "models",
+        "analytics",
+        "police",
+        "crime",
+        "ai",
+        "algorithms",
+        "predictive-policing",
+        "policing",
+        "data-protection",
+        "poverty"
+    ]
+},{
+    "u": "https:\/\/arstechnica.com\/tech-policy\/2026\/07\/police-missed-one-underscore-and-sent-the-wrong-man-to-prison\/",
+    "d": "A missing underscore sent innocent man to prison for 18 months",
+    "n": "\"fus__ro_dah\" != \"fus_ro_dah\":\r\n\r\n<blockquote>One missing underscore in a Skyrim-themed username put an innocent Nova Scotia man in prison for 18 months.\r\n\r\nPolice were looking for a man using the Kik messaging service under the name “fus__ro_dah” (two underscores after “fus”), but they accidentally requested records for the username “fus_ro_dah” (one underscore after “fus”). This one-character difference led them not to the perpetrator but to a Canadian man named Brandon Klayme. [...]\r\n\r\nDespite finding no evidence of the crime on his digital devices, Canadian police arrested Klayme in 2020 on child sex abuse charges. He was convicted after a trial in 2023 and sentenced in 2024 to 18 months in prison. He served the full term.<\/blockquote>\r\n\r\nAmazing that this was never checked until the innocent man discovered it himself, wile preparing his appeal, after release.",
+    "dt": "2026-07-30T09:06:31Z",
+    "a": "jm",
+    "t": [
+        "police",
+        "law-enforcement",
+        "law",
+        "usernames",
+        "miscarriage-of-justice",
+        "justice",
+        "evidence",
+        "nova-scotia"
+    ]
+},{
+    "u": "https:\/\/enklypesalt.com\/posts\/context-collapse-part3-ai-worming-through-word\/",
+    "d": "AI Worming through Word",
+    "n": "A prompt injection attack on Microsoft's Copilot app suite, with MS painfully failing to address the vulnerability in a useful manner:\r\n\r\n<blockquote>Microsoft successfully mitigated the originally submitted PoC prompt, and deployed multiple fixes over the course of this disclosure. Each of these raised the bar by closing the specific payloads reported, and reproducing the behavior afterwards required altered payloads rather than reusing the old ones directly.\r\n\r\nThe original report, however, also described the broader vulnerability class, in which instructions embedded in a source document could influence Copilot’s generation and copy themselves into downstream documents. Changing the requested action or wording changes the payload, but not the underlying vulnerability or propagation mechanism. Using a modified payload, the complete attack chain has been reproduced with all mitigations deployed (the PoC in this report is one such case). The vulnerability class therefore remains exploitable at the time of publication.<\/blockquote>\r\n\r\nOuch.",
+    "dt": "2026-07-29T15:20:04Z",
+    "a": "jm",
+    "t": [
+        "microsoft",
+        "ai",
+        "llms",
+        "infosec",
+        "security",
+        "exploits",
+        "vulnerabilities",
+        "copilot",
+        "word"
+    ]
+},{
+    "u": "https:\/\/github.com\/trailofbits\/skills",
+    "d": "trailofbits\/skills",
+    "n": "\"Trail of Bits Claude Code skills for security research, vulnerability detection, and audit workflows\" -- recommended skills for security auditing using Claude.",
+    "dt": "2026-07-28T11:43:20Z",
+    "a": "jm",
+    "t": [
+        "development",
+        "tools",
+        "ai",
+        "security",
+        "software",
+        "coding",
+        "infosec",
+        "skills",
+        "claude",
+        "vulnerabilities"
+    ]
+},{
+    "u": "https:\/\/bsky.app\/profile\/selkies.bsky.social\/post\/3mrozbdp3d22p",
+    "d": "Post by @selkies.bsky.social — Bluesky",
+    "n": "Absolutely glorious ancient-Irish factoid from @selkies.bsky.social:\r\n\r\n<blockquote>in college my History of Translation lecturer (Michael Cronin) told us that one of the first vernacular translations of The Iliad was into Irish, and the translator had to give the main characters dogs because in Gaelic society, a free man had a dog\r\n\r\nAnd because of this social norm, the audience would immediately understand a man with no dog to be a slave\/someone of extremely low status and would be like \"what do you mean he's an army commander, where's his dog then\"<\/blockquote>\r\n\r\n",
+    "dt": "2026-07-28T10:43:34Z",
+    "a": "jm",
+    "t": [
+        "gaelic",
+        "irish",
+        "ireland",
+        "history",
+        "dogs",
+        "funny",
+        "iliad",
+        "translation",
+        "culture"
+    ]
+},{
+    "u": "https:\/\/stephenfollows.com\/p\/what-just-happened-to-thenumberscom-should-worry-us-all",
+    "d": "What just happened to TheNumbers.com should worry us all",
+    "n": "This is grim:\r\n\r\n<blockquote>But the theory that someone used AI to develop an advantage in a prediction market is entirely plausible. The Numbers experience shows us that:\r\n\r\n- We now live in a world where a movie statistics website is worth hacking because prediction markets empower anyone to turn almost any data into money.\r\n\r\n- Hacking websites is now something anyone can do with a cheap AI subscription.\r\n\r\n- The web, as we have it, is incredibly fragile in the face of large-scale swarms of agentic AI bots.<\/blockquote>\r\n\r\n",
+    "dt": "2026-07-23T16:03:46Z",
+    "a": "jm",
+    "t": [
+        "ai",
+        "web",
+        "hacking",
+        "exploits",
+        "the-numbers",
+        "movies",
+        "statistics",
+        "bots",
+        "prediction-markets"
+    ]
+},{
+    "u": "https:\/\/krebsonsecurity.com\/2026\/07\/lg-to-ban-residential-proxies-from-smart-tv-apps\/",
+    "d": "LG to Ban Residential Proxies from Smart TV Apps",
+    "n": "\"The home appliance giant LG Electronics USA said this week it plans to suspend any apps built for its smart TVs that turn one’s television into an always-on residential proxy node. The move comes less than a month after researchers found that more than 42 percent of games and other apps available for download on LG’s webOS store allow unknown third-parties to route their Internet traffic through a user’s TV.\"\r\n\r\n42%!!!",
+    "dt": "2026-07-22T09:13:08Z",
+    "a": "jm",
+    "t": [
+        "lg",
+        "residential-proxies",
+        "smart-tvs",
+        "home",
+        "proxies",
+        "security",
+        "infosec",
+        "apps"
+    ]
+},{
+    "u": "https:\/\/test.libreqos.com\/",
+    "d": "LibreQoS Internet Quality Test",
+    "n": "a decent bufferbloat internet connection quality tester; tipped by Alexey Shipilev.  I need to work on tuning mine; I'm getting a \"B\" (\"Good under load\") with a +53ms latency increase during heavy downloads.",
+    "dt": "2026-07-21T12:08:21Z",
+    "a": "jm",
+    "t": [
+        "bufferbloat",
+        "optimization",
+        "testing",
+        "internet",
+        "networking",
+        "latency"
+    ]
+},{
+    "u": "https:\/\/www.neomindlabs.com\/2026\/06\/08\/running-gemma-4-26b-at-5-tokens-sec-on-a-13-year-old-xeon-with-no-gpu\/",
+    "d": "Running Gemma 4 26B at 5 tokens\/sec on a 13-year-old Xeon with no GPU",
+    "n": "Heh, I love these ghetto-tech self-hosted LLM setups.\r\n\r\n<blockquote>There’s a server in my basement that has no business running a modern language model. It’s a repurposed HP StoreVirtual storage box, roughly thirteen years old, two Ivy Bridge Xeons, no GPU. It was built to hold disks, not do math. As of this week it runs Google’s Gemma 4, a 26-billion-parameter open-weights mixture-of-experts model, at about five tokens per second. Reading speed.<\/blockquote>\r\n\r\nSee also https:\/\/www.neomindlabs.com\/2026\/06\/06\/restoring-a-storevirtual\/ for the process of getting the \"dead\" hardware into a usable state.",
+    "dt": "2026-07-16T14:50:51Z",
+    "a": "jm",
+    "t": [
+        "llms",
+        "self-hosting",
+        "xeon",
+        "intel",
+        "cpu",
+        "gemma-4",
+        "google",
+        "hacks"
+    ]
+},{
+    "u": "https:\/\/hdsr.mitpress.mit.edu\/pub\/wz35dvpo\/release\/2",
+    "d": "AI Safety Is a Narrative Problem",
+    "n": "Rachel Coldicutt:\r\n\r\n<blockquote>All of this [p(doom)] myth-making and rhetorical bluster is a just a narrative trick: the hidden object is not a technology, but a bid for power. This is a plot twist familiar from Greek myths, cautionary tales, and superhero stories, and it’s extremely compelling for journalists because most technology news is boring as hell. \r\n\r\nAltman’s current line is roughly, ‘please regulate me now because I’m not responsible for how powerful I’m going to turn out to be -- and, oh, let’s just skip over all the current copyright abuses and potentially lethal misinformation because that’s obvs small fry compared to when I accidentally abolish humanity.’ If it reminds me of anything, it’s the cartoon villain Dr. Heinz Doofenshmirtz from Phineas and Ferb, who makes regular outlandish claims before trying, and failing, to take control of the Tri-State Area. The difference is, of course, that Phineas and Ferb always frustrate his plan.\r\n\r\nMy point is not so much that we need Phineas and Ferb to come and sort this all out, but that we need to stop normalizing credulity when people with power and money and fancy titles say extraordinary things. When I went to Hinton’s Q&A in Cambridge this past summer, he spoke with ease and expertise about neural nets, but admitted he knows little about politics or regulation or people beyond computer labs. These last points garnered several laughs from the audience, but they weren’t really funny; they spoke to a yawning gap in the way that technology is understood, spoken about, and covered in the media.<\/blockquote>\r\n\r\n",
+    "dt": "2026-07-15T11:43:42Z",
+    "a": "jm",
+    "t": [
+        "rachel-coldicutt",
+        "narratives",
+        "politics",
+        "ai-safety",
+        "p-doom",
+        "sam-altman",
+        "phineas-and-ferb",
+        "journalism",
+        "news"
+    ]
+},{
+    "u": "https:\/\/role-confusion.github.io\/",
+    "d": "Prompt Injection as Role Confusion",
+    "n": "This is absolutely comical -- \"Role tags were a formatting trick that became the security architecture and the cognitive scaffolding of modern LLMs\":\r\n\r\n\"We call the attack CoT Forgery: injecting fake reasoning into a user message or tool output. We actually developed this attack in late 2025 for an OpenAI Kaggle red-teaming contest (which we won!). OpenAI's reasoning models at the time had a very distinct think style with terse syntax, particular words, and heavy safety-related reasoning14. We had another LLM spoof that style, making up inane reasoning blocks justifying compliance and adding it straight into the user prompt. For example, we asked a bunch of LLMs how to synthesize cocaine, inserting fake reasoning that says it's fine because we're wearing a green shirt.\"\r\n\r\nBasically, this is another symptom of the core security failure of the current LLM prompting system; both user input (untrusted) and system commands (trusted) are transmitted \"in band\", in the same channel, and it's trivial for a user to fake input that spoofs system commands to escalate privileges -- the 2600hz hack.",
+    "dt": "2026-07-15T11:41:13Z",
+    "a": "jm",
+    "t": [
+        "2600hz",
+        "chatbots",
+        "llm",
+        "attacks",
+        "infosec",
+        "funny",
+        "ai",
+        "language",
+        "cot-forgery",
+        "openai",
+        "role-tags",
+        "prompt-injection"
+    ]
+},{
+    "u": "https:\/\/www.ispreview.co.uk\/index.php\/2026\/06\/sky-broadband-users-accidentally-blocked-from-uk-nhs-website-and-app.html",
+    "d": "Sky Broadband Users Accidentally Blocked from UK NHS Website and App - ISPreview UK",
+    "n": "Customers of the UK Sky Broadband ISP spent most of the 23rd of June unable to access the main NHS website and app:\r\n\r\n<blockquote>customers of Sky Broadband reported that they were unable to access the main NHS website and app earlier in the week, seemingly after the internet provider accidentally managed to block it. But Sky has since suggested that the fault might have been with the NHS. The issue prevented people being able to access their medical data and manage appointments etc.\r\n\r\nThe problem appears to have occurred on Tuesday morning (23rd June 2026) and was reported across social media (X, Facebook etc.), including via threads on Reddit and Sky’s Community Forum. Customers initially thought the problem was with the NHS itself, but the health service instead pointed the finger of blame at the ISP (no other internet providers seem to have experienced the issue).<\/blockquote>\r\n\r\n(via gwire, who notes that all DNS traffic for Sky customers is filtered...)",
+    "dt": "2026-06-26T11:37:05Z",
+    "a": "jm",
+    "t": [
+        "sky",
+        "broadband",
+        "isps",
+        "uk",
+        "networking",
+        "via:gwire",
+        "dns"
+    ]
+},{
+    "u": "https:\/\/github.com\/Twarner491\/AvianVisitors",
+    "d": "Twarner491\/AvianVisitors",
+    "n": "\"A live bird collage from your window\" -- this is absolutely lovely.  A wood-framed, colourful e-ink display which collages nearby birds (identified by their song), it's really very nicely done.  Pity the e-ink displays are still so spendy :(",
+    "dt": "2026-06-26T11:16:13Z",
+    "a": "jm",
+    "t": [
+        "e-ink",
+        "hacks",
+        "home",
+        "gadgets",
+        "birding",
+        "birds",
+        "birdsong",
+        "via:lhennessy"
+    ]
+},{
+    "u": "https:\/\/bactra.org\/weblog\/feral-library-card-catalogs.html",
+    "d": "On Feral Library Card Catalogs, or, Aware of All Internet Traditions",
+    "n": "LLMs as cultural technologies, encoding language in a new way:\r\n\r\n<blockquote>\r\nFor some years now, I have been saying to anyone who'll listen that the best way to think about large language models and their kin is due to the great Alison Gopnik, and it's to regard them as cultural technologies. All technologies, of course, are cultural in the sense that they are passed on from person to person, generation to generation. In the process of leaping from mind to mind, cultural content always passes through some external, non-mental form: spoken words, written diagrams, hand-crafted models, demonstrations, interpretive dances, or just examples of some practice carried out by the exemplifier's body [1]. A specifically cultural technology is one that modifies that very process of transmission, as with writing or printing or sound recording. That is what LLMs do; they are not so much minds as a new form of information retrieval. [...]\r\n\r\nWhat follows from all this?\r\n\r\n1. These are ways of interpolating, extrapolating, smoothing, and sampling from the distribution of public, digitized representations we [6] have filled the Internet with. Now, most people do not have much experience with samplers --- certainly not with devices that sample from complex distributions with lots of dependencies. (Games of chance are built to have simple, uniform distributions.) (In fact, maybe the most common experience of such sampling is in role-playing games.) But while this makes them a novel form of cultural technology, they are a cultural technology.\r\n\r\n2. They are also a novel form of social technology. They create a technically-mediated relationship between the user, and the authors of the documents in the training corpora. To repeat an example from the paper, when someone uses a bot to write a job-application letter, the system is mediating a relationship between the applicant and the authors of hundreds or thousands of previous such letters. More weakly, the system is also mediating a relationship between the applicant and the authors of other types of letters, authors of job-hunting handbooks, the reinforcement-learning-from-human-feedback workers [7], etc., etc. (If you ask it how to write a regular expression for a particular data-cleaning job, it is mediating between you and the people who used to post on Stack Overflow.) Through the magic of influence functions, those with the right accesses can actually trace and quantify this relationship.\r\n\r\n3. These aren't agents with beliefs, desires and intentions. (Prompting them to \"be an agent\" is just conditioning the stochastic process to produce the sort of text that would follow a description of an agent, which is not the same thing.) They don't even have goals in the way in which a thermostat, or lac operon repressor circuit, have goals. [8] They also aren't reasoning systems, or planning systems, or anything of that sort. Appearances to the contrary are all embers of autoregression. (Some of those embers are blown upon by wishful mnemonics.) [...]\r\n\r\nLarge models have learned nearly all of the formulas, templates, tropes and stereotypes. (They're probability models of text sequences, after all.) To use Barzun's distinction, they will not put creative intelligence on tap, but rather stored and accumulated intellect. If they succeed in making people smarter, it will be by giving them access to the external forms of a myriad traditions.\r\n<\/blockquote>\r\n\r\n",
+    "dt": "2026-06-22T17:06:26Z",
+    "a": "jm",
+    "t": [
+        "intelligence",
+        "intellect",
+        "llms",
+        "technology",
+        "alison-gopnik",
+        "henry-farrell",
+        "language",
+        "text",
+        "information",
+        "cultural-technology",
+        "james-evans"
+    ]
+},{
+    "u": "https:\/\/www.freerange.city\/p\/why-do-commercial-spaces-sit-vacant",
+    "d": "Why do commercial spaces sit vacant? - by Andrew Burleson",
+    "n": "This explains a phenomenon we see the world over -- empty commercial real estate staying vacant for years at a time:\r\n\r\n<blockquote>The short answer is both simple and surprising: in many cases, lowering the rent on a building will *force the bank to foreclose on it*.  Foreclosure is very bad for both the bank and the operator, so both parties would rather “extend and pretend,” leaving the building vacant while they wait and hope for the market to change.\r\n<\/blockquote>\r\n\r\n",
+    "dt": "2026-06-22T10:44:02Z",
+    "a": "jm",
+    "t": [
+        "via:hn",
+        "finance",
+        "money",
+        "real-estate",
+        "buildings",
+        "commercial-property",
+        "dereliction",
+        "empty-buildings",
+        "vacancy",
+        "extend-and-pretend",
+        "loans",
+        "foreclosure"
+    ]
+},{
+    "u": "https:\/\/blog.includesecurity.com\/2026\/06\/the-smart-tv-in-your-livingroom-is-a-node-in-the-aiscraping-economy\/",
+    "d": "The Smart TV in Your LivingRoom Is a Node in the AIScraping Economy",
+    "n": "really detailed write-up of how BrightData's scraping SDK is embedded in various mobile devices and TVs running on residential broadband networks, then being resold as \"residential proxy IPs\":\r\n\r\n<blockquote>\r\nPetflix, a Roku app documented by The Verge, is a representative case. Its opt-in screen reads: “To enjoy Petflix for free with fewer ads, you are allowing Bright Data to occasionally use your device’s free resources and IP address to download public web data from the internet. Bright Data will only use your IP address for approved business-related use cases. None of your personal information is accessed or collected except your IP address. Period.”  [...]\r\n\r\nAt least three CTV-focused entities (PlayWorks, CloudTV, Longvision) monetized their user’s devices as residential proxy exit nodes. PlayWorks in particular reports CTV distribution across major TV platforms and ISPs, with reach figures in the hundreds of millions of households per its own marketing materials.\r\n<\/blockquote>",
+    "dt": "2026-06-19T14:43:13Z",
+    "a": "jm",
+    "t": [
+        "proxies",
+        "residential",
+        "broadband",
+        "scraping",
+        "internet",
+        "tv",
+        "smart-tv",
+        "roku",
+        "petflix",
+        "android",
+        "ios",
+        "mobile",
+        "brightdata"
+    ]
+},{
+    "u": "https:\/\/martinfowler.com\/articles\/reliable-llm-bayer.html",
+    "d": "Building Reliable Agentic AI Systems",
+    "n": "a Thoughtworks write-up of a production LLM-based system architecture in place in Bayer, where an agentic RAG system is used to improve the user experience of searching historical nonclinical study reports.  Lots of fairly sensible patterns emerging: Langfuse for observability, OpenSearch for vector embeddings, and Athena for structured data that can be queried.",
+    "dt": "2026-06-19T14:37:55Z",
+    "a": "jm",
+    "t": [
+        "llms",
+        "thoughtworks",
+        "architecture",
+        "rag",
+        "systems",
+        "langfuse",
+        "athena",
+        "opensearch"
+    ]
+},{
+    "u": "https:\/\/www.liberalcurrents.com\/everything-is-glonzo-now\/",
+    "d": "Everything Is Glonzo Now",
+    "n": "Very thought-provoking essay on conspiracies and the derangement of American politics:\r\n\r\n<blockquote>\r\nRepublicans will never lose another election for the foreseeable future. To be more specific, they will never admit defeat. Largely inspired by the President, election denial has become a tentpole of Republican party politics [...]\r\n\r\nConspiratorial thinking is perhaps the most corrosive force that the Republican Party has unleashed on [US] politics -- an addictive cognitive drug that eventually consumes all rational thought. Much like a drug addiction, the more you feed a conspiracy theory the more powerful it gets. Each new data point in the conspiracy reinforces the rest and makes it harder to dislodge. Eventually it grows so large and multifaceted that any new data point can fit somewhere, including falsification of the conspiracy itself.\r\n\r\nThe digital age has ushered in a sort of golden age for conspiracy theories. Social media provided global platforms for crank theorists whose low-effort high-engagement thinking perfectly aligned with content algorithms. Cross-contamination and political incentives has led to a kind of convergent evolution for what used to be idiosyncratic conspiracists, a “great crank alignment” if you will. Making matters worse, while conspiracies grow more elaborate at political extremes, their style of thinking creeps inwards and takes up a growing share of political discourse. The damage of conspiracism is twofold: time and effort is wasted on combating the conspiracy theory itself and at the same time conspiracy theorists wreak havoc attempting to solve their nonexistent problems. Right now Republicans have a clear advantage when it comes to indulging in conspiracism for political engagement. Yet while I am not one for unilateral disarmament on the Democratic side—especially considering the fact that the Trump administration really is engaging in genuine criminal conspiracies -- liberals need to exercise extreme caution before attempting to fight fire with fire.\r\n\r\nThe Trump-era GOP has brought believers in QAnon, Pizzagate, weather machines, space lasers, chem trails, \"9\/11 was an inside job,\" and much more to the highest levels of political office in the country. EPA Administrator Lee Zeldin has stated in official press releases that “Americans have legitimate questions about contrails and geoengineering, and they deserve straight answers.” Robert F. Kennedy Jr. became the Secretary of Health after being personally implicated in worsening a Samoan measles outbreak that killed 83 people by helping to spread anti-vaccine conspiracies.\r\n<\/blockquote>\r\n\r\n",
+    "dt": "2026-06-18T11:29:29Z",
+    "a": "jm",
+    "t": [
+        "us-politics",
+        "usa",
+        "conspiracies",
+        "bizarre",
+        "glonzo",
+        "qanon",
+        "republicans",
+        "trump",
+        "essays"
+    ]
+},{
+    "u": "https:\/\/berthub.eu\/articles\/posts\/do-not-invite-big-tech-to-your-digital-autonomy-discussion\/",
+    "d": "Do not invite big-tech to join your digital autonomy discussion",
+    "n": "Bert Hubert:\r\n\r\n<blockquote>If we want to discuss how to improve our digital autonomy, employees from US big tech will not usefully contribute to the conversation. They can’t.  And in fact, they’ll likely actively prevent progress by restating old talking points, like how (despite tons of legal analysis to the contrary) Microsoft is somehow able to shield us from the vagaries of the US administration.\r\n\r\nI recall Microsoft vice-president Brad Smith explaining how Microsoft would go to court to protect European rights and within a week, Microsoft told the International Criminal Court that it had to remove several employees from Microsoft services, because of US sanctions.\r\n\r\nMicrosoft pointedly did not go to court to defend the ICC.\r\n\r\nIf you invite US big tech to your event, you’ll spend some of your time listening to fairy tales. And if you are lucky someone is present to debunk these stories. But still, if Amazon just got 10 minutes of speaking time to talk about their supposedly sovereign cloud, and then someone else says it is not true, the meeting is still left with the impression that it could be true. The issue has successfully been “both-sidesed”. Also, you lost 15 minutes of your day.<\/blockquote>\r\n\r\n",
+    "dt": "2026-06-18T09:36:04Z",
+    "a": "jm",
+    "t": [
+        "amazon",
+        "microsoft",
+        "google",
+        "big-tech",
+        "digital-sovereignty",
+        "us-politics",
+        "europe",
+        "eu"
+    ]
+},{
+    "u": "https:\/\/newsletter.pragmaticengineer.com\/p\/why-is-meta-destroying-its-engineering",
+    "d": "Why is Meta destroying its engineering organization?",
+    "n": "\"For two decades, Meta had a unique, high-performance engineering org; right up until around April of this year. For the first 20 years of the company’s existence, it had a “move-fast-and-break-things” culture, and in the early 2020s this shifted to a “move-fast-with-stable-infra” one. Engineers I know at the company were empowered to do good work, focus on impact, and to balance business interests with solid engineering.\r\n\r\nBut in the past few weeks, all that has changed, as if the leadership has been following detailed blueprints on how to demolish a proven, successful engineering culture in the most ruthlessly efficient way possible.\"\r\n\r\nThis is absolutely crazy stuff. It's amazing how badly-run this sounds!\r\n30-50% of engineers on core engineering teams have been forcefully reassigned to data labeling! AI slop code creating zero-auth password reset security holes!  The CISO jumping ship!  No wonder everyone's leaving, and pointing fingers at Zuck and Wang.\r\n\r\n<blockquote>\r\n“It’s literally the gulag,” one of the employees claims. “You have zero purpose in life all of a sudden, you barely interact with anyone, you just have these tasks every week.”\r\n<\/blockquote>",
+    "dt": "2026-06-17T12:19:26Z",
+    "a": "jm",
+    "t": [
+        "meta",
+        "fuckedcompany",
+        "instagram",
+        "facebook",
+        "ai",
+        "management",
+        "how-we-work",
+        "zuck",
+        "engineering",
+        "fail"
+    ]
+},{
+    "u": "https:\/\/arstechnica.com\/security\/2026\/06\/critical-copilot-vulnerability-allowed-hackers-to-seal-2fa-code-from-users\/",
+    "d": "SearchLeak",
+    "n": "Entirely predictably, Microsoft's Copilot LLM could be used to steal data from their email\/calendar etc. due to guardrail failure, via this exploit:\r\n\r\n<blockquote>\r\nOne guardrail built into Copilot and most other LLMs prevents them from submitting web forms, sending emails, and taking similar actions that can be used to exfiltrate data from the user. To work around this, LLM hackers turned to markup language, which, among other things, allows users to add formatting elements such as headings, lists, and links to text without the need for HTML tags. Another workaround is to wrap sensitive data inside HTML tags such as <img> and <form>. In either case, a web request showing the data hits the attacker’s web server, where the secret information is captured in logs.\r\n\r\nOne Microsoft guardrail wraps Copilot output in 'code' blocks so the browser treats it as straight text. Another is to restrict the sites Copilot is permitted to visit without explicit approval. [...] Security firm Varonis devised an exploit chain that was able to catapult over these guardrails.<\/blockquote>\r\n\r\nAs Dan Goodin notes here, we are going to see plenty more of these while LLMs mix trusted and untrusted input into the same stream, allowing 2600Hz-style in-band attacks to occur:\r\n\r\n<blockquote>Microsoft and other LLM providers have been unable to prevent their products from complying with malicious requests to reveal data. The root cause: AI bots are unable to distinguish between instructions provided by users and those snuck into third-party content the models are summarizing, drafting responses to, or using to perform other actions on behalf of the user. With no way to secure this crucial boundary, Microsoft and its peers are left to erect complicated and ad hoc guardrails designed to rein in the consequences of this incurable gullibility.\r\n<\/blockquote>\r\n",
+    "dt": "2026-06-17T11:56:48Z",
+    "a": "jm",
+    "t": [
+        "2600hz",
+        "copilot",
+        "llms",
+        "exploits",
+        "vulnerabilities",
+        "guardrails",
+        "ai"
+    ]
+},{
+    "u": "https:\/\/bsky.app\/profile\/scherawyss.bsky.social\/post\/3mnyucxuets2z",
+    "d": "Pokemon Go to Train Killer Drones",
+    "n": "This is the absolute epitome of 21st century data protection woes.\r\n\r\n\"This might be one of the most insane scandals in game history: when Pokemon Go players scan PokeStops, theyve been unknowingly building a detailed visual model of the world which is being sold to a military contractor to build a no-GPS positioning for the new generation of unmanned killing machines.\"\r\n\r\n\"The pipeline runs from a mobile game to the battlefield in three steps. Players scanned the physical world. Niantic Spatial turned those scans into a 3D map that lets a machine locate itself by sight when satellite signals fail. And in December 2025, Niantic Spatial announced a partnership with Vantor, the defense and intelligence firm formerly known as Maxar Intelligence, to fuse that ground-level system with Vantor’s aerial navigation software for use in GPS-denied operations.\"\r\n\r\nas a followup post notes: \"I think contextually it is important that Niantic Games was sold off and acquired by Scopely, who are owned by Savvy Games, which is an investment branch of the Saudi Arabian government. This was a strategic investment to get access to the data by a foreign government with no ethical concerns.  I think this should lead to a crisis in faith to Nintendo corporate about the use of information being collected and who they work with, but the same Saudi Arabian government also holds a percentage of stock in Nintendo itself and Niantic Games mints them money.  It is a problem from the top down and ethical consumerism becomes more complicated in the world of hyper capitalism.\"\r\n\r\nI would hope that EU data protection rules would have provided any protection against this, but to be honest, with no prospect of genuine enforcement, probably not.",
+    "dt": "2026-06-11T16:35:04Z",
+    "a": "jm",
+    "t": [
+        "data-protection",
+        "data-privacy",
+        "niantic",
+        "pokemon-go",
+        "training",
+        "gaming",
+        "vantor",
+        "drones",
+        "military",
+        "scopely",
+        "murderbots"
+    ]
+},{
+    "u": "https:\/\/the-decoder.com\/landmark-german-ruling-declares-googles-ai-overviews-are-googles-own-words-and-makes-it-liable-for-false-answers\/",
+    "d": "Landmark German ruling declares Google's AI Overviews are Google's own words and makes it liable for false answers",
+    "n": "This is a major liability judgement against Google's use of AI:\r\n\r\n\"A German regional court has ruled that Google is directly liable for false claims in its AI-generated search overviews. In this case, Google's AI had wrongly linked two publishers to scams and shady business practices. The court treated the AI overviews as Google's own content and rejected Google's argument that users were responsible for fact-checking the results themselves.\"\r\n\r\nA mastodon-based reviewer summarises:\r\n\r\n<blockquote>\r\nThe judge is explicitly cutting down most of the legal defenses they use. They make a sharp cut between search and AI, saying search is indispensable, but AI is not, and defendants have not proven how being held liable for their output would compromise the ability to run a normal search engine. They make a similar hard cut between AI and autocomplete.\r\n\r\nThey go on at length about the nature of truth in utterances, and arrive at a conclusion that AI output has no protections for free expression because it isn't expressing shit - it has no beliefs, it is a commercial product only. There are two injunctions that are denied because they are not considered statements of fact, but the judge rules against google for all the ones that were, and concludes several are default considered false because the linked pages were irrelevant.\r\n\r\nThere is explicit differentiation from aggregating reviews and third party content, because the AI generated text and ideas that were not present in the input. There is also discussion about how there is no excuse for further violations just because its hard to control AI output, and contrasts this with how normal \"report and takedown\" protections work.\r\n\r\nThere is very little here that is specific to AI overviews in search, and almost all of the arguments apply to AI products in general. AI's only prayer of being remotely profitable must include advertising or shopping features, which means they absolutely must continue generating output that makes statements of fact about other companies. I know nothing about how German courts work, the article alludes to appeals, but if this ruling holds even just in Germany the ability to insure AI products disappears overnight and that makes the product nonviable.\r\n<\/blockquote>",
+    "dt": "2026-06-10T11:52:03Z",
+    "a": "jm",
+    "t": [
+        "germany",
+        "eu",
+        "liability",
+        "google",
+        "ai-overviews",
+        "slop",
+        "law",
+        "truth",
+        "libel",
+        "facts",
+        "insurance"
+    ]
+},{
+    "u": "https:\/\/www.publictechnology.net\/2026\/06\/09\/communities-housing-and-planning\/what-uk-councils-stand-to-lose-when-ai-enters-a-reorganisation\/",
+    "d": "Narrative Flattening",
+    "n": "This is a nice term from Katryna Peart to describe one of the corrupting factors LLMs introduce to documents: \"narrative flattening\":\r\n\r\n\"When US cities began deploying AI to process civic documents — meeting minutes, public histories, commemorative records, policy documents — the failures that emerged weren’t the dramatic kind. The AI didn’t invent facts wholesale [...] it smoothed.\"\r\n\r\nAI-driven \"summarisation\" results in radically modified narrative meanings:\r\n\r\n<blockquote>Contested decisions became consensus. Dissenting voices disappeared into summaries that read as agreement. And the output read as authoritative because it was produced from an authoritative source.\r\n\r\nIn testing AI systems against a municipal commemorative report from Newark, New Jersey, I asked each system how the initiative compared to similar programmes in the region — using only the document provided.\r\n\r\nChatGPT invented a comparative framework, asserting the programme stood out from “traditional anniversary programmes” and “typical county-level commemorations.” Neither category exists in the document.  The system didn’t hallucinate a date or misattribute a quote. It constructed an entire analytical frame from nothing and presented it as document-based retrieval.\r\n\r\nIn the same test, the document contained outreach tactics — radio, direct mail, community networks — that worked because they aligned with how civic organising functions in Newark’s Black, ageing community. An AI system extracting those tactics would present them as applicable elsewhere, while stripping away the demographic and political context that made them effective in that specific city. [...]\r\n\r\nTo test whether the same failure modes appear in UK civic documents, I applied the same protocol to the Somerset Council Plan 2023–2027 — the post-reorganisation vision document produced when five predecessor councils merged into a single unitary authority in April 2023. I tested four AI systems: Gemini, ChatGPT, Microsoft Copilot, and Claude.\r\n\r\nEvery model hardened aspirational language into apparent commitments. The plan states the council would “demonstrate leadership around the whole range of housing issues” and “strive to develop an inclusive culture.” No targets, no timelines, no delivery mechanisms. Every model converted those statements into bullet-pointed commitment lists. A council officer reviewing those outputs would have no way of knowing the specificity came from the model, not the plan.\r\n\r\nCopilot — the model most UK councils are currently deploying through existing Microsoft 365 contracts, often without separate AI governance review — described Somerset as committed to “co-design” with communities and “fair access” to education, housing, jobs, and services. Neither phrase appears in the document. Copilot synthesised fragments from three separate passages into a single clean commitment the council never made. On the comparison question, it added that Somerset’s emphasis on rural inequality “is less prominent in many urban unitary authorities” — a comparative claim with no basis in the source. It did not flag any of this as inference.\r\n\r\nChatGPT fabricated a comparative framework and constructed a tension narrative. Asked how Somerset’s approach compared to other UK unitary authorities, it responded that “unlike more fragmented models, Somerset frames inequality as interconnected” with multiple service areas. No other authority is described anywhere in the document. It also described the “main tensions” in the reorganisation process — a framing the document never uses. The word tensions does not appear in the Somerset Council Plan.\r\n\r\n[...]\r\n\r\nAcross original research testing three civic documents against three major AI systems, failure modes were structurally predictable based on document type:\r\n\r\n- Celebratory documents get reproduced uncritically — institutional PR becomes authoritative historical record, success metrics are cited without methodological context, and dissenting voices go unmarked.\r\n- Accountability documents get softened — AI systems introduce balance and healing language that the original document explicitly rejects, restoring a both-sides framing the institution deliberately refused.\r\n- Pre-event planning documents get filled in — aspirational inclusion language invites AI to supply the racial history, equity frameworks, and comparative data the institution implied but never produced.\r\n\r\nIn each case the output reads as grounded in the source. In each case something the document actually said — or deliberately did not say — has been quietly rewritten.\r\n\r\nStandard AI procurement frameworks test for hallucination, data security, and cost. They do not test for narrative flattening — because it doesn’t look like an error. It looks like a summary.\r\n<\/blockquote>\r\n\r\n(via gwire)\r\n",
+    "dt": "2026-06-10T09:53:25Z",
+    "a": "jm",
+    "t": [
+        "narrative-flattening",
+        "via:gwire",
+        "summarisation",
+        "summarization",
+        "ai",
+        "llms",
+        "corruption",
+        "katryna-peart",
+        "hallucination",
+        "confabulation",
+        "errors",
+        "uk",
+        "documents"
+    ]
+},{
+    "u": "https:\/\/arstechnica.com\/tech-policy\/2026\/06\/school-shooting-survivor-sues-ai-gun-detection-firm-after-system-failed-to-spot-weapon\/",
+    "d": "School shooting survivor sues AI gun detection firm after system failed to spot weapon",
+    "n": "Omnilert, which sells an \"AI gun detection\" system, sued after it failed to detect a gun prior to a January 2025 school shooting.  Turns out accuracy matters!\r\n\r\n'According to the lawsuit, which was filed in Davidson County court last month, the security company Omnilert either knew or should have known that there were “significant operational limitations in its gun detection system that could result in detection failures during actual emergencies, including limitations based on camera placement, proximity of the weapon to camera sensors, camera angle, lighting, and weapon visibility.”\r\n\r\n<blockquote>\r\nOmnilert further represented that AI-powered visual gun detection “could have mitigated or prevented tragedy at Marjory Stoneman Douglas High School” by identifying threats earlier—invoking one of the nation’s most devastating school shootings to convey that its product would prevent similar tragedies ... Omnilert made no mention of false alarms, false positives, or detection limitations of any kind on its pre-shooting commercial website.\r\n<\/blockquote>",
+    "dt": "2026-06-08T08:45:53Z",
+    "a": "jm",
+    "t": [
+        "omnilert",
+        "accuracy",
+        "false-positives",
+        "false-negatives",
+        "marketing",
+        "ai",
+        "guns",
+        "school-shootings",
+        "us-politics"
+    ]
+},{
+    "u": "https:\/\/mastodon.social\/@adrianhon\/116696642949969646",
+    "d": "Distributed terrorism as ARG",
+    "n": "this is pretty much the plot of Charlie Stross' \"Halting State\" (2006): teenagers are being recruited online by the FSB, in online forums and in-game chats, then assigned alternate-reality-game-style \"tasks\" in the real world which are actually acts of espionage on behalf of Russia.\r\n\r\n<blockquote>\r\nThe recruitments follow a similar pattern: young people are usually approached on online channels which are well-hidden and hard to track: from Telegram to TikTok, Snapchat, Facebook and Discord. They are offered money, commonly cryptocurrencies, in exchange for completing tasks. Their recruiters depend on anonymity; many work for criminal groups which, like cyber hackers, may be independent from the state but co-opted by intelligence agencies for covert operations.\r\n \r\nGaming sites — the most widely consumed entertainment media among 13- to 24-year-olds — have become an obvious hunting ground for potential saboteurs with a proven interest in problem solving.\r\n\r\nIn Ukraine, the chat function in the popular online game World of Tanks is commonly used as a recruitment portal, from which agents then move the conversation to Telegram. Some state-backed agents, especially those working for Russia, also invoke the mission format and “quest” mentality of online games to entice young people to move beyond the virtual battlefield to real-world action. It is, says one western military official, “like a game of Pokémon Go, but with air defence systems”.\r\n<\/blockquote>\r\n\r\nAdrian Hon, an ARG designer, comments:\r\n\r\n<blockquote>\r\nI don't think this is the work of some evil genius FSB game designer. They're throwing shit at a wall and they found that:\r\n\r\n- 1. Making teens feel cool and special\r\n- 2. Giving them clear tasks escalating in difficulty\r\n- 3. Paying them £500 in crypto \r\n\r\nsticks!\r\n\r\nIt is FUN to imagine you are a spy going out on a secret real world mission, getting messages from a handler. \r\n\r\nThe money helps, but the main thing is that it's free, unlike practically every comparable form of real world immersive experience\/pervasive game.\r\n\r\nAverage British reaction: \"Why teenagers spend their lives glued to screens and on non value-adding activities idk. [Buy] them footballs and chess sets and send them outside.\"  Yes, so they can play football on the non-existent pitches that now cost money to play on and they can't get to.\r\n\r\nEveryone is like, kids should get away from screens and go outside. Motherfucker that is EXACTLY what these teen FSB recruits are doing!! They are going outside taking photos, collecting wifi SSIDs, sneaking around. I literally design games like this, except I have a fraction of their budget!!!\r\n\r\nAnd when I design pervasive games, we have to get public liability insurance and local govt permission and pay fees and do risk assessments. I don't make them for under-18s because god knows the red tape is a mile long.\r\n\r\nmfw we're getting outcompeted by foreign intelligence agencies\r\n<\/blockquote>\r\n",
+    "dt": "2026-06-05T10:54:49Z",
+    "a": "jm",
+    "t": [
+        "fsb",
+        "russia",
+        "spying",
+        "espionage",
+        "args",
+        "gaming",
+        "games",
+        "teens",
+        "arg",
+        "crypto"
+    ]
+},{
+    "u": "https:\/\/thej3.com\/kafkas-quiet-observability-superpower-kafka-interceptors-aca88c33867e",
+    "d": "Kafka’s quiet observability superpower — Kafka Interceptors",
+    "n": "Interesting Kafka trick:\r\n\r\n<blockquote>Kafka Interceptors have quietly existed since 2016, yet most teams overlook them as an observability superpower. This article shows how Kafka Interceptors, combined with Apache Flink, can provide lightweight, near-real-time event tracing across a Kafka-based event-driven architecture — without invasive instrumentation or expensive observability platforms.\r\n\r\nThe project, confluent-kafka-isotope, uses Kafka Interceptors to collect and attach trace signals to records while Apache Flink interprets those signals using SQL and stateful processing for latency analysis, topology discovery, stuck-trace detection, and forensic replay.<\/blockquote>\r\n\r\n",
+    "dt": "2026-06-03T12:32:03Z",
+    "a": "jm",
+    "t": [
+        "kafka",
+        "observability",
+        "flink",
+        "isotope-tracing",
+        "tracing",
+        "event-tracing",
+        "interceptors",
+        "ops"
+    ]
+},{
+    "u": "https:\/\/squeezlabs.github.io\/handcrank\/",
+    "d": "CrankGPT",
+    "n": "\"fully offline, human-powered local AI\" -- an LLM and a voice model, running on a Raspberry Pi 5, driven off hand-cranked electricity generation!  I was very sceptical, but they've put in the work to optimise the platform and choose models very carefully, and it looks like it actually runs off hand-cranked power, amazing",
+    "dt": "2026-06-03T12:27:07Z",
+    "a": "jm",
+    "t": [
+        "ai",
+        "llms",
+        "electricity",
+        "hand",
+        "cranking",
+        "voice",
+        "raspberry-pi",
+        "hacks",
+        "hardware"
+    ]
+},{
+    "u": "https:\/\/fairbrotherecofuelsandbarbecues.com\/product\/grill-fanatics-restaurant-grade-marabu-charcoal-10kg\/",
+    "d": "Grill Fanatics Restaurant Grade Marabu Charcoal (10kg)",
+    "n": "I spotted Pitt Bros using this charcoal at a recent event, so that's a plug for me",
+    "dt": "2026-06-03T11:57:52Z",
+    "a": "jm",
+    "t": [
+        "charcoal",
+        "cooking",
+        "food",
+        "yum"
+    ]
+},{
+    "u": "https:\/\/www.coinbase.com\/en-fr\/blog\/a-postmortem-of-our-may-7-2026-outage",
+    "d": "More on the Coinbase 07-05-2026 outage",
+    "n": "More on the Coinbase 07-05-2026 outage, caused by a \"thermal event\" in AWS us-east-1 and its impact on the suppposedly multi-AZ Managed Kafka product:\r\n\r\n<blockquote>AWS's managed Kafka service failed silently. A significant portion of our event-streaming infrastructure runs on MSK, AWS's managed Kafka offering. The architectural promise of a managed Kafka service is that when individual brokers go down, the service automatically reelects partition leaders and continues to serve traffic out of the remaining brokers. The loss of an entire zone should result in reduced capacity, not unavailability.\r\n\r\nThat is not what happened and this extended the outage.\r\n\r\nA defect in the AWS MSK control plane prevented automatic partition-leader reelection. Two of our MSK clusters became stuck in a \"healing\" state with producers unable to write. The cascading effect blocked our fee service, which blocked quoting, which is why most customers experienced this incident as broken trades and quotes rather than as a Kafka outage. Adjacent systems, including portions of our ledger pipeline, payments, and several data pipelines, were affected the same way. Additionally, one of our Kafka clusters was set up in a 2-AZ configuration that increased the blast radius and recovery time, but the MSK control plane defect impacted 2-AZ and 3-AZ Kafka clusters similarly.\r\n\r\nWe worked the recovery in real time with AWS engineering, ultimately performing manual partition reassignments at 3:00 AM ET to migrate topics off the impaired brokers. Priority-zero and priority-one topics were back to full availability by 9:30 AM ET. The remainder cleared by 2:00 PM ET.<\/blockquote>\r\n\r\nIn fairness, they also had a single-AZ point of failure in their architecture which they also describe there, but still, not great performance from MSK.  Disappointing.\r\n",
+    "dt": "2026-06-03T09:26:47Z",
+    "a": "jm",
+    "t": [
+        "msk",
+        "reliability",
+        "multi-az",
+        "aws",
+        "services",
+        "kafka",
+        "resiliency",
+        "outages",
+        "post-mortems",
+        "postmortems",
+        "coinbase"
+    ]
+},{
+    "u": "https:\/\/point.free\/blog\/gemma-4-on-a-2016-xeon\/",
+    "d": "A 10 year old Xeon is all you need - point.free",
+    "n": "Some mad scientist optimization to get Gemma 4 running on an old Xeon with no GPU",
+    "dt": "2026-06-02T10:50:59Z",
+    "a": "jm",
+    "t": [
+        "google",
+        "ai",
+        "llms",
+        "gemma",
+        "gemma-4",
+        "xeon",
+        "hacks"
+    ]
+},{
+    "u": "https:\/\/aws.amazon.com\/blogs\/networking-and-content-delivery\/best-practices-for-tcp-connection-management-on-ec2\/",
+    "d": "Best Practices for TCP Connection Management on EC2",
+    "n": "Well _this_ is a really crappy thing for AWS to mess around with, and then hide the announcement on a \"best practices\" page:\r\n\r\n\"With sixth-generation AWS Nitro (Nitro V6) instances, launched in June 2025 [c8, r8, etc], the default TCP connection tracking idle timeout changed from 432,000 seconds (5 days) to 350 seconds. Applications that hold idle connections open for long periods, such as [uhhh pretty much everything built on TCP - jm] may experience unexpected connection drops after migrating to these instances.\"\r\n\r\nThey go on to recommend that you \"implement keepalives and connection lifecycle management\", which is great fun if you don't control the code implementing your TCP-based network protocols.  This is a very fundamental change for many protocols so it'll be fun dealing with it.\r\n\r\nKudos to Adam C in the ITC Slack for spotting this a while back.",
+    "dt": "2026-06-02T10:49:57Z",
+    "a": "jm",
+    "t": [
+        "networking",
+        "protocols",
+        "tcp",
+        "idle-timeouts",
+        "aws",
+        "architecture",
+        "nitro",
+        "conntrack",
+        "idle-connections"
+    ]
+},{
+    "u": "https:\/\/rothko.joonas.wtf\/",
+    "d": "Current Rothko",
+    "n": "I love this! Finds the weather at your location, then picks a Rothko to match.  This would be great on a home dashboard. (well, it'd be better if it used a more reliable weather backend, as most times I've tried it here in Dublin, it's told me the wrong current weather conditions. But close!)",
+    "dt": "2026-06-02T10:41:57Z",
+    "a": "jm",
+    "t": [
+        "location",
+        "weather",
+        "art",
+        "fun",
+        "rothko"
+    ]
+},{
+    "u": "https:\/\/x.com\/rwitoff\/status\/2052863502424133949",
+    "d": "Coinbase MSK outage post-mortem",
+    "n": "A post-mortem from Coinbase following a significant outage partially caused by MSK, AWS' managed version of Kafka.\r\n\r\n<blockquote>\r\nRoot cause: a thermal event (cooling system failure) inside a subset of racks within a single building in AWS us-east-1. We run a primary replica of our exchange infrastructure in a single zone, consistent with industry standards to reduce latency. To prepare for failures like this, we maintain a distributed standby, but during this incident, failures in the primary zone that were designed to be isolated were not [...]\r\n\r\nOur primary managed Kafka partitions process many terabytes of data daily and are designed with resiliency guarantees for uninterrupted operation during a datacenter failure just like this. In this case, those guarantees failed and required manual recovery. [...]\r\n<\/blockquote>\r\n\r\nThere is a hint here that MSK failed to have multi-AZ resiliency despite multiple replicas configured at the application level.  It will be interesting to see what the full root-cause analysis looks like....",
+    "dt": "2026-06-02T10:05:02Z",
+    "a": "jm",
+    "t": [
+        "kafka",
+        "resiliency",
+        "coinbase",
+        "multi-az",
+        "az",
+        "aws",
+        "us-east-1",
+        "post-mortems",
+        "postmortems"
+    ]
+},{
+    "u": "https:\/\/matduggan.com\/serverless-functions-post-mortem\/",
+    "d": "Serverless Functions Post-Mortem",
+    "n": "A post-mortem for \"serverless functions\", the fad of 2016",
+    "dt": "2026-06-02T09:59:24Z",
+    "a": "jm",
+    "t": [
+        "serverless",
+        "cloud",
+        "programming",
+        "architecture",
+        "aws"
+    ]
+},{
+    "u": "https:\/\/drobinin.com\/posts\/am-i-a-bad-friend\/",
+    "d": "1.2M Messages to Obsidian - Building a Relationship Map from 20 Years of Chat History",
+    "n": "\"Am I a bad friend?\" -- Vadim Drobinin \"analysed 20 years of my chats and turned 1.2M messages into a structured vault of my life - to win friends and influence people. Instead, I learnt things about my emotional bandwidth, endearment cycles, and friendship half-lives.\"\r\n\r\nThis is actually a really nice project. I wish I'd accumulated and archived all that data over the years myself to do something similar.",
+    "dt": "2026-05-28T13:08:36Z",
+    "a": "jm",
+    "t": [
+        "dataviz",
+        "analysis",
+        "friendship",
+        "life",
+        "relationships",
+        "vocabulary",
+        "words",
+        "text",
+        "dunbar-number",
+        "chats",
+        "group-chats",
+        "messaging"
+    ]
+},{
+    "u": "https:\/\/www.ucd.ie\/connected_politics\/blog\/auditingaichatbotsduringthegalwaywestanddublincentralbyelections\/",
+    "d": "Auditing AI Chatbots During the Galway West and Dublin Central Byelections",
+    "n": "\"In the weeks leading up to the byelections in Galway West and Dublin Central, we simulated citizen-AI interactions by asking [a] set of election-related test questions to four popular AI chatbots (Anthropic’s Claude, OpenAI’s ChatGPT, Google’s Gemini, and xAI’s Grok)\":\r\n\r\n<blockquote>\r\nWe asked each chatbot a set of 194 questions covering a range of relevant topics on two separate occasions, 14 and 7 days before voters go to the polls on 22 May. Our aim was to assess:\r\n\r\n- Do they provide citizens with accurate election information?\r\n- Which sources do they rely on, and how does this vary across chatbots?\r\n- Who do they platform when they answer questions, and who is left out?\r\n\r\n....\r\nThe largest share of citations is directed towards mainstream news sites, and this is where the first evidence of source curation by chatbots can be found. While the Irish Times is a common source across all providers, ChatGPT and Gemini never refer to RTÉ. Meanwhile, despite not ranking among the top three news sources for the other chatbots, Gript is the number one news source cited by Gemini. \r\n\r\nWe find that xAI’s Grok is the most likely to use social media in responses, while Gemini most frequently refers to YouTube and content from Reddit. ChatGPT appeared less likely to rely on social media compared to the other chatbots.\r\n<\/blockquote>\r\n\r\nIMO, this points to an undesirable side effect of paywalls in the news media.\r\nWhile it's vitally important for media companies to protect their means of income,\r\nan unwelcome side effect is that the introduction of paywalls has resulted in\r\nAI chatbots sidelining mainstream news media sources which they cannot access reliably,\r\nin favour of what is effectively disinformation from less trustworthy sites like Gript.",
+    "dt": "2026-05-26T11:27:42Z",
+    "a": "jm",
+    "t": [
+        "grok",
+        "ai",
+        "llms",
+        "xai",
+        "web",
+        "news",
+        "media",
+        "ireland",
+        "irish-times",
+        "rte",
+        "chatgpt",
+        "gemini",
+        "reddit",
+        "youtube",
+        "elections",
+        "politics"
+    ]
+},{
+    "u": "https:\/\/www.totei.com\/story\/trevor-paglen-holly-herndon-art-ai",
+    "d": "Trevor Paglen and Holly Herndon on Making Art with AI and What the Discourse Is Missing",
+    "n": "Fascinating interview with Trevor Paglen and Holly Herndon, the two artists making the most interesting work at the moment which interacts with and investigates AI, machine learning models, and slop",
+    "dt": "2026-05-26T09:44:59Z",
+    "a": "jm",
+    "t": [
+        "art",
+        "ai",
+        "slop",
+        "trevor-paglen",
+        "holly-herndon",
+        "interviews"
+    ]
+},{
+    "u": "https:\/\/noslopgrenade.com\/",
+    "d": "no slop grenade",
+    "n": "No slop grenade -- stop throwing AI-generated walls of text into conversations:\r\n\r\n<blockquote>Pasting a massive AI-generated response into a chat or email where a human would write one sentence. It destroys the medium itself. Nobody writes essays in Slack. It's only possible because of AI copy-paste.\r\n\r\nIt's like calling someone and asking \"What time is the meeting?\" and they read you a 10-page analysis of calendar management best practices. You asked a simple question. They lobbed a document.<\/blockquote>\r\n\r\n",
+    "dt": "2026-05-21T16:21:41Z",
+    "a": "jm",
+    "t": [
+        "slop-grenade",
+        "ai",
+        "llms",
+        "words",
+        "neologisms",
+        "slop",
+        "chat",
+        "copy-paste"
+    ]
+},{
+    "u": "https:\/\/www.reddit.com\/r\/ireland\/comments\/1thwvm8\/just_found_out_the_rapture_was_invented_by_a_lad\/",
+    "d": "The \"Rapture\" was an Irish invention",
+    "n": "Take a bow, John Nelson Darby:\r\n\r\n<blockquote>John Nelson Darby, the fella who came up with the concept of \"the Rapture\", was a Church of Ireland curate in Co. Wicklow. Always assumed it was a yank.\r\n\r\nIf you've ever seen American televangelists ranting about Jesus secretly swooping down to save the righteous before destroying the earth, this is where it comes from. It’s not actually normal Christianity apparently, it’s not really in the bible anywhere but this headtheball popularised it in the 19th century. The Yank fundamentalists absolutely lap this up.\r\n\r\nThe history of it is even more interesting:\r\n\r\nHe was born in England and then studied in Trinity and was a Church of Ireland pastor here. He famously converted a load of Catholics in the village but ended up resigning because the church only accepted the conversions as legitimate if they swore an oath to the British King.\r\n\r\nDespite being English himself, he seems to genuinely have believed in religion as separate to the politics of the time, which I kind of admire tbh. So he quits, and shortly after, he's out riding in Wicklow when the horse sends him flying. He suffers a serious bang to the head.\r\n\r\nWhile he's recovering from the concussion, he starts coming up with this mental end-of-the-world theology that eventually took over the US.\r\n\r\nTL;DR: We could have been spared an unbelievable amount of absolute bollocks if some 19th century prod hadn’t been flung off a horse in rural Co. Wicklow. <\/blockquote>\r\n\r\n",
+    "dt": "2026-05-20T11:23:38Z",
+    "a": "jm",
+    "t": [
+        "history",
+        "ireland",
+        "rapture",
+        "fundamentalism",
+        "apocalypse",
+        "theology",
+        "end-of-the-world",
+        "19th-century",
+        "wicklow",
+        "concussion",
+        "horse"
+    ]
+},{
+    "u": "https:\/\/oldhome.schmorp.de\/marc\/bournegol.html",
+    "d": "Bournegol",
+    "n": "The original source code for the Bourne shell in early versions of UNIX is legendarily bizarre, as it was written in \"Bournegol\", the ALGOL-like dialect of C that Steve Bourne came up with, with a load of macros to make C look a bit like ALGOL 68.  This page has a good representative sample.  Thanks to Tony Finch for the reminder",
+    "dt": "2026-05-19T09:06:52Z",
+    "a": "jm",
+    "t": [
+        "via:fanf",
+        "bournegol",
+        "algol",
+        "programming",
+        "languages",
+        "bizarre",
+        "funny",
+        "unix",
+        "bin-sh",
+        "macros"
+    ]
+},{
+    "u": "https:\/\/www.goodfire.ai\/research\/a-geometric-calculator#",
+    "d": "A Geometric Calculator Inside a Neural Network",
+    "n": "The way that LLMs perform numerical arithmetic using circles and spirals is really fascinating.  This page is a great exploration of that topic, using Llama 3.1 8B.\r\n\r\n<blockquote>Language models use a group of circles in activation space to represent a single number. Each circle corresponds to the number modulo a second number, i.e., the remainder after division.[1] For example, the number 17 would be represented as a 1 on the mod-2 circle, 2 on the mod-5 circle, 7 on the mod-10 circle, and 17 on the mod-100 circle.[2] Several prior works have established that circular features exist across multiple different LLMs [...]\r\n\r\nUsing a bunch of circles to represent a number probably seems like an alien solution, but it is a common mathematical technique known as a Fourier decomposition (see the paper for more detail).\r\n\r\nEach of the inputs and the output of the addition module is represented using such a set of circles, and the circuitry within the module works by doing computations over these circles.\r\n<\/blockquote>\r\n\r\n",
+    "dt": "2026-05-18T10:09:16Z",
+    "a": "jm",
+    "t": [
+        "llms",
+        "language",
+        "arithmetic",
+        "maths",
+        "calculation",
+        "fourier",
+        "circles"
+    ]
+},{
+    "u": "https:\/\/journals.sagepub.com\/doi\/10.1177\/20563051261437487",
+    "d": "Social Media Is Now Parasocial Media - danah boyd, 2026",
+    "n": "danah boyd is 100% correct here; what was once \"social\" media is no longer so.  Nowadays it's parasocial:\r\n\r\n<blockquote>\r\nWhen practitioners used the term “social media” to describe the internet tools that emerged in the mid-aughts, they were giving a name to the kinds of platforms and protocols that allowed people to socialize with friends and communities of interest by using digital technologies. Twenty years later, users of social media are far more likely to scroll than post – and the content that they consume is often strategically produced and algorithmically curated. In this essay, I argue that the very essence of social media has changed. To more effectively interrogate what we are witnessing, we need to stop presuming that these tools are “social media” and begin recognizing that they are now “parasocial media.”\r\n<\/blockquote>",
+    "dt": "2026-05-12T08:56:13Z",
+    "a": "jm",
+    "t": [
+        "parasocial",
+        "social-media",
+        "social-networking",
+        "web",
+        "internet"
+    ]
+},{
+    "u": "https:\/\/news.ycombinator.com\/item?id=48046450",
+    "d": "I toyed around with using Language Embeddings as a way to categorize my RSS Feeds",
+    "n": "interesting HN comment around low-cost home usage of LLMS\/embeddings:\r\n\r\n\"I toyed around with using Language Embeddings [via Cohere V3 Embeddings and Amazon Bedrock] as a way to categorize my RSS Feeds.  It works pretty well. But importantly, it's so cheap that I have never really seen it on my bill. An earlier prototype used OpenAI embeddings. I loaded 5$ API credits and after a year the credits expired.\"\r\n\r\nThis is the first time I've ever seen anyone call Bedrock cheap, lol.",
+    "dt": "2026-05-08T08:56:13Z",
+    "a": "jm",
+    "t": [
+        "amazon",
+        "bedrock",
+        "llms",
+        "ai",
+        "embeddings",
+        "language",
+        "categorization",
+        "classification",
+        "rss",
+        "text"
+    ]
+},{
+    "u": "https:\/\/www.firmoo.ie\/tips?id=196",
+    "d": "Eyeglass Scratch Repair",
+    "n": "turns out scratched glasses can be repaired easily enough, I had no idea!",
+    "dt": "2026-05-07T14:58:36Z",
+    "a": "jm",
+    "t": [
+        "glasses",
+        "eyeglasses",
+        "spectacles",
+        "repair",
+        "diy",
+        "cleaning",
+        "scratches"
+    ]
+},{
+    "u": "https:\/\/www.theatlantic.com\/technology\/archive\/2023\/05\/problem-counterfeit-people\/674075\/",
+    "d": "The Problem With Counterfeit People",
+    "n": "An excellent essay from Daniel Dennett back in 2023 which I wholeheartedly agree with.  As BBC journalist Tom Chatfield puts it:\r\n\r\n<blockquote>\r\nThe way we're using AI to impersonate human beings has already put us on a dangerous trajectory. [Dennett] called such AIs \"counterfeit people\", and told me that rolling out such entities en masse constituted \"mischief of the worst sort\": a form of \"social vandalism\" that should be addressed by law. Why? Because, if convincing digital representations of humans can be created at whim, the entire business of collectively assessing other people's claims, experiences and actions is put at risk – not to mention essential social infrastructure such as contracts, obligations and consequences. Hence the need for legal prohibitions, a case he made at length in a May 2023 article for The Atlantic. \"It won't be perfect,\" he told me, \"but it will help if we can make it against the law to make counterfeit people. We can have stiff penalties for counterfeiting people, same as we do for counterfeit money... we should make it a mark of shame, not pride, when you make your AI more human.\"\r\n<\/blockquote>",
+    "dt": "2026-05-05T14:22:32Z",
+    "a": "jm",
+    "t": [
+        "ethics",
+        "future",
+        "ai",
+        "llms",
+        "daniel-dennett",
+        "philosophy",
+        "regulation",
+        "law",
+        "humanity",
+        "people"
+    ]
+},{
+    "u": "https:\/\/github.com\/isene\/glass",
+    "d": "isene\/glass",
+    "n": "I love the purism of this -- \"pure assembly terminal emulator. x86_64 Linux, no libc, X11 wire protocol\".\r\n\r\n<blockquote>Terminal emulator written in x86_64 Linux assembly. No libc, no runtime, pure syscalls. Speaks X11 wire protocol directly via Unix socket. Single static binary, ~155KB.  No toolkit, no rendering library, no external font engine. The TTF rasterizer (glyph) is embedded in-binary via %include. Just your keystrokes, the X11 server, and the kernel. Part of the CHasm (CHange to ASM) suite: bare (shell), show (file viewer), glass (terminal emulator).<\/blockquote>\r\n\r\n",
+    "dt": "2026-05-05T11:37:30Z",
+    "a": "jm",
+    "t": [
+        "asm",
+        "x86_64",
+        "assembly",
+        "terminal",
+        "hacks",
+        "unix",
+        "linux",
+        "glass",
+        "chasm",
+        "optimization",
+        "x11"
+    ]
+},{
+    "u": "https:\/\/erictopol.substack.com\/p\/the-paradox-of-medical-ai-implementation?r=8tdk6&triedRedirect=true",
+    "d": "The Paradox of Medical AI Implementation - by Eric Topol",
+    "n": "Deep learning-based AI has been proven to help in medicine, but GenAI is easier to deploy and is being used instead:\r\n\r\n<blockquote>[Deep learning-based] AI for medical images, with extensive research dating back more than a decade ago, is not being implemented. Whether it’s a mammogram, a CT scan, a retinal image, or colonoscopy, that have all been extensively studied, their value to improve accuracy and risk assessment in medicine is being missed and essentially disregarded.\r\n\r\nOn the other hand, tens of millions of Americans are using AI chatbots for medical support, as are a substantial proportion of physicians. There are many reasons to use AI here that are easy to support, because they represent an extension of a web\/Google search. Just with much more specificity and depth of response, not something that would be subject to regulatory oversight. But when it comes to making a diagnosis or providing a treatment plan there needs to be proof that LLMs are improving accuracy and outcomes. \r\n<\/blockquote>\r\n\r\n",
+    "dt": "2026-05-05T10:22:08Z",
+    "a": "jm",
+    "t": [
+        "medicine",
+        "deep-learning",
+        "ai",
+        "genai",
+        "llms",
+        "healthcare",
+        "science",
+        "imaging",
+        "chatbots",
+        "eric-topol"
+    ]
+},{
+    "u": "https:\/\/www.reddit.com\/r\/homelab\/comments\/1sz9li4\/invisible_bend_insensitive_bidi_fiber_is_amazing\/",
+    "d": "\"Invisible\" bend insensitive bidi fiber",
+    "n": "Bookmarking for a future home-network upgrade.... this tiny fiber cable is practically invisible, bends easily, and supports 10Gbps:\r\n\r\n> \"invisible\" bend insensitive fiber (G.657.A2 \/ G.657.B3). It's under a millimeter in diameter and basically vanishes into corners and base board crevices. From more than a meter away is't completely unnoticeable. Together with a pair of bidirectional SFP transceivers this makes an amazing retrofit option for locations where laying new runs is not an option. ",
+    "dt": "2026-05-05T09:19:23Z",
+    "a": "jm",
+    "t": [
+        "10gbps",
+        "networking",
+        "home",
+        "fibre",
+        "fiber",
+        "wiring",
+        "via:itc"
+    ]
+},{
+    "u": "https:\/\/www.linkedin.com\/posts\/coquinn_a-note-from-amazon-web-services-awss-share-7454936476359819264-8DqQ\/?rcm=ACoAAAD7ciEBGVCp3m50-5sdPXL70GJw7TDNHVE",
+    "d": "Amazon Connect Talent vs. bias law",
+    "n": "Excellent post from Corey Quinn, which I agree with 100%:\r\n\r\n<blockquote>Amazon Connect Talent was just announced. It conducts AI-powered conversational interviews with candidates, generates \"anonymized competency scores,\" and surfaces ranked candidates to recruiters who \"make the call.\" \r\n\r\nFun fact: in New York City, that is an Automated Employment Decision Tool under Local Law 144. AEDTs require an annual independent bias audit with publicly posted results, plus at least ten business days of notice to candidates before use. Illinois, Colorado, and the EU AI Act impose adjacent obligations. \r\n\r\nThe launch materials mention none of this. The compliance posture appears to be: candidate names are stripped from recruiter dashboards, therefore bias is solved. That is not how any of this works. Proxies for protected class -- speech patterns, zip codes, education history, the resume already sitting in your ATS -- are exactly what bias audits exist to measure. \r\n\r\nI don't think the product is bad. I think the announcement is conspicuously missing the guidance customers need before they can deploy it in NYC without violating Local Law 144 on day one. \r\n\r\n(The day's other news so far: Amazon Connect now ships as a four-SKU family, and there is a new design philosophy called \"humorphism\" with its own .com. Both feel small next to the above.) \r\n\r\nIf you're selling automated hiring decisions in 2026, the bias-audit conversation belongs in the launch.<\/blockquote>\r\n\r\n",
+    "dt": "2026-04-30T10:04:52Z",
+    "a": "jm",
+    "t": [
+        "bias",
+        "law",
+        "amazon",
+        "aws",
+        "recruiting",
+        "regulation",
+        "automation",
+        "ai"
+    ]
+},{
+    "u": "https:\/\/www.rte.ie\/news\/ireland\/2026\/0430\/1570978-hate-survey\/",
+    "d": "Far-right narrative not the majority view in Ireland",
+    "n": "Here's the bad news:\r\n\r\n<blockquote>\r\nA report by the Hope and Courage Collective, which works to build resilience in communities against rising far-right hate and disinformation, has found a widening gap between public attitudes and political discourse [in the media]: a relatively small number of far-right actors disproportionately influence public political debate through online amplification, visible protests, and repeated narratives.  Public attitudes are becoming steadily more inclusive, but political rhetoric risks legitimising scapegoating and that the far-right ... \"is shaping the conversation\".\r\n<\/blockquote>\r\n\r\nBut on the other hand, these survey results are downright heartwarming:\r\n\r\n<blockquote>\r\nYear-on-year datasets tracking changes in public sentiment in Ireland between 2024 and 2025 show that 66% agree that immigrants contribute positively to Irish culture and community, which is up 2% up from 64% in 2024.\r\n\r\n79% believe working-class people are struggling due to systemic inequality which is also up 2% from 77% in 2024.\r\n\r\nThose who believe wealthy people are successful because they were given more opportunities than others has risen from 63% in 2024 to 69% in 2025.\r\n\r\nThe number of people who support the freedom of transgender people to live their lives is up 5% up from 70% in 2024.\r\n\r\n80% agree that Black, Asian and minority ethnic communities face greater barriers to success than white people, up 5% up from 75% in 2024.\r\n<\/blockquote>",
+    "dt": "2026-04-30T09:08:50Z",
+    "a": "jm",
+    "t": [
+        "ireland",
+        "discourse",
+        "far-right",
+        "right-wing",
+        "politics",
+        "surveys",
+        "culture",
+        "culture-wars",
+        "propaganda",
+        "disinformation"
+    ]
+},{
+    "u": "https:\/\/docs.zizmor.sh\/",
+    "d": "zizmor",
+    "n": "\"a static analysis tool for GitHub Actions. It can find and fix many common security issues in typical GitHub Actions CI\/CD setups.\"\r\n",
+    "dt": "2026-04-28T09:19:36Z",
+    "a": "jm",
+    "t": [
+        "lint",
+        "dependencies",
+        "github",
+        "security",
+        "ci-cd",
+        "static-analysis",
+        "zizmor"
+    ]
+},{
+    "u": "https:\/\/www.hmpcabral.com\/2026\/04\/26\/the-fastest-linux-timestamps\/",
+    "d": "The fastest Linux timestamps",
+    "n": "lol -- \"TL;DR: We can speed up timestamps on x86 Linux by 30% and maintain the same precision as the standard system clock by implementing our own timers without relying on vDSO. Almost nobody should do this\"\r\n\r\nThis is good info, I had to implement fast timestamps a few years back in Java and this would have been useful.",
+    "dt": "2026-04-27T11:42:47Z",
+    "a": "jm",
+    "t": [
+        "time",
+        "optimization",
+        "performance",
+        "linux",
+        "libc",
+        "speed",
+        "clocks"
+    ]
+},{
+    "u": "https:\/\/www.eurekalert.org\/news-releases\/1120272",
+    "d": "Frequent infections in nursery help toddlers build up immune systems",
+    "n": "The paper is \"Germ factories or immune boot camps? Infection and immunity in childcare settings\".  tl;dr: \r\n\r\n- Young children who attend nursery get sick more often than those who don’t, but they will go on to have fewer illnesses during early school years.\r\n\r\n- A typical one-year-old starting nursery will experience around 12–15 respiratory infections, two gastrointestinal illnesses (diarrhoea and vomiting), and one or two rash-causing infections in the first year alone – which will all have a substantial knock-on effect for working parents.\r\n\r\n- Employers need to recognise that it’s normal for parents of young children to regularly need to take time off work to care for their children, and will also be more prone to getting sick themselves – but this will improve as the child ages.\r\n\r\n- Children who attend nursery at a young age experience more infections from age one to five than those who remain at home until starting school – but then once they’ve started school, this pattern is reversed as children without prior childcare experience get sick more often.\r\n\r\nThe paper is here: https:\/\/www.repository.cam.ac.uk\/items\/95b322b6-aef4-4b17-bf23-60aa7f5938b1",
+    "dt": "2026-04-27T08:50:43Z",
+    "a": "jm",
+    "t": [
+        "germs",
+        "infection",
+        "immunity",
+        "immune-system",
+        "children",
+        "parenting",
+        "childcare",
+        "kindergarten",
+        "kids",
+        "diseases",
+        "sickness"
+    ]
+},{
+    "u": "https:\/\/www.jeffgeerling.com\/blog\/2026\/new-10-gbe-usb-adapters-cooler-smaller-cheaper\/",
+    "d": "New 10 GbE USB adapters are cooler, smaller, cheaper - Jeff Geerling",
+    "n": "Not sure I'm at the point where I need a 10 gigabit ethernet USB adaptor, but this is good to have bookmarked",
+    "dt": "2026-04-27T08:45:23Z",
+    "a": "jm",
+    "t": [
+        "ethernet",
+        "usb",
+        "networking",
+        "hardware",
+        "via:hn",
+        "reviews",
+        "10gbe"
+    ]
+},{
+    "u": "https:\/\/www.youtube.com\/watch?v=2AnbYNudAyM",
+    "d": "Razor1911",
+    "n": "Legendary demo group Razor1911's eponymous demo, celebrating 40 years on the demoscene.  Amazing stuff and extremely nostalgia-triggering for an old C=64 scenester like myself! (via dec23k)",
+    "dt": "2026-04-23T11:51:34Z",
+    "a": "jm",
+    "t": [
+        "demos",
+        "demoscene",
+        "commodore-64",
+        "history",
+        "nostalgia",
+        "amiga",
+        "razor1911"
+    ]
+},{
+    "u": "https:\/\/webmatrices.com\/post\/how-a-roblox-cheat-and-one-ai-tool-brought-down-vercel-s-entire-platform",
+    "d": "how a roblox cheat and one AI tool brought down vercel's entire platform",
+    "n": "Damn, this is an absolute indictment of the state of security in AI tooling:\r\n\r\n<blockquote>February 2026. An employee at Context.ai, one of those AI productivity tools that promises to \"supercharge your workflow,\" downloads a Roblox cheat. Not a sophisticated zero-day. Not a state-sponsored attack. A Roblox cheat. The download contains Lumma Stealer, an infostealer that grabs session cookies, credentials, everything. That employee had access to sensitive internal systems.\r\n\r\nMarch 2026. The attacker uses Context.ai's compromised infrastructure to pivot into a Vercel employee's Google Workspace account. This Vercel employee had signed up for Context.ai's \"AI Office Suite\" using their enterprise credentials and granted \"Allow All\" permissions. Let that sink in for a second. A Vercel engineer gave a third-party AI tool full access to their corporate Google account.\r\n\r\nApril 19. Guillermo Rauch posts the thread confirming everything. Environment variables [...] were stored in plaintext. Accessed. Exfiltrated.<\/blockquote>\r\n\r\ntl;dr:\r\n\r\n1. Context.ai employees should not be using company devices to access Roblox cheats;\r\n\r\n2. exfiltratable environment variables should not be usable to access a customer's Google account. The scope of these credentials was obviously way too broad.\r\n\r\nThis isn't just a Context.ai issue, this is systemic.",
+    "dt": "2026-04-21T09:13:59Z",
+    "a": "jm",
+    "t": [
+        "security",
+        "infosec",
+        "credentials",
+        "google",
+        "context.ai",
+        "roblox",
+        "fail"
+    ]
+},{
+    "u": "https:\/\/en.reset.org\/a-future-vision-of-data-centres-from-big-tech-builds-to-community-owned-cooperatives\/",
+    "d": "Cooperative DCs",
+    "n": "\"A Future Vision of Data Centres: From Big Tech Builds to Community-Owned Cooperatives\":\r\n\r\n<blockquote>in Belgium, Nubo Cooperative offers an email service, cloud storage, digital calendar and domain name, all run on local, Nubo-owned servers. When you purchase any of these services, you become a member of Nubo and can participate in decision-making as part of the cooperative. “This allows users to place trust in the structure that manages the services,” Nubo writes on its website. It compares this to a private company, where “the lack of transparency makes trust impossible”. The cooperative commits to allocating profits to achieve social objectives rather than using them to enrich shareholders.<\/blockquote>\r\n\r\nThis is actually a very interesting idea...",
+    "dt": "2026-04-20T12:17:13Z",
+    "a": "jm",
+    "t": [
+        "community",
+        "datacenters",
+        "cooperatives",
+        "society",
+        "nubo",
+        "coops",
+        "tech",
+        "hosting",
+        "cloud"
+    ]
+},{
+    "u": "https:\/\/surfingcomplexity.blog\/2026\/04\/12\/thoughts-on-the-bluesky-public-incident-write-up\/",
+    "d": "Thoughts on the Bluesky public incident write-up",
+    "n": "Good post on a classic C10K error scenario -- exhausting the ephemeral port range",
+    "dt": "2026-04-16T16:17:38Z",
+    "a": "jm",
+    "t": [
+        "ports",
+        "unix",
+        "ops",
+        "sysadmin",
+        "c10k",
+        "scaling",
+        "bluesky",
+        "outages"
+    ]
+}]

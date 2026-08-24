@@ -155,13 +155,56 @@ export const api = {
     },
   },
 
-  importer: {
-    /** Ship raw pasted text or a file's contents; the server parses and maps. */
-    start(content: string, filename?: string) {
-      return request<{ job: import('@/types/api').ImportJob }>('/api/me/import', {
+  connections: {
+    list() {
+      return request<{ connections: import('@/types/api').Connection[] }>('/api/me/connections');
+    },
+    /** `input` is whatever the person has — a username, a profile link, a token. */
+    link(provider: import('@/types/api').ConnectionProvider, input: string) {
+      return request<{ connection: import('@/types/api').Connection }>('/api/me/connections', {
         method: 'POST',
-        body: JSON.stringify({ content, filename }),
+        body: JSON.stringify({ provider, input }),
       });
+    },
+    sync(provider: import('@/types/api').ConnectionProvider) {
+      return request<{ connection: import('@/types/api').Connection }>(`/api/me/connections/${provider}`, { method: 'POST' });
+    },
+    unlink(provider: import('@/types/api').ConnectionProvider) {
+      return request<{ ok: true }>(`/api/me/connections/${provider}`, { method: 'DELETE' });
+    },
+    /** Sign-in targets (no scripts) for the connections screen. */
+    sessions() {
+      return request<{ targets: Omit<import('@/types/api').SessionTarget, 'script'>[] }>('/api/me/connections/session');
+    },
+    session(target: string) {
+      return request<import('@/types/api').SessionTarget>(`/api/me/connections/session/${target}`);
+    },
+    /** A feed the phone fetched itself (reddit turns servers away); the server parses and syncs it. */
+    syncFeed(provider: import('@/types/api').ConnectionProvider, feedText: string) {
+      return request<{ connection: import('@/types/api').Connection }>(`/api/me/connections/${provider}`, {
+        method: 'POST',
+        body: JSON.stringify({ feedText }),
+      });
+    },
+    pending() {
+      return request<import('@/types/api').PendingFinds>('/api/me/connections/pending');
+    },
+    /** Answer the pill: map everything waiting (optionally one account), or set it aside for good. */
+    resolvePending(action: 'add' | 'decline', provider?: import('@/types/api').ConnectionProvider) {
+      return request<import('@/types/api').PendingFinds>('/api/me/connections/pending', {
+        method: 'POST',
+        body: JSON.stringify({ action, provider }),
+      });
+    },
+  },
+  importer: {
+    /** What's in the file, before anything is mapped. */
+    inspect(payload: import('@/types/api').ImportPayload) {
+      return request<import('@/types/api').ImportInspect>('/api/me/import/inspect', { method: 'POST', body: JSON.stringify(payload) });
+    },
+    /** Ship pasted text or a file (base64 for zips); the server parses and maps. */
+    start(payload: import('@/types/api').ImportPayload) {
+      return request<{ job: import('@/types/api').ImportJob }>('/api/me/import', { method: 'POST', body: JSON.stringify(payload) });
     },
     /** The user's latest import job — running or last finished. */
     status() {
@@ -332,6 +375,7 @@ export const api = {
       pushSocial?: boolean;
       pushResurface?: boolean;
       pushStreak?: boolean;
+      connectionsMode?: 'ASK' | 'AUTO';
     }) {
       return request<UserPreference>('/api/me/preferences', {
         method: 'PATCH',

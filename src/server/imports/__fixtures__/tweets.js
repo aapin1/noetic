@@ -1,0 +1,1 @@
+window.YTD.tweets.part0 = [ {"tweet":{"id_str":"111","full_text":"thinking about how maps hide more than they show","created_at":"Mon Jan 06 10:00:00 +0000 2026"}}, {"tweet":{"id_str":"112","full_text":"RT @someone: nope","created_at":"Mon Jan 06 10:00:00 +0000 2026"}} ]

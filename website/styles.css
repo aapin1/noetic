@@ -304,32 +304,6 @@ input:focus-visible {
 .cell-d p { color: rgba(236, 236, 236, 0.55); }
 .cell-d .eyebrow { color: rgba(236, 236, 236, 0.4); }
 
-/* ---------- interlude ---------- */
-
-.interlude {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 0 1.5rem 7rem;
-  text-align: center;
-}
-
-.interlude-line {
-  font-family: var(--serif);
-  font-size: clamp(1.35rem, 2.6vw, 1.7rem);
-  line-height: 1.5;
-  color: var(--secondary);
-}
-.interlude-line em { color: var(--text); }
-
-.interlude-note {
-  margin-top: 1.3rem;
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.16em;
-  text-transform: lowercase;
-  color: var(--faint);
-}
-
 /* ---------- cat strip ---------- */
 
 .cat-strip {
@@ -337,44 +311,7 @@ input:focus-visible {
   text-align: center;
 }
 
-/* ---------- live ---------- */
-
 .hero-actions { margin-top: 1.8rem; }
-
-.live {
-  max-width: 1140px;
-  margin: 0 auto;
-  padding: 0 1.5rem 8rem;
-  text-align: center;
-}
-
-.live-h2 {
-  margin-top: 1.1rem;
-  font-family: var(--serif);
-  font-weight: 400;
-  font-size: clamp(2.4rem, 5vw, 3.4rem);
-  letter-spacing: -0.015em;
-}
-
-.live-sub {
-  margin: 1rem auto 0;
-  font-size: 1.02rem;
-  line-height: 1.6;
-  color: var(--secondary);
-  max-width: 44ch;
-}
-
-.live-cta { margin-top: 2.2rem; }
-
-.live-note {
-  margin-top: 1.2rem;
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  text-transform: lowercase;
-  color: var(--faint);
-}
-.live-note a { color: var(--muted); }
 
 .ascii {
   font-family: var(--mono);
@@ -472,8 +409,6 @@ input:focus-visible {
 
   .bento { grid-template-columns: 1fr; }
 
-  .live { padding-bottom: 6rem; }
   .beats { padding-bottom: 5rem; }
-  .interlude { padding-bottom: 6rem; }
   .cat-strip { padding-bottom: 5rem; }
 }

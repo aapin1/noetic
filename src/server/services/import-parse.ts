@@ -58,7 +58,7 @@ export function parseBookmarksHtml(html: string): string[] {
 
 /** Minimal CSV reader: quoted fields, escaped quotes, newlines inside quotes.
  * Malformed rows degrade to whatever cells they yield — never a throw. */
-function parseCsvRows(csv: string): string[][] {
+export function parseCsvRows(csv: string, delimiter = ","): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = "";
@@ -78,7 +78,7 @@ function parseCsvRows(csv: string): string[][] {
       }
     } else if (ch === '"') {
       quoted = true;
-    } else if (ch === ",") {
+    } else if (ch === delimiter) {
       row.push(cell);
       cell = "";
     } else if (ch === "\n" || ch === "\r") {

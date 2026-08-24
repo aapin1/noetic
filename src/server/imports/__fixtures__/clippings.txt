@@ -1,0 +1,20 @@
+﻿Example Title: The Beginning (John Doe)
+- Your Highlight on page 12 | location 123-124 | Added on Monday, 1 January 2020 12:00:00
+
+This is a highlight text that runs on for a while.
+==========
+Example Title: The Beginning (John Doe)
+- Your Note on page 12 | location 124 | Added on Monday, 1 January 2020 12:01:00
+
+my own note about the highlight
+==========
+Another Book (Jane Roe)
+- Your Bookmark on page 3 | location 40 | Added on Tuesday, 2 January 2020 09:00:00
+
+
+==========
+Example Title: The Beginning (John Doe)
+- Your Highlight on page 12 | location 123-124 | Added on Monday, 1 January 2020 12:00:00
+
+This is a highlight text that runs on for a while.
+==========

@@ -284,6 +284,11 @@ export default function SettingsScreen() {
             onPress={() => router.push('/import' as never)}
           />
           <SettingRow
+            label="Connections"
+            description="Letterboxd, Goodreads, Readwise — what you write there lands here."
+            onPress={() => router.push('/connections' as never)}
+          />
+          <SettingRow
             label="Export my data"
             description="Every capture you’ve saved, as a file you keep."
             onPress={() => void handleExport()}

@@ -501,6 +501,11 @@ export type PolishContext = {
   userContext?: string;
   topicNames?: string[];
   neighborContext?: { title: string; edgeType: string }[];
+  /** Set when the capture is the person's own words ABOUT a work (a film
+   * review from Letterboxd, book notes from Goodreads). The polish should try
+   * to read their words in relation to that work — and say nothing about a
+   * work it does not know. */
+  mediaContext?: { kind: string; title: string; siteName?: string };
   drafts: InsightDraft[];
 };
 
@@ -557,6 +562,13 @@ export async function polishInsights(args: PolishContext): Promise<InsightDraft[
     "- Include ONLY if a genuinely generative, specific question exists. One short line. Omit it otherwise — never force one.",
     "",
     "Do not start with 'This capture', 'This article', or the title verbatim. Do not overstate thin evidence.",
+    args.mediaContext
+      ? [
+          `ABOUT A WORK: the capture is the user's own words (a review, notes, a reaction) about the ${args.mediaContext.kind} "${args.mediaContext.title}"${args.mediaContext.siteName ? `, from their ${args.mediaContext.siteName} account` : ""}.`,
+          `- FIRST try to read their words in relation to that ${args.mediaContext.kind} — its themes, subject, or craft — if you know the work or content_text describes it.`,
+          "- If you do not know the work, do NOT guess or invent anything about it (no plot, no reception, no genre claims). Treat their words on their own terms instead.",
+        ].join("\n")
+      : "",
     groundingDirective(args.contentGrounding),
     args.userContext
       ? "user_account_of_content is the user's own description of what the content was about — treat it as the authoritative account of the content."
@@ -572,6 +584,7 @@ export async function polishInsights(args: PolishContext): Promise<InsightDraft[
     content_text: args.contentText?.slice(0, 1200) ?? "",
     user_account_of_content: args.userContext?.slice(0, 1200) ?? "",
     topics: args.topicNames ?? [],
+    about_work: args.mediaContext ?? undefined,
     related_items: (args.neighborContext ?? []).map((n) => ({
       title: n.title,
       relationship: n.edgeType,

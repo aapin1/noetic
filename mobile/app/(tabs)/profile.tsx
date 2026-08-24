@@ -18,6 +18,8 @@ import { Button } from '@/components/ui/Button';
 import { EditableAvatar } from '@/components/profile/EditableAvatar';
 import { ScreenIntro } from '@/components/ui/ScreenIntro';
 import { WrappedSection, wrappedAccent } from '@/components/wrapped/WrappedSection';
+import { Mark } from '@/components/ui/ProviderGrid';
+import { linkableMeta } from '@/lib/connectionProviders';
 import { ShareAtlasEntry, ShareRecapEntry } from '@/components/share/ShareRecapEntry';
 import type { OwnerProfile } from '@/types/api';
 
@@ -37,6 +39,11 @@ export default function YouScreen() {
     () => api.profile.wrapped(),
     [],
     { cacheKey: 'profile.wrapped' },
+  );
+  const { data: linkedAccounts, refetch: refetchConnections } = useApiQuery(
+    () => api.connections.list().then((r) => r.connections),
+    [],
+    { cacheKey: 'connections.list' },
   );
 
   // Pull-to-refresh only. Focus revalidation happens silently in the
@@ -68,7 +75,8 @@ export default function YouScreen() {
       scroller.current?.scrollTo({ y: 0, animated: false });
       void refetch();
       void refetchWrapped();
-    }, [refetch, refetchWrapped]),
+      void refetchConnections();
+    }, [refetch, refetchWrapped, refetchConnections]),
   );
 
   const handleRefresh = useCallback(async () => {
@@ -144,6 +152,37 @@ export default function YouScreen() {
           ) : null}
         </View>
 
+        {/* Your connections, always present — filled marks for linked
+            accounts, dashed slots for the rest of the top four. The whole
+            shelf is one door to the Connections page, so an unfilled slot
+            keeps quietly asking without saying a word. */}
+        <Pressable
+          onPress={() => router.push('/connections' as never)}
+          style={[styles.connShelf, { backgroundColor: c.surface, borderColor: c.border }]}
+          accessibilityRole="button"
+          accessibilityLabel="Your connections — link accounts that feed your map"
+        >
+          <Text variant="label" color="faint">connections</Text>
+          <View style={styles.connRow}>
+            {(linkedAccounts ?? []).map((conn) => {
+              const meta = linkableMeta(conn.provider);
+              return (
+                <View
+                  key={conn.provider}
+                  style={[styles.connTile, { borderColor: `${meta?.accent ?? '#888888'}55`, backgroundColor: `${meta?.accent ?? '#888888'}1C` }]}
+                >
+                  <Mark mark={conn.provider} color={meta?.accent ?? c.text} />
+                </View>
+              );
+            })}
+            {Array.from({ length: Math.max(1, 4 - (linkedAccounts?.length ?? 0)) }).map((_, i) => (
+              <View key={`slot-${i}`} style={[styles.connTile, styles.connEmpty, { borderColor: c.border }]}>
+                <Text style={{ color: c.faint, fontSize: 18, lineHeight: 22 }}>+</Text>
+              </View>
+            ))}
+          </View>
+        </Pressable>
+
         {/* No loader while the first read is in flight — the stats simply
             arrive. */}
         {!wrapped && wrappedLoading ? null : wrapped && wrapped.totalCaptures === 0 ? (
@@ -215,5 +254,16 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   bio: { marginTop: Spacing[3], textAlign: 'center', maxWidth: 320 },
+  connShelf: {
+    marginHorizontal: Spacing[4],
+    marginTop: Spacing[3],
+    borderWidth: 1,
+    borderRadius: Radius.xl,
+    padding: Spacing[4],
+    gap: Spacing[3],
+  },
+  connRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: Spacing[2] },
+  connTile: { width: 44, height: 44, borderRadius: Radius.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  connEmpty: { borderStyle: 'dashed' },
   editButtonWrap: { paddingHorizontal: Spacing[6], marginTop: Spacing[6] },
 });

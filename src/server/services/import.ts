@@ -1,51 +1,64 @@
-import { CaptureKind } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
+import type { ProviderItem } from "@/server/connections/types";
 import type { DbClient } from "@/server/db";
-import { capturePipeline } from "@/server/services/admission";
-import { captureItem } from "@/server/services/cognition";
-import { parseImportContent, planImport, type ImportPlan } from "@/server/services/import-parse";
+import { parseImportFile, type ImportParse } from "@/server/imports";
+import { resolveWork } from "@/server/imports/resolve";
+import { captureProviderItem } from "@/server/services/capture-items";
+import { IMPORT_CAP } from "@/server/services/import-parse";
+import { normalizeUrl } from "@/server/url";
 
 /**
- * Bulk link import: parse → dedupe → run each URL through the ordinary
- * capture pipeline as a background job the client polls.
+ * File import: any export a person can get their hands on — a Goodreads CSV,
+ * a Letterboxd zip, Kindle clippings, a Takeout, an Obsidian vault, a pasted
+ * list of links — parsed into provider items and run through the same capture
+ * builder the connected accounts use.
  *
- * Job state is in-process only (this backend is one long-lived Node process;
- * there is no queue or job table anywhere in the app). A restart mid-import
- * loses the remaining URLs and the status row — the captures already made
- * are durable, and re-importing the same file skips them as duplicates, so
- * the recovery story is "run it again".
+ * Two kinds of row: ones with the person's words (always mapped) and bare
+ * ones (a watch, a rating). Bare rows come over only when asked
+ * (`includeBare`), and only once the work resolver finds a page to read.
+ *
+ * Job state is in-process only (one long-lived Node process; no queue). A
+ * restart mid-import loses the remaining rows and the tally — captures made
+ * so far are durable, and re-importing skips them as duplicates.
  */
 
 export type ImportJobStatus = {
   id: string;
+  /** Rows queued for capture (after dedupe and the cap). */
   total: number;
   done: number;
   failed: number;
   duplicates: number;
   invalid: number;
   overCap: number;
+  /** Bare rows the resolver could not find a page for. */
+  unresolved: number;
+  /** "goodreads export", "kindle clippings", … */
+  formats: string[];
   status: "running" | "done";
   startedAt: string;
   finishedAt: string | null;
 };
 
+export type ImportInspect = {
+  formats: string[];
+  /** Rows seen in the file. */
+  seen: number;
+  /** Rows carrying the person's words. */
+  withWords: number;
+  /** Rows that are only a title/link — brought over when asked. */
+  bare: number;
+  skippedFiles: number;
+};
+
 type ImportJob = ImportJobStatus & { userId: string };
 
-// One job per user — the latest sticks around after finishing so a user who
-// left mid-import comes back to the final tally rather than to nothing.
 const jobsByUser = new Map<string, ImportJob>();
-
-// Import runs beneath the interactive path: two lanes, and every URL still
-// passes through the shared capture semaphore so a big import can never
-// starve live captures of more than two of the eight slots.
 const IMPORT_CONCURRENCY = 2;
-const BUSY_RETRY_DELAY_MS = 15_000;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+/** Catalogue sites whose pages the extractor can't read — worth a resolver pass before falling back to the link itself. */
+const UNREADABLE = /(^|\.)(imdb\.com|goodreads\.com|letterboxd\.com|myanimelist\.net|netflix\.com|crunchyroll\.com|grouvee\.com|amazon\.[a-z.]+)\//i;
 
 export function getImportJob(userId: string): ImportJobStatus | null {
   const job = jobsByUser.get(userId);
@@ -54,57 +67,77 @@ export function getImportJob(userId: string): ImportJobStatus | null {
   return status;
 }
 
-/** Which of these canonical URLs the user has already captured. Chunked so a
- * giant bookmark file never turns into one giant `IN (...)`. */
-async function loadExistingCanonical(
-  db: DbClient,
-  userId: string,
-  candidates: string[],
-): Promise<Set<string>> {
-  const existing = new Set<string>();
+export type ImportInput = { content: string; filename?: string; encoding?: "base64" | "utf8" };
+
+function toParse(input: ImportInput): ImportParse {
+  if (input.encoding === "base64") {
+    return parseImportFile({ bytes: new Uint8Array(Buffer.from(input.content, "base64")), filename: input.filename });
+  }
+  return parseImportFile({ text: input.content, filename: input.filename });
+}
+
+function isBare(item: ProviderItem): boolean {
+  return !item.words && !item.quote && item.mode !== "link" && item.mode !== "text";
+}
+
+/** What's in the file, before anything is mapped. The screen shows this and asks the one question. */
+export function inspectImport(input: ImportInput): ImportInspect {
+  const parsed = toParse(input);
+  const bare = parsed.items.filter(isBare).length;
+  return { formats: parsed.formats, seen: parsed.seen, withWords: parsed.items.length - bare, bare, skippedFiles: parsed.skippedFiles };
+}
+
+async function loadExistingCanonical(db: DbClient, userId: string, candidates: string[]): Promise<Set<string>> {
+  const found = new Set<string>();
   const CHUNK = 500;
   for (let i = 0; i < candidates.length; i += CHUNK) {
+    const chunk = candidates.slice(i, i + CHUNK);
     const rows = await db.capturedItem.findMany({
-      where: {
-        userId,
-        contentItem: { canonicalUrl: { in: candidates.slice(i, i + CHUNK) } },
-      },
+      where: { userId, contentItem: { canonicalUrl: { in: chunk } } },
       select: { contentItem: { select: { canonicalUrl: true } } },
     });
-    for (const row of rows) {
-      if (row.contentItem?.canonicalUrl) existing.add(row.contentItem.canonicalUrl);
-    }
+    for (const r of rows) if (r.contentItem?.canonicalUrl) found.add(r.contentItem.canonicalUrl);
   }
-  return existing;
+  return found;
 }
 
-async function captureOne(userId: string, url: string): Promise<void> {
+function canonical(url: string): string | null {
   try {
-    await capturePipeline.run(() => captureItem({ userId, kind: CaptureKind.LINK, url }));
-  } catch (error) {
-    // A busy backend is the one failure worth waiting out — the job has
-    // nowhere to be. Anything else (dead link, paywall, SSRF refusal) is
-    // this URL's problem and just counts as failed.
-    if (error instanceof AppError && error.code === "SERVER_BUSY") {
-      await sleep(BUSY_RETRY_DELAY_MS);
-      await capturePipeline.run(() => captureItem({ userId, kind: CaptureKind.LINK, url }));
-      return;
-    }
-    throw error;
+    return normalizeUrl(url);
+  } catch {
+    return null;
   }
 }
 
-async function runImport(job: ImportJob, urls: string[]): Promise<void> {
+async function runImport(job: ImportJob, items: ProviderItem[], db: DbClient): Promise<void> {
+  const now = new Date();
   let next = 0;
   const lane = async () => {
-    while (true) {
-      const index = next++;
-      if (index >= urls.length) return;
+    while (next < items.length) {
+      const item = items[next++];
       try {
-        await captureOne(job.userId, urls[index]);
+        // A bare row needs a page worth reading. Catalogue pages (imdb,
+        // goodreads, letterboxd…) don't extract, so the resolver goes first
+        // and the catalogue link is only the fallback for words rows.
+        const bare = isBare(item);
+        if (item.lookup && (!item.url || (bare && UNREADABLE.test(item.url)))) {
+          const found = await resolveWork(item.lookup);
+          if (found) {
+            item.url = found.url;
+            item.description = item.description ?? found.description;
+            item.imageUrl = item.imageUrl ?? found.imageUrl;
+            item.author = item.author ?? found.author;
+          } else if (bare) {
+            job.unresolved += 1;
+            continue;
+          }
+        }
+        if (bare) item.mode = "link";
+        await captureProviderItem({ userId: job.userId, origin: "import", site: { siteName: item.lookup ? "" : "Import", contentType: item.lookup?.kind ?? "article" }, item, now, db });
         job.done += 1;
-      } catch {
+      } catch (error) {
         job.failed += 1;
+        console.error(JSON.stringify({ event: "import_item_failed", title: item.title, url: item.url, error: error instanceof Error ? error.message : String(error) }));
       }
     }
   };
@@ -113,28 +146,20 @@ async function runImport(job: ImportJob, urls: string[]): Promise<void> {
   job.finishedAt = new Date().toISOString();
 }
 
-export async function startImport(args: {
-  userId: string;
-  content: string;
-  filename?: string;
-  db?: DbClient;
-}): Promise<ImportJobStatus> {
+export async function startImport(args: ImportInput & { userId: string; includeBare?: boolean; db?: DbClient }): Promise<ImportJobStatus> {
   const db = args.db ?? prisma;
-
   const previous = jobsByUser.get(args.userId);
   if (previous && previous.status === "running") {
     throw new AppError("IMPORT_RUNNING", "An import is already mapping. Let it finish first.", 409);
   }
 
-  const urls = parseImportContent(args.content, args.filename);
-  if (urls.length === 0) {
-    throw new AppError("IMPORT_EMPTY", "No links found in that. Check the file or the paste.", 422);
+  const parsed = toParse(args);
+  if (parsed.items.length === 0) {
+    throw new AppError("IMPORT_EMPTY", "Nothing mneme could read in that. Check the file or the paste.", 422);
   }
 
-  // Reserve the per-user slot BEFORE the first await — two concurrent POSTs
-  // (a double-tap racing the client's busy flag) would otherwise both pass
-  // the guard above, plan their dedup against the same pre-import state, and
-  // capture the same URLs twice. Everything up to here is synchronous.
+  // Reserve the per-user slot before the first await: a double-tap would
+  // otherwise plan twice against the same pre-import state.
   const job: ImportJob = {
     id: randomUUID(),
     userId: args.userId,
@@ -144,40 +169,51 @@ export async function startImport(args: {
     duplicates: 0,
     invalid: 0,
     overCap: 0,
+    unresolved: 0,
+    formats: parsed.formats,
     status: "running",
     startedAt: new Date().toISOString(),
     finishedAt: null,
   };
   jobsByUser.set(args.userId, job);
 
-  let plan: ImportPlan;
+  let queue: ProviderItem[];
   try {
-    // Normalize + in-batch dedupe first (empty existing set), then check the
-    // DB for just those candidates, then plan for real.
-    const candidates = planImport({ urls, existing: new Set(), cap: Number.MAX_SAFE_INTEGER });
-    const existing = await loadExistingCanonical(db, args.userId, candidates.toCapture);
-    plan = planImport({ urls, existing });
+    const wanted = parsed.items.filter((i) => args.includeBare || !isBare(i));
+    const withUrl = wanted.map((i) => ({ item: i, canon: i.url ? canonical(i.url) : null }));
+    job.invalid = withUrl.filter((w) => w.item.url && !w.canon).length;
+    const existing = await loadExistingCanonical(db, args.userId, withUrl.map((w) => w.canon).filter((c): c is string => !!c));
+    const seen = new Set<string>();
+    queue = [];
+    for (const w of withUrl) {
+      if (w.item.url && !w.canon) continue;
+      if (w.canon) {
+        if (seen.has(w.canon) || existing.has(w.canon)) {
+          job.duplicates += 1;
+          continue;
+        }
+        seen.add(w.canon);
+        w.item.url = w.canon;
+      }
+      if (queue.length >= IMPORT_CAP) {
+        job.overCap += 1;
+        continue;
+      }
+      queue.push(w.item);
+    }
   } catch (error) {
-    // Give the slot back — a failed plan must not leave a phantom "running"
-    // job blocking every future import. Restore the last finished job so the
-    // status endpoint keeps showing the previous tally.
     if (previous) jobsByUser.set(args.userId, previous);
     else jobsByUser.delete(args.userId);
     throw error;
   }
 
-  job.total = plan.toCapture.length;
-  job.duplicates = plan.duplicates;
-  job.invalid = plan.invalid;
-  job.overCap = plan.overCap;
-
-  if (plan.toCapture.length > 0) {
-    void runImport(job, plan.toCapture);
+  job.total = queue.length;
+  if (queue.length > 0) {
+    void runImport(job, queue, db);
   } else {
     job.status = "done";
     job.finishedAt = new Date().toISOString();
   }
-
   const { userId: _owner, ...status } = job;
   return status;
 }

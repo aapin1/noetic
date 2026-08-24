@@ -89,6 +89,8 @@ function RootLayout() {
                 <Stack.Screen name="blocked" options={{ presentation: 'card' }} />
                 <Stack.Screen name="notification-settings" options={{ presentation: 'card' }} />
                 <Stack.Screen name="import" options={{ presentation: 'card' }} />
+                <Stack.Screen name="connections" options={{ presentation: 'card' }} />
+                <Stack.Screen name="connections-session" options={{ presentation: 'modal', gestureEnabled: true }} />
                 <Stack.Screen name="today" options={{ presentation: 'card' }} />
                 <Stack.Screen name="terrain" options={{ presentation: 'card' }} />
                 <Stack.Screen name="plus" options={{ presentation: 'modal', gestureEnabled: true }} />

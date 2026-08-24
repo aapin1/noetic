@@ -53,6 +53,8 @@ export interface CapturedItem {
   reaction: string | null;
   userContext: string | null;
   kind: CaptureKind;
+  /** "import", a connected account ("letterboxd" | "goodreads" | "readwise"), or null when saved by hand. */
+  origin: string | null;
   topics: CaptureTopic[];
   contentItem: CaptureContent | null;
   rawText: string | null;
@@ -240,6 +242,75 @@ export interface TodayResponse {
   connection: TodayConnection | null;
 }
 
+export type ConnectionProvider =
+  | 'letterboxd'
+  | 'goodreads'
+  | 'readwise'
+  | 'anilist'
+  | 'trakt'
+  | 'hardcover'
+  | 'raindrop'
+  | 'instapaper'
+  | 'youtube'
+  | 'mastodon'
+  | 'bluesky'
+  | 'tumblr'
+  | 'medium'
+  | 'substack'
+  | 'bookwyrm'
+  | 'hackernews'
+  | 'reddit'
+  | 'pinboard'
+  | 'arena'
+  | 'zotero'
+  | 'github'
+  | 'kitsu'
+  | 'steam'
+  | 'backloggd'
+  | 'rawg'
+  | 'listenbrainz'
+  | 'bandcamp';
+
+/** A linked outside account that feeds the map on its own. */
+export interface Connection {
+  provider: ConnectionProvider;
+  handle: string;
+  /** When set, the phone fetches this itself and posts the body (sites that turn servers away). */
+  deviceFeed: { url: string; headers?: Record<string, string> } | null;
+  label: string | null;
+  status: 'ok' | 'error';
+  /** A sentence that says what to fix. Null when status is ok. */
+  lastError: string | null;
+  lastSyncedAt: string | null;
+  lastSync: { seen: number; withWords: number; mapped: number; failed: number; skipped: number } | null;
+  syncing: boolean;
+  /** Captures this account has put on the map, all time. */
+  mapped: number;
+  /** Finds waiting for a yes (ASK mode). */
+  pending: number;
+  createdAt: string;
+}
+
+/** An in-app sign-in recipe: where to open, when it's ready, what to run. */
+export interface SessionTarget {
+  key: string;
+  name: string;
+  what: string;
+  startUrl: string;
+  readyPattern: string;
+  working: string;
+  filename: string;
+  script: string;
+}
+
+/** Finds waiting for a yes, grouped per account. */
+export interface PendingFinds {
+  total: number;
+  groups: { provider: ConnectionProvider; count: number; titles: string[] }[];
+  /** True while an "add" is still mapping in the background. */
+  adding: boolean;
+}
+
 /** A bulk-import job's polled status. In-process server-side: a backend
  * restart mid-import loses the tally (captures already made survive). */
 export interface ImportJob {
@@ -250,9 +321,29 @@ export interface ImportJob {
   duplicates: number;
   invalid: number;
   overCap: number;
+  /** Bare rows no page could be found for. */
+  unresolved: number;
+  /** "goodreads export", "kindle clippings", … */
+  formats: string[];
   status: 'running' | 'done';
   startedAt: string;
   finishedAt: string | null;
+}
+
+/** What a file holds, before anything is mapped. */
+export interface ImportInspect {
+  formats: string[];
+  seen: number;
+  withWords: number;
+  bare: number;
+  skippedFiles: number;
+}
+
+export interface ImportPayload {
+  content: string;
+  filename?: string;
+  encoding?: 'utf8' | 'base64';
+  includeBare?: boolean;
 }
 
 /** One capture in the full-account export. */
@@ -290,6 +381,8 @@ export interface UserPreference {
   pushSocial: boolean;
   pushResurface: boolean;
   pushStreak: boolean;
+  /** Connected accounts: 'ASK' stages new finds for the Atlas pill; 'AUTO' maps them. */
+  connectionsMode: 'ASK' | 'AUTO';
   tzOffsetMinutes: number | null;
   createdAt: string;
   updatedAt: string;

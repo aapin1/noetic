@@ -1,4 +1,4 @@
-import { InsightStyle, Prisma } from "@prisma/client";
+import { type ConnectionsMode, InsightStyle, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/server/db";
 
@@ -23,6 +23,7 @@ export type PushPreferenceInput = {
   pushSocial?: boolean;
   pushResurface?: boolean;
   pushStreak?: boolean;
+  connectionsMode?: ConnectionsMode;
 };
 
 /**
@@ -52,6 +53,7 @@ export async function updatePreferences(args: {
     pushSocial: args.pushSocial ?? undefined,
     pushResurface: args.pushResurface ?? undefined,
     pushStreak: args.pushStreak ?? undefined,
+    connectionsMode: args.connectionsMode ?? undefined,
   };
 
   return db.userPreference.upsert({

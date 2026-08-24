@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+ <link rel="self" href="http://www.youtube.com/feeds/videos.xml?playlist_id=PLBCF2DAC6FFB574DE"/>
+ <id>yt:playlist:PLBCF2DAC6FFB574DE</id>
+ <yt:playlistId>PLBCF2DAC6FFB574DE</yt:playlistId>
+ <yt:channelId>UCvceBgMIpKb4zK1ss-Sh90w</yt:channelId>
+ <title>Google Search Stories</title>
+ <author>
+  <name>Google Search Stories</name>
+  <uri>https://www.youtube.com/channel/UCvceBgMIpKb4zK1ss-Sh90w</uri>
+ </author>
+ <published>2011-09-23T04:52:01+00:00</published>
+ <entry>
+  <id>yt:video:GvgqDSnpRQM</id>
+  <yt:videoId>GvgqDSnpRQM</yt:videoId>
+  <yt:channelId>UCvceBgMIpKb4zK1ss-Sh90w</yt:channelId>
+  <title>Andrew Willis, Skatepark Engineer</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=GvgqDSnpRQM"/>
+  <author>
+   <name>Google Search Stories</name>
+   <uri>https://www.youtube.com/channel/UCvceBgMIpKb4zK1ss-Sh90w</uri>
+  </author>
+  <published>2013-10-18T07:03:29+00:00</published>
+  <updated>2026-07-12T09:16:11+00:00</updated>
+  <media:group>
+   <media:title>Andrew Willis, Skatepark Engineer</media:title>
+   <media:content url="https://www.youtube.com/v/GvgqDSnpRQM?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i4.ytimg.com/vi/GvgqDSnpRQM/hqdefault.jpg" width="480" height="360"/>
+   <media:description>Andrew Willis built a skatepark in East London using reclaimed materials left over from the Olympic Games, creating a lasting legacy for the local community of Hackney Wick.</media:description>
+   <media:community>
+    <media:starRating count="1148" average="5.00" min="1" max="5"/>
+    <media:statistics views="2656365"/>
+   </media:community>
+  </media:group>
+ </entry>
+<entry>
+  <id>yt:video:V4DDt30Aat4</id>
+  <yt:videoId>V4DDt30Aat4</yt:videoId>
+  <yt:channelId>UCvceBgMIpKb4zK1ss-Sh90w</yt:channelId>
+  <title>Mark Lesek: A New/Old Prosthetic</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=V4DDt30Aat4"/>
+  <author>
+   <name>Google Search Stories</name>
+   <uri>https://www.youtube.com/channel/UCvceBgMIpKb4zK1ss-Sh90w</uri>
+  </author>
+  <published>2011-11-21T19:11:41+00:00</published>
+  <updated>2026-07-04T17:04:52+00:00</updated>
+  <media:group>
+   <media:title>Mark Lesek: A New/Old Prosthetic</media:title>
+   <media:content url="https://www.youtube.com/v/V4DDt30Aat4?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i3.ytimg.com/vi/V4DDt30Aat4/hqdefault.jpg" width="480" height="360"/>
+   <media:description>Follow Mark on Google+: https://plus.google.com/u/0/114778778979884307299/about&#13;
+&#13;
+Mark lost his arm several years ago. Now his search for a better prosthetic could improve the lives of amputees everywhere.</media:description>
+   <media:community>
+    <media:starRating count="1785" average="5.00" min="1" max="5"/>
+    <media:statistics views="3605199"/>
+   </media:community>
+  </media:group>
+ </entry>
+<entry>
+  <id>yt:video:XDgC4FMftpg</id>
+  <yt:videoId>XDgC4FMftpg</yt:videoId>
+  <yt:channelId>UCvceBgMIpKb4zK1ss-Sh90w</yt:channelId>
+  <title>Mark Kempton: Neighbors In Need</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=XDgC4FMftpg"/>
+  <author>
+   <name>Google Search Stories</name>
+   <uri>https://www.youtube.com/channel/UCvceBgMIpKb4zK1ss-Sh90w</uri>
+  </author>
+  <published>2011-11-21T20:36:57+00:00</published>
+  <updated>2026-05-06T18:39:53+00:00</updated>
+  <media:group>
+   <media:title>Mark Kempton: Neighbors In Need</media:title>
+   <media:content url="https://www.youtube.com/v/XDgC4FMftpg?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i1.ytimg.com/vi/XDgC4FMftpg/hqdefault.jpg" width="480" height="360"/>
+   <media:description>Follow Mark on Google+: https://profiles.google.com/u/0/105705606437451864842&#13;
+&#13;
+When floodwaters hit northeast Australia, Mark's innovative search became the difference between life and death for many of his neighbors.</media:description>
+   <media:community>
+    <media:starRating count="865" average="5.00" min="1" max="5"/>
+    <media:statistics views="5586171"/>
+   </media:community>
+  </media:group>
+ </entry>
+</feed>

@@ -117,6 +117,9 @@ type EventProps = {
   companion_message: { turn_index: number };
   paywall_view: { source: string };
   purchase: { product_id: string; period: string };
+  connection_linked: { provider: string };
+  connection_link_failed: { provider: string; reason: string };
+  connection_unlinked: { provider: string };
 };
 
 export type AnalyticsEvent = keyof EventProps;

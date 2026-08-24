@@ -10,6 +10,7 @@ Live on the [App Store](https://apps.apple.com/us/app/mneme-your-brain-mapped/id
 - **Mind** — what is moving through your knowledge: threads picking up speed, two saves that quietly disagree, positions worth taking. Backed by an LLM intelligence layer with a content-addressed cache.
 - **You** — the long view of your own attention: timeline, streaks, terrain, a yearly "wrapped".
 - **Pulse** — a slow social check-in from the few people you follow. Not a feed.
+- **Connections** — 27 accounts (Letterboxd, Goodreads, Readwise, Kindle via sign-in, Bluesky, Mastodon, Hacker News, Steam, Zotero…) refreshed daily; 25 export formats through one import door; five "sign in inside mneme" sources. Only what you wrote lands by default; bare watches and ratings are offered, never forced.
 - Plus: share-sheet capture, bulk import (bookmarks HTML, Pocket CSV, URL lists), full export, resurfacing push notifications, Sign in with Apple, a Socratic companion, and an optional Plus tier via RevenueCat.
 
 ## Repository layout

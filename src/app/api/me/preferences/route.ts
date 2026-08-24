@@ -24,6 +24,7 @@ export async function PATCH(request: Request) {
       pushSocial: input.pushSocial,
       pushResurface: input.pushResurface,
       pushStreak: input.pushStreak,
+      connectionsMode: input.connectionsMode,
     });
   });
 }

@@ -194,6 +194,15 @@ export const sendNotificationPayloadsSchema = z.object({
   recipientId: z.string().min(1).optional(),
 });
 
+/** File import: text, or a file as base64 (zips, anything binary). 40MB of base64 ≈ 30MB on disk. */
+export const importSchema = z.object({
+  content: z.string().min(1).max(40_000_000),
+  filename: z.string().max(255).optional(),
+  encoding: z.enum(["utf8", "base64"]).optional(),
+  /** Also bring rows without the person's words (a watch, a rating), once a page is found for them. */
+  includeBare: z.boolean().optional(),
+});
+
 export const captureKindSchema = z.enum(["LINK", "TEXT", "QUOTE", "IMAGE"]);
 
 export const captureSchema = z.object({
@@ -279,6 +288,7 @@ export const updatePreferencesSchema = z.object({
   pushSocial: z.boolean().optional(),
   pushResurface: z.boolean().optional(),
   pushStreak: z.boolean().optional(),
+  connectionsMode: z.enum(["ASK", "AUTO"]).optional(),
 }).refine(
   (value) => Object.values(value).some((field) => field !== undefined),
   { message: "At least one preference field is required" },
