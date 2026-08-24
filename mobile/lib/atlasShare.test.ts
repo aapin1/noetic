@@ -6,13 +6,11 @@ import {
   atlasMonthStamp,
   atlasNodeRadius,
   atlasStatLine,
-  convexHull,
+  atlasLabelBudget,
+  buildAtlasScene,
   darkenHex,
-  expandHull,
   fitAtlasFrame,
-  mstEdges,
   projectAtlasPoint,
-  smoothClosedPath,
   type AtlasSharePoint,
 } from "./atlasShare";
 
@@ -129,69 +127,97 @@ describe("atlasNodeRadius", () => {
   });
 });
 
-describe("mstEdges", () => {
-  it("spans n points with exactly n-1 edges", () => {
-    const pts = Array.from({ length: 12 }, (_, i) => ({ x: (i * 37) % 12, y: (i * 91) % 12 }));
-    const edges = mstEdges(pts);
-    expect(edges).toHaveLength(11);
-    // Every point is reachable: union of endpoints covers all indices.
-    const touched = new Set(edges.flat());
-    expect(touched.size).toBe(12);
+describe("buildAtlasScene", () => {
+  const opts = { width: 320, height: 360, showLabels: true, colorFor: () => "#6E9AD1", hash: (id: string) => id.length * 7919 };
+  const mk = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ id: `n${i}`, x: (i % 10) / 10 + 0.05, y: Math.floor(i / 10) / 10 + 0.05 }));
+  const cluster = (ids: string[], name = "design") => ({ topicId: `t-${name}`, name, kind: "domain" as const, count: ids.length, itemIds: ids });
+
+  it("returns an empty scene for no nodes", () => {
+    expect(buildAtlasScene([], [], [], opts)).toEqual({ washes: [], links: [], stars: [], labels: [], baseR: 0 });
   });
 
-  it("handles degenerate sizes", () => {
-    expect(mstEdges([])).toEqual([]);
-    expect(mstEdges([{ x: 0, y: 0 }])).toEqual([]);
-    expect(mstEdges([{ x: 0, y: 0 }, { x: 1, y: 1 }])).toEqual([[0, 1]]);
-  });
-
-  it("prefers near neighbours: a chain connects sequentially", () => {
-    const pts = [0, 1, 2, 3].map((i) => ({ x: i * 10, y: 0 }));
-    const edges = mstEdges(pts).map(([a, b]) => [Math.min(a, b), Math.max(a, b)]);
-    expect(edges).toContainEqual([0, 1]);
-    expect(edges).toContainEqual([1, 2]);
-    expect(edges).toContainEqual([2, 3]);
-  });
-});
-
-describe("convexHull", () => {
-  it("drops interior points", () => {
-    const square = [
-      { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 },
-      { x: 5, y: 5 }, { x: 3, y: 7 },
-    ];
-    const hull = convexHull(square);
-    expect(hull).toHaveLength(4);
-    expect(hull).not.toContainEqual({ x: 5, y: 5 });
-  });
-
-  it("passes tiny clouds through", () => {
-    const two = [{ x: 0, y: 0 }, { x: 1, y: 1 }];
-    expect(convexHull(two)).toEqual(two);
-  });
-});
-
-describe("expandHull", () => {
-  it("pushes every vertex away from the centroid", () => {
-    const hull = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
-    const out = expandHull(hull, 3);
-    for (const p of out) {
-      const d = Math.hypot(p.x - 5, p.y - 5);
-      expect(d).toBeCloseTo(Math.hypot(5, 5) + 3);
+  it("draws one star per node inside the frame", () => {
+    const nodes = mk(30);
+    const scene = buildAtlasScene(nodes, [], [], opts);
+    expect(scene.stars).toHaveLength(30);
+    for (const s of scene.stars) {
+      expect(s.cx).toBeGreaterThan(0); expect(s.cx).toBeLessThan(opts.width);
+      expect(s.cy).toBeGreaterThan(0); expect(s.cy).toBeLessThan(opts.height);
     }
   });
-});
 
-describe("smoothClosedPath", () => {
-  it("emits a closed path with one quadratic per vertex", () => {
-    const d = smoothClosedPath([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 5, y: 8 }]);
-    expect(d.startsWith("M ")).toBe(true);
-    expect(d.endsWith(" Z")).toBe(true);
-    expect(d.match(/Q /g)).toHaveLength(3);
+  it("scatters a node with no coordinates deterministically", () => {
+    const a = buildAtlasScene([{ id: "abc" }], [], [], opts);
+    const b = buildAtlasScene([{ id: "abc" }], [], [], opts);
+    expect(a.stars[0]).toEqual(b.stars[0]);
   });
 
-  it("returns empty for fewer than 3 points", () => {
-    expect(smoothClosedPath([{ x: 0, y: 0 }, { x: 1, y: 1 }])).toBe("");
+  it("ramps link opacity by weight and dashes contradictions", () => {
+    const nodes = mk(3);
+    const edges = [
+      { fromItemId: "n0", toItemId: "n1", type: "RELATED", weight: 0.2 },
+      { fromItemId: "n1", toItemId: "n2", type: "RELATED", weight: 0.9 },
+      { fromItemId: "n0", toItemId: "n2", type: "CONTRADICTS", weight: 0.5 },
+    ];
+    const { links } = buildAtlasScene(nodes, edges, [], opts);
+    const strong = links.find((l) => l.key === "n1-n2")!;
+    const weak = links.find((l) => l.key === "n0-n1")!;
+    expect(strong.opacity).toBeGreaterThan(weak.opacity);
+    expect(links.find((l) => l.key === "n0-n2")!.dashed).toBe(true);
+  });
+
+  it("skips edges to nodes that are not on the map", () => {
+    const { links } = buildAtlasScene(mk(2), [{ fromItemId: "n0", toItemId: "ghost", type: "RELATED", weight: 1 }], [], opts);
+    expect(links).toHaveLength(0);
+  });
+
+  it("marks hubs only on dense maps", () => {
+    const star = (n: number) =>
+      Array.from({ length: n - 1 }, (_, i) => ({ fromItemId: "n0", toItemId: `n${i + 1}`, type: "RELATED", weight: 1 }));
+    expect(buildAtlasScene(mk(8), star(8), [], opts).stars.some((s) => s.hub)).toBe(false);
+    expect(buildAtlasScene(mk(40), star(40), [], opts).stars.find((s) => s.id === "n0")!.hub).toBe(true);
+  });
+
+  it("washes and labels one field per major cluster, respecting the budget", () => {
+    const nodes = mk(20);
+    const clusters = Array.from({ length: 7 }, (_, i) => cluster([`n${i * 2}`, `n${i * 2 + 1}`], `field ${i}`));
+    const scene = buildAtlasScene(nodes, [], clusters, opts);
+    expect(scene.washes).toHaveLength(7);
+    expect(scene.labels.length).toBeLessThanOrEqual(atlasLabelBudget(20).max);
+    expect(scene.labels[0]!.text).toBe("field 0");
+  });
+
+  it("ignores singleton clusters", () => {
+    const scene = buildAtlasScene(mk(3), [], [cluster(["n0"], "alone")], opts);
+    expect(scene.washes).toHaveLength(0);
+    expect(scene.labels).toHaveLength(0);
+  });
+
+  it("never places two labels on top of each other", () => {
+    const nodes = Array.from({ length: 12 }, (_, i) => ({ id: `n${i}`, x: 0.5 + (i % 2) * 0.01, y: 0.5 + Math.floor(i / 2) * 0.005 }));
+    const clusters = Array.from({ length: 6 }, (_, i) => cluster([`n${i * 2}`, `n${i * 2 + 1}`], `overlapping field ${i}`));
+    const { labels } = buildAtlasScene(nodes, [], clusters, opts);
+    for (let i = 0; i < labels.length; i++) {
+      for (let j = i + 1; j < labels.length; j++) {
+        const a = labels[i]!, b = labels[j]!;
+        const overlap = Math.abs(a.y - b.y) < a.fontSize && Math.abs(a.x - b.x) < (a.width + b.width) / 2;
+        expect(overlap).toBe(false);
+      }
+    }
+  });
+
+  it("hides labels when asked", () => {
+    const scene = buildAtlasScene(mk(4), [], [cluster(["n0", "n1"])], { ...opts, showLabels: false });
+    expect(scene.labels).toHaveLength(0);
+    expect(scene.washes).toHaveLength(1);
+  });
+});
+
+describe("atlasLabelBudget", () => {
+  it("spends fewer, bigger names on a small map and more, smaller ones on a dense map", () => {
+    expect(atlasLabelBudget(5).max).toBeLessThan(atlasLabelBudget(200).max);
+    expect(atlasLabelBudget(5).fontSize).toBeGreaterThan(atlasLabelBudget(200).fontSize);
   });
 });
 

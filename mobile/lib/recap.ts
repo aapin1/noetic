@@ -7,6 +7,12 @@ import type { CaptureSummary } from '@/types/api';
 /** Cap so a slideshow stays watchable and capture stays fast. */
 export const RECAP_MAX = 10;
 
+/**
+ * The one line on every share frame that says where to go. Sits beside the
+ * wordmark exactly once per frame — a card never says "mneme" twice.
+ */
+export const SHARE_CTA = 'your second brain, on iOS';
+
 /** Aspect ratio of a share frame — 4:5 portrait, friendly to stories/TikTok. */
 export const RECAP_ASPECT = 1.25;
 
