@@ -23,6 +23,9 @@ import { asInsightSource, track } from '@/lib/analytics';
 import { TUTORIAL_DEMO_CAPTURE, TUTORIAL_DEMO_NODE } from '@/constants/tutorialSteps';
 import type { CaptureDetail } from '@/types/api';
 
+/** How long after a capture the screen keeps a place open for its READING. */
+const READING_WAIT_MS = 30_000;
+
 /**
  * One block of the read: a kicker, a heading, and its body, on card stock.
  *
@@ -84,11 +87,23 @@ export default function InsightDetailScreen() {
   // polishes them in the background within a few seconds. Quietly re-read so
   // the sharpened text swaps in — old captures skip this entirely.
   const capturedAtMs = data ? new Date(data.capturedAt).getTime() : null;
+  // The READING (the claim the content makes, and the catch in it) is written
+  // by that same background polish, so for a few seconds a fresh capture has
+  // only its graph drafts. The screen holds a place for it until it lands, and
+  // gives up quietly once the polish has had long enough — a thin source never
+  // gets one, and the model may decline rather than guess.
+  const [readingWaitOver, setReadingWaitOver] = useState(false);
   useEffect(() => {
-    if (!capturedAtMs || Date.now() - capturedAtMs > 2 * 60 * 1000) return;
+    if (!capturedAtMs || Date.now() - capturedAtMs > 2 * 60 * 1000) {
+      setReadingWaitOver(true);
+      return;
+    }
     const first = setTimeout(() => void refetch(), 4000);
     const second = setTimeout(() => void refetch(), 10000);
-    return () => { clearTimeout(first); clearTimeout(second); };
+    // A long transcript's polish can outlast the second re-read.
+    const third = setTimeout(() => void refetch(), 20000);
+    const waitOver = setTimeout(() => setReadingWaitOver(true), READING_WAIT_MS - (Date.now() - capturedAtMs));
+    return () => { clearTimeout(first); clearTimeout(second); clearTimeout(third); clearTimeout(waitOver); };
   }, [capturedAtMs, refetch]);
 
   // Editing the AI's understanding of the content. Saving reprocesses the
@@ -246,6 +261,14 @@ export default function InsightDetailScreen() {
   // Nullish-only fallthrough (??) would keep an empty string in place instead
   // of falling through — treat blank strings as "nothing extracted" too.
   const aboutText = data.userContext?.trim() || data.summary?.trim() || legacyDescription || null;
+
+  // A capture whose source couldn't be read carries the thin-content NOVELTY
+  // (evidence.contentThin) and will never get a READING — nothing to wait for.
+  const hasReading = data.insights.some((ins) => ins.type === 'READING');
+  const thinSource = data.insights.some(
+    (ins) => (ins.evidence as { contentThin?: boolean } | null)?.contentThin === true,
+  );
+  const awaitingReading = !hasReading && !thinSource && !readingWaitOver;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.deep }]} edges={['top']}>
@@ -453,6 +476,12 @@ export default function InsightDetailScreen() {
         ) : null}
 
         <Section kicker="what it means" title="Insight" accent={Accents.amber}>
+          {awaitingReading ? (
+            <View style={styles.savingRow}>
+              <LoadingDots size={4} />
+              <Text variant="monoSmall" color="muted">reading it closely…</Text>
+            </View>
+          ) : null}
           {data.insights.map((ins) => (
             <InsightLine key={ins.id} insight={ins} />
           ))}

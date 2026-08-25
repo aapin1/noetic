@@ -13,6 +13,8 @@ const TYPE_LABEL: Record<InsightType, string> = {
   CONTRADICTS: 'contradicts',
   NOVELTY: 'novelty',
   RECUR: 'recur',
+  READING: 'the claim',
+  MIRROR: 'a read on you',
 };
 
 interface Props {
@@ -52,6 +54,15 @@ export function InsightLine({ insight, compact = false }: Props) {
       <Text variant={compact ? 'serif' : 'serifLg'} color="primary" style={styles.headline}>
         {insight.headline}
       </Text>
+      {/* A READING is a contract, not a paragraph: the headline is the claim
+          the content makes and the body is the catch in it. The kicker names
+          the first half; this names the second, so the two read as a pair
+          rather than as a headline with an explanatory sentence under it. */}
+      {!compact && insight.body && insight.type === 'READING' ? (
+        <Text variant="label" color="muted" style={styles.catchLabel}>
+          the catch
+        </Text>
+      ) : null}
       {!compact && insight.body ? (
         <Text variant="body" color="secondary" style={styles.body}>
           {insight.body}
@@ -84,6 +95,9 @@ const styles = StyleSheet.create({
     height: 2,
   },
   headline: {},
+  catchLabel: {
+    marginTop: Spacing[3],
+  },
   body: {
     marginTop: Spacing[2],
   },

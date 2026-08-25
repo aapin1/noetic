@@ -4,6 +4,7 @@ import {
   CaptureKind,
   CognitiveEventType,
   InsightStyle,
+  InsightType,
   type MemoryEdgeType,
   type Prisma,
 } from "@prisma/client";
@@ -34,12 +35,20 @@ import {
   draftInsights,
   RELATED_LIMIT,
   RELATED_MIN_WEIGHT,
+  sortInsights,
   type Neighbor,
   type TopicCount,
   type TrajectoryShift,
 } from "@/server/cognition/insights";
 import { cosineSim } from "@/server/cognition/layout";
-import { describeImage, embedText, polishInsights, type Recommendation } from "@/server/cognition/llm";
+import {
+  describeImage,
+  embedText,
+  generateMirror,
+  polishInsights,
+  type PolishResult,
+  type Recommendation,
+} from "@/server/cognition/llm";
 import { isPaidTranscriptHost, scoreContentConfidence } from "@/server/metadata";
 import { blendSearchScore, rankCaptureText, SEMANTIC_MIN_SIM } from "@/server/search-ranking";
 import { applyTopicWeights, incrementTasteProfileVersion } from "@/server/services/activity";
@@ -580,6 +589,99 @@ function mediaContextFor(args: { origin?: string | null; kind?: string; title?: 
   return { kind: args.kind, title: args.title, siteName: args.siteName };
 }
 
+/** How many captures in before the mirror is written. Three is the smallest
+ * number with a shape: two is a coincidence, three is a thread. */
+const MIRROR_AT = 3;
+
+/**
+ * Lands the background polish. The sharpened text swaps into the rows the
+ * response already returned, and the READING — which has no draft, because it
+ * is written from the content rather than from graph statistics — is inserted
+ * as a new row. The insight screen re-reads a few seconds after a capture and
+ * picks both up. Failure leaves the drafts standing.
+ */
+async function applyPolish(db: DbClient, args: {
+  userId: string;
+  capturedItemId: string;
+  insightIds: string[];
+  polished: PolishResult;
+}) {
+  await Promise.all(
+    args.polished.insights.map((draft, index) => {
+      const id = args.insightIds[index];
+      if (!id) return null;
+      return db.insight.update({
+        where: { id },
+        data: {
+          headline: draft.headline,
+          body: draft.body,
+          evidence: draft.evidence as Prisma.InputJsonValue,
+        },
+      });
+    }),
+  );
+
+  const reading = args.polished.reading;
+  if (!reading) return;
+  await db.insight.create({
+    data: {
+      userId: args.userId,
+      capturedItemId: args.capturedItemId,
+      type: reading.type,
+      headline: reading.headline,
+      body: reading.body,
+      evidence: reading.evidence as Prisma.InputJsonValue,
+      strength: reading.strength,
+    },
+  });
+}
+
+/**
+ * The read at three (see generateMirror). Fires from the capture that makes
+ * the corpus MIRROR_AT deep, in the background, and attaches to that capture —
+ * so it leads the insight the user is about to open. One per account: the
+ * existence check runs before and after the LLM call, which narrows (without
+ * closing) the window where two captures from one share-sheet burst both see
+ * themselves as the third.
+ */
+async function writeMirror(db: DbClient, args: { userId: string; capturedItemId: string; style: InsightStyle }) {
+  const hasMirror = async () =>
+    (await db.insight.count({ where: { userId: args.userId, type: InsightType.MIRROR } })) > 0;
+  if (await hasMirror()) return;
+
+  const rows = await db.capturedItem.findMany({
+    where: { userId: args.userId },
+    orderBy: [{ capturedAt: "asc" }, { id: "asc" }],
+    take: MIRROR_AT,
+    select: captureSummarySelect,
+  });
+  if (rows.length < MIRROR_AT) return;
+
+  const mirror = await generateMirror({
+    style: args.style,
+    captures: rows.map(serializeCapturedItem).map((item) => ({
+      title: item.title,
+      // The user's own account outranks the AI summary, as everywhere; a text
+      // capture IS the user's words.
+      gist: item.userContext ?? item.summary ?? item.rawText ?? null,
+      topics: item.topics.map((topic) => topic.name),
+    })),
+  });
+  if (!mirror || (await hasMirror())) return;
+
+  await db.insight.create({
+    data: {
+      userId: args.userId,
+      capturedItemId: args.capturedItemId,
+      type: InsightType.MIRROR,
+      headline: mirror.headline,
+      body: mirror.body,
+      evidence: { captureIds: rows.map((row) => row.id) } as Prisma.InputJsonValue,
+      strength: 1,
+    },
+  });
+}
+
 export async function captureItem(payload: CapturePayload): Promise<CapturedItemSummary & {
   insights: { id: string; type: string; headline: string; body: string; strength: number; evidence: unknown }[];
   related: CapturedItemSummary[];
@@ -1027,8 +1129,9 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   })().catch((err) => console.error("[capture] background bookkeeping failed", err));
 
   // Background: sharpen the draft insights with the LLM after the response is
-  // on its way. The rows already exist with readable draft text; this swaps in
-  // the polished headline/body when it lands. Failure leaves the drafts.
+  // on its way, and write the READING from the content. The rows already exist
+  // with readable draft text; this swaps in the polished headline/body when it
+  // lands and adds the reading as a new row. Failure leaves the drafts.
   if (txResult.insights.length > 0) {
     const insightIds = txResult.insights.map((row) => row.id);
     void polishInsights({
@@ -1046,23 +1149,17 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
       drafts,
     })
       .then(async (polished) => {
-        await Promise.all(
-          polished.map((draft, index) => {
-            const id = insightIds[index];
-            if (!id) return null;
-            return db.insight.update({
-              where: { id },
-              data: {
-                headline: draft.headline,
-                body: draft.body,
-                evidence: draft.evidence as Prisma.InputJsonValue,
-              },
-            });
-          }),
-        );
+        await applyPolish(db, { userId: payload.userId, capturedItemId: txResult.id, insightIds, polished });
         console.log(`[capture] background polish done in ${Date.now() - txDoneAt}ms`);
       })
       .catch((err) => console.error("[capture] background insight polish failed", err));
+  }
+
+  // Background: the read at three. This capture made the corpus exactly
+  // MIRROR_AT deep — the first moment there is a person to describe.
+  if (neighborInfo.priorCount === MIRROR_AT - 1) {
+    void writeMirror(db, { userId: payload.userId, capturedItemId: txResult.id, style: insightStyle })
+      .catch((err) => console.error("[capture] background mirror failed", err));
   }
 
   return { ...txResult, threadContext, recommendations };
@@ -1243,7 +1340,10 @@ export async function updateCaptureContext(args: {
       });
     }
 
-    await tx.insight.deleteMany({ where: { capturedItemId: item.id } });
+    // The MIRROR is about the person, not this capture's content, and it is
+    // written once per account — a rebuild of the capture it happens to hang
+    // off must not take it with it.
+    await tx.insight.deleteMany({ where: { capturedItemId: item.id, type: { not: InsightType.MIRROR } } });
     for (const draft of drafts) {
       const row = await tx.insight.create({
         data: {
@@ -1280,22 +1380,7 @@ export async function updateCaptureContext(args: {
     })),
     drafts,
   })
-    .then(async (polished) => {
-      await Promise.all(
-        polished.map((draft, index) => {
-          const insightId = insightIds[index];
-          if (!insightId) return null;
-          return db.insight.update({
-            where: { id: insightId },
-            data: {
-              headline: draft.headline,
-              body: draft.body,
-              evidence: draft.evidence as Prisma.InputJsonValue,
-            },
-          });
-        }),
-      );
-    })
+    .then((polished) => applyPolish(db, { userId: args.userId, capturedItemId: item.id, insightIds, polished }))
     .catch((err) => console.error("[capture] context-edit background polish failed", err));
 
   return getCapture({ userId: args.userId, capturedItemId: item.id, db });
@@ -1393,6 +1478,7 @@ export async function getCapture(args: { userId: string; capturedItemId: string;
           body: true,
           strength: true,
           evidence: true,
+          createdAt: true,
         },
         orderBy: { createdAt: "asc" },
       },
@@ -1440,7 +1526,10 @@ export async function getCapture(args: { userId: string; capturedItemId: string;
 
   return {
     ...serializeCapturedItem(item),
-    insights: item.insights.map((row) => ({
+    // Content-first order (MIRROR, READING, then the graph readings by
+    // strength) — createdAt alone would lead every young capture with the
+    // NOVELTY footnote written at capture time.
+    insights: sortInsights(item.insights).map((row) => ({
       id: row.id,
       type: row.type,
       headline: row.headline,

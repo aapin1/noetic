@@ -11,6 +11,10 @@
  * Modes, via `LLM_FIXTURES`:
  *   replay (default) — serve from tests/fixtures/llm; a miss is a hard error.
  *   record           — call the real API and write the response to disk.
+ *   record-missing   — replay what exists, record only the misses. For when
+ *                      one prompt changed: a full re-record re-rolls every
+ *                      non-deterministic call, and a re-rolled classification
+ *                      changes the topics that key every later call.
  *   off              — no interception at all.
  *
  * Production code is untouched: this only ever swaps `globalThis.fetch`.
@@ -22,7 +26,7 @@ import path from "node:path";
 const FIXTURE_DIR = path.resolve(__dirname, "../fixtures/llm");
 const OPENAI_HOST = "api.openai.com";
 
-export type FixtureMode = "replay" | "record" | "off";
+export type FixtureMode = "replay" | "record" | "record-missing" | "off";
 
 type FixtureFile = {
   /** Human-readable provenance so a fixture can be reviewed without decoding a hash. */
@@ -40,7 +44,7 @@ type FixtureFile = {
 
 export function fixtureMode(): FixtureMode {
   const raw = process.env.LLM_FIXTURES;
-  if (raw === "record" || raw === "off") return raw;
+  if (raw === "record" || raw === "record-missing" || raw === "off") return raw;
   return "replay";
 }
 
@@ -203,7 +207,7 @@ export function installLlmFixtures(): () => void {
 
   const realFetch = globalThis.fetch.bind(globalThis);
 
-  if (mode === "record" && !existsSync(FIXTURE_DIR)) {
+  if (mode !== "replay" && !existsSync(FIXTURE_DIR)) {
     mkdirSync(FIXTURE_DIR, { recursive: true });
   }
 
@@ -222,8 +226,9 @@ export function installLlmFixtures(): () => void {
     const method = init?.method ?? "GET";
     const key = await fixtureKey(url, method, init?.body);
 
-    if (mode === "replay") {
-      if (!existsSync(key.file)) throw missError(key);
+    const onDisk = existsSync(key.file);
+    if (mode === "replay" || (mode === "record-missing" && onDisk)) {
+      if (!onDisk) throw missError(key);
       const fixture = JSON.parse(readFileSync(key.file, "utf8")) as FixtureFile;
       return new Response(JSON.stringify(fixture.response.body), {
         status: fixture.response.status,
