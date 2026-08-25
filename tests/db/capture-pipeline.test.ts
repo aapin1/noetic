@@ -11,6 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { POST as postCapture, GET as listCapturesRoute } from "@/app/api/captures/route";
+import { GET as getCaptureRoute } from "@/app/api/captures/[id]/route";
 import { GET as getGraph } from "@/app/api/memory/graph/route";
 import { authedRequest, createTestUser, flushBackgroundWork, prisma, readJson } from "../support/db";
 
@@ -23,6 +24,39 @@ type CaptureResponse = {
   mapY: number | null;
 };
 
+type CaptureDetail = CaptureResponse & {
+  insights: { type: string; headline: string; body: string; strength: number }[];
+};
+
+/**
+ * The insight polish (which carries the READING) and the mirror run after the
+ * capture response with `void`. Replayed they land in milliseconds; while
+ * recording they are real round-trips, and truncating the database out from
+ * under them would skip the mirror's LLM call entirely (no rows, no call, no
+ * fixture).
+ */
+const BACKGROUND_LLM_MS = process.env.LLM_FIXTURES?.startsWith("record") ? 12_000 : 500;
+const RECORDING_TIMEOUT_MS = 90_000;
+
+/** The old NOVELTY bodies promised value later; the footnote must not. */
+const PROMISE = /save (a few )?more|as you add more|patterns will|will start to (emerge|show)|the system will/i;
+
+async function captureText(user: Awaited<ReturnType<typeof createTestUser>>, text: string) {
+  const { status, data } = await readJson<CaptureResponse>(
+    await postCapture(authedRequest(user, "/api/captures", { body: { kind: "TEXT", text } })),
+  );
+  expect(status).toBe(201);
+  await flushBackgroundWork(BACKGROUND_LLM_MS);
+  return data.id;
+}
+
+async function readDetail(user: Awaited<ReturnType<typeof createTestUser>>, id: string) {
+  const { data } = await readJson<CaptureDetail>(
+    await getCaptureRoute(authedRequest(user, `/api/captures/${id}`), { params: { id } }),
+  );
+  return data;
+}
+
 const STOICISM_TEXT =
   "Epictetus argues that freedom comes not from controlling events but from " +
   "correctly judging what is and is not within our power. The dichotomy of " +
@@ -32,6 +66,16 @@ const QUANTUM_TEXT =
   "The measurement problem in quantum mechanics asks why a superposition " +
   "collapses to a single outcome on observation. Decoherence explains the " +
   "appearance of collapse without resolving what selects the outcome.";
+
+const ATTENTION_TEXT =
+  "Attention is the scarce resource, not time. Deep work is the practice of " +
+  "protecting long uninterrupted blocks of it, and most modern tools are " +
+  "designed to fragment exactly that.";
+
+const HABITS_TEXT =
+  "Willpower is a poor foundation for change; environment design is a better " +
+  "one. Make the good habit the default and the bad one require effort, and " +
+  "behaviour follows without a fight.";
 
 describe("capture pipeline", () => {
   it("persists a text capture with topics and an embedding", async () => {
@@ -152,6 +196,59 @@ describe("capture pipeline", () => {
     expect(error?.code).toBe("VALIDATION_ERROR");
     expect(await prisma.capturedItem.count()).toBe(0);
   });
+
+  it("reads a first capture from its content alone, and leads with that reading", async () => {
+    const user = await createTestUser();
+    const id = await captureText(user, STOICISM_TEXT);
+
+    const detail = await readDetail(user, id);
+
+    // The one thing a first capture has is its content, so the first insight
+    // is the claim it makes and the catch in it — not a note that the graph
+    // is empty.
+    const [lead] = detail.insights;
+    expect(lead.type).toBe("READING");
+    expect(lead.headline.length).toBeGreaterThan(20);
+    expect(lead.body.length).toBeGreaterThan(20);
+    expect(lead.strength).toBe(1);
+
+    // The graph fact is still there, as a footnote that promises nothing.
+    const novelty = detail.insights.find((row) => row.type === "NOVELTY");
+    expect(novelty).toBeTruthy();
+    expect(novelty!.body).not.toMatch(PROMISE);
+    expect(detail.insights.indexOf(novelty!)).toBeGreaterThan(0);
+  }, RECORDING_TIMEOUT_MS);
+
+  it("writes the mirror on the third capture, leads with it there, and never writes a second", async () => {
+    const user = await createTestUser();
+    const ids = [
+      await captureText(user, STOICISM_TEXT),
+      await captureText(user, QUANTUM_TEXT),
+      await captureText(user, ATTENTION_TEXT),
+    ];
+
+    const mirrors = await prisma.insight.findMany({ where: { userId: user.id, type: "MIRROR" } });
+    expect(mirrors).toHaveLength(1);
+    expect(mirrors[0].capturedItemId).toBe(ids[2]);
+    expect(mirrors[0].headline.length).toBeGreaterThan(20);
+    expect(mirrors[0].body.length).toBeGreaterThan(20);
+    // Second person: it is about the reader, not the items.
+    expect(mirrors[0].headline).toMatch(/\byou\b|\byou'/i);
+    expect((mirrors[0].evidence as { captureIds: string[] }).captureIds.sort()).toEqual([...ids].sort());
+
+    // It outranks the capture's own reading on the screen.
+    const detail = await readDetail(user, ids[2]);
+    expect(detail.insights[0].type).toBe("MIRROR");
+    expect(detail.insights[1].type).toBe("READING");
+
+    // The first two captures carry no mirror.
+    const earlier = await readDetail(user, ids[0]);
+    expect(earlier.insights.some((row) => row.type === "MIRROR")).toBe(false);
+
+    // One per account: the fourth capture does not write another.
+    await captureText(user, HABITS_TEXT);
+    expect(await prisma.insight.count({ where: { userId: user.id, type: "MIRROR" } })).toBe(1);
+  }, RECORDING_TIMEOUT_MS);
 
   it("records the client clock for the streak day", async () => {
     const user = await createTestUser();

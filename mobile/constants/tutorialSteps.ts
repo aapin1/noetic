@@ -119,13 +119,16 @@ export const TUTORIAL_DEMO_CAPTURE = {
   caption: null,
   mediaUrl: null,
   insights: [
+    // Shaped like the READING every real first capture gets: the claim the
+    // content makes, and the catch in it — so the walkthrough shows the actual
+    // first reward rather than a description of how insights will work later.
     {
       id: 'tutorial-demo-insight',
-      type: 'NOVELTY' as const,
-      headline: 'Curiosity as a compass',
+      type: 'READING' as const,
+      headline: 'Curiosity is a better guide to great work than ambition, because it points at problems you will actually stay with.',
       body:
-        "This is what an insight looks like: mneme's read on how a capture fits what you've saved. The essay argues that curiosity is a better guide than ambition, because it points at problems you'll actually stay with. As your map grows, insights start connecting new saves to old ones.",
-      strength: 0.8,
+        'It assumes you can afford to follow curiosity for years before it pays — advice from someone whose bets already paid off.',
+      strength: 1,
       evidence: null,
     },
   ],

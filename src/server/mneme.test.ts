@@ -188,6 +188,7 @@ describe("cognition helpers", () => {
       itemTitle: "Title",
       drafts: [...drafts],
     });
-    expect(result[0]?.headline).toBe("Old headline");
+    expect(result.insights[0]?.headline).toBe("Old headline");
+    expect(result.reading).toBeNull();
   });
 });

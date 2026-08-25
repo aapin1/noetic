@@ -73,6 +73,34 @@ const STYLE_VOICE: Record<InsightStyle, {
   },
 };
 
+/**
+ * Footnote strength for NOVELTY (two of four bars). It carries no reading of
+ * the content, so it must never outrank one — READING and MIRROR are written
+ * at strength 1 and sort above it everywhere.
+ */
+export const NOVELTY_STRENGTH = 0.4;
+
+/**
+ * Display order for a capture's insights. The content-first readings lead:
+ * MIRROR (about the person) above READING (about this capture) above the
+ * graph-derived kinds, which then fall by strength. Ordering by createdAt
+ * alone put NOVELTY first on every young capture — it is written at capture
+ * time while READING/MIRROR land seconds later from the background polish.
+ */
+const INSIGHT_RANK: Partial<Record<InsightType, number>> = {
+  [InsightType.MIRROR]: 0,
+  [InsightType.READING]: 1,
+};
+
+export function sortInsights<T extends { type: InsightType; strength: number; createdAt?: Date }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const rank = (INSIGHT_RANK[a.type] ?? 2) - (INSIGHT_RANK[b.type] ?? 2);
+    if (rank !== 0) return rank;
+    if (b.strength !== a.strength) return b.strength - a.strength;
+    return (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0);
+  });
+}
+
 export function draftInsights(args: {
   style: InsightStyle;
   itemTitle: string;
@@ -115,15 +143,22 @@ export function draftInsights(args: {
     return drafts;
   }
 
+  // NOVELTY is a footnote, not the reward. Its whole semantic content is
+  // "nothing here yet", and a first capture used to get it as the ONLY
+  // insight — three sentences narrating the app's own emptiness and promising
+  // value later ("save a few more and patterns will start to emerge"). The
+  // reward for a first capture is now the READING the polish adds from the
+  // content itself (see polishInsights); this line just states the graph fact
+  // once, at footnote strength, and never promises anything.
   if (args.isFirstCapture && !args.contentThin) {
     drafts.push({
       type: InsightType.NOVELTY,
       headline: voice.novelty(dominantTopic),
       body: dominantTopic
-        ? `This is your first saved item under ${dominantTopic} — the graph begins here. Every subsequent capture in this area will build connections back to this one. Save a few more on the same topic and patterns will start to emerge.`
-        : "This is your first capture in mneme — the memory graph starts here. As you add more items, the system will surface connections, recurring themes, and shifts in your thinking over time.",
+        ? `Your first capture under ${dominantTopic}. Nothing of yours sits near it yet.`
+        : "Your first capture. Nothing of yours sits near it yet.",
       evidence: { dominantTopic },
-      strength: 1,
+      strength: NOVELTY_STRENGTH,
     });
     return drafts;
   }
@@ -254,10 +289,10 @@ export function draftInsights(args: {
       type: InsightType.NOVELTY,
       headline: voice.novelty(dominantTopic),
       body: dominantTopic
-        ? `Nothing in your existing record closely matches this under ${dominantTopic}. That makes it a genuine new signal — a first data point in a direction your thinking hasn't gone before. Save more on this topic and the graph will start to show you where it connects.`
-        : "Nothing in your existing record closely matches this capture. It stands alone for now — a first node in a new region of your graph. As you add more, the system will find the threads that connect it to what you already know.",
+        ? `Nothing you've saved sits close to this under ${dominantTopic}. It stands on its own for now.`
+        : "Nothing you've saved sits close to this. It stands on its own for now.",
       evidence: { dominantTopic },
-      strength: 0.6,
+      strength: NOVELTY_STRENGTH,
     });
   }
 

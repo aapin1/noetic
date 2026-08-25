@@ -85,6 +85,11 @@ enum InsightType {
   CONTRADICTS
   NOVELTY
   RECUR
+  // Content-only: the claim the capture makes and the catch in it. Needs no
+  // corpus, so it is the one insight a first capture can carry.
+  READING
+  // About the person, not the capture: the read at three captures.
+  MIRROR
 }
 
 enum MemoryEdgeType {

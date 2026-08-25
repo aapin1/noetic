@@ -1,4 +1,4 @@
-import type { InsightStyle } from "@prisma/client";
+import { InsightType, type InsightStyle } from "@prisma/client";
 import type { InsightDraft } from "@/server/cognition/insights";
 import { GENERAL_TOPICS, normalizeGeneral } from "@/server/cognition/generalTopics";
 
@@ -528,25 +528,74 @@ function groundingDirective(grounding: "rich" | "partial" | "thin" | undefined):
 }
 
 /**
- * Rewrites insight drafts with deep, specific intellectual analysis.
+ * The model for the two calls that carry a point of view — the READING's
+ * catch and the MIRROR. Both run in the background (latency is free) and the
+ * mirror runs once per account, so a stronger model here costs almost nothing
+ * per user. Recorded fixtures show the mini model writing "many people
+ * believe…" catches — an opinion poll, not a catch — even when told not to;
+ * this is the knob to turn if that shows up in production.
+ */
+const INSIGHT_MODEL = () =>
+  process.env.OPENAI_INSIGHT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+
+export type PolishResult = {
+  /** The drafts, rewritten in place — same order and length as the input. */
+  insights: InsightDraft[];
+  /**
+   * The READING: the claim this content makes and the catch in it, written
+   * from the content alone. Null when the material was too thin to support one
+   * (title-only captures never get one) or the model declined.
+   */
+  reading: InsightDraft | null;
+};
+
+/**
+ * Rewrites insight drafts with deep, specific intellectual analysis, and adds
+ * the one insight that needs no corpus at all: the READING.
  *
- * Goals:
+ * Every draft is a graph statistic (neighbour counts, topic counts, a
+ * trajectory delta), so a polished draft is a nicer-sounding graph statistic —
+ * and on a first capture the only draft is NOVELTY, which says "nothing here
+ * yet". The content the user just chose to save is the one asset that is
+ * fully present at N=1, and it was never itself the reward. The READING is
+ * written in the same call (no extra LLM round-trip, no extra cost): the
+ * claim the content actually makes, and the strongest thing wrong with it or
+ * quietly assumed by it. That second half is the point of view — a summary is
+ * a commodity; a catch is an opinion.
+ *
+ * Goals for the drafts:
  *  - Headlines are claims, not descriptions.
  *  - Bodies explain WHY something is significant — specific implications, named traditions, non-obvious angles.
  *  - open_question surfaces one generative question the user likely hasn't articulated.
  *  - Neighbor connections name the specific intellectual bridge, not just the category.
  */
-export async function polishInsights(args: PolishContext): Promise<InsightDraft[]> {
+export async function polishInsights(args: PolishContext): Promise<PolishResult> {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey || args.drafts.length === 0) return args.drafts;
+  if (!apiKey || args.drafts.length === 0) return { insights: args.drafts, reading: null };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  // Thin = a title and nothing else. The grounding directive already forbids
+  // inventing the content's argument; a READING is nothing but the content's
+  // argument, so it is not even asked for.
+  const wantReading = args.contentGrounding !== "thin";
 
   const systemPrompt = [
     "You are a knowledge analyst in a personal memory graph.",
     "Rewrite each insight draft to be genuinely useful and CONCISE. Say something smart — do not perform being smart. Plain, direct language beats erudition. If a phrase only exists to sound clever, cut it.",
     "",
+    wantReading
+      ? [
+          "READING — the first thing the user sees, and the only insight that needs nothing but the content:",
+          "- claim: the one thing this content actually argues or asserts, stated AS a claim in one plain sentence — never 'the video discusses…' or 'the author explores…'. If the content is the user's own note, the claim is what THEY are asserting.",
+          "- catch: the specific case the claim fails on, the assumption it needs that it doesn't give, or the evidence or tradition that cuts against it. One sentence, specific to THIS claim, stated as a fact about the world — not as what other people think. Bring in what you know; never invent what the content itself said, and never restate a limitation the content already admits.",
+          "- Banned catch shapes: 'many people believe/argue…', 'some would say…', 'this overlooks…', 'it oversimplifies…', 'it doesn't address…', 'it ignores the role of…', 'individual differences', 'complexities', 'nuances'. An opinion poll is not a catch, and those phrases are true of every claim ever made.",
+          "- Shape (a different subject): claim 'Remote work makes teams more productive.' catch 'The studies measure output per hour from people who chose to be remote, and say nothing about the juniors who used to learn by overhearing.'",
+          "- Both must be grounded in content_text or user_account_of_content. If the material is too thin to know what it claims (a title, hashtags, a caption, a fragment), set reading to null. A null is better than a guess.",
+          "",
+        ].join("\n")
+      : "",
     "HEADLINE:",
     "- One plain sentence: a specific point about this capture or its link to the user's other saved items.",
     "- No jargon, name-dropping, or rhetorical flourish for effect. Say the actual point.",
@@ -560,6 +609,8 @@ export async function polishInsights(args: PolishContext): Promise<InsightDraft[
     "",
     "OPEN_QUESTION (optional):",
     "- Include ONLY if a genuinely generative, specific question exists. One short line. Omit it otherwise — never force one.",
+    "",
+    "NOVELTY drafts: one short line stating that nothing saved yet sits near this. Never promise what saving more will do — no 'save more', 'as you add more', 'patterns will emerge' — and never call one capture an 'interest'. It is a footnote, not the point.",
     "",
     "Do not start with 'This capture', 'This article', or the title verbatim. Do not overstate thin evidence.",
     args.mediaContext
@@ -576,12 +627,19 @@ export async function polishInsights(args: PolishContext): Promise<InsightDraft[
     `${styleDirective(args.style)}`,
     "",
     "Return strictly valid JSON (no markdown):",
-    '{"insights": [{"index": N, "headline": "...", "body": "...", "open_question": "..."}]}',
+    wantReading
+      ? '{"reading": {"claim": "...", "catch": "..."} | null, "insights": [{"index": N, "headline": "...", "body": "...", "open_question": "..."}]}'
+      : '{"insights": [{"index": N, "headline": "...", "body": "...", "open_question": "..."}]}',
   ].filter(Boolean).join("\n");
 
   const userMessage = {
     title: args.itemTitle,
-    content_text: args.contentText?.slice(0, 1200) ?? "",
+    // Title and excerpt lead the combined text (sourceTokens), then the body.
+    // 1200 chars was enough to rewrite graph drafts; finding the claim of a
+    // transcript needs to see past its opening. This call runs in the
+    // background, so the extra input costs money (a fraction of a cent on the
+    // mini model), not latency.
+    content_text: args.contentText?.slice(0, 3000) ?? "",
     user_account_of_content: args.userContext?.slice(0, 1200) ?? "",
     topics: args.topicNames ?? [],
     about_work: args.mediaContext ?? undefined,
@@ -606,9 +664,10 @@ export async function polishInsights(args: PolishContext): Promise<InsightDraft[
         authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+        model: INSIGHT_MODEL(),
         temperature: 0.4,
-        max_tokens: 360,
+        // Two more sentences of output than before — the reading.
+        max_tokens: 520,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -617,34 +676,153 @@ export async function polishInsights(args: PolishContext): Promise<InsightDraft[
       }),
     });
 
-    if (!response.ok) return args.drafts;
+    if (!response.ok) return { insights: args.drafts, reading: null };
 
     const payload = (await response.json()) as {
       choices?: { message?: { content?: string } }[];
     };
     const content = payload.choices?.[0]?.message?.content;
-    if (!content) return args.drafts;
+    if (!content) return { insights: args.drafts, reading: null };
 
     const parsed = JSON.parse(content) as {
       insights?: { index: number; headline: string; body: string; open_question?: string }[];
+      reading?: { claim?: unknown; catch?: unknown } | null;
     };
-    if (!parsed.insights) return args.drafts;
 
-    return args.drafts.map((draft, index) => {
-      const replacement = parsed.insights?.find((e) => e.index === index);
-      if (!replacement?.headline) return draft;
-      return {
-        ...draft,
-        headline: replacement.headline.trim(),
-        body: replacement.body?.trim() || draft.body,
-        evidence: {
-          ...draft.evidence,
-          ...(replacement.open_question ? { open_question: replacement.open_question.trim() } : {}),
-        },
-      };
-    });
+    const insights = parsed.insights
+      ? args.drafts.map((draft, index) => {
+        const replacement = parsed.insights?.find((e) => e.index === index);
+        if (!replacement?.headline) return draft;
+        return {
+          ...draft,
+          headline: replacement.headline.trim(),
+          body: replacement.body?.trim() || draft.body,
+          evidence: {
+            ...draft.evidence,
+            ...(replacement.open_question ? { open_question: replacement.open_question.trim() } : {}),
+          },
+        };
+      })
+      : args.drafts;
+
+    // A reading needs both halves: a claim without a catch is a summary, and
+    // a summary is exactly the commodity this is not.
+    const claim = typeof parsed.reading?.claim === "string" ? parsed.reading.claim.trim() : "";
+    const catchLine = typeof parsed.reading?.catch === "string" ? parsed.reading.catch.trim() : "";
+    const reading: InsightDraft | null =
+      wantReading && claim.length > 0 && catchLine.length > 0
+        ? {
+          type: InsightType.READING,
+          headline: claim,
+          body: catchLine,
+          evidence: { grounding: args.contentGrounding ?? "rich" },
+          strength: 1,
+        }
+        : null;
+
+    return { insights, reading };
   } catch {
-    return args.drafts;
+    return { insights: args.drafts, reading: null };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** One of the first captures, as the mirror sees it. */
+export type MirrorSubject = {
+  title: string;
+  /** The AI summary, the user's own words, or null when only a title is known. */
+  gist: string | null;
+  topics: string[];
+};
+
+/**
+ * The read at three: one true, specific, slightly uncomfortable sentence about
+ * the PERSON, written from their first three captures. Not what the items are
+ * about — what the person is collecting. Three saves on mental training, the
+ * law of attraction and SAT prep are not "an interest in self-improvement";
+ * they are someone collecting techniques for controlling their own mind, and
+ * the app can say so at N=3 where every other reflective surface (You,
+ * terrain, wrapped) waits for 10, 15, 50 or a year.
+ *
+ * One call per user, ever (the caller guards on an existing MIRROR row).
+ * Returns null when the model can't say one true thing — a null is the
+ * honest outcome for three hashtag captions, and nothing is shown.
+ */
+export async function generateMirror(args: {
+  style: InsightStyle;
+  captures: MirrorSubject[];
+}): Promise<{ headline: string; body: string } | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey || args.captures.length === 0) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  const systemPrompt = [
+    `You have seen exactly ${args.captures.length} things a person chose to save — the first of everything they will ever save. Write the read on the person.`,
+    "",
+    "READ:",
+    "- One sentence, second person. True, specific, and a little uncomfortable: what this person is actually collecting, not what the items are about.",
+    "- It must be falsifiable — a sentence this person could push back on. Name the thing they keep reaching for (a kind of control, a kind of permission, a kind of certainty, a kind of excuse) in concrete words.",
+    "- Shape (different items): three saves on mental training, the law of attraction and SAT prep → 'You're not collecting information, you're collecting techniques for controlling your own mind.' Find this person's own thread in their own terms; do not reuse that sentence's wording.",
+    "- Horoscopes are banned: 'you collect insights that challenge conventional thinking' is true of anyone who saves anything. Banned words: 'insights', 'challenge', 'conventional', 'explore', 'complexities', 'perspectives', 'curious', 'diverse', 'eclectic', 'wide-ranging', 'interested in', 'passionate', 'journey'.",
+    "- If the items genuinely share nothing, say what the range itself says about how this person reads — still specific to these items, never 'you have varied interests'.",
+    "- Do not name the items in the read; that is what BECAUSE is for.",
+    "",
+    "BECAUSE:",
+    "- One sentence of evidence that names the items (short titles are fine) and shows the thread running through them.",
+    "",
+    "If the material is only titles and hashtags with no substance to read, return {\"read\": null}. A null is better than a guess.",
+    styleDirective(args.style),
+    "",
+    "Return strictly valid JSON (no markdown):",
+    '{"read": "...", "because": "..."} or {"read": null}',
+  ].join("\n");
+
+  const userMessage = {
+    captures: args.captures.map((c) => ({
+      title: c.title.slice(0, 160),
+      gist: c.gist?.slice(0, 500) ?? "",
+      topics: c.topics,
+    })),
+  };
+
+  try {
+    const response = await fetch(OPENAI_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: INSIGHT_MODEL(),
+        temperature: 0.5,
+        max_tokens: 220,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: JSON.stringify(userMessage) },
+        ],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as {
+      choices?: { message?: { content?: string } }[];
+    };
+    const content = payload.choices?.[0]?.message?.content;
+    if (!content) return null;
+
+    const parsed = JSON.parse(content) as { read?: unknown; because?: unknown };
+    const read = typeof parsed.read === "string" ? parsed.read.trim() : "";
+    const because = typeof parsed.because === "string" ? parsed.because.trim() : "";
+    if (read.length === 0 || because.length === 0) return null;
+    return { headline: read, body: because };
+  } catch {
+    return null;
   } finally {
     clearTimeout(timer);
   }

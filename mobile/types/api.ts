@@ -14,6 +14,8 @@ export type InsightType =
   | 'REINFORCES'
   | 'CONTRADICTS'
   | 'NOVELTY'
+  | 'READING'
+  | 'MIRROR'
   | 'RECUR';
 export type MemoryEdgeType =
   | 'RECURS'
