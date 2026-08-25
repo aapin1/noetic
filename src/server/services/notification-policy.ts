@@ -43,6 +43,8 @@ const CATEGORY_BY_TYPE: Record<NotificationType, PushCategory> = {
   [NotificationType.DORMANT_REVIVAL]: "resurface",
   [NotificationType.RESURFACE]: "resurface",
   [NotificationType.STREAK_HELD]: "streak",
+  [NotificationType.STREAK_AT_RISK]: "streak",
+  [NotificationType.NUDGE]: "resurface",
 };
 
 /**
@@ -145,6 +147,19 @@ export const CEILING_WINDOW_MS = 24 * 60 * 60 * 1000;
  */
 export const PENDING_TTL_MS = 36 * 60 * 60 * 1000;
 
+/**
+ * The evening streak reminder is the exception: "nothing captured today yet"
+ * is only true today. Held past midnight it would arrive next morning as a
+ * claim about the wrong day, so it gets the hours left in the evening and no
+ * more. Six covers a 7pm send held by the ceiling until quiet hours begin.
+ */
+export const STREAK_AT_RISK_TTL_MS = 6 * 60 * 60 * 1000;
+
+/** How long a pending notification of this type stays worth sending. */
+export function pendingTtlMs(type: NotificationType): number {
+  return type === NotificationType.STREAK_AT_RISK ? STREAK_AT_RISK_TTL_MS : PENDING_TTL_MS;
+}
+
 /** One user's push policy, as the send path needs it. */
 export type UserPushPolicy = {
   tzOffsetMinutes: number;
@@ -224,7 +239,7 @@ export function decideSend(args: {
 }): SendDecision {
   // Stale beats everything: there is no point asking whether a two-day-old
   // "capture today" is in quiet hours.
-  if (args.now.getTime() - args.createdAt.getTime() > PENDING_TTL_MS) return "drop";
+  if (args.now.getTime() - args.createdAt.getTime() > pendingTtlMs(args.type)) return "drop";
 
   // An opt-out is a standing answer, not a timing problem.
   if (!allowsCategory(args.policy, categoryOf(args.type))) return "drop";
@@ -281,6 +296,14 @@ export function byPriority(a: NotificationType, b: NotificationType): number {
 export const DAILY_SEND_HOUR = 9;
 
 /**
+ * The local hour of the one evening push: the streak reminder. Late enough
+ * that "nothing captured today yet" is a real observation rather than a
+ * greeting, early enough that a reply is still possible before the day ends,
+ * and two hours clear of the default quiet window so it is never held.
+ */
+export const EVENING_SEND_HOUR = 19;
+
+/**
  * Every UTC offset a real client can report, in minutes.
  *
  * Enumerated rather than expressed as a range because the range wraps midnight
@@ -327,8 +350,12 @@ const CATEGORY_COLUMN = {
  *    permanently invisible to both sweeps, which is a silent and total failure
  *    for exactly the oldest users.
  */
-export function dueThisHourWhere(now: Date, category?: PushCategory): Prisma.UserWhereInput {
-  const offsets = offsetsAtLocalHour(now, DAILY_SEND_HOUR);
+export function dueThisHourWhere(
+  now: Date,
+  category?: PushCategory,
+  hour: number = DAILY_SEND_HOUR,
+): Prisma.UserWhereInput {
+  const offsets = offsetsAtLocalHour(now, hour);
   const wantsCategory: Prisma.UserPreferenceWhereInput = category
     ? ({ [CATEGORY_COLUMN[category]]: true } as Prisma.UserPreferenceWhereInput)
     : {};

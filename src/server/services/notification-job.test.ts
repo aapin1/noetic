@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DbClient } from "@/server/db";
 import { runNotificationJob } from "@/server/services/notification-job";
+import { localDayIndex } from "@/server/services/streak";
 
 /**
  * The hourly tick. What is worth pinning here is not the selection logic — that
@@ -204,5 +205,149 @@ describe("the run log", () => {
 
     const next = await runNotificationJob({ db, now: new Date(NOW.getTime() + 3600_000) });
     expect(next.ran).toBe(true);
+  });
+});
+
+/**
+ * A tick with real users on it, at a UTC hour that is 9am for one offset and
+ * 7pm for another — both are due at once, on different sweeps.
+ */
+const SIXTEEN_UTC = new Date("2026-07-30T16:00:00Z");
+const DAY_MS = 86_400_000;
+const MORNING_TZ = -420; // 9am
+const EVENING_TZ = 180; // 7pm
+
+type DueUser = {
+  id: string;
+  tzOffsetMinutes: number | null;
+  pushStreak?: boolean;
+  /** Days of a run ending yesterday, in the user's local days. */
+  run: number;
+  tokens?: number;
+};
+
+function busyDb(users: DueUser[]) {
+  const { db, queries, leases } = idleDb();
+  const notifications: { recipientId: string; type: string; createdAt: Date }[] = [];
+  const byId = new Map(users.map((u) => [u.id, u]));
+
+  const captureDays = (u: DueUser) => {
+    const today = localDayIndex(SIXTEEN_UTC, u.tzOffsetMinutes ?? 0);
+    return Array.from({ length: u.run }, (_, i) => today - 1 - i);
+  };
+  const capturedAtFor = (u: DueUser) =>
+    captureDays(u).map((day) => ({
+      // Midday local, expressed as an instant.
+      capturedAt: new Date(day * DAY_MS - (u.tzOffsetMinutes ?? 0) * 60_000 + DAY_MS / 2),
+      id: `c-${day}`,
+      rawText: null,
+      contentItem: null,
+      topics: [],
+    }));
+
+  Object.assign(db, {
+    user: {
+      findMany: async () => {
+        queries["user.findMany"] = (queries["user.findMany"] ?? 0) + 1;
+        return users.map((u) => ({
+          id: u.id,
+          preference: { pushResurface: true, pushStreak: u.pushStreak ?? true, tzOffsetMinutes: u.tzOffsetMinutes },
+          deviceTokens: Array.from({ length: u.tokens ?? 1 }, (_, i) => ({ id: `t${i}` })),
+          capturedItems: capturedAtFor(u).slice(0, 1),
+        }));
+      },
+      findUnique: async () => null,
+    },
+    userPreference: {
+      findMany: async () => [],
+      findUnique: async (q: { where: { userId: string } }) => {
+        const u = byId.get(q.where.userId)!;
+        return {
+          tzOffsetMinutes: u.tzOffsetMinutes,
+          streakFrozenDays: [],
+          streakLastFreezeDay: null,
+          streakActivityDays: [],
+          pushStreak: u.pushStreak ?? true,
+        };
+      },
+      upsert: async () => ({}),
+    },
+    capturedItem: {
+      findMany: async (q: { where: { userId: string } }) => capturedAtFor(byId.get(q.where.userId)!),
+    },
+    memoryEdge: { findMany: async () => [] },
+    positionChallenge: { findFirst: async () => null },
+    notification: {
+      findMany: async () => [],
+      findFirst: async (q: { where: { recipientId: string; type?: string | { in: string[] }; createdAt?: { gte: Date } } }) => {
+        const types = typeof q.where.type === "string" ? [q.where.type] : q.where.type?.in;
+        const hit = notifications.find(
+          (n) => n.recipientId === q.where.recipientId
+            && (!types || types.includes(n.type))
+            && (!q.where.createdAt || n.createdAt >= q.where.createdAt.gte),
+        );
+        return hit ? { id: "existing" } : null;
+      },
+      create: async (q: { data: { recipientId: string; type: string } }) => {
+        notifications.push({ recipientId: q.data.recipientId, type: q.data.type, createdAt: SIXTEEN_UTC });
+        return { id: `n${notifications.length}` };
+      },
+      updateMany: async () => ({ count: 0 }),
+      groupBy: async () => [],
+    },
+  });
+
+  return { db, queries, leases, notifications };
+}
+
+describe("the evening hour", () => {
+  it("reminds the users for whom it is 7pm, and only them, in the same read", async () => {
+    const { db, queries, notifications } = busyDb([
+      { id: "evening", tzOffsetMinutes: EVENING_TZ, run: 5 },
+      { id: "morning", tzOffsetMinutes: MORNING_TZ, run: 5 },
+    ]);
+
+    const result = await runNotificationJob({ db, now: SIXTEEN_UTC });
+
+    expect(result.due).toBe(2);
+    expect(result.streakRisk).toEqual({ considered: 1, queued: 1 });
+    expect(notifications.filter((n) => n.type === "STREAK_AT_RISK").map((n) => n.recipientId))
+      .toEqual(["evening"]);
+    // Still one user read: the two hours are split from the offset, not queried twice.
+    expect(queries["user.findMany"]).toBe(1);
+  });
+
+  it("does not run the morning sweeps on the evening's users", async () => {
+    const { db, notifications } = busyDb([
+      { id: "evening", tzOffsetMinutes: EVENING_TZ, run: 5 },
+    ]);
+
+    const result = await runNotificationJob({ db, now: SIXTEEN_UTC });
+
+    expect(result.streak.considered).toBe(0);
+    expect(result.resurface.considered).toBe(0);
+    expect(notifications.every((n) => n.type === "STREAK_AT_RISK")).toBe(true);
+  });
+
+  it("skips the reminder for anyone who muted streak pushes or has no device", async () => {
+    const { db, notifications } = busyDb([
+      { id: "muted", tzOffsetMinutes: EVENING_TZ, run: 5, pushStreak: false },
+      { id: "no-device", tzOffsetMinutes: EVENING_TZ, run: 5, tokens: 0 },
+      { id: "short", tzOffsetMinutes: EVENING_TZ, run: 2 },
+    ]);
+
+    const result = await runNotificationJob({ db, now: SIXTEEN_UTC });
+
+    // Only the short run is even looked at; it is not long enough to remind.
+    expect(result.streakRisk).toEqual({ considered: 1, queued: 0 });
+    expect(notifications).toHaveLength(0);
+  });
+
+  it("counts the evening's work in the run log", async () => {
+    const { db } = busyDb([{ id: "evening", tzOffsetMinutes: EVENING_TZ, run: 5 }]);
+
+    await runNotificationJob({ db, now: SIXTEEN_UTC });
+
+    expect(loggedRuns(errorSpy)[0]).toMatchObject({ due: 1, considered: 1, queued: 1 });
   });
 });

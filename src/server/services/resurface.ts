@@ -10,8 +10,9 @@ import {
   type LoadedCapture,
 } from "@/server/services/intelligence";
 import { rankTopicMomentum } from "@/server/services/memory";
-import { dueThisHourWhere } from "@/server/services/notification-policy";
+import { clampOffset, dueThisHourWhere } from "@/server/services/notification-policy";
 import { createNotification } from "@/server/services/notifications";
+import { localDayIndex } from "@/server/services/streak";
 
 /**
  * The resurfacing engine: pick the single most interesting *unseen* thing about
@@ -30,14 +31,31 @@ export const RESURFACE_TYPES = [
   NotificationType.THREAD_MOMENTUM,
   NotificationType.DORMANT_REVIVAL,
   NotificationType.RESURFACE,
+  NotificationType.NUDGE,
 ] as const;
 
 /** Below this, a user has not written enough for us to say anything true. */
 const MIN_CORPUS = 5;
-/** The first-fragments comeback speaks only while the account is this young. */
-const EARLY_DAYS = 7;
-/** …and never about a capture from the same morning. */
+/**
+ * Below this the app is still mostly a promise: the map has little to connect
+ * and most observation tiers cannot fire. Getting a user here is the hard part,
+ * so under it the engine nudges toward capturing rather than staying silent.
+ * Matches TERRAIN_FORMING_MIN — the point at which the You page starts to show
+ * the long view forming.
+ */
+export const GROWTH_TARGET = 15;
+/** Growth prompts speak every other day, never daily. */
+const GROWTH_EVERY_DAYS = 2;
+/** Never nudge someone who captured this recently — they are plainly active. */
 const EARLY_MIN_AGE_MS = 12 * 60 * 60 * 1000;
+/**
+ * Days quiet at which the inactivity ladder speaks — once per rung, per
+ * absence. After the last rung the account is left alone; the sweep's own
+ * activity window retires it not long after.
+ */
+export const INACTIVITY_RUNGS = [3, 7, 14, 30] as const;
+/** An account that has never captured is nudged for this long after signup. */
+const NEVER_CAPTURED_WINDOW_DAYS = 30;
 /** The weakest tier (an old capture) needs a real corpus to not feel arbitrary. */
 const MIN_CORPUS_FOR_ANNIVERSARY = 12;
 const CAPTURE_SCAN_LIMIT = 200;
@@ -144,6 +162,71 @@ async function loadCaptures(userId: string, db: DbClient): Promise<LoadedCapture
 }
 
 /**
+ * When the user was last here, in their own days.
+ *
+ * "Here" is a capture or a /today visit — the two things the app records —
+ * plus signup, so a brand-new account with nothing in it still has a day to
+ * measure from. Both reads are best-effort: the sweep's fake databases and an
+ * account that predates the preferences row must both resolve to "unknown",
+ * which the re-engagement tiers read as "say nothing".
+ */
+async function loadActivity(
+  userId: string,
+  db: DbClient,
+): Promise<{ tzOffsetMinutes: number; activityDays: number[]; signupAt: Date | null }> {
+  let prefs: { tzOffsetMinutes: number | null; streakActivityDays: number[] } | null = null;
+  try {
+    prefs = await db.userPreference.findUnique({
+      where: { userId },
+      select: { tzOffsetMinutes: true, streakActivityDays: true },
+    });
+  } catch {
+    prefs = null;
+  }
+  let user: { createdAt: Date } | null = null;
+  try {
+    user = await db.user.findUnique({ where: { id: userId }, select: { createdAt: true } });
+  } catch {
+    user = null;
+  }
+  return {
+    tzOffsetMinutes: clampOffset(prefs?.tzOffsetMinutes),
+    activityDays: prefs?.streakActivityDays ?? [],
+    signupAt: user?.createdAt ?? null,
+  };
+}
+
+/**
+ * Where this account stands against the floors, as one honest sentence. The
+ * numbers are the real ones: MIN_CORPUS is where observations begin and
+ * GROWTH_TARGET is where the map starts connecting, so the promise made here
+ * is one the app keeps.
+ */
+function progressLine(count: number): string {
+  if (count < MIN_CORPUS) return `${count} of ${MIN_CORPUS} — mneme starts noticing patterns at ${MIN_CORPUS}.`;
+  return `${count} of ${GROWTH_TARGET} — the map starts connecting at ${GROWTH_TARGET}.`;
+}
+
+function quietPhrase(rung: number): string {
+  if (rung <= 3) return "three days";
+  if (rung <= 7) return "a week";
+  if (rung <= 14) return "two weeks";
+  return "a month";
+}
+
+/**
+ * The growth prompts, rotated by day so a user sees each in turn. Every one is
+ * a question about what they have been reading — the thing to do next — never
+ * about what they saved before, which has not changed since they saw it.
+ */
+const GROWTH_PROMPTS: { title: string; lead: string }[] = [
+  { title: "read or watched anything cool recently?", lead: "one capture is enough." },
+  { title: "what's the best thing you read this week?", lead: "save it before it slips." },
+  { title: "saved anything you disagreed with lately?", lead: "disagreement is where mneme gets interesting." },
+  { title: "a podcast, a thread, a page of a book", lead: "anything counts." },
+];
+
+/**
  * Every resurfacing key this user has already been sent.
  *
  * Kept in `Notification.payload.resurfaceKey` rather than a dedicated table —
@@ -171,9 +254,12 @@ async function loadSeenKeys(userId: string, db: DbClient): Promise<Set<string>> 
 /**
  * Pick the one thing worth telling this user, or null.
  *
- * Null is a real answer and by far the most common one. A weak push is worse
- * than no push: it teaches people that the app's notifications aren't worth
- * opening, which is the exact failure this whole feature exists to avoid.
+ * Null is a real answer and, past the growth target, by far the most common
+ * one. A weak push is worse than no push: it teaches people that the app's
+ * notifications aren't worth opening, which is the exact failure this whole
+ * feature exists to avoid. Under the target the calculus flips — the app has
+ * nothing to show yet, and the only push that helps is the one that gets them
+ * to the point where it does.
  */
 export async function selectResurfaceCandidate(args: {
   userId: string;
@@ -206,10 +292,21 @@ export async function selectResurfaceCandidate(args: {
   });
   if (recent) return null;
 
-  const [captures, seen] = await Promise.all([
+  const [captures, seen, activity] = await Promise.all([
     loadCaptures(args.userId, db),
     loadSeenKeys(args.userId, db),
+    loadActivity(args.userId, db),
   ]);
+
+  // The user's last day here, or null when we have no clock to measure from.
+  const tz = activity.tzOffsetMinutes;
+  const todayIdx = localDayIndex(now, tz);
+  const lastActiveDay = Math.max(
+    captures[0] ? localDayIndex(captures[0].capturedAt, tz) : -Infinity,
+    activity.activityDays.length ? Math.max(...activity.activityDays) : -Infinity,
+    activity.signupAt ? localDayIndex(activity.signupAt, tz) : -Infinity,
+  );
+  const daysQuiet = Number.isFinite(lastActiveDay) ? todayIdx - lastActiveDay : null;
 
   // ── 0. a challenge to a staked position ───────────────────────────────────
   // Above every other tier, and above the corpus floor: the floor exists
@@ -249,42 +346,32 @@ export async function selectResurfaceCandidate(args: {
     }
   }
 
-  // ── 0.5. the first-fragments comeback ─────────────────────────────────────
-  // The corpus floor exists because a thin corpus can't support a true
-  // observation — but in an account's first days there is something truer to
-  // say than any observation: onboarding ends on "tomorrow morning i'll bring
-  // one of these back to you", and this tier is that promise kept. It speaks
-  // only while the corpus is both under the floor and younger than a week
-  // (a stalled months-old account gets silence, not a random echo), brings
-  // each early capture back at most once, oldest first — the first thought
-  // returns first — and skips anything under twelve hours old so a
-  // same-morning save can't come back before lunch.
-  if (captures.length > 0 && captures.length < MIN_CORPUS) {
-    const earliest = captures[captures.length - 1]!;
-    if (now.getTime() - earliest.capturedAt.getTime() <= EARLY_DAYS * DAY_MS) {
-      const oldestFirst = [...captures].reverse();
-      for (const item of oldestFirst) {
-        const age = now.getTime() - item.capturedAt.getTime();
-        if (age < EARLY_MIN_AGE_MS) continue;
-        const key = `first-thought:${item.id}`;
-        if (seen.has(key)) continue;
-        const when = age <= 2 * DAY_MS ? "yesterday" : "a few days ago";
-        return {
-          type: NotificationType.RESURFACE,
-          key,
-          title: "still on your mind?",
-          body: `you saved “${short(item.label)}” ${when}. see what it sits near now.`,
-          // The /today ritual, same as the anniversary tier: it carries the
-          // capture plus its strongest edge, and opening it credits the day.
-          deepLink: "/today",
-          payload: { resurfaceKey: key, captureId: item.id },
-        };
+  // ── the re-engagement fallback ────────────────────────────────────────────
+  // Reached whenever no observation is left to make. Neither of these is an
+  // observation — they are invitations — and an invitation is always weaker
+  // than a true thing about the user's own thinking, so every observational
+  // tier is tried first.
+  //
+  // The inactivity ladder speaks at fixed rungs of absence, once each: the
+  // highest rung reached whose key is unseen, so a tick that was missed (or
+  // spent on an observation) cannot stack up into several. A return resets
+  // the ladder, because the key is bound to the day they left. The growth
+  // prompt covers the days in between for accounts still under the target.
+  const reengage = (): ResurfaceCandidate | null => {
+    if (daysQuiet !== null) {
+      const rung = [...INACTIVITY_RUNGS].reverse().find((r) => daysQuiet >= r);
+      const withinWindow = captures.length > 0 || daysQuiet <= NEVER_CAPTURED_WINDOW_DAYS;
+      if (rung !== undefined && withinWindow) {
+        const key = `inactive:${rung}:${lastActiveDay}`;
+        if (!seen.has(key)) return inactivityCandidate({ key, rung, captures, now });
       }
     }
-    return null;
-  }
+    return growthCandidate({ captures, seen, todayIdx, daysQuiet, now });
+  };
 
-  if (captures.length < MIN_CORPUS) return null;
+  // Under the floor nothing observational can be true, but an invitation
+  // toward the floor can be.
+  if (captures.length < MIN_CORPUS) return reengage();
 
   const byId = new Map(captures.map((c) => [c.id, c]));
   const allGroups = groupCapturesByTopic(captures, 2);
@@ -408,7 +495,7 @@ export async function selectResurfaceCandidate(args: {
   // ── 5. something you saved a while back ───────────────────────────────────
   // The floor, not the goal: only reached when nothing above fired, and only
   // for someone with enough history that a 30-day-old capture means something.
-  if (captures.length < MIN_CORPUS_FOR_ANNIVERSARY) return null;
+  if (captures.length < MIN_CORPUS_FOR_ANNIVERSARY) return reengage();
 
   for (const days of ANNIVERSARIES) {
     const target = now.getTime() - days * DAY_MS;
@@ -433,7 +520,84 @@ export async function selectResurfaceCandidate(args: {
     };
   }
 
-  return null;
+  return reengage();
+}
+
+/**
+ * The inactivity push. For an account with enough to show, it names the thread
+ * they were building and points at it; for a thin one, it asks the only
+ * question that moves them forward — what have you been reading — and says
+ * honestly how far they are from the app getting interesting.
+ */
+function inactivityCandidate(args: {
+  key: string;
+  rung: number;
+  captures: LoadedCapture[];
+  now: Date;
+}): ResurfaceCandidate {
+  const { key, rung, captures, now } = args;
+  const quiet = quietPhrase(rung);
+  const base = { type: NotificationType.NUDGE, key };
+
+  if (captures.length >= GROWTH_TARGET) {
+    const [top] = rankByActivity(groupCapturesByTopic(captures, 2), now)
+      .filter((g) => !isGeneralTopic(g.topicName));
+    if (top) {
+      return {
+        ...base,
+        title: `you were building something on ${top.topicName.toLowerCase()}`,
+        body: `${quiet} quiet, and it's still there. read anything since?`,
+        deepLink: `/archive/${top.topicId}`,
+        payload: { resurfaceKey: key, kind: "inactive", days: rung, topicId: top.topicId },
+      };
+    }
+  }
+
+  return {
+    ...base,
+    title: "read or watched anything cool recently?",
+    body: captures.length === 0
+      ? `${quiet} since you joined and nothing captured yet. one is enough to start.`
+      : `${quiet} since your last capture. ${progressLine(captures.length)}`,
+    deepLink: "/(tabs)",
+    payload: { resurfaceKey: key, kind: "inactive", days: rung, captures: captures.length },
+  };
+}
+
+/**
+ * The growth prompt: every other day, for an account still under the target,
+ * when nothing truer fired. Never for someone who is plainly active (captured
+ * within twelve hours, or here today), and never once the inactivity ladder
+ * has taken over — that is a different conversation.
+ */
+function growthCandidate(args: {
+  captures: LoadedCapture[];
+  seen: Set<string>;
+  todayIdx: number;
+  daysQuiet: number | null;
+  now: Date;
+}): ResurfaceCandidate | null {
+  const { captures, seen, todayIdx, daysQuiet, now } = args;
+  if (captures.length >= GROWTH_TARGET) return null;
+  if (daysQuiet === null || daysQuiet < 1) return null;
+  if (daysQuiet >= INACTIVITY_RUNGS[0]) return null;
+  if (captures[0] && now.getTime() - captures[0].capturedAt.getTime() < EARLY_MIN_AGE_MS) return null;
+
+  const bucket = Math.floor(todayIdx / GROWTH_EVERY_DAYS);
+  const key = `growth:${bucket}`;
+  if (seen.has(key)) return null;
+
+  const prompt = GROWTH_PROMPTS[bucket % GROWTH_PROMPTS.length]!;
+  return {
+    type: NotificationType.NUDGE,
+    key,
+    title: prompt.title,
+    body: captures.length === 0
+      ? `${prompt.lead} nothing captured yet — the first one starts the map.`
+      : `${prompt.lead} ${progressLine(captures.length)}`,
+    deepLink: "/(tabs)",
+    payload: { resurfaceKey: key, kind: "growth", captures: captures.length },
+  };
 }
 
 /**

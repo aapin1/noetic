@@ -22,6 +22,10 @@ interface Props {
  * that statement is the permission ask. Replaces the old onboarding primer
  * slide, which asked before the app had earned anything.
  *
+ * The promise is the one the engine actually keeps: it speaks when the map
+ * notices something (see services/resurface.ts), and checks in when the
+ * user has gone quiet — not "tomorrow morning", which nothing guarantees.
+ *
  * Same one-shot discipline as PushPrimer: iOS grants one system prompt per
  * install, so both paths mark the ask spent.
  */
@@ -38,16 +42,16 @@ export function ComebackPromise({ visible, fragmentCount, onDecline, onAccept }:
 
           <Text variant="serif" color="secondary" style={{ lineHeight: 26 }}>
             {fragmentCount === 1
-              ? 'that thought is on your map now. here is the whole point of putting it there:'
-              : 'those thoughts are on your map now. here is the whole point of putting them there:'}
+              ? 'that thought is on your map now. as more land, mneme starts to notice things — two that disagree, a thread picking up.'
+              : 'those thoughts are on your map now. as more land, mneme starts to notice things — two that disagree, a thread picking up.'}
           </Text>
 
           <Text variant="serif" style={{ lineHeight: 26, marginTop: Spacing[4], color: c.text }}>
-            tomorrow morning i'll bring one of these back to you.
+            want a nudge when that happens?
           </Text>
 
           <Text variant="monoSmall" style={{ color: c.faint, marginTop: Spacing[5], letterSpacing: 1 }}>
-            once a day at most. no badges, no counts.
+            once a day at most. no badges.
           </Text>
 
           <View style={styles.actions}>
@@ -58,7 +62,7 @@ export function ComebackPromise({ visible, fragmentCount, onDecline, onAccept }:
             </Pressable>
             <Pressable onPress={onAccept} hitSlop={8} style={styles.action}>
               <Text variant="monoSmall" style={{ color: c.text, letterSpacing: 1 }}>
-                do that →
+                yes →
               </Text>
             </Pressable>
           </View>

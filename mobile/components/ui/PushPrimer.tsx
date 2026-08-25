@@ -13,14 +13,16 @@ interface Props {
 }
 
 /**
- * The pre-permission sheet, shown once, after a first capture actually lands.
+ * The pre-permission sheet, shown once, at the first quiet moment after a
+ * first capture has landed and its pill has gone.
  *
  * Two rules shape the copy. It promises the thing rather than the mechanism —
  * "when two things you saved disagree", not "enable notifications" — because
  * the system prompt that follows is one-shot per install and a vague ask spends
  * it for nothing. And it states the ceiling up front, since the honest answer to
  * "how often will this bother me" is the main thing standing between a person
- * and yes.
+ * and yes. Three short lines: it arrives after the pill has already had the
+ * user's attention once, so it earns none of it back by being long.
  */
 export function PushPrimer({ visible, onDecline, onAccept }: Props) {
   const c = useThemeColors();
@@ -30,22 +32,20 @@ export function PushPrimer({ visible, onDecline, onAccept }: Props) {
       <View style={styles.overlay}>
         <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
           <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 2, marginBottom: Spacing[3] }}>
-            SAVED
+            WHILE YOU'RE AWAY
           </Text>
 
           <Text variant="serif" color="secondary" style={{ lineHeight: 26 }}>
-            mneme keeps reading after you save. it notices when two things you
-            saved disagree, when a thread starts moving, when something you cared
-            about has gone quiet.
+            mneme keeps reading after you save — and notices when two things you
+            saved disagree, or a thread starts moving.
           </Text>
 
-          <Text variant="serif" color="secondary" style={{ lineHeight: 26, marginTop: Spacing[4] }}>
-            we can tell you when that happens. otherwise you'd only find out by
-            opening the app and looking.
+          <Text variant="serif" style={{ lineHeight: 26, marginTop: Spacing[4], color: c.text }}>
+            want to hear when it does?
           </Text>
 
           <Text variant="monoSmall" style={{ color: c.faint, marginTop: Spacing[5], letterSpacing: 1 }}>
-            once a day at most. no badges, no counts.
+            once a day at most. no badges.
           </Text>
 
           <View style={styles.actions}>
@@ -56,7 +56,7 @@ export function PushPrimer({ visible, onDecline, onAccept }: Props) {
             </Pressable>
             <Pressable onPress={onAccept} hitSlop={8} style={styles.action}>
               <Text variant="monoSmall" style={{ color: c.text, letterSpacing: 1 }}>
-                tell me →
+                yes, tell me →
               </Text>
             </Pressable>
           </View>

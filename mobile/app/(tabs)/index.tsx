@@ -3686,8 +3686,14 @@ export default function MapScreen() {
   }, [pillPresent, pillSlide]);
   const savedPillTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pillDelayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // True while a pill is scheduled but not yet on screen. The composer path
+  // clears the "logging" pill and shows the "saved" one 1.8s later; anything
+  // waiting for a quiet moment must see that gap as busy, or it lands in it —
+  // which is exactly how the push sheet used to arrive on top of the pill.
+  const [pillPending, setPillPending] = useState(false);
   const showSavedPill = useCallback((id: string) => {
     if (savedPillTimer.current) clearTimeout(savedPillTimer.current);
+    setPillPending(false);
     setSavedPill({ phase: 'saved', id });
     savedPillTimer.current = setTimeout(() => setSavedPill(null), 10000);
   }, []);
@@ -3722,19 +3728,23 @@ export default function MapScreen() {
   // carries "insight →" and "atlas →" actions and lives for ten seconds, so a
   // timer raced it: the primer landed on top of the one prompt the user was
   // still deciding about, and both wanted attention at once. Now it waits for
-  // the pill to go, the capture sheet to close, any drawer to dismiss, and the
-  // map to be back in front — whether that takes two seconds or two minutes.
+  // the pill to go (or, just after a capture, to arrive and then go), the
+  // capture sheet to close, any drawer to dismiss, the walkthrough to finish,
+  // and the map to be back in front — whether that takes ten seconds or ten
+  // minutes. It does not need to be soon; it needs to be alone.
   useEffect(() => {
     if (!pushPrimerArmed) return;
-    if (savedPill || showCapture || drawerVisible || !screenFocused) return;
-    // A short beat after things settle, so it reads as a follow-up rather than
-    // something that was queued behind the pill all along.
+    if (savedPill || pillPending || showCapture || drawerVisible || !screenFocused) return;
+    if (tutorialActive) return;
+    // A real pause after things settle — long enough that the node landing
+    // and the pill leaving are over, so this reads as its own moment rather
+    // than the next thing in a queue.
     const timer = setTimeout(() => {
       setShowPushPrimer(true);
       setPushPrimerArmed(false);
-    }, 900);
+    }, 3000);
     return () => clearTimeout(timer);
-  }, [pushPrimerArmed, savedPill, showCapture, drawerVisible, screenFocused]);
+  }, [pushPrimerArmed, savedPill, pillPending, showCapture, drawerVisible, screenFocused, tutorialActive]);
 
   // Both paths mark it asked: iOS grants exactly one system prompt per install,
   // so a "not now" that we later re-asked would just be a sheet with no prompt
@@ -3903,6 +3913,7 @@ export default function MapScreen() {
         // taps "insight →" the screen opens instantly from cache.
         void prefetchQuery(`capture:${res.id}`, () => api.captures.get(res.id));
         setSavedPill(null);
+        setPillPending(true);
         if (pillDelayTimer.current) clearTimeout(pillDelayTimer.current);
         pillDelayTimer.current = setTimeout(() => showSavedPill(res.id), 1800);
         // Ask for push here and nowhere else: the moment a capture has actually
@@ -3924,6 +3935,7 @@ export default function MapScreen() {
           reason: failureReason(e),
         });
         setSavedPill(null);
+        setPillPending(false);
         Alert.alert(
           'Capture failed',
           e instanceof Error ? e.message : 'Could not save that. Try again.',
@@ -4316,14 +4328,18 @@ export default function MapScreen() {
   }, [disclosure, promiseArmed, promiseState, graphData]);
   useEffect(() => {
     if (!promiseArmed) return;
-    if (savedPill || showCapture || drawerVisible || !screenFocused) return;
+    if (savedPill || pillPending || showCapture || drawerVisible || !screenFocused) return;
+    if (tutorialActive || showPushPrimer) return;
     const timer = setTimeout(() => {
       setPromiseArmed(false);
       disclosure.markSeen(EVENT_FLAGS.promiseOffered);
       setPromiseState({ fragments: graphData?.totalCount ?? 2 });
-    }, 1200);
+    }, 3000);
     return () => clearTimeout(timer);
-  }, [promiseArmed, savedPill, showCapture, drawerVisible, screenFocused, disclosure, graphData]);
+  }, [
+    promiseArmed, savedPill, pillPending, showCapture, drawerVisible, screenFocused,
+    tutorialActive, showPushPrimer, disclosure, graphData,
+  ]);
 
   // Discovery (multi-select) highlights — the selected edges and nodes, drawn
   // ON TOP of the base graph in their own tiny layer. Kept out of graphLayer so

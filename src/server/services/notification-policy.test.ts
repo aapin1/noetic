@@ -5,6 +5,10 @@ import {
   categoryOf,
   DAILY_SEND_HOUR,
   decideSend,
+  DEFAULT_QUIET_END_HOUR,
+  DEFAULT_QUIET_START_HOUR,
+  dueThisHourWhere,
+  EVENING_SEND_HOUR,
   isQuietHour,
   localHour,
   MAX_PUSHES_PER_DAY,
@@ -121,6 +125,42 @@ describe("who is due this hour", () => {
     for (const offset of offsetsAtLocalHour(at, DAILY_SEND_HOUR)) {
       expect(localHour(at, offset)).toBe(DAILY_SEND_HOUR);
     }
+  });
+
+  it("selects a different slice for the evening hour, and never the morning one", () => {
+    // At 16:00Z it is 9am in UTC-7 and 7pm in UTC+3. Whoever is due for the
+    // morning sweep must not also be due for the evening one on the same tick.
+    const at = new Date("2026-07-30T16:00:00Z");
+    const morning = offsetsAtLocalHour(at, DAILY_SEND_HOUR);
+    const evening = offsetsAtLocalHour(at, EVENING_SEND_HOUR);
+    expect(morning).toContain(-420);
+    expect(evening).toContain(180);
+    expect(morning.filter((o) => evening.includes(o))).toEqual([]);
+
+    const where = dueThisHourWhere(at, undefined, EVENING_SEND_HOUR) as {
+      OR: { preference: { is: { tzOffsetMinutes?: { in: number[] } } } }[];
+    };
+    expect(where.OR[0].preference.is.tzOffsetMinutes?.in).toEqual(evening);
+  });
+
+  it("the evening hour sits outside the default quiet window", () => {
+    expect(isQuietHour(EVENING_SEND_HOUR, DEFAULT_QUIET_START_HOUR, DEFAULT_QUIET_END_HOUR)).toBe(false);
+  });
+});
+
+describe("the evening reminder's shelf life", () => {
+  it("drops a streak reminder that has slipped past its evening, but keeps an observation that old", () => {
+    // Both created at 7pm; it is now 2am. The contradiction is as true as
+    // ever. "nothing captured today yet" is about yesterday now.
+    const createdAt = new Date("2026-07-30T19:00:00Z");
+    const now = new Date("2026-07-31T02:00:00Z");
+    const policy = toPushPolicy({ quietHoursStartHour: 3, quietHoursEndHour: 3 });
+    expect(decideSend({
+      type: NotificationType.STREAK_AT_RISK, createdAt, policy, sentInWindow: 0, now,
+    })).toBe("drop");
+    expect(decideSend({
+      type: NotificationType.CONTRADICTION_FOUND, createdAt, policy, sentInWindow: 0, now,
+    })).toBe("send");
   });
 });
 
