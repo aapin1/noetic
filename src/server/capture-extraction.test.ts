@@ -3,17 +3,25 @@ import { fetchMetadata, parseMetadataFromHtml, scoreContentConfidence } from "@/
 
 describe("scoreContentConfidence", () => {
   it("scores substantive body text as rich", () => {
-    expect(scoreContentConfidence({ bodyText: "x".repeat(900) })).toBe("rich");
+    expect(scoreContentConfidence({ bodyText: "attention decays ".repeat(60) })).toBe("rich");
   });
 
   it("scores short body or description as partial", () => {
-    expect(scoreContentConfidence({ bodyText: "x".repeat(200) })).toBe("partial");
+    expect(scoreContentConfidence({ bodyText: "attention decays ".repeat(15) })).toBe("partial");
     expect(scoreContentConfidence({ description: "d".repeat(200) })).toBe("partial");
   });
 
   it("scores title-only content as thin", () => {
     expect(scoreContentConfidence({})).toBe("thin");
     expect(scoreContentConfidence({ bodyText: "tiny", description: "also tiny" })).toBe("thin");
+  });
+
+  it("treats a few-words body as debris however long the characters run", () => {
+    // What a failed transcript scrape actually returns: a nav label or a
+    // cookie line grabbed from a random corner of the page. Long enough to
+    // clear a character check, nowhere near the source's content.
+    expect(scoreContentConfidence({ bodyText: "Subscribe Sign in Watch later Copy link Tap to unmute" })).toBe("thin");
+    expect(scoreContentConfidence({ bodyText: "x".repeat(900) })).toBe("thin");
   });
 });
 

@@ -48,14 +48,28 @@ export function scoreContentConfidence(args: {
   description?: string | null;
 }): ContentConfidence {
   const body = (args.bodyText ?? "").trim();
-  if (body.length >= 800) return "rich";
+  // A handful of words is scrape debris — a nav label, a cookie banner, a
+  // stray caption line the transcript fetch grabbed instead of the transcript.
+  // It reads as "content" by length alone, so score it as no body at all;
+  // otherwise the pipeline argues from three words found in a random corner
+  // of the page and the user is never asked what the source was about.
+  const substantive = wordCount(body) >= MIN_BODY_WORDS ? body : "";
+  if (substantive.length >= 800) return "rich";
   const desc = (args.description ?? "").trim();
   // A URL-shaped description is a stub from a failed scrape (paywall, robot
   // wall) — a long URL must not read as a "partial" excerpt, or the ask-the-
   // user fallback never fires for exactly the captures that need it most.
   const realDesc = /^https?:\/\//i.test(desc) ? "" : desc;
-  if (body.length >= 150 || realDesc.length >= 150) return "partial";
+  if (substantive.length >= 150 || realDesc.length >= 150) return "partial";
   return "thin";
+}
+
+/** Below this, an extracted body is debris rather than the source's content. */
+const MIN_BODY_WORDS = 25;
+
+function wordCount(text: string): number {
+  const words = text.match(/\S+/g);
+  return words ? words.length : 0;
 }
 
 /** Share of alphabetic characters that are Latin — the wrong-language guard.
