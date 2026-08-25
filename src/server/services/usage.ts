@@ -10,9 +10,10 @@ import type { DbClient } from "@/server/db";
 // ~20% more than the native-ad revenue that same heavy user throws off
 // (~$0.35/mo at a $3 blended eCPM over ~100+ impressions). Working per-unit
 // costs and the resulting monthly ceiling:
-//   social_video_transcript  ~$0.06  (Decodo residential proxy pulls the full
-//                                     TikTok/IG body + Supadata/Groq ASR — by
-//                                     far the priciest path, cut the hardest)
+//   social_video_transcript  ~$0.06  (the paid Supadata backstop for TikTok/IG
+//                                     — only metered when it actually ran; the
+//                                     self-hosted captions/ASR ladder is
+//                                     ~$0.002 and unmetered)
 //   image_describe           ~$0.01  (gpt-4o vision)
 //   voice_transcription      ~$0.008 (whisper-1)
 //   companion_message        ~$0.0006 but PER DAY — 6/day = 180/mo = ~$0.11

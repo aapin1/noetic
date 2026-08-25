@@ -25,6 +25,13 @@ const DEFAULT_BATTERY: { label: string; url: string; minChars: number }[] = [
   { label: "medium post", url: "https://medium.com/@erikdkennedy/7-rules-for-creating-gorgeous-ui-part-1-559d4e805cda", minChars: 800 },
   { label: "podcast page", url: "https://podcasts.apple.com/us/podcast/lex-fridman-podcast/id1434243584", minChars: 150 },
   { label: "tweet", url: "https://x.com/naval/status/1002103360646823936", minChars: 30 },
+  // Short-form social — what real captures turned out to mostly be (2026-08).
+  { label: "tiktok (native captions)", url: "https://www.tiktok.com/@hankgreen1/video/7462834976497601822", minChars: 800 },
+  { label: "tiktok (ASR path)", url: "https://www.tiktok.com/@hankgreen1/video/7211527414260698374", minChars: 150 },
+  // Minecraft clip with no speech: caption-only is the correct outcome.
+  { label: "tiktok (speechless clip)", url: "https://www.tiktok.com/@tiktok/video/7106594312292453675", minChars: 0 },
+  { label: "instagram reel", url: "https://www.instagram.com/reel/DJQJeVQPnI4/", minChars: 150 },
+  { label: "instagram photo post", url: "https://www.instagram.com/p/DW1xjVPCXJ0/", minChars: 0 },
   { label: "reddit thread", url: "https://www.reddit.com/r/explainlikeimfive/comments/1lqx7c/eli5_why_is_the_sky_blue/", minChars: 0 },
   { label: "pdf paper (.pdf url)", url: "https://www.sas.upenn.edu/~cavitch/pdf-library/Nagel_Bat.pdf", minChars: 800 },
   // arxiv serves PDFs without a .pdf suffix — exercises content-type detection.

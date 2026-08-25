@@ -3,11 +3,14 @@ import { load } from "cheerio";
 import { parseHTML } from "linkedom";
 import slugify from "slugify";
 import { extractText, getDocumentProxy, getMeta } from "unpdf";
+import { BROWSER_UA, condenseToBudget, fetchWithTimeout } from "@/server/extract-util";
 import { createProxySession, type ProxySession } from "@/server/proxyFetch";
+import { fetchInstagramMetadata, fetchTikTokMetadata, isInstagramHost, isSocialVideoUrl, isTikTokHost } from "@/server/social";
+import { fetchSupadataTranscript } from "@/server/supadata";
 import { groqConfigured, transcribeAudioUrl } from "@/server/transcribe";
 import { normalizeUrl } from "@/server/url";
 
-export type BodySource = "transcript" | "body" | "jsonld" | "reddit" | "description" | "pdf";
+export type BodySource = "transcript" | "body" | "jsonld" | "reddit" | "description" | "pdf" | "vision";
 
 export type ExtractedMetadata = {
   title?: string;
@@ -55,38 +58,6 @@ export function scoreContentConfidence(args: {
   return "thin";
 }
 
-/** Article/transcript body budget. Long content is fitted via
- * condenseToBudget rather than truncated at this many chars. */
-const BODY_TEXT_LIMIT = 12000;
-
-/**
- * Fits long text into the body budget by sampling head, middle, and tail
- * instead of blind truncation. A 2-hour transcript cut at the old cap kept
- * only the first ~8 minutes, so embeddings, topics, and insights never saw
- * the argument's development or conclusion. Segment edges land on word
- * boundaries, and elisions are marked so the LLM knows material was skipped.
- */
-function condenseToBudget(text: string, limit = BODY_TEXT_LIMIT): string {
-  if (text.length <= limit) return text;
-  const sep = "\n[…]\n";
-  const budget = limit - 2 * sep.length;
-  const headLen = Math.floor(budget * 0.45);
-  const midLen = Math.floor(budget * 0.3);
-  const tailLen = budget - headLen - midLen;
-  const head = text.slice(0, headLen).replace(/\S+$/, "").trimEnd();
-  const midStart = Math.floor(text.length / 2 - midLen / 2);
-  const middle = text
-    .slice(midStart, midStart + midLen)
-    .replace(/^\S+/, "")
-    .replace(/\S+$/, "")
-    .trim();
-  const tail = text
-    .slice(text.length - tailLen)
-    .replace(/^\S+/, "")
-    .trimStart();
-  return [head, middle, tail].join(sep);
-}
-
 /** Share of alphabetic characters that are Latin — the wrong-language guard.
  * Digits/punctuation are ignored so code-heavy or numeric text isn't punished. */
 function latinShare(text: string): number {
@@ -98,17 +69,6 @@ function latinShare(text: string): number {
     else if (c > 0x2ff) other++;
   }
   return latin + other === 0 ? 0 : latin / (latin + other);
-}
-
-/** fetch with a hard timeout so a hung host can't stall the capture pipeline. */
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 // Cap how much HTML enters the parsers. parseMetadataFromHtml runs three
@@ -339,10 +299,6 @@ export function parseMetadataFromHtml(html: string, originalUrl: string): Extrac
   };
 }
 
-// A real browser UA + consent cookie for sites that serve stripped pages to
-// non-browser agents (Reddit's JSON API, bot-guarded article sites).
-const BROWSER_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 const YT_HEADERS = {
   "user-agent": BROWSER_UA,
   "accept-language": "en-US,en;q=0.9",
@@ -663,16 +619,6 @@ function isRedditHost(parsed: URL): boolean {
   return host === "reddit.com" || host.endsWith(".reddit.com") || host === "redd.it";
 }
 
-function isTikTokHost(parsed: URL): boolean {
-  const host = hostOf(parsed);
-  return host === "tiktok.com" || host.endsWith(".tiktok.com");
-}
-
-function isInstagramHost(parsed: URL): boolean {
-  const host = hostOf(parsed);
-  return host === "instagram.com" || host.endsWith(".instagram.com") || host === "instagr.am";
-}
-
 function isTwitterHost(parsed: URL): boolean {
   const host = hostOf(parsed);
   return host === "twitter.com" || host === "x.com" || host.endsWith(".twitter.com");
@@ -762,40 +708,6 @@ async function fetchRedditMetadata(normalized: string, originalUrl: string): Pro
   }
 }
 
-/**
- * Supadata transcript API — the production-grade path for video/social
- * content. Our own YouTube scrape works from residential IPs but gets served
- * bot interstitials from datacenter IPs (i.e. the deployed backend), and
- * TikTok/Instagram are unscrapable walls. Env-gated: without SUPADATA_API_KEY
- * this tier is silently skipped. `mode=native` fetches existing captions only
- * (1 credit); `mode=auto` falls back to AI transcription for caption-less
- * short videos (2 credits/min).
- */
-async function fetchSupadataTranscript(url: string, mode: "native" | "auto"): Promise<string | undefined> {
-  const apiKey = process.env.SUPADATA_API_KEY;
-  if (!apiKey) return undefined;
-
-  try {
-    // `native` (existing captions) responds quickly, so cap it tightly — it's
-    // a rare fallback and the user is waiting on the capture sheet. `auto`
-    // legitimately needs time when it falls back to AI transcription.
-    // `lang=en`: without it Supadata picks an arbitrary caption track — it
-    // returned Arabic transcripts for English videos (benchmarked 2026-07-13),
-    // and that text flows straight into embeddings and topic classification.
-    const timeoutMs = mode === "native" ? 8000 : 20000;
-    const endpoint = `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(url)}&text=true&mode=${mode}&lang=en`;
-    const res = await fetchWithTimeout(endpoint, { headers: { "x-api-key": apiKey } }, timeoutMs);
-    if (!res.ok) return undefined;
-
-    const payload = (await res.json()) as { content?: unknown };
-    if (typeof payload.content !== "string") return undefined;
-    const text = payload.content.replace(/\s+/g, " ").trim();
-    return text.length >= 40 ? condenseToBudget(text) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /** Tweet text via Twitter's free oEmbed endpoint (no auth required). */
 async function fetchTweetMetadata(normalized: string, originalUrl: string): Promise<ExtractedMetadata | undefined> {
   try {
@@ -824,105 +736,6 @@ async function fetchTweetMetadata(normalized: string, originalUrl: string): Prom
       sourceName: "X",
       sourceDomain: "x.com",
       contentType: "post",
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Best-effort TikTok media URL from the page's rehydration JSON. TikTok
- * bot-walls datacenter (and many residential) IPs outright, so this runs
- * through the proxy session and is expected to miss often — the Supadata
- * fallback still covers those cases.
- */
-async function fetchTikTokMediaUrl(url: string, session: ProxySession): Promise<string | undefined> {
-  try {
-    const res = await session.fetch(url, { headers: { ...YT_HEADERS, accept: "text/html" }, redirect: "follow" }, 8000);
-    if (!res.ok) return undefined;
-    const html = await res.text();
-    const match = html.match(/"playAddr":"([^"]+)"/) ?? html.match(/"downloadAddr":"([^"]+)"/);
-    if (!match) return undefined;
-    // The URL sits inside a JSON string ("/" escapes etc.) — unescape it.
-    const mediaUrl = JSON.parse(`"${match[1]}"`) as string;
-    return mediaUrl.startsWith("http") ? mediaUrl : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * TikTok transcript, cheapest source first: Groq ASR over the scraped media
- * URL (~$0.0007/min) when configured, then Supadata mode=auto (2 credits/min).
- * The media download must reuse the scrape's proxy session — TikTok CDN URLs
- * are tied to the requesting IP.
- */
-async function fetchTikTokTranscript(
-  normalized: string,
-): Promise<{ text: string; viaSupadata: boolean } | undefined> {
-  if (groqConfigured()) {
-    const session = createProxySession();
-    try {
-      const mediaUrl = await fetchTikTokMediaUrl(normalized, session);
-      if (mediaUrl) {
-        const result = await transcribeAudioUrl({
-          url: mediaUrl,
-          session,
-          headers: { "user-agent": BROWSER_UA },
-          filename: "video.mp4",
-        });
-        if (result) return { text: condenseToBudget(result.text), viaSupadata: false };
-      }
-    } finally {
-      await session.close().catch(() => {});
-    }
-  }
-  const supadata = await fetchSupadataTranscript(normalized, "auto");
-  return supadata ? { text: supadata, viaSupadata: true } : undefined;
-}
-
-/** TikTok caption + author via oEmbed, plus a transcript when available. */
-async function fetchTikTokMetadata(
-  normalized: string,
-  originalUrl: string,
-  allowPaidTranscript: boolean,
-): Promise<ExtractedMetadata | undefined> {
-  try {
-    const [oembedRes, transcript] = await Promise.all([
-      fetchWithTimeout(
-        `https://www.tiktok.com/oembed?url=${encodeURIComponent(normalized)}`,
-        { headers: { accept: "application/json" } },
-        8000,
-      ).catch(() => undefined),
-      // TikTok videos rarely have native captions, so allow AI transcription —
-      // they are short, which keeps the per-video cost tiny.
-      allowPaidTranscript ? fetchTikTokTranscript(normalized) : Promise.resolve(undefined),
-    ]);
-
-    let oembed: { title?: string; author_name?: string; thumbnail_url?: string } | undefined;
-    if (oembedRes?.ok) {
-      oembed = (await oembedRes.json()) as typeof oembed;
-    }
-
-    const title = clean(oembed?.title);
-    if (!title && !transcript) return undefined;
-
-    const text = transcript?.text;
-    return {
-      title: title ?? (text!.length > 90 ? `${text!.slice(0, 87).trimEnd()}…` : text!),
-      // Transcript stays out of the description — see the YouTube extractor.
-      description: text ? undefined : title,
-      bodyText: text ?? title,
-      bodySource: text ? "transcript" : "description",
-      usedSupadata: transcript?.viaSupadata ? true : undefined,
-      canonicalUrl: normalizeUrl(normalized),
-      originalUrl,
-      siteName: "TikTok",
-      authorName: clean(oembed?.author_name),
-      imageUrl: clean(oembed?.thumbnail_url),
-      sourceName: "TikTok",
-      sourceDomain: "tiktok.com",
-      contentType: "video",
     };
   } catch {
     return undefined;
@@ -1043,12 +856,12 @@ async function fetchPdfMetadata(normalized: string, originalUrl: string): Promis
   }
 }
 
-/** Hosts whose body text requires Supadata AI transcription (mode=auto,
- * 2 credits/min) — the per-capture cost worth metering per user. */
+/** Hosts whose body text may end at the paid Supadata backstop (mode=auto,
+ * 2 credits/min) — the per-capture cost worth metering per user. The
+ * self-hosted ladder (native captions, Whisper ASR) runs for everyone. */
 export function isPaidTranscriptHost(url: string): boolean {
   try {
-    const parsed = new URL(normalizeUrl(url));
-    return isTikTokHost(parsed) || isInstagramHost(parsed);
+    return isSocialVideoUrl(normalizeUrl(url));
   } catch {
     return false;
   }
@@ -1061,6 +874,12 @@ export async function fetchMetadata(
   const allowPaidTranscript = opts.allowPaidTranscript ?? true;
   const normalized = normalizeUrl(url);
   const parsed = new URL(normalized);
+
+  // Instagram/Facebook wrap outbound links in a redirect page whose `u`
+  // parameter is the real destination.
+  if ((parsed.hostname === "l.instagram.com" || parsed.hostname === "l.facebook.com") && parsed.searchParams.get("u")) {
+    return fetchMetadata(parsed.searchParams.get("u")!, opts);
+  }
 
   // Direct PDF links skip the HTML ladder entirely — its parsers can only
   // chew on the raw bytes for the full timeout chain and come back empty.
@@ -1086,10 +905,22 @@ export async function fetchMetadata(
   }
 
   if (isTikTokHost(parsed)) {
-    const metadata = await fetchTikTokMetadata(normalized, url, allowPaidTranscript);
+    const metadata = await fetchTikTokMetadata(normalized, url, { allowPaidTranscript });
     if (metadata) {
       return { metadata, requiresManualInput: !metadata.title };
     }
+    // Deleted/private/unavailable: the generic scrape would only ever return
+    // TikTok's app shell ("TikTok - Make Your Day"). A clean stub lets the
+    // ask-the-user fallback fire instead.
+    return { requiresManualInput: true };
+  }
+
+  if (isInstagramHost(parsed)) {
+    const metadata = await fetchInstagramMetadata(normalized, url, { allowPaidTranscript });
+    if (metadata) {
+      return { metadata, requiresManualInput: false };
+    }
+    // fall through to the generic scrape (og tags via the proxy) on failure
   }
 
   if (parsed.hostname.includes("youtube.com") || parsed.hostname === "youtu.be") {
@@ -1150,13 +981,6 @@ export async function fetchMetadata(
       };
     }
   }
-
-  // Instagram has no public oEmbed and blocks scrapers; a Supadata transcript
-  // is the only real content route. The generic scrape below still runs for
-  // og:title/description.
-  const instagramTranscript = isInstagramHost(parsed) && allowPaidTranscript
-    ? await fetchSupadataTranscript(normalized, "auto")
-    : undefined;
 
   // Many sites serve bots a stripped page (or a 403), so a browser-UA attempt
   // is usually needed anyway — run it concurrently with the polite MNEME-UA
@@ -1237,25 +1061,6 @@ export async function fetchMetadata(
     } finally {
       await session.close().catch(() => {});
     }
-  }
-
-  if (instagramTranscript && metadata) {
-    metadata.bodyText = instagramTranscript;
-    metadata.bodySource = "transcript";
-    metadata.usedSupadata = true;
-  } else if (instagramTranscript && !metadata) {
-    metadata = {
-      title: instagramTranscript.length > 90 ? `${instagramTranscript.slice(0, 87).trimEnd()}…` : instagramTranscript,
-      bodyText: instagramTranscript,
-      bodySource: "transcript",
-      usedSupadata: true,
-      canonicalUrl: normalized,
-      originalUrl: url,
-      siteName: "Instagram",
-      sourceName: "Instagram",
-      sourceDomain: "instagram.com",
-      contentType: "video",
-    };
   }
 
   if (!metadata) {

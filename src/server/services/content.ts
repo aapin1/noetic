@@ -3,6 +3,7 @@ import slugify from "slugify";
 import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/server/db";
+import { isSocialVideoUrl } from "@/server/social";
 import { fetchMetadata, isPdfContentUrl, scoreContentConfidence, sourceSlug, type ContentConfidence } from "@/server/metadata";
 import { cleanContentMetadata } from "@/server/cognition/llm";
 import { upsertTopics } from "@/server/topics";
@@ -156,18 +157,31 @@ export async function ingestUrl(url: string, db: DbClient = prisma, opts: Ingest
     // forever. Rate-limited to one attempt per day per item: each retry runs
     // the full ladder (including paid Supadata credits), and a URL that just
     // failed will almost always fail again minutes later.
-    const RETRY_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+    // TikTok/Instagram rows retry sooner and even when a body exists: a
+    // transcript miss stores the caption as the body, and the shared row
+    // would otherwise pin every later capturer of the same video (including
+    // one whose cap allows the paid backstop) to that caption for a day.
+    const social = isSocialVideoUrl(existing.canonicalUrl ?? "");
+    const RETRY_COOLDOWN_MS = social ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+    const wantsBody = !existing.bodyText || (social && (!existing.bodySource || existing.bodySource === "description"));
     // PDFs bypass the cooldown: they parse locally (no paid tier to protect),
     // and every PDF captured before the PDF pipeline existed is a thin stub
     // that would otherwise stay broken for a day after the fix shipped.
     const retryDue =
       Date.now() - existing.updatedAt.getTime() > RETRY_COOLDOWN_MS ||
       isPdfContentUrl(existing.canonicalUrl ?? "");
-    if (!existing.bodyText && existing.canonicalUrl && retryDue) {
+    let usedSupadata = false;
+    if (wantsBody && existing.canonicalUrl && retryDue) {
       try {
         const refetched = await fetchMetadata(existing.canonicalUrl, opts);
+        usedSupadata = Boolean(refetched.metadata?.usedSupadata);
         const body = refetched.metadata?.bodyText;
-        if (body) {
+        // A caption-only re-read must not overwrite a caption-only row: only
+        // a first body, or an actual transcript, counts as healing.
+        const improved =
+          body &&
+          (!existing.bodyText || refetched.metadata?.bodySource === "transcript" || refetched.metadata?.bodySource === "vision");
+        if (body && improved) {
           // A stub row (scrape failed at first capture: hostname-as-title,
           // URL-as-description) adopts the refetched identity too — healing
           // only the body would leave the capture named after its domain.
@@ -230,6 +244,7 @@ export async function ingestUrl(url: string, db: DbClient = prisma, opts: Ingest
       requiresManualInput: false,
       contentItem: existing,
       cleaned,
+      usedSupadata,
     };
   }
 
@@ -349,6 +364,7 @@ export async function ingestUrl(url: string, db: DbClient = prisma, opts: Ingest
       requiresManualInput: false,
       contentItem: await serializeContentItem(db, created.id),
       bodyText: metadata.bodyText,
+      usedSupadata: Boolean(metadata.usedSupadata),
     };
   }
 
@@ -358,6 +374,7 @@ export async function ingestUrl(url: string, db: DbClient = prisma, opts: Ingest
     contentItem: await serializeContentItem(db, created.id),
     bodyText: metadata.bodyText,
     cleaned,
+    usedSupadata: Boolean(metadata.usedSupadata),
   };
 }
 
@@ -372,6 +389,8 @@ export async function preflightUrl(url: string, db: DbClient = prisma, opts: Ing
   title?: string;
   excerpt?: string;
   bodySource?: string;
+  /** True when this preflight spent a Supadata credit — the caller meters it. */
+  usedSupadata?: boolean;
 }> {
   let ingest: Awaited<ReturnType<typeof ingestUrl>>;
   try {
@@ -387,6 +406,7 @@ export async function preflightUrl(url: string, db: DbClient = prisma, opts: Ing
       title: item.title,
       excerpt: item.description ?? undefined,
       bodySource: item.bodySource ?? undefined,
+      usedSupadata: "usedSupadata" in ingest ? ingest.usedSupadata : undefined,
     };
   }
 
@@ -416,6 +436,7 @@ export async function ingestOrStubUrl(url: string, db: DbClient = prisma, opts: 
       // Present only when this call created the row with deferClean: resolves
       // with the post-clean title/excerpt once the row has been updated.
       cleaned: "cleaned" in ingest ? ingest.cleaned : undefined,
+      usedSupadata: "usedSupadata" in ingest ? Boolean(ingest.usedSupadata) : false,
     };
   }
 

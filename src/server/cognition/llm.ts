@@ -1535,3 +1535,63 @@ export async function generateTerrainNarrative(args: {
     clearTimeout(timer);
   }
 }
+
+/**
+ * Reads the text off frames or slides of a social post — TikTok photo
+ * slideshows, Instagram carousels, and speechless videos whose whole
+ * argument is burned-in text. Verbatim, frame-labelled plain text; a frame
+ * with no meaningful text gets a one-sentence description instead. Cheap
+ * vision model by default (slides are large text); null on any failure.
+ */
+export async function readSocialFrames(args: {
+  images: { base64: string; mimeType: string }[];
+  caption?: string;
+}): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey || args.images.length === 0) return null;
+
+  const count = args.images.length;
+  const instruction = [
+    `${count === 1 ? "This is a frame" : `These are ${count} frames/slides, in order,`} from a short social-media post${
+      args.caption ? ` whose caption is: "${args.caption.slice(0, 300).replace(/\s+/g, " ")}"` : ""
+    }.`,
+    `Transcribe ALL visible text verbatim, in reading order, one block per frame labelled "Frame 1:", "Frame 2:", … Keep the original wording; do not summarise, translate, or fix typos.`,
+    "Only when a frame has no meaningful text, describe in one short sentence what it shows.",
+    "Never invent text that is not visible. Return plain text, no markdown.",
+  ].join("\n");
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(OPENAI_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: process.env.OPENAI_SOCIAL_VISION_MODEL ?? "gpt-4o-mini",
+        temperature: 0,
+        max_tokens: 1500,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: instruction },
+              ...args.images.map((image) => ({
+                type: "image_url",
+                image_url: { url: `data:${image.mimeType};base64,${image.base64}`, detail: "auto" },
+              })),
+            ],
+          },
+        ],
+      }),
+    });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    const text = payload.choices?.[0]?.message?.content?.trim();
+    return text ? text : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}

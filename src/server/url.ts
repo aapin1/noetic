@@ -10,6 +10,10 @@ const TRACKING_PARAMS = new Set([
   "mc_eid",
   "ref",
   "ref_src",
+  // Instagram share-sheet identifiers: every share of the same post carries
+  // a fresh one, which defeated canonical-URL dedupe.
+  "igsh",
+  "igshid",
 ]);
 
 function normalizeYouTubeUrl(url: URL) {

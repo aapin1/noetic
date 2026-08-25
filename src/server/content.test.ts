@@ -6,6 +6,7 @@ import { cleanContentMetadata } from "@/server/cognition/llm";
 vi.mock("@/server/metadata", () => ({
   fetchMetadata: vi.fn().mockResolvedValue({ requiresManualInput: true }),
   scoreContentConfidence: vi.fn().mockReturnValue("thin"),
+  isPdfContentUrl: vi.fn().mockReturnValue(false),
   sourceSlug: (name: string) => name.toLowerCase().replace(/\s+/g, "-"),
 }));
 
@@ -210,5 +211,75 @@ describe("the metadata clean", () => {
 
     expect("cleaned" in result && result.cleaned).toBeUndefined();
     expect(cleanContentMetadata).not.toHaveBeenCalled();
+  });
+});
+
+describe("ingestUrl — TikTok/Instagram rows re-read for a transcript", () => {
+  const socialRow = (overrides: Record<string, unknown>) => ({
+    id: "content_social",
+    title: "Take back your attention.",
+    description: "Take back your attention.",
+    bodyText: "Take back your attention. #attention",
+    bodySource: "description",
+    canonicalUrl: "https://www.tiktok.com/@hankgreen1/video/7462834976497601822",
+    updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+    source: null,
+    contentType: null,
+    topics: [],
+    ...overrides,
+  });
+
+  it("re-runs the ladder for a caption-only social row even though it has a body", async () => {
+    const existing = socialRow({});
+    vi.mocked(fetchMetadata).mockResolvedValueOnce({
+      requiresManualInput: false,
+      metadata: {
+        title: "Take back your attention.",
+        bodyText: "You know what the last few days have me thinking pretty clearly? Take back your attention.",
+        bodySource: "transcript",
+        canonicalUrl: existing.canonicalUrl,
+        originalUrl: existing.canonicalUrl,
+        usedSupadata: true,
+      },
+    } as any);
+    const update = vi.fn().mockResolvedValue(null);
+    const db = { contentItem: { findUnique: vi.fn().mockResolvedValue(existing), update } } as any;
+
+    const result = await ingestUrl(existing.canonicalUrl, db, { allowPaidTranscript: true });
+
+    expect(fetchMetadata).toHaveBeenCalledWith(existing.canonicalUrl, { allowPaidTranscript: true });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ bodySource: "transcript" }) }));
+    expect(result.status).toBe("existing");
+    expect("usedSupadata" in result && result.usedSupadata).toBe(true);
+  });
+
+  it("does not overwrite a caption-only row with another caption-only read", async () => {
+    const existing = socialRow({});
+    vi.mocked(fetchMetadata).mockResolvedValueOnce({
+      requiresManualInput: false,
+      metadata: { title: "x", bodyText: "Take back your attention. #attention", bodySource: "description", canonicalUrl: existing.canonicalUrl, originalUrl: existing.canonicalUrl },
+    } as any);
+    const update = vi.fn().mockResolvedValue(null);
+    const db = { contentItem: { findUnique: vi.fn().mockResolvedValue(existing), update } } as any;
+
+    await ingestUrl(existing.canonicalUrl, db);
+
+    // Only the cooldown touch, never a body write.
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update.mock.calls[0][0].data).toEqual({ updatedAt: expect.any(Date) });
+  });
+
+  it("leaves a social row with a real transcript alone", async () => {
+    const existing = socialRow({ bodySource: "transcript", bodyText: "x".repeat(2000) });
+    const db = { contentItem: { findUnique: vi.fn().mockResolvedValue(existing), update: vi.fn() } } as any;
+    await ingestUrl(existing.canonicalUrl, db);
+    expect(fetchMetadata).not.toHaveBeenCalled();
+  });
+
+  it("keeps the 24h cooldown and body-only retry rule for ordinary articles", async () => {
+    const existing = socialRow({ canonicalUrl: "https://example.com/essay", bodyText: "x".repeat(2000), bodySource: "body", updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000) });
+    const db = { contentItem: { findUnique: vi.fn().mockResolvedValue(existing), update: vi.fn() } } as any;
+    await ingestUrl(existing.canonicalUrl, db);
+    expect(fetchMetadata).not.toHaveBeenCalled();
   });
 });

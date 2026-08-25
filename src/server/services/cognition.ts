@@ -11,7 +11,7 @@ import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import type { DbClient, RootDbClient } from "@/server/db";
 import { ingestOrStubUrl, repairMissingExcerpt } from "@/server/services/content";
-import { tryConsumeUsage } from "@/server/services/usage";
+import { hasUsageRemaining, tryConsumeUsage } from "@/server/services/usage";
 import {
   cosine,
   jaccard,
@@ -657,13 +657,18 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     contentKind = row.contentType?.name ?? undefined;
     contentSiteName = row.siteName ?? undefined;
   } else if (payload.kind === CaptureKind.LINK && payload.url) {
-    // TikTok/Instagram body text costs Supadata credits (AI transcription) —
-    // metered per user. Over the cap the capture still succeeds; it just
-    // falls back to oEmbed caption/og-tags like any thin scrape.
+    // TikTok/Instagram: the self-hosted ladder (native captions, Whisper ASR)
+    // runs for everyone; only the paid Supadata backstop is metered, and a
+    // unit is consumed only when it actually produced the transcript. Over
+    // the cap the capture still succeeds on caption/og-tags like any thin
+    // scrape.
+    const social = isPaidTranscriptHost(payload.url);
     const allowPaidTranscript =
-      !isPaidTranscriptHost(payload.url) ||
-      (await tryConsumeUsage(payload.userId, "social_video_transcript", db));
+      !social || (await hasUsageRemaining(payload.userId, "social_video_transcript", db));
     const resolved = await ingestOrStubUrl(payload.url, db, { allowPaidTranscript, deferClean: true });
+    if (social && resolved.usedSupadata) {
+      await tryConsumeUsage(payload.userId, "social_video_transcript", db);
+    }
     contentItemId = resolved.contentItemId;
     contentTitle = resolved.contentTitle;
     contentDescription = resolved.contentDescription;
