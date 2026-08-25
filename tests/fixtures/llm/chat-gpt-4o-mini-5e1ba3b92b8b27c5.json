@@ -1,0 +1,47 @@
+{
+  "request": {
+    "url": "https://api.openai.com/v1/chat/completions",
+    "endpoint": "chat",
+    "model": "gpt-4o-mini",
+    "summary": "{\"title\":\"The measurement problem in quantum mechanics asks why a superposition collapses \",\"content_text\":\"The measurement problem in quantum mechanics asks wh"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "chatcmpl-EGllGLJZi7GQEy41NVhR4SIElXlrZ",
+      "object": "chat.completion",
+      "created": 1787665550,
+      "model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"reading\": {\"line\": \"Decoherence describes the process leading to the appearance of collapse but doesn't clarify the selection of outcomes in quantum measurements.\", \"options\": [{\"move\": \"the missing step\", \"note\": \"Decoherence explains how superpositions interact with the environment, but it doesn't address how a specific outcome is chosen.\"}, {\"move\": \"the counterexample\", \"note\": \"In certain interpretations, like the many-worlds interpretation, outcomes do not collapse at all, challenging the premise of the measurement problem.\"}, {\"move\": \"the cost\", \"note\": \"Accepting decoherence as an explanation may lead to overlooking the fundamental questions about reality and observer influence.\"}], \"pick\": 0}, \"insights\": [{\"index\": 0, \"headline\": \"Decoherence does not solve the measurement problem in quantum mechanics.\", \"body\": \"While it explains the appearance of collapse, it leaves unanswered how a specific outcome is determined. This contrasts with interpretations that reject collapse entirely.\"}]}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 1595,
+        "completion_tokens": 206,
+        "total_tokens": 1801,
+        "prompt_tokens_details": {
+          "cached_tokens": 1024,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "service_tier": "default",
+      "system_fingerprint": "fp_a2b728f9dd"
+    }
+  }
+}

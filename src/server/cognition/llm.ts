@@ -506,10 +506,11 @@ export type PolishContext = {
    * to read their words in relation to that work — and say nothing about a
    * work it does not know. */
   mediaContext?: { kind: string; title: string; siteName?: string };
-  /** Kickers of the user's last few READINGs, newest first — the moves the
-   * polish should NOT make again, so a run of saves gets a run of different
-   * readings rather than "the catch" seven times over. */
-  recentReadingKickers?: string[];
+  /** The user's last few READINGs, newest first: the move each made and how
+   * its note opened. The polish is told to make a different move AND open
+   * differently, so a run of saves gets a run of different readings rather
+   * than "the catch" seven times over in the same sentence shape. */
+  recentReadings?: { move?: string; opened_with: string }[];
   drafts: InsightDraft[];
 };
 
@@ -541,6 +542,42 @@ function groundingDirective(grounding: "rich" | "partial" | "thin" | undefined):
  */
 const INSIGHT_MODEL = () =>
   process.env.OPENAI_INSIGHT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+
+/** A move name as stored: lowercase, no trailing punctuation, short. */
+function normalizeMove(raw: unknown): string {
+  return typeof raw === "string" ? raw.trim().toLowerCase().replace(/[.:]+$/, "").slice(0, 32) : "";
+}
+
+/**
+ * Picks the reading's note from the model's candidates. The model drafts
+ * three notes under three different moves and names a pick; that pick stands
+ * unless its move is one the user was just given, in which case the first
+ * candidate whose move is fresh wins instead. Asking for three real
+ * alternatives is what makes the choice real — asked for one note, the mini
+ * model reached for the same move on five of six captures regardless of what
+ * it was told about repetition. Exported for its tests.
+ */
+export function chooseReadingNote(
+  rawOptions: unknown,
+  rawPick: unknown,
+  recent: { move?: string }[],
+): { move: string; note: string } | null {
+  const options = (Array.isArray(rawOptions) ? rawOptions : [])
+    .map((option) => {
+      const row = option as { move?: unknown; note?: unknown } | null;
+      return {
+        move: normalizeMove(row?.move),
+        note: typeof row?.note === "string" ? row.note.trim() : "",
+      };
+    })
+    .filter((option) => option.note.length > 0);
+  if (options.length === 0) return null;
+
+  const recentMoves = new Set(recent.map((r) => r.move).filter((m): m is string => !!m));
+  const pick = typeof rawPick === "number" && Number.isInteger(rawPick) && options[rawPick] ? options[rawPick] : options[0];
+  if (!pick.move || !recentMoves.has(pick.move)) return pick;
+  return options.find((option) => option.move && !recentMoves.has(option.move)) ?? pick;
+}
 
 export type PolishResult = {
   /** The drafts, rewritten in place — same order and length as the input. */
@@ -591,21 +628,30 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
     "",
     wantReading
       ? [
-          "READING — the first thing the user sees, and the only insight that needs nothing but the content. It has a line, a note, and a kicker:",
-          "- line: one sentence that proves you understood this content better than a summary would. Usually the claim it actually makes, stated AS a claim; sometimes what it is really about underneath its stated subject; sometimes the question it is answering without saying so. Never 'the video discusses…' or 'the author explores…'. If the content is the user's own note, read what THEY are asserting.",
-          "- note: then do ONE thing with that line — one sentence, specific to this content, stated as a fact about the world rather than as what other people think. Choose the move this content most deserves:",
+          "READING — the first thing the user sees, and the only insight that needs nothing but the content. Its job is to hand the reader something they did NOT get from the content itself. It has a line, a note, and a kicker:",
+          "- line: one sentence that proves you understood this better than a summary would. Vary what kind of sentence it is: the claim it actually makes, stated as a claim; what it is really about underneath its stated subject; the question it is answering without saying so; the thing it takes for granted. Never 'the video discusses…' or 'the author explores…'. If the content is the user's own note, read what THEY are asserting.",
+          "- note: one or two sentences that add something from OUTSIDE the content — a fact, a name, a date, a number, a case, a mechanism, a history, a boundary. If the note could have been written by someone who had only read the content, it fails. Choose the move by asking what would be most news to someone who just finished this — never by the content's genre. Some moves:",
           "    · the catch — the specific case it fails on, or the assumption it needs and doesn't give",
-          "    · where it comes from — the tradition, thinker or era the idea descends from, named (only if you actually know)",
+          "    · where it comes from — who said this first, in what tradition or era",
+          "    · the older version — the same idea in an earlier form, and what got lost or added on the way",
           "    · the test — what you would have to see for it to be right, or wrong",
           "    · the counterexample — one concrete thing the claim cannot explain",
-          "    · what it's selling — the wish the content trades on (for hype, self-help, marketing)",
+          "    · the mechanism — why it works when it works, in causal terms the content skips",
+          "    · the boundary — where it stops applying, and what is on the other side of that line",
+          "    · the number — the quantity that reframes it: how big the effect really is, how rare the case",
+          "    · the word doing the work — the one term the whole argument leans on, and what it hides",
+          "    · the missing step — what has to happen between the advice and the result that the content leaves out",
+          "    · the opposite school — the serious tradition that says the reverse, and its best reason",
           "    · the sharper version — the stronger claim buried in it that the author did not quite make",
           "    · the cost — what you give up if you act on it",
-          "    or a move of your own that fits better.",
-          "- kicker: name the move you made, one to three lowercase words ('the catch', 'where it comes from', 'the test', 'the cost'…). It is shown as the note's label.",
-          "- recent_reading_moves lists the kickers of this user's last few readings, newest first. Do not repeat a move that appears there unless this content clearly demands it — a reader who gets the same move on every save stops reading them.",
-          "- Write like a sharp editor's margin note, not a form. No two of your readings should share a sentence shape. Never open the note with 'It assumes', 'Many people', 'This claim', 'This overlooks'. Banned: 'oversimplifies', 'doesn't address', 'individual differences', 'complexities', 'nuances', and any opinion poll ('many believe', 'some would say').",
-          "- Ground both sentences in content_text or user_account_of_content; bring in what you know of the world, never invent what the content said, never restate a limitation the content already admits. If the material is too thin to know what it claims (a title, hashtags, a caption, a fragment), set reading to null. A null is better than a guess.",
+          "    · the better example — the case that would have made the point properly",
+          "    · what it's selling — the wish it trades on",
+          "    or a move of your own. No move belongs to a genre: five self-help videos deserve five different moves, and 'what it's selling' is the last move to reach for on one, not the first.",
+          "- options: write THREE candidate notes, each making a different move from the list above (or your own), each with its move named in one to three lowercase words. Three genuinely different notes with different facts in them — not one note relabelled three ways. The move name is shown as the note's label, so it must describe what the note actually does.",
+          "- pick: the index of the option that would be most news to someone who just finished this content and that does not repeat a move in recent_readings.",
+          "- recent_readings lists this user's last few readings, newest first: the move each made and how its note opened. The pick must not repeat a move on that list, and none of your options may open the way any of them opened. A reader who gets the same move or the same sentence shape twice stops reading.",
+          "- Write like a sharp editor's margin note, not a form. Never open a note with 'It assumes', 'Many people', 'This claim', 'This overlooks', 'While', 'Research shows'. Banned: 'oversimplifies', 'doesn't address', 'individual differences', 'complexities', 'nuances', any opinion poll ('many believe', 'some would say'), and any unnamed authority ('research shows', 'studies suggest', 'scientists say', 'experts') — name the study, the person, or the number, or make a different move.",
+          "- The line must be grounded in content_text or user_account_of_content. The note may bring in what you know of the world, but must never invent what the content said and must never restate a limitation the content already admits. If the material is too thin to know what it claims (a title, hashtags, a caption, a fragment), set reading to null. A null is better than a guess.",
           "",
         ].join("\n")
       : "",
@@ -641,7 +687,7 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
     "",
     "Return strictly valid JSON (no markdown):",
     wantReading
-      ? '{"reading": {"line": "...", "kicker": "...", "note": "..."} | null, "insights": [{"index": N, "headline": "...", "body": "...", "open_question": "..."}]}'
+      ? '{"reading": {"line": "...", "options": [{"move": "...", "note": "..."}, {"move": "...", "note": "..."}, {"move": "...", "note": "..."}], "pick": 0} | null, "insights": [{"index": N, "headline": "...", "body": "...", "open_question": "..."}]}'
       : '{"insights": [{"index": N, "headline": "...", "body": "...", "open_question": "..."}]}',
   ].filter(Boolean).join("\n");
 
@@ -656,7 +702,7 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
     user_account_of_content: args.userContext?.slice(0, 1200) ?? "",
     topics: args.topicNames ?? [],
     about_work: args.mediaContext ?? undefined,
-    recent_reading_moves: wantReading ? (args.recentReadingKickers ?? []) : undefined,
+    recent_readings: wantReading ? (args.recentReadings ?? []) : undefined,
     related_items: (args.neighborContext ?? []).map((n) => ({
       title: n.title,
       relationship: n.edgeType,
@@ -680,8 +726,10 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
       body: JSON.stringify({
         model: INSIGHT_MODEL(),
         temperature: 0.4,
-        // Two more sentences of output than before — the reading.
-        max_tokens: 520,
+        // Room for the reading's line and three candidate notes on top of
+        // the rewritten drafts. Only one note is kept; the other two are the
+        // price of a real choice, ~150 output tokens on the mini model.
+        max_tokens: 900,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -700,7 +748,7 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
 
     const parsed = JSON.parse(content) as {
       insights?: { index: number; headline: string; body: string; open_question?: string }[];
-      reading?: { line?: unknown; kicker?: unknown; note?: unknown } | null;
+      reading?: { line?: unknown; options?: unknown; pick?: unknown } | null;
     };
 
     const insights = parsed.insights
@@ -720,23 +768,22 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
       : args.drafts;
 
     // A reading needs both halves: a line without a note is a summary, and a
-    // summary is exactly the commodity this is not. The kicker — the move the
-    // model chose ("the catch", "where it comes from", "the test") — travels in
+    // summary is exactly the commodity this is not. The note is chosen from
+    // the model's candidates by chooseReadingNote, which holds the no-repeat
+    // rule against the user's recent moves. The move's name travels in
     // evidence so the screen can label the note and the next capture's polish
-    // can be told not to make the same move again.
+    // can be told not to make it again.
     const line = typeof parsed.reading?.line === "string" ? parsed.reading.line.trim() : "";
-    const note = typeof parsed.reading?.note === "string" ? parsed.reading.note.trim() : "";
-    const kicker =
-      typeof parsed.reading?.kicker === "string"
-        ? parsed.reading.kicker.trim().toLowerCase().replace(/[.:]+$/, "").slice(0, 32)
-        : "";
+    const chosen = wantReading
+      ? chooseReadingNote(parsed.reading?.options, parsed.reading?.pick, args.recentReadings ?? [])
+      : null;
     const reading: InsightDraft | null =
-      wantReading && line.length > 0 && note.length > 0
+      line.length > 0 && chosen
         ? {
           type: InsightType.READING,
           headline: line,
-          body: note,
-          evidence: { grounding: args.contentGrounding ?? "rich", ...(kicker ? { kicker } : {}) },
+          body: chosen.note,
+          evidence: { grounding: args.contentGrounding ?? "rich", ...(chosen.move ? { kicker: chosen.move } : {}) },
           strength: 1,
         }
         : null;

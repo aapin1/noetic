@@ -1,7 +1,7 @@
 import { InsightType } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InsightDraft } from "./insights";
-import { generateMirror, polishInsights } from "./llm";
+import { chooseReadingNote, generateMirror, polishInsights } from "./llm";
 
 const NOVELTY_DRAFT: InsightDraft = {
   type: InsightType.NOVELTY,
@@ -39,12 +39,19 @@ afterEach(() => {
 });
 
 describe("polishInsights — the READING", () => {
-  it("returns the model's line and note as a READING draft, with the move it chose in evidence", async () => {
+  it("returns the model's line and its picked note as a READING draft, with the move in evidence", async () => {
     const fetchMock = mockChat({
       reading: {
         line: "Public speaking nerves are a training problem, not a personality trait.",
-        kicker: "The Test.",
-        note: "If that were true, the tenth rehearsal would be calmer than the first for everyone, and for a lot of people it isn't.",
+        options: [
+          { move: "the catch", note: "Exposure works on fear of the stage, not on having nothing to say." },
+          {
+            move: "The Test.",
+            note: "If that were true, the tenth rehearsal would be calmer than the first for everyone, and for a lot of people it isn't.",
+          },
+          { move: "the number", note: "Beta blockers cut performance anxiety in about 70% of musicians in the 1980s trials." },
+        ],
+        pick: 1,
       },
       insights: [{ index: 0, headline: "First under psychology.", body: "Nothing near it yet." }],
     });
@@ -54,7 +61,10 @@ describe("polishInsights — the READING", () => {
       itemTitle: "mental training is important!!",
       contentText: "A transcript about rehearsing under pressure so the stage feels familiar.",
       contentGrounding: "rich",
-      recentReadingKickers: ["the catch", "the catch"],
+      recentReadings: [
+        { move: "the catch", opened_with: "Environment design is itself an act of" },
+        { move: "the catch", opened_with: "Decoherence describes the appearance of collapse but" },
+      ],
       drafts: [NOVELTY_DRAFT],
     });
 
@@ -73,14 +83,22 @@ describe("polishInsights — the READING", () => {
     const body = sentBody(fetchMock);
     expect(body.messages[0].content).toContain("READING");
     expect(body.messages[0].content).toContain('"reading"');
-    expect(body.messages[0].content).toMatch(/no template|move of your own/i);
-    const user = JSON.parse(body.messages[1].content) as { recent_reading_moves: string[] };
-    expect(user.recent_reading_moves).toEqual(["the catch", "the catch"]);
+    expect(body.messages[0].content).toMatch(/move of your own/i);
+    // The contract's core test, and the anti-routing rule, are in the prompt.
+    expect(body.messages[0].content).toMatch(/OUTSIDE the content/);
+    expect(body.messages[0].content).toMatch(/never by the content's genre/);
+    const user = JSON.parse(body.messages[1].content) as {
+      recent_readings: { move?: string; opened_with: string }[];
+    };
+    expect(user.recent_readings).toEqual([
+      { move: "the catch", opened_with: "Environment design is itself an act of" },
+      { move: "the catch", opened_with: "Decoherence describes the appearance of collapse but" },
+    ]);
   });
 
   it("never asks for a reading on a title-only capture, and ignores one if the model offers it anyway", async () => {
     const fetchMock = mockChat({
-      reading: { line: "Invented.", kicker: "the catch", note: "Also invented." },
+      reading: { line: "Invented.", options: [{ move: "the catch", note: "Also invented." }], pick: 0 },
       insights: [{ index: 0, headline: "First under psychology.", body: "Nothing near it yet." }],
     });
 
@@ -98,7 +116,7 @@ describe("polishInsights — the READING", () => {
   });
 
   it("a line without a note is a summary, not a reading", async () => {
-    mockChat({ reading: { line: "Mental training matters.", kicker: "the catch", note: "" }, insights: [] });
+    mockChat({ reading: { line: "Mental training matters.", options: [{ move: "the catch", note: "" }], pick: 0 }, insights: [] });
     const result = await polishInsights({
       style: "DIRECT",
       itemTitle: "t",
@@ -138,16 +156,72 @@ describe("polishInsights — the READING", () => {
   });
 
   it("keeps a reading whose move went unnamed, just without a label", async () => {
-    mockChat({ reading: { line: "A line.", note: "A note on it." }, insights: [] });
+    mockChat({ reading: { line: "A line.", options: [{ note: "A note on it." }], pick: 0 }, insights: [] });
     const result = await polishInsights({ style: "DIRECT", itemTitle: "t", contentGrounding: "rich", drafts: [NOVELTY_DRAFT] });
     expect(result.reading?.headline).toBe("A line.");
+    expect(result.reading?.body).toBe("A note on it.");
     expect(result.reading?.evidence).toEqual({ grounding: "rich" });
+  });
+
+  it("overrides the model's pick when it repeats a move the user was just given", async () => {
+    mockChat({
+      reading: {
+        line: "A line.",
+        options: [
+          { move: "the catch", note: "Catch note." },
+          { move: "the mechanism", note: "Mechanism note." },
+          { move: "the number", note: "Number note." },
+        ],
+        pick: 1,
+      },
+      insights: [],
+    });
+    const result = await polishInsights({
+      style: "DIRECT",
+      itemTitle: "t",
+      contentGrounding: "rich",
+      recentReadings: [{ move: "the mechanism", opened_with: "x" }, { move: "the catch", opened_with: "y" }],
+      drafts: [NOVELTY_DRAFT],
+    });
+    // The pick (mechanism) and the first option (catch) are both recent; the
+    // number is the first fresh move.
+    expect(result.reading?.body).toBe("Number note.");
+    expect(result.reading?.evidence).toEqual({ grounding: "rich", kicker: "the number" });
   });
 
   it("tells the polish that NOVELTY is a footnote that never promises", async () => {
     const fetchMock = mockChat({ reading: null, insights: [] });
     await polishInsights({ style: "DIRECT", itemTitle: "t", contentGrounding: "rich", drafts: [NOVELTY_DRAFT] });
     expect(sentBody(fetchMock).messages[0].content).toMatch(/NOVELTY drafts:.*never promise/i);
+  });
+});
+
+describe("chooseReadingNote", () => {
+  const options = [
+    { move: "The Catch", note: "a" },
+    { move: "the test", note: "b" },
+    { move: "the cost", note: "c" },
+  ];
+
+  it("honours the pick when its move is fresh, normalising the move name", () => {
+    expect(chooseReadingNote(options, 0, [])).toEqual({ move: "the catch", note: "a" });
+    expect(chooseReadingNote(options, 2, [{ move: "the catch" }])).toEqual({ move: "the cost", note: "c" });
+  });
+
+  it("falls back to the first option on a missing or out-of-range pick", () => {
+    expect(chooseReadingNote(options, undefined, [])).toEqual({ move: "the catch", note: "a" });
+    expect(chooseReadingNote(options, 7, [])).toEqual({ move: "the catch", note: "a" });
+  });
+
+  it("keeps the pick when every option repeats a recent move — repetition beats silence", () => {
+    const recent = [{ move: "the catch" }, { move: "the test" }, { move: "the cost" }];
+    expect(chooseReadingNote(options, 1, recent)).toEqual({ move: "the test", note: "b" });
+  });
+
+  it("drops empty notes and returns null with nothing usable", () => {
+    expect(chooseReadingNote([{ move: "the catch", note: " " }], 0, [])).toBeNull();
+    expect(chooseReadingNote(undefined, 0, [])).toBeNull();
+    expect(chooseReadingNote("nope", 0, [])).toBeNull();
   });
 });
 

@@ -1,0 +1,47 @@
+{
+  "request": {
+    "url": "https://api.openai.com/v1/chat/completions",
+    "endpoint": "chat",
+    "model": "gpt-4o-mini",
+    "summary": "{\"title\":\"Attention is the scarce resource, not time. Deep work is the practice of protect\",\"content_text\":\"Attention is the scarce resource, not time. Deep wor"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "chatcmpl-EGllSVmTNCPTiTlMO8rS4fbndIFF3",
+      "object": "chat.completion",
+      "created": 1787665562,
+      "model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"reading\": {\"line\": \"Protecting attention is more critical than managing time in achieving deep work.\", \"options\": [{\"move\": \"the cost\", \"note\": \"Prioritizing attention can lead to missed opportunities for social interaction and collaboration.\"}, {\"move\": \"the sharper version\", \"note\": \"Deep work not only enhances productivity but also fosters creativity and innovation.\"}, {\"move\": \"the boundary\", \"note\": \"This approach may not apply in environments that require constant communication or rapid responses.\"}], \"pick\": 1}, \"insights\": [{\"index\": 0, \"headline\": \"Focusing on attention management strengthens the argument for deep work.\", \"body\": \"This view contrasts with traditional time management strategies, emphasizing the need to protect focus over merely allocating time.\"}]}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 1619,
+        "completion_tokens": 162,
+        "total_tokens": 1781,
+        "prompt_tokens_details": {
+          "cached_tokens": 1024,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "service_tier": "default",
+      "system_fingerprint": "fp_a2b728f9dd"
+    }
+  }
+}
