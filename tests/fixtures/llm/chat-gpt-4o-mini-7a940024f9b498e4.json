@@ -8,16 +8,16 @@
   "response": {
     "status": 200,
     "body": {
-      "id": "chatcmpl-EGaq86cM21ghquO96Z2dQ31g2F8ff",
+      "id": "chatcmpl-EGbW5Yuh6gLnMYBmHZQ1b3iL9Ik51",
       "object": "chat.completion",
-      "created": 1787623568,
+      "created": 1787626169,
       "model": "gpt-4o-mini-2024-07-18",
       "choices": [
         {
           "index": 0,
           "message": {
             "role": "assistant",
-            "content": "{\"reading\": {\"claim\": \"The measurement problem in quantum mechanics questions why a superposition collapses to a single outcome upon observation.\", \"catch\": \"Decoherence describes the appearance of collapse but does not clarify how a specific outcome is chosen.\"}, \"insights\": [{\"index\": 0, \"headline\": \"This entry introduces the measurement problem in quantum mechanics.\", \"body\": \"It highlights the unresolved issue of outcome selection despite decoherence explaining the collapse appearance.\"}]}",
+            "content": "{\"reading\": {\"line\": \"Decoherence describes how superposition appears to collapse but does not clarify the mechanism behind outcome selection.\", \"kicker\": \"the catch\", \"note\": \"Without addressing the selection process, the explanation remains incomplete.\"}, \"insights\": [{\"index\": 0, \"headline\": \"Decoherence does not solve the measurement problem.\", \"body\": \"It highlights the process of apparent collapse but leaves the question of outcome selection unanswered.\"}]}",
             "refusal": null,
             "annotations": []
           },
@@ -26,11 +26,11 @@
         }
       ],
       "usage": {
-        "prompt_tokens": 916,
+        "prompt_tokens": 1171,
         "completion_tokens": 97,
-        "total_tokens": 1013,
+        "total_tokens": 1268,
         "prompt_tokens_details": {
-          "cached_tokens": 0,
+          "cached_tokens": 1024,
           "audio_tokens": 0
         },
         "completion_tokens_details": {
@@ -41,7 +41,7 @@
         }
       },
       "service_tier": "default",
-      "system_fingerprint": "fp_0950b7f384"
+      "system_fingerprint": "fp_c73dd82b09"
     }
   }
 }

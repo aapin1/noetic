@@ -506,6 +506,10 @@ export type PolishContext = {
    * to read their words in relation to that work — and say nothing about a
    * work it does not know. */
   mediaContext?: { kind: string; title: string; siteName?: string };
+  /** Kickers of the user's last few READINGs, newest first — the moves the
+   * polish should NOT make again, so a run of saves gets a run of different
+   * readings rather than "the catch" seven times over. */
+  recentReadingKickers?: string[];
   drafts: InsightDraft[];
 };
 
@@ -587,12 +591,21 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
     "",
     wantReading
       ? [
-          "READING — the first thing the user sees, and the only insight that needs nothing but the content:",
-          "- claim: the one thing this content actually argues or asserts, stated AS a claim in one plain sentence — never 'the video discusses…' or 'the author explores…'. If the content is the user's own note, the claim is what THEY are asserting.",
-          "- catch: the specific case the claim fails on, the assumption it needs that it doesn't give, or the evidence or tradition that cuts against it. One sentence, specific to THIS claim, stated as a fact about the world — not as what other people think. Bring in what you know; never invent what the content itself said, and never restate a limitation the content already admits.",
-          "- Banned catch shapes: 'many people believe/argue…', 'some would say…', 'this overlooks…', 'it oversimplifies…', 'it doesn't address…', 'it ignores the role of…', 'individual differences', 'complexities', 'nuances'. An opinion poll is not a catch, and those phrases are true of every claim ever made.",
-          "- Shape (a different subject): claim 'Remote work makes teams more productive.' catch 'The studies measure output per hour from people who chose to be remote, and say nothing about the juniors who used to learn by overhearing.'",
-          "- Both must be grounded in content_text or user_account_of_content. If the material is too thin to know what it claims (a title, hashtags, a caption, a fragment), set reading to null. A null is better than a guess.",
+          "READING — the first thing the user sees, and the only insight that needs nothing but the content. It has a line, a note, and a kicker:",
+          "- line: one sentence that proves you understood this content better than a summary would. Usually the claim it actually makes, stated AS a claim; sometimes what it is really about underneath its stated subject; sometimes the question it is answering without saying so. Never 'the video discusses…' or 'the author explores…'. If the content is the user's own note, read what THEY are asserting.",
+          "- note: then do ONE thing with that line — one sentence, specific to this content, stated as a fact about the world rather than as what other people think. Choose the move this content most deserves:",
+          "    · the catch — the specific case it fails on, or the assumption it needs and doesn't give",
+          "    · where it comes from — the tradition, thinker or era the idea descends from, named (only if you actually know)",
+          "    · the test — what you would have to see for it to be right, or wrong",
+          "    · the counterexample — one concrete thing the claim cannot explain",
+          "    · what it's selling — the wish the content trades on (for hype, self-help, marketing)",
+          "    · the sharper version — the stronger claim buried in it that the author did not quite make",
+          "    · the cost — what you give up if you act on it",
+          "    or a move of your own that fits better.",
+          "- kicker: name the move you made, one to three lowercase words ('the catch', 'where it comes from', 'the test', 'the cost'…). It is shown as the note's label.",
+          "- recent_reading_moves lists the kickers of this user's last few readings, newest first. Do not repeat a move that appears there unless this content clearly demands it — a reader who gets the same move on every save stops reading them.",
+          "- Write like a sharp editor's margin note, not a form. No two of your readings should share a sentence shape. Never open the note with 'It assumes', 'Many people', 'This claim', 'This overlooks'. Banned: 'oversimplifies', 'doesn't address', 'individual differences', 'complexities', 'nuances', and any opinion poll ('many believe', 'some would say').",
+          "- Ground both sentences in content_text or user_account_of_content; bring in what you know of the world, never invent what the content said, never restate a limitation the content already admits. If the material is too thin to know what it claims (a title, hashtags, a caption, a fragment), set reading to null. A null is better than a guess.",
           "",
         ].join("\n")
       : "",
@@ -610,7 +623,7 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
     "OPEN_QUESTION (optional):",
     "- Include ONLY if a genuinely generative, specific question exists. One short line. Omit it otherwise — never force one.",
     "",
-    "NOVELTY drafts: one short line stating that nothing saved yet sits near this. Never promise what saving more will do — no 'save more', 'as you add more', 'patterns will emerge' — and never call one capture an 'interest'. It is a footnote, not the point.",
+    "NOVELTY drafts: one short line, phrased freshly in this capture's own terms, saying that nothing saved yet sits near it — not a formula. Never promise what saving more will do (no 'save more', 'as you add more', 'patterns will emerge'), never call one capture an 'interest'. It is a footnote, not the point.",
     "",
     "Do not start with 'This capture', 'This article', or the title verbatim. Do not overstate thin evidence.",
     args.mediaContext
@@ -628,7 +641,7 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
     "",
     "Return strictly valid JSON (no markdown):",
     wantReading
-      ? '{"reading": {"claim": "...", "catch": "..."} | null, "insights": [{"index": N, "headline": "...", "body": "...", "open_question": "..."}]}'
+      ? '{"reading": {"line": "...", "kicker": "...", "note": "..."} | null, "insights": [{"index": N, "headline": "...", "body": "...", "open_question": "..."}]}'
       : '{"insights": [{"index": N, "headline": "...", "body": "...", "open_question": "..."}]}',
   ].filter(Boolean).join("\n");
 
@@ -643,6 +656,7 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
     user_account_of_content: args.userContext?.slice(0, 1200) ?? "",
     topics: args.topicNames ?? [],
     about_work: args.mediaContext ?? undefined,
+    recent_reading_moves: wantReading ? (args.recentReadingKickers ?? []) : undefined,
     related_items: (args.neighborContext ?? []).map((n) => ({
       title: n.title,
       relationship: n.edgeType,
@@ -686,7 +700,7 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
 
     const parsed = JSON.parse(content) as {
       insights?: { index: number; headline: string; body: string; open_question?: string }[];
-      reading?: { claim?: unknown; catch?: unknown } | null;
+      reading?: { line?: unknown; kicker?: unknown; note?: unknown } | null;
     };
 
     const insights = parsed.insights
@@ -705,17 +719,24 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
       })
       : args.drafts;
 
-    // A reading needs both halves: a claim without a catch is a summary, and
-    // a summary is exactly the commodity this is not.
-    const claim = typeof parsed.reading?.claim === "string" ? parsed.reading.claim.trim() : "";
-    const catchLine = typeof parsed.reading?.catch === "string" ? parsed.reading.catch.trim() : "";
+    // A reading needs both halves: a line without a note is a summary, and a
+    // summary is exactly the commodity this is not. The kicker — the move the
+    // model chose ("the catch", "where it comes from", "the test") — travels in
+    // evidence so the screen can label the note and the next capture's polish
+    // can be told not to make the same move again.
+    const line = typeof parsed.reading?.line === "string" ? parsed.reading.line.trim() : "";
+    const note = typeof parsed.reading?.note === "string" ? parsed.reading.note.trim() : "";
+    const kicker =
+      typeof parsed.reading?.kicker === "string"
+        ? parsed.reading.kicker.trim().toLowerCase().replace(/[.:]+$/, "").slice(0, 32)
+        : "";
     const reading: InsightDraft | null =
-      wantReading && claim.length > 0 && catchLine.length > 0
+      wantReading && line.length > 0 && note.length > 0
         ? {
           type: InsightType.READING,
-          headline: claim,
-          body: catchLine,
-          evidence: { grounding: args.contentGrounding ?? "rich" },
+          headline: line,
+          body: note,
+          evidence: { grounding: args.contentGrounding ?? "rich", ...(kicker ? { kicker } : {}) },
           strength: 1,
         }
         : null;
@@ -764,14 +785,14 @@ export async function generateMirror(args: {
     "",
     "READ:",
     "- One sentence, second person. True, specific, and a little uncomfortable: what this person is actually collecting, not what the items are about.",
-    "- It must be falsifiable — a sentence this person could push back on. Name the thing they keep reaching for (a kind of control, a kind of permission, a kind of certainty, a kind of excuse) in concrete words.",
-    "- Shape (different items): three saves on mental training, the law of attraction and SAT prep → 'You're not collecting information, you're collecting techniques for controlling your own mind.' Find this person's own thread in their own terms; do not reuse that sentence's wording.",
-    "- Horoscopes are banned: 'you collect insights that challenge conventional thinking' is true of anyone who saves anything. Banned words: 'insights', 'challenge', 'conventional', 'explore', 'complexities', 'perspectives', 'curious', 'diverse', 'eclectic', 'wide-ranging', 'interested in', 'passionate', 'journey'.",
+    "- It must be falsifiable — a sentence this person could push back on — and said in the terms these particular items give you, not generic ones.",
+    "- There is no template. Choose the move this set earns: name the thing they keep reaching for (a kind of control, permission, certainty, excuse); name what is conspicuously missing from saves like these; name the question all of them are trying to answer; name what the saving itself looks like (arming, bracing, escaping, rehearsing); or a move of your own. A contrast ('not X but Y') is one move among many — never open with 'You're not', and never use the 'you're not collecting X, you're collecting Y' construction at all; it has become a cliché. A flat declarative, a question, a noticed habit are equally good shapes.",
+    "- Horoscopes are banned: anything that would be true of anyone who saves anything. Banned words: 'insights', 'challenge', 'conventional', 'explore', 'complexities', 'perspectives', 'frameworks', 'curious', 'diverse', 'eclectic', 'wide-ranging', 'interested in', 'passionate', 'journey'.",
     "- If the items genuinely share nothing, say what the range itself says about how this person reads — still specific to these items, never 'you have varied interests'.",
     "- Do not name the items in the read; that is what BECAUSE is for.",
     "",
     "BECAUSE:",
-    "- One sentence of evidence that names the items (short titles are fine) and shows the thread running through them.",
+    "- One sentence of evidence, in your words, that names the items (short titles are fine) and shows the thread running through them. Do not quote the items back.",
     "",
     "If the material is only titles and hashtags with no substance to read, return {\"read\": null}. A null is better than a guess.",
     styleDirective(args.style),

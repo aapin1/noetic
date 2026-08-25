@@ -1,6 +1,6 @@
 import { InsightType } from "@prisma/client";
 import { describe, expect, it } from "vitest";
-import { draftInsights, NOVELTY_STRENGTH, sortInsights } from "./insights";
+import { draftInsights, NOVELTY_STRENGTH, recentReadingMoves, sortInsights } from "./insights";
 
 /** The old NOVELTY bodies narrated the app's own emptiness and promised value
  * later. None of that language may come back. */
@@ -48,6 +48,20 @@ describe("draftInsights — NOVELTY is a footnote", () => {
     // 0.5 + jaccard/2), so a footnote at NOVELTY_STRENGTH can never outrank one
     // on the archive's strongest-first lead insight.
     expect(NOVELTY_STRENGTH).toBeLessThan(0.5);
+  });
+});
+
+describe("recentReadingMoves", () => {
+  it("returns the kickers of READING rows only, newest first, skipping unlabelled ones", () => {
+    const rows = [
+      { type: InsightType.READING, evidence: { grounding: "rich", kicker: "the test" } },
+      { type: InsightType.NOVELTY, evidence: { dominantTopic: "psychology" } },
+      { type: InsightType.READING, evidence: { grounding: "partial" } },
+      { type: InsightType.CONNECTION, evidence: { kicker: "not a reading" } },
+      { type: InsightType.READING, evidence: { kicker: "the catch" } },
+      { type: InsightType.READING, evidence: null },
+    ];
+    expect(recentReadingMoves(rows)).toEqual(["the test", "the catch"]);
   });
 });
 
