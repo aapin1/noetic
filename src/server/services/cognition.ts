@@ -35,7 +35,7 @@ import {
   draftInsights,
   RELATED_LIMIT,
   RELATED_MIN_WEIGHT,
-  recentReadingMoves,
+  recentReadingContext,
   sortInsights,
   type Neighbor,
   type TopicCount,
@@ -594,6 +594,10 @@ function mediaContextFor(args: { origin?: string | null; kind?: string; title?: 
  * number with a shape: two is a coincidence, three is a thread. */
 const MIRROR_AT = 3;
 
+/** How many of the user's last READINGs the polish is told not to repeat —
+ * enough to cover a share-sheet session of saves. */
+const RECENT_READINGS = 6;
+
 /**
  * Lands the background polish. The sharpened text swaps into the rows the
  * response already returned, and the READING — which has no draft, because it
@@ -717,18 +721,27 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   // Types of the last few insights — drives draftInsights' repetition guard
   // (a burst of saves must not lead every capture with the same trajectory
   // reading). Indexed on (userId, createdAt); costs nothing next to the rest.
-  // `evidence` rides along for the READING moves (recentReadingMoves) — the
-  // polish's own repetition guard.
   const recentInsightTypesPromise = db.insight.findMany({
     where: { userId: payload.userId },
     orderBy: { createdAt: "desc" },
     take: 6,
-    select: { type: true, evidence: true },
+    select: { type: true },
+  });
+  // The last few READINGs — the polish's own repetition guard (move and
+  // opening; see recentReadingContext). Its own query rather than a wider
+  // take on the one above: the type guard's window is deliberately ~3
+  // captures, while this wants the last several readings whatever else was
+  // written in between.
+  const recentReadingsPromise = db.insight.findMany({
+    where: { userId: payload.userId, type: InsightType.READING },
+    orderBy: { createdAt: "desc" },
+    take: RECENT_READINGS,
+    select: { body: true, evidence: true },
   });
   // If the capture aborts before these are awaited (extraction can throw), a
   // late rejection must not crash the process. Awaiting them below still
   // rethrows — this only marks the rejection as handled.
-  for (const p of [existingTopicsPromise, insightStylePromise, priorsPromise, recentInsightTypesPromise]) {
+  for (const p of [existingTopicsPromise, insightStylePromise, priorsPromise, recentInsightTypesPromise, recentReadingsPromise]) {
     void p.catch(() => {});
   }
 
@@ -1159,7 +1172,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
       contentGrounding,
       userContext: payload.userContext,
       mediaContext: mediaContextFor({ origin: payload.origin, kind: contentKind, title: contentTitle, siteName: contentSiteName }),
-      recentReadingKickers: recentReadingMoves(recentInsights),
+      recentReadings: recentReadingContext(await recentReadingsPromise),
       topicNames: classified.map((topic) => topic.name),
       neighborContext: neighborInfo.neighbors.map((n) => ({
         title: n.title,
@@ -1282,12 +1295,22 @@ export async function updateCaptureContext(args: {
   const topicCounts = computeTopicCounts(neighborInfo.rawPriors, topicMap);
   const trajectory = computeTrajectory(neighborInfo.rawPriors, topicMap);
   const itemTitle = contentTitle ?? (rawText ?? caption ?? "Untitled capture").slice(0, 80);
-  const recentInsights = await db.insight.findMany({
-    where: { userId: args.userId },
-    orderBy: { createdAt: "desc" },
-    take: 6,
-    select: { type: true, evidence: true },
-  });
+  const [recentInsights, recentReadings] = await Promise.all([
+    db.insight.findMany({
+      where: { userId: args.userId },
+      orderBy: { createdAt: "desc" },
+      take: 6,
+      select: { type: true },
+    }),
+    // Excluding this capture's own reading, which is about to be rebuilt —
+    // it must not count as a move already made.
+    db.insight.findMany({
+      where: { userId: args.userId, type: InsightType.READING, capturedItemId: { not: item.id } },
+      orderBy: { createdAt: "desc" },
+      take: RECENT_READINGS,
+      select: { body: true, evidence: true },
+    }),
+  ]);
 
   const drafts = draftInsights({
     style: insightStyle,
@@ -1391,7 +1414,7 @@ export async function updateCaptureContext(args: {
     contentGrounding,
     userContext,
     mediaContext: mediaContextFor({ origin: item.origin, kind: item.contentItem?.contentType?.name, title: item.contentItem?.title, siteName: item.contentItem?.siteName ?? undefined }),
-    recentReadingKickers: recentReadingMoves(recentInsights),
+    recentReadings: recentReadingContext(recentReadings),
     topicNames: classified.map((topic) => topic.name),
     neighborContext: neighborInfo.neighbors.map((n) => ({
       title: n.title,

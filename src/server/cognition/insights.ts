@@ -92,17 +92,30 @@ const INSIGHT_RANK: Partial<Record<InsightType, number>> = {
   [InsightType.READING]: 1,
 };
 
+/** How many words of a recent note the polish is shown, so it can avoid the
+ * opening rather than the whole sentence. */
+const OPENING_WORDS = 8;
+
 /**
- * The moves (kickers) of the user's recent READINGs, newest first — "the
- * catch", "where it comes from", "the test". Handed back to the polish as the
- * moves it should not make again, the same way recentInsightTypes keeps a
- * burst of saves from leading with the same trajectory reading every time.
+ * The user's recent READINGs as the polish sees them: the move each made
+ * ("the catch", "where it comes from") and the first few words of its note.
+ * Handed back as the moves it must not make again and the openings it must
+ * not reuse — the same idea as recentInsightTypes, which keeps a burst of
+ * saves from leading with the same trajectory reading every time, extended to
+ * sentence shape because a different move in the same shape still reads as
+ * the same reading.
  */
-export function recentReadingMoves(rows: { type: InsightType; evidence: unknown }[]): string[] {
-  return rows
-    .filter((row) => row.type === InsightType.READING)
-    .map((row) => (row.evidence as { kicker?: unknown } | null)?.kicker)
-    .filter((kicker): kicker is string => typeof kicker === "string" && kicker.length > 0);
+export function recentReadingContext(
+  rows: { body: string; evidence: unknown }[],
+): { move?: string; opened_with: string }[] {
+  return rows.map((row) => {
+    const kicker = (row.evidence as { kicker?: unknown } | null)?.kicker;
+    const opened_with = row.body.split(/\s+/).filter(Boolean).slice(0, OPENING_WORDS).join(" ");
+    return {
+      ...(typeof kicker === "string" && kicker.length > 0 ? { move: kicker } : {}),
+      opened_with,
+    };
+  });
 }
 
 export function sortInsights<T extends { type: InsightType; strength: number; createdAt?: Date }>(rows: T[]): T[] {

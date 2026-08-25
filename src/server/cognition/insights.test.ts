@@ -1,6 +1,6 @@
 import { InsightType } from "@prisma/client";
 import { describe, expect, it } from "vitest";
-import { draftInsights, NOVELTY_STRENGTH, recentReadingMoves, sortInsights } from "./insights";
+import { draftInsights, NOVELTY_STRENGTH, recentReadingContext, sortInsights } from "./insights";
 
 /** The old NOVELTY bodies narrated the app's own emptiness and promised value
  * later. None of that language may come back. */
@@ -51,17 +51,22 @@ describe("draftInsights — NOVELTY is a footnote", () => {
   });
 });
 
-describe("recentReadingMoves", () => {
-  it("returns the kickers of READING rows only, newest first, skipping unlabelled ones", () => {
+describe("recentReadingContext", () => {
+  it("hands back each reading's move and the opening words of its note, in order", () => {
     const rows = [
-      { type: InsightType.READING, evidence: { grounding: "rich", kicker: "the test" } },
-      { type: InsightType.NOVELTY, evidence: { dominantTopic: "psychology" } },
-      { type: InsightType.READING, evidence: { grounding: "partial" } },
-      { type: InsightType.CONNECTION, evidence: { kicker: "not a reading" } },
-      { type: InsightType.READING, evidence: { kicker: "the catch" } },
-      { type: InsightType.READING, evidence: null },
+      {
+        body: "If that were true, the tenth rehearsal would be calmer than the first for everyone.",
+        evidence: { grounding: "rich", kicker: "the test" },
+      },
+      // Unlabelled move: the opening still counts as a shape not to reuse.
+      { body: "Stoic ethics emphasizes inner judgment.", evidence: { grounding: "partial" } },
+      { body: "", evidence: null },
     ];
-    expect(recentReadingMoves(rows)).toEqual(["the test", "the catch"]);
+    expect(recentReadingContext(rows)).toEqual([
+      { move: "the test", opened_with: "If that were true, the tenth rehearsal would" },
+      { opened_with: "Stoic ethics emphasizes inner judgment." },
+      { opened_with: "" },
+    ]);
   });
 });
 
