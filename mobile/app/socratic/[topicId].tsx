@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { LimitNotice } from '@/components/ui/LimitNotice';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import type { SocraticMessage, SocraticThread } from '@/types/api';
 
@@ -51,6 +52,7 @@ export default function SocraticScreen() {
   const [messages, setMessages] = useState<SocraticMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorLimit, setErrorLimit] = useState(false);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
 
@@ -107,6 +109,7 @@ export default function SocraticScreen() {
     } catch (e) {
       setMessages((prev) => prev.filter((m) => m.id !== optimisticUser.id));
       setError(e instanceof Error ? e.message : 'Failed to send');
+      setErrorLimit((e as { code?: string })?.code === 'USAGE_LIMIT');
     } finally {
       setSending(false);
     }
@@ -126,7 +129,7 @@ export default function SocraticScreen() {
 
       {!loading && error && (
         <View style={styles.centered}>
-          <Text variant="monoSmall" color="danger">{error}</Text>
+          {errorLimit ? <LimitNotice message={error} /> : <Text variant="monoSmall" color="danger">{error}</Text>}
         </View>
       )}
 

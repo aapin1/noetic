@@ -11,6 +11,7 @@ import { failureReason, track, type CaptureKind } from '@/lib/analytics';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { LimitNotice } from '@/components/ui/LimitNotice';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { Radius, Spacing } from '@/constants/theme';
 
@@ -33,6 +34,7 @@ export default function ShareIntentScreen() {
   const [message, setMessage] = useState('');
   const [savedId, setSavedId] = useState<string | null>(null);
   const [savedTitle, setSavedTitle] = useState<string>('');
+  const [savedLimit, setSavedLimit] = useState<string | null>(null);
   const handledRef = useRef(false);
 
   useEffect(() => {
@@ -103,6 +105,7 @@ export default function ShareIntentScreen() {
         void rememberSharedCapture(res.id);
         setSavedId(res.id);
         setSavedTitle(res.title);
+        setSavedLimit(res.usageLimit?.message ?? null);
         setStatus('saved');
       } catch (e) {
         track('capture_failed', {
@@ -147,6 +150,7 @@ export default function ShareIntentScreen() {
               {savedTitle}
             </Text>
           )}
+          {!!savedLimit && <LimitNotice message={savedLimit} style={{ maxWidth: 300, marginTop: Spacing[3] }} />}
           <Pressable
             onPress={() => {
               void clearSharedCapture();

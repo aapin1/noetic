@@ -8,6 +8,7 @@ import { track } from '@/lib/analytics';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { LimitNotice } from '@/components/ui/LimitNotice';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import type { CompanionMessage, CompanionThread } from '@/types/api';
 
@@ -96,6 +97,7 @@ export default function CompanionScreen() {
   // wrong for a send that failed (there is, and hiding it loses the user's
   // place). A send failure shows a line above the input and nothing else.
   const [sendError, setSendError] = useState<string | null>(null);
+  const [sendLimit, setSendLimit] = useState(false);
 
   // Seed the input with a pre-filled draft when arriving from a Mind thread
   // ("Continue in companion"), so the user only has to write their own take.
@@ -181,6 +183,7 @@ export default function CompanionScreen() {
     } catch (e) {
       setMessages((prev) => prev.filter((m) => m.id !== optimisticUser.id));
       setSendError(e instanceof Error ? e.message : 'Failed to send');
+      setSendLimit((e as { code?: string })?.code === 'USAGE_LIMIT');
       // Put the text back so a failed send is retryable — the optimistic
       // bubble is gone and `reply` was already cleared, so otherwise the
       // user's message is simply lost. Never clobber a fresh draft.
@@ -292,7 +295,7 @@ export default function CompanionScreen() {
 
           {sendError && (
             <View style={[styles.sendError, { backgroundColor: c.background }]}>
-              <Text variant="monoSmall" color="danger">{sendError}</Text>
+              {sendLimit ? <LimitNotice message={sendError} /> : <Text variant="monoSmall" color="danger">{sendError}</Text>}
             </View>
           )}
 

@@ -22,6 +22,13 @@ import type { UsageMeter } from '@/types/api';
 
 const ACCENT = accentFor(7);
 
+/** "tomorrow" for daily meters, "Sep 1" for monthly — on the user's own clock. */
+function formatReset(meter: UsageMeter): string {
+  if (meter.period === 'day') return 'tomorrow';
+  const at = new Date(meter.resetsAt ?? '');
+  return Number.isNaN(at.getTime()) ? 'next month' : at.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 const METER_LABELS: Record<UsageMeter['kind'], string> = {
   social_video_transcript: 'TikTok & Instagram captures',
   image_describe: 'image understanding',
@@ -305,6 +312,7 @@ export default function PlusScreen() {
                     </Text>
                     <Text variant="monoSmall" color={maxed ? 'primary' : 'faint'}>
                       {meter.used}/{meter.limit}
+                      {meter.resetsAt ? ` · resets ${formatReset(meter)}` : ''}
                     </Text>
                   </View>
                   <View style={[styles.meterTrack, { backgroundColor: c.elevated }]}>

@@ -446,6 +446,7 @@ export async function ingestOrStubUrl(url: string, db: DbClient = prisma, opts: 
       contentTitle: row.title,
       contentDescription: row.description ?? undefined,
       bodyText: row.bodyText ?? undefined,
+      bodySource: row.bodySource ?? undefined,
       // Present only when this call created the row with deferClean: resolves
       // with the post-clean title/excerpt once the row has been updated.
       cleaned: "cleaned" in ingest ? ingest.cleaned : undefined,

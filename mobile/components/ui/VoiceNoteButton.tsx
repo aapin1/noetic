@@ -11,7 +11,8 @@ interface Props {
   /** Receives the transcribed text when a recording finishes. */
   onText: (text: string) => void;
   /** Surfaces recording/transcription errors to the host form. */
-  onError?: (message: string) => void;
+  /** `code` is the API error code when the server refused (e.g. USAGE_LIMIT). */
+  onError?: (message: string, code?: string) => void;
 }
 
 /**
@@ -67,7 +68,10 @@ export function VoiceNoteButton({ onText, onError }: Props) {
       const { text } = await api.captures.transcribe(base64, 'audio/m4a');
       onText(text);
     } catch (e) {
-      onError?.(e instanceof Error ? e.message : 'Could not transcribe that — try typing instead.');
+      onError?.(
+        e instanceof Error ? e.message : 'Could not transcribe that — try typing instead.',
+        (e as { code?: string })?.code,
+      );
     } finally {
       setState('idle');
     }

@@ -36,7 +36,7 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
-import { ChevronDown, ChevronUp, Crosshair, MessageCircleIcon, Moon, Search, Sun, Trash2Icon, type LucideIcon } from 'lucide-react-native';
+import { Crosshair, MessageCircleIcon, Moon, Search, Sun, Trash2Icon, type LucideIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { takeRecentSharedCapture } from '@/lib/lastShared';
 import { prefetchQuery, useApiQuery } from '@/hooks/useApiQuery';
@@ -63,6 +63,7 @@ import { ARCHIVE_REVEAL_COUNT, EVENT_FLAGS } from '@/lib/disclosure';
 import { Whisper } from '@/components/ui/Whisper';
 import { useSocratic } from '@/contexts/SocraticContext';
 import { Text } from '@/components/ui/Text';
+import { LimitNotice } from '@/components/ui/LimitNotice';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { PushPrimer } from '@/components/ui/PushPrimer';
 import { StreakMark } from '@/components/ui/StreakMark';
@@ -1251,6 +1252,11 @@ function PreflightStatus({ loading, preflight, c }: {
       </View>
     );
   }
+  // A cap degraded the read: say so here, with the reset date, instead of
+  // letting "short excerpt" look like the source's fault.
+  if (preflight.usageLimit) {
+    return <LimitNotice message={preflight.usageLimit.message} style={{ marginTop: Spacing[3] }} />;
+  }
   if (preflight.confidence === 'partial') {
     return (
       <View style={sh.preflightRow}>
@@ -1266,17 +1272,17 @@ function PreflightStatus({ loading, preflight, c }: {
 }
 
 function StepTwo({
-  reaction, setReaction, error, busy, onBack, onCommit, c,
+  reaction, setReaction, error, errorIsLimit, busy, onBack, onCommit, c,
   isLink, preflight, preflightLoading, userContext, setUserContext, onVoiceError,
 }: {
   reaction: string; setReaction: (s: string) => void;
-  error: string; busy: boolean; onBack: () => void; onCommit: () => void;
+  error: string; errorIsLimit?: boolean; busy: boolean; onBack: () => void; onCommit: () => void;
   c: AppThemeColors;
   isLink: boolean;
   preflight: CapturePreflight | null;
   preflightLoading: boolean;
   userContext: string; setUserContext: (s: string) => void;
-  onVoiceError: (message: string) => void;
+  onVoiceError: (message: string, code?: string) => void;
 }) {
   // The fail-safe: when we couldn't read the source (or barely could), the
   // user's own account becomes the ground truth the insight pipeline works from.
@@ -1338,8 +1344,9 @@ function StepTwo({
             </Text>
           </View>
         )}
-        {!!error && (
-          <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
+        {!!error && (errorIsLimit
+          ? <LimitNotice message={error} style={{ marginTop: Spacing[3] }} />
+          : <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
         )}
         <Divider c={c} />
         <View style={sh.actions}>
@@ -1539,11 +1546,22 @@ const tb = StyleSheet.create({
 
 // ── Info strip (bottom map summary) ───────────────────────────────
 
+interface StripHint {
+  key: string;
+  /** Lower = shown first when several are eligible. */
+  priority: number;
+  text: string;
+  onPress: () => void;
+}
+/** Per-session turns each hint gets before the strip rests on the counts. */
+const STRIP_HINT_MAX_SHOWS_PER_SESSION = 2;
+/** Lifetime showings before an unacted hint retires for good. */
+const STRIP_HINT_MAX_SHOWS = 6;
+const STRIP_HINT_SHOWS_KEY = 'mneme_strip_hint_shows';
+
 function InfoStrip({
-  collapsed, onToggle, onLayout, mapBg, pointCount, totalPointCount, fieldCount, connectionCount, hints,
+  onLayout, mapBg, pointCount, totalPointCount, fieldCount, connectionCount, hints, onHintShown,
 }: {
-  collapsed: boolean;
-  onToggle: () => void;
   onLayout: (e: LayoutChangeEvent) => void;
   /** The map's own background, so the strip fades out of it rather than onto it. */
   mapBg: string;
@@ -1552,37 +1570,54 @@ function InfoStrip({
   totalPointCount: number;
   fieldCount: number;
   connectionCount: number;
-  /** Undiscovered-feature lines the strip slowly trades the counts for. */
-  hints: { key: string; text: string; onPress: () => void }[];
+  /** Undiscovered-feature lines the strip slowly trades the counts for, sorted by priority. */
+  hints: StripHint[];
+  /** A hint just finished its turn — the caller keeps the cross-session tally. */
+  onHintShown: (key: string) => void;
 }) {
   // The ticker: counts hold the floor, then one hint takes it for a beat,
-  // then the counts return — a slow crossfade, never a scroll. Collapsing the
-  // strip parks it back on the counts.
-  const [hintIdx, setHintIdx] = useState(-1);
-  const hintCursor = useRef(0);
+  // then the counts return — a slow crossfade, never a scroll. When several
+  // hints are eligible they take turns: the pick is the one shown fewest
+  // times this session, ties broken by priority, and once every hint has
+  // had STRIP_HINT_MAX_SHOWS_PER_SESSION turns the strip rests on the counts.
+  const [hintKey, setHintKey] = useState<string | null>(null);
+  const sessionShows = useRef<Record<string, number>>({});
   const tickerFade = useRef(new RNAnimated.Value(1)).current;
   useEffect(() => {
-    if (collapsed || hints.length === 0) {
-      setHintIdx(-1);
+    const pickNext = (): StripHint | null => {
+      let best: StripHint | null = null;
+      let bestShows = STRIP_HINT_MAX_SHOWS_PER_SESSION;
+      for (const h of hints) {
+        const shows = sessionShows.current[h.key] ?? 0;
+        if (shows < bestShows) { best = h; bestShows = shows; }
+      }
+      return best;
+    };
+    if (hintKey === null && pickNext() === null) {
       tickerFade.setValue(1);
       return;
     }
-    const hold = hintIdx === -1 ? 14000 : 8000;
+    const hold = hintKey === null ? 14000 : 8000;
     const timer = setTimeout(() => {
       RNAnimated.timing(tickerFade, { toValue: 0, duration: 450, useNativeDriver: true }).start(({ finished }) => {
         if (!finished) return;
-        if (hintIdx === -1) {
-          setHintIdx(hintCursor.current % hints.length);
-          hintCursor.current += 1;
+        if (hintKey === null) {
+          const next = pickNext();
+          if (next) sessionShows.current[next.key] = (sessionShows.current[next.key] ?? 0) + 1;
+          setHintKey(next?.key ?? null);
         } else {
-          setHintIdx(-1);
+          // Tallied on the way out, not in: a hint that hits its lifetime cap
+          // should finish its last turn instead of vanishing mid-show.
+          onHintShown(hintKey);
+          setHintKey(null);
         }
         RNAnimated.timing(tickerFade, { toValue: 1, duration: 450, useNativeDriver: true }).start();
       });
     }, hold);
     return () => clearTimeout(timer);
-  }, [collapsed, hints.length, hintIdx, tickerFade]);
-  const hint = hintIdx >= 0 && hintIdx < hints.length ? hints[hintIdx] : null;
+  }, [hints, hintKey, onHintShown, tickerFade]);
+  // A hint whose gate closed mid-show (e.g. acted on) drops back to the counts.
+  const hint = hintKey === null ? null : hints.find((h) => h.key === hintKey) ?? null;
   // Standalone counts only. This is baseline information, not navigation — the
   // strip used to also carry two tappable lines (a "rising theme" link and a
   // tensions link), which made it a third place to route from and pushed it
@@ -1615,52 +1650,36 @@ function InfoStrip({
 
   return (
     <View
-      style={[infoStripStyles.wrap, !collapsed && infoStripStyles.wrapExpanded]}
+      style={infoStripStyles.wrap}
       onLayout={onLayout}
       pointerEvents="box-none"
     >
-      {!collapsed && (
-        <>
-          {/* Painted in the MAP's own colour, ramping from fully transparent at
-              the top. A flat scrim gave the strip a hard top edge and a tint of
-              its own, which read as a black bar laid over a lighter canvas —
-              the fade has no edge to see and no colour that isn't already the
-              map's, so it just looks like the map getting denser underfoot. */}
-          <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
-            <Defs>
-              <LinearGradient id="stripFade" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor={mapBg} stopOpacity={0} />
-                <Stop offset="45%" stopColor={mapBg} stopOpacity={0.55} />
-                <Stop offset="100%" stopColor={mapBg} stopOpacity={0.92} />
-              </LinearGradient>
-            </Defs>
-            <Rect x="0" y="0" width="100%" height="100%" fill="url(#stripFade)" />
-          </Svg>
-          <RNAnimated.View style={[infoStripStyles.row, { opacity: tickerFade }]} pointerEvents="box-none">
-            {hint ? (
-              <Pressable onPress={hint.onPress} hitSlop={8} accessibilityRole="button" pointerEvents="auto">
-                <Text variant="monoSmall" style={infoStripStyles.hint}>
-                  {hint.text}
-                </Text>
-              </Pressable>
-            ) : (
-              items
-            )}
-          </RNAnimated.View>
-        </>
-      )}
-      <Pressable
-        onPress={onToggle}
-        hitSlop={10}
-        style={infoStripStyles.toggle}
-        pointerEvents="auto"
-        accessibilityLabel={collapsed ? 'Show map summary' : 'Hide map summary'}
-        accessibilityRole="button"
-      >
-        {collapsed
-          ? <ChevronUp size={16} color="rgba(240,232,214,0.53)" strokeWidth={1.5} />
-          : <ChevronDown size={16} color="rgba(240,232,214,0.53)" strokeWidth={1.5} />}
-      </Pressable>
+      {/* Painted in the MAP's own colour, ramping from fully transparent at
+          the top. A flat scrim gave the strip a hard top edge and a tint of
+          its own, which read as a black bar laid over a lighter canvas —
+          the fade has no edge to see and no colour that isn't already the
+          map's, so it just looks like the map getting denser underfoot. */}
+      <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+        <Defs>
+          <LinearGradient id="stripFade" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%" stopColor={mapBg} stopOpacity={0} />
+            <Stop offset="45%" stopColor={mapBg} stopOpacity={0.55} />
+            <Stop offset="100%" stopColor={mapBg} stopOpacity={0.92} />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#stripFade)" />
+      </Svg>
+      <RNAnimated.View style={[infoStripStyles.row, { opacity: tickerFade }]} pointerEvents="box-none">
+        {hint ? (
+          <Pressable onPress={hint.onPress} hitSlop={8} accessibilityRole="button" pointerEvents="auto">
+            <Text variant="monoSmall" style={infoStripStyles.hint}>
+              {hint.text}
+            </Text>
+          </Pressable>
+        ) : (
+          items
+        )}
+      </RNAnimated.View>
     </View>
   );
 }
@@ -1673,14 +1692,9 @@ const infoStripStyles = StyleSheet.create({
     alignItems: 'center',
     paddingLeft: Spacing[4],
     paddingRight: Spacing[2],
-  },
-  // Padding only — the background itself is the gradient <Svg> above, which
-  // needs vertical room to ramp: too tight and the fade becomes the hard edge
-  // it exists to avoid. Collapsed, the strip leaves nothing but its chevron
-  // over the bare map. The FAB above it does NOT follow it down (see
-  // fabBottom): collapsing is meant to clear the counts, not to rearrange the
-  // controls.
-  wrapExpanded: {
+    // Padding only — the background itself is the gradient <Svg> above, which
+    // needs vertical room to ramp: too tight and the fade becomes the hard edge
+    // it exists to avoid.
     paddingTop: Spacing[6],
     paddingBottom: Spacing[2],
   },
@@ -1701,10 +1715,6 @@ const infoStripStyles = StyleSheet.create({
     // of a 393px screen, so the gap is where the headroom comes from.
     columnGap: Spacing[2],
     rowGap: 2,
-  },
-  toggle: {
-    padding: 4,
-    marginLeft: 'auto',
   },
   item: {
     color: 'rgba(240,232,214,0.57)',
@@ -2001,7 +2011,7 @@ export default function MapScreen() {
   // estimate until the first layout pass reports the real value.
   const [headerH, setHeaderH] = useState(0);
   // Same idea for the bottom summary strip: it wraps to a second row on narrow
-  // screens and shrinks to just its chevron when collapsed, so the capture FAB
+  // screens, so the capture FAB
   // and the discovery pills above it are placed off the measured height rather
   // than a guess. `stripVisible` / `fabBottom` are derived further down, once
   // the modes the strip depends on are in scope.
@@ -2771,7 +2781,6 @@ export default function MapScreen() {
   );
 
   // ── Tool state ─────────────────────────────────────────────────
-  const [infoCollapsed, setInfoCollapsed] = useState(false);
   const [toolMode, setToolMode] = useState<ToolMode>('default');
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
@@ -3285,43 +3294,15 @@ export default function MapScreen() {
   const [reaction, setReaction] = useState('');
   const [busy, setBusy] = useState(false);
   const [captureError, setCaptureError] = useState('');
+  // True when captureError is a free-plan cap (voice notes) — rendered as a
+  // LimitNotice with the paywall link rather than plain danger text.
+  const [captureErrorIsLimit, setCaptureErrorIsLimit] = useState(false);
   // Preflight: what the backend could read from the pasted URL, fetched while
   // the user types their reaction. Drives the "what was this about?" fail-safe.
   const [preflight, setPreflight] = useState<CapturePreflight | null>(null);
   const [preflightLoading, setPreflightLoading] = useState(false);
   const [userContext, setUserContext] = useState('');
   const preflightSeq = useRef(0);
-
-  // ── Feature hints for the summary strip ─────────────────────────
-  // The strip's counts are baseline furniture; when there's a feature the
-  // person hasn't met yet, the strip slowly trades the counts for one line
-  // about it. Every hint is condition-gated, and acting on one retires it
-  // for good — nothing here nags.
-  const { data: linkedAccountCount } = useApiQuery(
-    () => api.connections.list().then((r) => r.connections.length),
-    [],
-    { cacheKey: 'connections.count' },
-  );
-  const stripHints = useMemo(() => {
-    const out: { key: string; text: string; onPress: () => void }[] = [];
-    const go = (flag: string, path: string) => () => {
-      disclosure.markSeen(flag);
-      router.push(path as never);
-    };
-    if (linkedAccountCount === 0 && totalCaptureCount >= 3 && !disclosure.hasSeen('hint:connections')) {
-      out.push({ key: 'connections', text: 'letterboxd, goodreads & more can feed this map →', onPress: go('hint:connections', '/connections') });
-    }
-    if (totalCaptureCount >= 5 && !disclosure.hasSeen('hint:import')) {
-      out.push({ key: 'import', text: 'a pile of bookmarks? bring them all at once →', onPress: go('hint:import', '/import') });
-    }
-    if (totalCaptureCount >= 10 && !disclosure.hasSeen(EVENT_FLAGS.sharedAtlas) && !disclosure.hasSeen('hint:share-atlas')) {
-      out.push({ key: 'share-atlas', text: 'your atlas is becoming worth sharing →', onPress: go('hint:share-atlas', '/share-atlas') });
-    }
-    if (disclosure.hasSeen(EVENT_FLAGS.sharedAtlas) && !disclosure.hasSeen(visitedTabFlag('pulse'))) {
-      out.push({ key: 'pulse', text: 'minds you know are charting too →', onPress: go('hint:pulse', '/(tabs)/pulse') });
-    }
-    return out;
-  }, [linkedAccountCount, totalCaptureCount, disclosure, router]);
 
   // Single source of truth for the bottom summary strip: the render below and
   // everything stacked above it must agree, or the FAB floats over a gap. The
@@ -3331,8 +3312,8 @@ export default function MapScreen() {
     nodes.length > 0 && !ghostActive && !showCapture && !drawerVisible && lensMode !== 'temporal' &&
     toolMode !== 'search' &&
     !(toolMode === 'discover' && (discoveryNodeIds.length > 0 || discoveryEdgeKeys.length > 0));
-  // Deliberately independent of BOTH `infoCollapsed` and `stripVisible`: the
-  // FAB always reserves the strip's expanded height, so it stays pinned at one
+  // Deliberately independent of `stripVisible`: the
+  // FAB always reserves the strip's height, so it stays pinned at one
   // spot under the user's thumb whether or not the counts happen to be on
   // screen. Tying it to the strip meant an empty map, a lens change, or an
   // active selection each dropped the button to the tab bar and back.
@@ -3697,8 +3678,16 @@ export default function MapScreen() {
   }, []);
 
   // ── push pre-permission ───────────────────────────────────────────────────
-  const { requestPermission } = useNotifications();
+  const { requestPermission, granted: pushGranted } = useNotifications();
   const [showPushPrimer, setShowPushPrimer] = useState(false);
+  // Mirrors the one-shot flag in storage, so the summary strip's notifications
+  // hint knows whether the system prompt has already been spent.
+  const [pushAsked, setPushAsked] = useState(false);
+  useEffect(() => { void hasAskedForPush().then(setPushAsked); }, []);
+  const markPushAsked = useCallback(() => {
+    setPushAsked(true);
+    void markAskedForPush();
+  }, []);
   // Armed by a successful capture, fired later once the user is actually free.
   const [pushPrimerArmed, setPushPrimerArmed] = useState(false);
 
@@ -3741,14 +3730,14 @@ export default function MapScreen() {
   // behind it.
   const closePushPrimer = useCallback(() => {
     setShowPushPrimer(false);
-    void markAskedForPush();
-  }, []);
+    markPushAsked();
+  }, [markPushAsked]);
 
   const acceptPushPrimer = useCallback(() => {
     setShowPushPrimer(false);
-    void markAskedForPush();
+    markPushAsked();
     void requestPermission();
-  }, [requestPermission]);
+  }, [markPushAsked, requestPermission]);
 
   // ── the comeback promise ──────────────────────────────────────────────────
   // The push ask, fused with the product's spine: with their own thoughts
@@ -3761,14 +3750,83 @@ export default function MapScreen() {
 
   const closePromise = useCallback(() => {
     setPromiseState(null);
-    void markAskedForPush();
-  }, []);
+    markPushAsked();
+  }, [markPushAsked]);
 
   const acceptPromise = useCallback(() => {
     setPromiseState(null);
-    void markAskedForPush();
+    markPushAsked();
     void requestPermission();
-  }, [requestPermission]);
+  }, [markPushAsked, requestPermission]);
+
+  // ── Feature hints for the summary strip ─────────────────────────
+  // The strip's counts are baseline furniture; when there's a feature the
+  // person hasn't met yet, the strip slowly trades the counts for one line
+  // about it. Every hint is condition-gated, and acting on one retires it
+  // for good. Nothing here nags: the strip shows each hint at most twice a
+  // session (see InfoStrip), and one that's been shown STRIP_HINT_MAX_SHOWS
+  // times without being acted on retires too.
+  const { data: linkedAccountCount } = useApiQuery(
+    () => api.connections.list().then((r) => r.connections.length),
+    [],
+    { cacheKey: 'connections.count' },
+  );
+  const [hintShows, setHintShows] = useState<Record<string, number>>({});
+  useEffect(() => {
+    void AsyncStorage.getItem(STRIP_HINT_SHOWS_KEY).then((raw) => {
+      if (!raw) return;
+      try { setHintShows(JSON.parse(raw) as Record<string, number>); } catch { /* ignore */ }
+    });
+  }, []);
+  const noteHintShown = useCallback((key: string) => {
+    setHintShows((prev) => {
+      const next = { ...prev, [key]: (prev[key] ?? 0) + 1 };
+      void AsyncStorage.setItem(STRIP_HINT_SHOWS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+  const stripHints = useMemo(() => {
+    // Lower priority number = shown first. Lines about the map itself outrank
+    // ambient introductions to other surfaces.
+    const out: StripHint[] = [];
+    const fresh = (key: string) =>
+      !disclosure.hasSeen(`hint:${key}`) && (hintShows[key] ?? 0) < STRIP_HINT_MAX_SHOWS;
+    const go = (key: string, path: string) => () => {
+      disclosure.markSeen(`hint:${key}`);
+      router.push(path as never);
+    };
+    if (nodes.length >= 4 && fresh('discover')) {
+      out.push({
+        key: 'discover', priority: 10, text: 'pick two points and see what links them →',
+        onPress: () => { disclosure.markSeen('hint:discover'); setToolMode('discover'); },
+      });
+    }
+    if (edges.length > 0 && !disclosure.hasSeen(visitedTabFlag('mind')) && fresh('mind')) {
+      out.push({ key: 'mind', priority: 20, text: 'mneme has been reading between your points →', onPress: go('mind', '/(tabs)/mind') });
+    }
+    // Three providers exist; anyone short of all three has something to link.
+    if ((linkedAccountCount ?? 0) < 3 && totalCaptureCount >= 1 && fresh('connections')) {
+      out.push({ key: 'connections', priority: 30, text: 'letterboxd, goodreads & more can feed this map →', onPress: go('connections', '/connections') });
+    }
+    if (totalCaptureCount >= 1 && fresh('import')) {
+      out.push({ key: 'import', priority: 40, text: 'a pile of bookmarks? bring them all at once →', onPress: go('import', '/import') });
+    }
+    // Only once the install's single system prompt is spent (primer or
+    // promise) and the answer was no — before that, those flows own the ask.
+    if (pushAsked && !pushGranted && fresh('notifications')) {
+      out.push({ key: 'notifications', priority: 50, text: 'let mneme nudge you when the map stirs →', onPress: go('notifications', '/notification-settings') });
+    }
+    if (totalCaptureCount >= 5 && fresh('today')) {
+      out.push({ key: 'today', priority: 60, text: 'one old capture, handed back each day →', onPress: go('today', '/today') });
+    }
+    if (totalCaptureCount >= 10 && !disclosure.hasSeen(EVENT_FLAGS.sharedAtlas) && fresh('share-atlas')) {
+      out.push({ key: 'share-atlas', priority: 70, text: 'your atlas is becoming worth sharing →', onPress: go('share-atlas', '/share-atlas') });
+    }
+    if (disclosure.hasSeen(EVENT_FLAGS.sharedAtlas) && !disclosure.hasSeen(visitedTabFlag('pulse')) && fresh('pulse')) {
+      out.push({ key: 'pulse', priority: 80, text: 'minds you know are charting too →', onPress: go('pulse', '/(tabs)/pulse') });
+    }
+    return out.sort((a, b) => a.priority - b.priority);
+  }, [nodes.length, edges.length, linkedAccountCount, totalCaptureCount, pushAsked, pushGranted, hintShows, disclosure, router]);
 
   // ── app store rating ──────────────────────────────────────────────────────
   // Armed by a successful capture, like the push primer, and fired on the same
@@ -3902,6 +3960,14 @@ export default function MapScreen() {
         // polishing the drafts in the background, and by the time the user
         // taps "insight →" the screen opens instantly from cache.
         void prefetchQuery(`capture:${res.id}`, () => api.captures.get(res.id));
+        // A cap degraded this capture (image read / social deep read): the
+        // capture still saved, so say what ran out and when it comes back.
+        if (res.usageLimit) {
+          Alert.alert('Saved, with a limit', res.usageLimit.message, [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Get Mneme Plus', onPress: () => { track('paywall_view', { source: 'limit' }); router.push('/plus?from=limit' as never); } },
+          ]);
+        }
         setSavedPill(null);
         if (pillDelayTimer.current) clearTimeout(pillDelayTimer.current);
         pillDelayTimer.current = setTimeout(() => showSavedPill(res.id), 1800);
@@ -3929,7 +3995,7 @@ export default function MapScreen() {
           e instanceof Error ? e.message : 'Could not save that. Try again.',
         );
       });
-  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, slideY, tutorialActive, notifyTargetPressed, nextTutorialStep, showSavedPill, maybeAskForPush, disclosure]);
+  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, slideY, tutorialActive, notifyTargetPressed, nextTutorialStep, showSavedPill, maybeAskForPush, disclosure, router]);
 
   const quickSave = useCallback(() => {
     if (!validatePayload()) return;
@@ -4745,17 +4811,14 @@ export default function MapScreen() {
         {/* Summary strip — baseline counts along the bottom, above the tab bar */}
         {stripVisible && (
           <InfoStrip
-            collapsed={infoCollapsed}
-            onToggle={() => setInfoCollapsed((v) => !v)}
-            // Only the EXPANDED height is recorded, so collapsing hides the
-            // counts without dropping the FAB onto the tab bar and back.
-            onLayout={(e) => { if (!infoCollapsed) setStripH(e.nativeEvent.layout.height); }}
+            onLayout={(e) => setStripH(e.nativeEvent.layout.height)}
             mapBg={mapBg}
             pointCount={nodes.length}
             totalPointCount={totalCaptureCount}
             fieldCount={fieldCount}
             connectionCount={edges.length}
             hints={stripHints}
+            onHintShown={noteHintShown}
           />
         )}
 
@@ -5335,15 +5398,15 @@ export default function MapScreen() {
                     >
                       <StepTwo
                         reaction={reaction} setReaction={setReaction}
-                        error={captureError} busy={busy}
-                        onBack={() => { setStep(1); setCaptureError(''); }}
+                        error={captureError} errorIsLimit={captureErrorIsLimit} busy={busy}
+                        onBack={() => { setStep(1); setCaptureError(''); setCaptureErrorIsLimit(false); }}
                         onCommit={() => void commit()}
                         c={c}
                         isLink={mode === 'link'}
                         preflight={preflight}
                         preflightLoading={preflightLoading}
                         userContext={userContext} setUserContext={setUserContext}
-                        onVoiceError={setCaptureError}
+                        onVoiceError={(message, code) => { setCaptureError(message); setCaptureErrorIsLimit(code === 'USAGE_LIMIT'); }}
                       />
                     </View>
                   )}

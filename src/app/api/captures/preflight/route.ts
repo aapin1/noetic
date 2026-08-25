@@ -4,7 +4,7 @@ import { capturePreflightSchema } from "@/server/contracts";
 import { preflightUrl } from "@/server/services/content";
 import { isPaidTranscriptHost } from "@/server/metadata";
 import { enforceRateLimit } from "@/server/services/ratelimit";
-import { hasUsageRemaining, tryConsumeUsage } from "@/server/services/usage";
+import { hasUsageRemaining, tryConsumeUsage, usageLimitNoticeFor } from "@/server/services/usage";
 
 export async function POST(request: Request) {
   return handleRoute(async () => {
@@ -21,6 +21,9 @@ export async function POST(request: Request) {
       await tryConsumeUsage(userId, "social_video_transcript");
     }
     const { usedSupadata: _spent, ...response } = result;
-    return response;
+    // Over the cap AND the free ladder came back without a transcript or a
+    // vision read: tell the user on the reaction step, with the reset date.
+    const degradedByCap = social && !allowPaidTranscript && result.bodySource !== "transcript" && result.bodySource !== "vision";
+    return degradedByCap ? { ...response, usageLimit: await usageLimitNoticeFor(userId, "social_video_transcript") } : response;
   });
 }

@@ -30,44 +30,111 @@ export type UsageKind =
 type CapDef = {
   free: number;
   period: "month" | "day";
+  /** What ran out — shown to the user, followed by the reset date and the upsell. */
   message: string;
+  upsell: string;
 };
 
 export const USAGE_CAPS: Record<UsageKind, CapDef> = {
   social_video_transcript: {
     free: 3,
     period: "month",
-    message:
-      "You've reached this month's limit for TikTok and Instagram captures. Upgrade to Mneme Plus for unlimited social captures.",
+    message: "You've used this month's 3 deep reads of TikTok and Instagram videos, so this one was saved with its caption only.",
+    upsell: "Mneme Plus makes them unlimited.",
   },
   image_describe: {
     free: 8,
     period: "month",
-    message:
-      "You've reached this month's limit for image understanding. The image was still saved with your caption. Mneme Plus lifts this limit.",
+    message: "You've used this month's 8 image reads, so this image was saved with your caption only.",
+    upsell: "Mneme Plus makes them unlimited.",
   },
   companion_message: {
     free: 6,
     period: "day",
-    message:
-      "The companion is resting until tomorrow — you've used today's messages. Mneme Plus removes the daily limit.",
+    message: "The companion is resting — you've used today's 6 messages.",
+    upsell: "Mneme Plus removes the daily limit.",
   },
   voice_transcription: {
     free: 5,
     period: "month",
-    message:
-      "You've reached this month's voice note limit. Mneme Plus removes it.",
+    message: "You've used this month's 5 voice notes.",
+    upsell: "Mneme Plus makes them unlimited.",
   },
 };
 
-function periodKey(period: "month" | "day", now = new Date()): string {
-  const iso = now.toISOString();
+export type UsageLimitNotice = {
+  kind: UsageKind;
+  /** Full user-facing sentence: what ran out, when it resets, the upsell. */
+  message: string;
+  limit: number;
+  period: "month" | "day";
+  /** ISO instant at which this user's current period rolls over. */
+  resetsAt: string;
+};
+
+const MAX_OFFSET_MINUTES = 14 * 60;
+const clampOffset = (minutes: number) => Math.max(-MAX_OFFSET_MINUTES, Math.min(MAX_OFFSET_MINUTES, Math.trunc(minutes)));
+
+/** The user's wall clock: UTC shifted by the offset the app last reported
+ * (0 — plain UTC — when it never has). Periods are keyed and reset on THIS
+ * clock, so a month ends at the user's midnight, not at 5pm Pacific. */
+const localNow = (now: Date, tzOffsetMinutes: number) => new Date(now.getTime() + tzOffsetMinutes * 60_000);
+
+function periodKey(period: "month" | "day", tzOffsetMinutes = 0, now = new Date()): string {
+  const iso = localNow(now, tzOffsetMinutes).toISOString();
   return period === "month" ? iso.slice(0, 7) : iso.slice(0, 10);
 }
 
-async function isPlus(db: DbClient, userId: string): Promise<boolean> {
+/** The UTC instant at which the user's current period rolls over. */
+export function periodResetsAt(period: "month" | "day", tzOffsetMinutes = 0, now = new Date()): Date {
+  const local = localNow(now, tzOffsetMinutes);
+  const nextLocal =
+    period === "month"
+      ? Date.UTC(local.getUTCFullYear(), local.getUTCMonth() + 1, 1)
+      : Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + 1);
+  return new Date(nextLocal - tzOffsetMinutes * 60_000);
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function describeReset(period: "month" | "day", resetsAt: Date, tzOffsetMinutes: number): string {
+  if (period === "day") return "Resets tomorrow.";
+  const local = localNow(resetsAt, tzOffsetMinutes);
+  return `Resets ${MONTHS[local.getUTCMonth()]} ${local.getUTCDate()}.`;
+}
+
+/** The user-facing "you've run out" notice for a kind, with the reset date on
+ * the user's own clock. */
+export function usageLimitNotice(kind: UsageKind, tzOffsetMinutes = 0, now = new Date()): UsageLimitNotice {
+  const cap = USAGE_CAPS[kind];
+  const resetsAt = periodResetsAt(cap.period, tzOffsetMinutes, now);
+  return {
+    kind,
+    limit: cap.free,
+    period: cap.period,
+    resetsAt: resetsAt.toISOString(),
+    message: `${cap.message} ${describeReset(cap.period, resetsAt, tzOffsetMinutes)} ${cap.upsell}`,
+  };
+}
+
+async function loadUser(db: DbClient, userId: string): Promise<{ plus: boolean; tzOffsetMinutes: number }> {
   const user = await db.user.findUnique({ where: { id: userId }, select: { plan: true } });
-  return user?.plan === "PLUS";
+  let tzOffsetMinutes = 0;
+  try {
+    const pref = await db.userPreference.findUnique({ where: { userId }, select: { tzOffsetMinutes: true } });
+    if (typeof pref?.tzOffsetMinutes === "number" && Number.isFinite(pref.tzOffsetMinutes)) {
+      tzOffsetMinutes = clampOffset(pref.tzOffsetMinutes);
+    }
+  } catch {
+    // No preference row / partial test doubles: UTC.
+  }
+  return { plus: user?.plan === "PLUS", tzOffsetMinutes };
+}
+
+/** The notice for a user, on their clock. */
+export async function usageLimitNoticeFor(userId: string, kind: UsageKind, db: DbClient = prisma): Promise<UsageLimitNotice> {
+  const { tzOffsetMinutes } = await loadUser(db, userId);
+  return usageLimitNotice(kind, tzOffsetMinutes);
 }
 
 /**
@@ -82,7 +149,6 @@ export async function tryConsumeUsage(
   db: DbClient = prisma,
 ): Promise<boolean> {
   const cap = USAGE_CAPS[kind];
-  const period = periodKey(cap.period);
 
   // A metering failure must not fail the caller. Both capture call sites treat
   // `false` as "skip the paid step" and still complete via their own fallback
@@ -91,7 +157,8 @@ export async function tryConsumeUsage(
   // money we've just proven we can't account for. Failing open would do the
   // opposite of both.
   try {
-    const plus = await isPlus(db, userId);
+    const { plus, tzOffsetMinutes } = await loadUser(db, userId);
+    const period = periodKey(cap.period, tzOffsetMinutes);
 
     const counter = await db.usageCounter.upsert({
       where: { userId_kind_period: { userId, kind, period } },
@@ -121,9 +188,10 @@ export async function hasUsageRemaining(
   db: DbClient = prisma,
 ): Promise<boolean> {
   const cap = USAGE_CAPS[kind];
-  if (await isPlus(db, userId)) return true;
+  const { plus, tzOffsetMinutes } = await loadUser(db, userId);
+  if (plus) return true;
   const counter = await db.usageCounter.findUnique({
-    where: { userId_kind_period: { userId, kind, period: periodKey(cap.period) } },
+    where: { userId_kind_period: { userId, kind, period: periodKey(cap.period, tzOffsetMinutes) } },
   });
   return (counter?.count ?? 0) < cap.free;
 }
@@ -136,17 +204,19 @@ export async function consumeUsageOrThrow(
 ): Promise<void> {
   const allowed = await tryConsumeUsage(userId, kind, db);
   if (!allowed) {
-    throw new AppError("USAGE_LIMIT", USAGE_CAPS[kind].message, 429);
+    const notice = await usageLimitNoticeFor(userId, kind, db);
+    throw new AppError("USAGE_LIMIT", notice.message, 429, notice);
   }
 }
 
 /** Current-period usage snapshot for the mobile app (settings / paywall). */
 export async function getUsageSummary(userId: string, db: DbClient = prisma) {
   const kinds = Object.keys(USAGE_CAPS) as UsageKind[];
+  const { tzOffsetMinutes } = await loadUser(db, userId);
   const rows = await db.usageCounter.findMany({
     where: {
       userId,
-      OR: kinds.map((kind) => ({ kind, period: periodKey(USAGE_CAPS[kind].period) })),
+      OR: kinds.map((kind) => ({ kind, period: periodKey(USAGE_CAPS[kind].period, tzOffsetMinutes) })),
     },
   });
   const byKind = new Map(rows.map((row) => [row.kind, row.count]));
@@ -155,6 +225,7 @@ export async function getUsageSummary(userId: string, db: DbClient = prisma) {
     used: byKind.get(kind) ?? 0,
     limit: USAGE_CAPS[kind].free,
     period: USAGE_CAPS[kind].period,
+    resetsAt: periodResetsAt(USAGE_CAPS[kind].period, tzOffsetMinutes).toISOString(),
   }));
 }
 

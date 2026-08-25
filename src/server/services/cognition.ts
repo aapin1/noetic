@@ -12,7 +12,7 @@ import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import type { DbClient, RootDbClient } from "@/server/db";
 import { ingestOrStubUrl, repairMissingExcerpt } from "@/server/services/content";
-import { hasUsageRemaining, tryConsumeUsage } from "@/server/services/usage";
+import { hasUsageRemaining, tryConsumeUsage, usageLimitNoticeFor, type UsageLimitNotice } from "@/server/services/usage";
 import {
   cosine,
   jaccard,
@@ -689,6 +689,8 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   edges: { fromItemId: string; toItemId: string; type: string; weight: number }[];
   threadContext: { topicName: string; captureCount: number } | null;
   recommendations: Recommendation[];
+  /** Set when a free-plan cap degraded this capture — the client tells the user. */
+  usageLimit?: UsageLimitNotice;
 }> {
   const db = payload.db ?? prisma;
   // Stage timings logged at the end — the capture path is latency-critical,
@@ -741,6 +743,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   // A clean, short "what this is about" line for display — never the full
   // scraped body/transcript. Shown on the insight screen as the AI summary.
   let captureSummary: string | null = null;
+  let usageLimit: UsageLimitNotice | undefined;
 
   // The kind of work this content IS ("film", "book"), when known — set for
   // pre-built content (connections, imports) and used to steer the insight
@@ -774,6 +777,11 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     if (social && resolved.usedSupadata) {
       await tryConsumeUsage(payload.userId, "social_video_transcript", db);
     }
+    // Over the cap AND the free ladder (captions, ASR, vision) found nothing:
+    // the capture saved with its caption only — say so, with the reset date.
+    if (social && !allowPaidTranscript && resolved.bodySource !== "transcript" && resolved.bodySource !== "vision") {
+      usageLimit = await usageLimitNoticeFor(payload.userId, "social_video_transcript", db);
+    }
     contentItemId = resolved.contentItemId;
     contentTitle = resolved.contentTitle;
     contentDescription = resolved.contentDescription;
@@ -794,24 +802,25 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   // description of the subject) so the capture is embedded and connected just
   // like a link's scraped article text. Failure degrades to the caption/reaction
   // fallback below.
-  if (
-    payload.kind === CaptureKind.IMAGE &&
-    payload.mediaUrl &&
+  if (payload.kind === CaptureKind.IMAGE && payload.mediaUrl) {
     // gpt-4o vision is the priciest per-capture call — metered per user.
-    // Over the cap the capture still saves via the caption/reaction fallback.
-    (await tryConsumeUsage(payload.userId, "image_describe", db))
-  ) {
-    const image = await loadImageForVision(payload.mediaUrl);
-    if (image) {
-      const described = await describeImage(image);
-      if (described) {
-        contentTitle = described.title;
-        contentDescription = described.description;
-        contentBodyText = described.description;
-        // Short gist for display — the description itself may be a verbatim
-        // transcription, which we keep for grounding but never surface raw.
-        captureSummary = described.summary;
+    // Over the cap the capture still saves via the caption/reaction fallback,
+    // and the response carries the notice so the user learns why.
+    if (await tryConsumeUsage(payload.userId, "image_describe", db)) {
+      const image = await loadImageForVision(payload.mediaUrl);
+      if (image) {
+        const described = await describeImage(image);
+        if (described) {
+          contentTitle = described.title;
+          contentDescription = described.description;
+          contentBodyText = described.description;
+          // Short gist for display — the description itself may be a verbatim
+          // transcription, which we keep for grounding but never surface raw.
+          captureSummary = described.summary;
+        }
       }
+    } else {
+      usageLimit = await usageLimitNoticeFor(payload.userId, "image_describe", db);
     }
   }
 
@@ -1172,7 +1181,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
       .catch((err) => console.error("[capture] background mirror failed", err));
   }
 
-  return { ...txResult, threadContext, recommendations };
+  return { ...txResult, threadContext, recommendations, ...(usageLimit ? { usageLimit } : {}) };
 }
 
 /**

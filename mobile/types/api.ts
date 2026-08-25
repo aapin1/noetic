@@ -91,6 +91,8 @@ export interface CaptureResponse extends CapturedItem {
   threadContext: { topicName: string; captureCount: number } | null;
   recommendations: Recommendation[];
   positionChallenge: CapturePositionChallenge | null;
+  /** Present when a free-plan cap degraded this capture (image read, social deep read). */
+  usageLimit?: UsageLimitNotice;
 }
 
 export interface CaptureDetail extends CapturedItem {
@@ -128,6 +130,17 @@ export interface CapturePreflight {
   title?: string;
   excerpt?: string;
   bodySource?: string;
+  /** Present when a free-plan cap degraded this read. */
+  usageLimit?: UsageLimitNotice;
+}
+
+/** "You've run out" — what ran out, when it resets (user's clock), the upsell. */
+export interface UsageLimitNotice {
+  kind: UsageMeter['kind'];
+  message: string;
+  limit: number;
+  period: 'month' | 'day';
+  resetsAt: string;
 }
 
 export interface MemoryGraphResponse {
@@ -797,6 +810,8 @@ export interface UsageMeter {
   used: number;
   limit: number;
   period: 'month' | 'day';
+  /** ISO instant the meter resets, on the user's clock. */
+  resetsAt?: string;
 }
 
 export interface Entitlements {
