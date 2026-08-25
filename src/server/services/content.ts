@@ -3,7 +3,7 @@ import slugify from "slugify";
 import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/server/db";
-import { isSocialVideoUrl } from "@/server/social";
+import { isSocialVideoUrl, resolveSocialPostKey } from "@/server/social";
 import { fetchMetadata, isPdfContentUrl, scoreContentConfidence, sourceSlug, type ContentConfidence } from "@/server/metadata";
 import { cleanContentMetadata } from "@/server/cognition/llm";
 import { upsertTopics } from "@/server/topics";
@@ -139,16 +139,29 @@ export async function ingestUrl(url: string, db: DbClient = prisma, opts: Ingest
   await assertPublicHttpUrl(url);
 
   const normalizedUrl = normalizeUrl(url);
-  const existing = await db.contentItem.findUnique({
-    where: { canonicalUrl: normalizedUrl },
-    include: {
-      source: true,
-      contentType: true,
-      topics: {
-        include: { topic: true },
-      },
+  const include = {
+    source: true,
+    contentType: true,
+    topics: {
+      include: { topic: true },
     },
-  });
+  } as const;
+  // TikTok/Instagram rows are stored under a rebuilt canonical URL that the
+  // share-sheet input (short link, `?_t=…` params, username-prefixed path)
+  // never equals — match them by post id so the preflight's row is reused
+  // instead of re-running the whole ladder (and a second ASR call).
+  const socialKey = isSocialVideoUrl(normalizedUrl) ? await resolveSocialPostKey(normalizedUrl).catch(() => undefined) : undefined;
+  const existing = socialKey
+    ? await db.contentItem.findFirst({
+        where: {
+          OR: [
+            { canonicalUrl: normalizedUrl },
+            { AND: [{ canonicalUrl: { contains: `${socialKey.platform}.com/` } }, { canonicalUrl: { endsWith: `/${socialKey.id}` } }] },
+          ],
+        },
+        include,
+      })
+    : await db.contentItem.findUnique({ where: { canonicalUrl: normalizedUrl }, include });
 
   if (existing) {
     // Backfill missing body text for items captured before the extraction

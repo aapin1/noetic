@@ -320,3 +320,20 @@ describe("blendSearchScore", () => {
     expect(blendSearchScore(0, 0.8)).toBeLessThan(50);
   });
 });
+
+describe("normalizeUrl — social share links", () => {
+  it("drops every share-sheet parameter on TikTok and Instagram post URLs", () => {
+    expect(normalizeUrl("https://www.tiktok.com/@hankgreen1/video/7462834976497601822?_r=1&_t=ZT-8zabc&is_from_webapp=1&sender_device=pc")).toBe(
+      "https://www.tiktok.com/@hankgreen1/video/7462834976497601822",
+    );
+    expect(normalizeUrl("https://www.tiktok.com/@user/photo/7462834976497601822/?lang=en")).toBe("https://www.tiktok.com/@user/photo/7462834976497601822");
+    expect(normalizeUrl("https://www.instagram.com/reel/DJQJeVQPnI4/?igsh=MTIzNA==&utm_source=ig_web_copy_link")).toBe("https://www.instagram.com/reel/DJQJeVQPnI4");
+    expect(normalizeUrl("https://www.instagram.com/alpha_expeditions/p/DJQJeVQPnI4/?img_index=2")).toBe("https://www.instagram.com/alpha_expeditions/p/DJQJeVQPnI4");
+  });
+
+  it("leaves non-post social URLs and other hosts' parameters alone", () => {
+    expect(normalizeUrl("https://www.tiktok.com/search?q=focus")).toBe("https://www.tiktok.com/search?q=focus");
+    expect(normalizeUrl("https://www.instagram.com/explore/tags/focus/?hl=en")).toBe("https://www.instagram.com/explore/tags/focus?hl=en");
+    expect(normalizeUrl("https://example.com/watch?v=1&_t=keep")).toBe("https://example.com/watch?_t=keep&v=1");
+  });
+});

@@ -73,6 +73,59 @@ function clean(value: unknown): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+export type SocialPostKey = { platform: "tiktok" | "instagram"; id: string };
+
+/**
+ * The stable identity of a social post — TikTok item id or Instagram
+ * shortcode — so the content cache can be matched BEFORE the ladder runs.
+ * Rows are keyed by a rebuilt canonical URL (`/@author/video/{id}`,
+ * `/reel/{sc}`), which the share-sheet input never equals: a short link or a
+ * `?_t=…` share URL used to miss the lookup, re-run the whole extraction
+ * (a second ASR call), then trip the canonicalUrl unique constraint.
+ * Free for full URLs; short links cost one oEmbed / redirect hop.
+ */
+export async function resolveSocialPostKey(url: string): Promise<SocialPostKey | undefined> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return undefined;
+  }
+  if (isTikTokHost(parsed)) {
+    const direct = TIKTOK_ID_RE.exec(parsed.pathname)?.[1];
+    if (direct) return { platform: "tiktok", id: direct };
+    const oembed = await fetchTikTokOembed(url);
+    const fromOembed = String(oembed?.embed_product_id ?? "");
+    if (/^\d{15,22}$/.test(fromOembed)) return { platform: "tiktok", id: fromOembed };
+    const session = createProxySession();
+    try {
+      const resolved = await resolveRedirects(url, session);
+      const id = TIKTOK_ID_RE.exec(new URL(resolved).pathname)?.[1];
+      return id ? { platform: "tiktok", id } : undefined;
+    } catch {
+      return undefined;
+    } finally {
+      await session.close().catch(() => {});
+    }
+  }
+  if (isInstagramHost(parsed)) {
+    const direct = INSTAGRAM_SHORTCODE_RE.exec(parsed.pathname)?.[1];
+    if (direct) return { platform: "instagram", id: direct };
+    if (!/^\/share\//.test(parsed.pathname)) return undefined;
+    const session = createProxySession();
+    try {
+      const resolved = await resolveRedirects(url, session);
+      const id = INSTAGRAM_SHORTCODE_RE.exec(new URL(resolved).pathname)?.[1];
+      return id ? { platform: "instagram", id } : undefined;
+    } catch {
+      return undefined;
+    } finally {
+      await session.close().catch(() => {});
+    }
+  }
+  return undefined;
+}
+
 function decodeEntities(value: string): string {
   return value
     .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))

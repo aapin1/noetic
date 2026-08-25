@@ -34,11 +34,24 @@ function normalizeYouTubeUrl(url: URL) {
   return `https://www.youtube.com/watch?v=${videoId}`;
 }
 
+/** Social posts are fully identified by the id/shortcode in their path; every
+ * query parameter on them is share-sheet tracking (`_r`, `_t`, `igsh`,
+ * `img_index`, `is_from_webapp`, …) that only defeats dedupe. */
+const SOCIAL_POST_PATH = /^\/(?:@[^/]+\/(?:video|photo)\/\d+|v\/\d+(?:\.html)?|embed\/(?:v2\/)?\d+|(?:[A-Za-z0-9_.]+\/)?(?:reels?|p|tv)\/[A-Za-z0-9_-]+)\/?$/;
+
+function isSocialHost(hostname: string) {
+  return hostname === "tiktok.com" || hostname.endsWith(".tiktok.com") || hostname === "instagram.com" || hostname.endsWith(".instagram.com") || hostname === "instagr.am";
+}
+
 export function normalizeUrl(input: string) {
   const url = new URL(input);
   url.hash = "";
   url.protocol = url.protocol.toLowerCase();
   url.hostname = url.hostname.toLowerCase();
+
+  if (isSocialHost(url.hostname) && SOCIAL_POST_PATH.test(url.pathname)) {
+    url.search = "";
+  }
 
   if (url.port === "80" || url.port === "443") {
     url.port = "";

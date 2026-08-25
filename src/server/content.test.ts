@@ -10,6 +10,16 @@ vi.mock("@/server/metadata", () => ({
   sourceSlug: (name: string) => name.toLowerCase().replace(/\s+/g, "-"),
 }));
 
+vi.mock("@/server/social", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/social")>()),
+  // Short links need the network to resolve; pin the answer here.
+  resolveSocialPostKey: vi.fn(async (url: string) => {
+    if (url.includes("vm.tiktok.com")) return { platform: "tiktok", id: "7462834976497601822" };
+    const id = /\/(?:video|photo)\/(\d+)/.exec(url)?.[1];
+    return id ? { platform: "tiktok", id } : undefined;
+  }),
+}));
+
 vi.mock("@/server/cognition/llm", () => ({
   cleanContentMetadata: vi.fn().mockResolvedValue(null),
 }));
@@ -243,7 +253,7 @@ describe("ingestUrl — TikTok/Instagram rows re-read for a transcript", () => {
       },
     } as any);
     const update = vi.fn().mockResolvedValue(null);
-    const db = { contentItem: { findUnique: vi.fn().mockResolvedValue(existing), update } } as any;
+    const db = { contentItem: { findUnique: vi.fn().mockResolvedValue(existing), findFirst: vi.fn().mockResolvedValue(existing), update } } as any;
 
     const result = await ingestUrl(existing.canonicalUrl, db, { allowPaidTranscript: true });
 
@@ -260,7 +270,7 @@ describe("ingestUrl — TikTok/Instagram rows re-read for a transcript", () => {
       metadata: { title: "x", bodyText: "Take back your attention. #attention", bodySource: "description", canonicalUrl: existing.canonicalUrl, originalUrl: existing.canonicalUrl },
     } as any);
     const update = vi.fn().mockResolvedValue(null);
-    const db = { contentItem: { findUnique: vi.fn().mockResolvedValue(existing), update } } as any;
+    const db = { contentItem: { findUnique: vi.fn().mockResolvedValue(existing), findFirst: vi.fn().mockResolvedValue(existing), update } } as any;
 
     await ingestUrl(existing.canonicalUrl, db);
 
@@ -271,15 +281,67 @@ describe("ingestUrl — TikTok/Instagram rows re-read for a transcript", () => {
 
   it("leaves a social row with a real transcript alone", async () => {
     const existing = socialRow({ bodySource: "transcript", bodyText: "x".repeat(2000) });
-    const db = { contentItem: { findUnique: vi.fn().mockResolvedValue(existing), update: vi.fn() } } as any;
+    const db = { contentItem: { findUnique: vi.fn().mockResolvedValue(existing), findFirst: vi.fn().mockResolvedValue(existing), update: vi.fn() } } as any;
     await ingestUrl(existing.canonicalUrl, db);
     expect(fetchMetadata).not.toHaveBeenCalled();
   });
 
   it("keeps the 24h cooldown and body-only retry rule for ordinary articles", async () => {
     const existing = socialRow({ canonicalUrl: "https://example.com/essay", bodyText: "x".repeat(2000), bodySource: "body", updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000) });
-    const db = { contentItem: { findUnique: vi.fn().mockResolvedValue(existing), update: vi.fn() } } as any;
+    const db = { contentItem: { findUnique: vi.fn().mockResolvedValue(existing), findFirst: vi.fn().mockResolvedValue(existing), update: vi.fn() } } as any;
     await ingestUrl(existing.canonicalUrl, db);
     expect(fetchMetadata).not.toHaveBeenCalled();
+  });
+});
+
+describe("ingestUrl — social rows are found by post id, not by the share URL", () => {
+  const stored = {
+    id: "content_tt",
+    title: "Take back your attention.",
+    description: "gist",
+    bodyText: "x".repeat(1200),
+    bodySource: "transcript",
+    canonicalUrl: "https://www.tiktok.com/@hankgreen1/video/7462834976497601822",
+    updatedAt: new Date(),
+    source: null,
+    contentType: null,
+    topics: [],
+  };
+
+  it("reuses the preflight's row when the capture arrives as a short link", async () => {
+    const findFirst = vi.fn().mockResolvedValue(stored);
+    const db = { contentItem: { findFirst, findUnique: vi.fn(), update: vi.fn() } } as any;
+
+    const result = await ingestUrl("https://vm.tiktok.com/ZMabc123/", db);
+
+    expect(result.status).toBe("existing");
+    expect("contentItem" in result && result.contentItem?.id).toBe("content_tt");
+    expect(fetchMetadata).not.toHaveBeenCalled();
+    const where = findFirst.mock.calls[0][0].where;
+    expect(JSON.stringify(where)).toContain('"endsWith":"/7462834976497601822"');
+    expect(JSON.stringify(where)).toContain("tiktok.com/");
+  });
+
+  it("reuses the row for a full URL carrying share parameters", async () => {
+    const findFirst = vi.fn().mockResolvedValue(stored);
+    const db = { contentItem: { findFirst, findUnique: vi.fn(), update: vi.fn() } } as any;
+
+    const result = await ingestUrl("https://www.tiktok.com/@hankgreen1/video/7462834976497601822?_r=1&_t=ZT-8zabc", db);
+
+    expect(result.status).toBe("existing");
+    expect(fetchMetadata).not.toHaveBeenCalled();
+    expect(findFirst.mock.calls[0][0].where.OR[0]).toEqual({ canonicalUrl: "https://www.tiktok.com/@hankgreen1/video/7462834976497601822" });
+  });
+
+  it("still uses the exact canonical lookup for ordinary URLs", async () => {
+    const findUnique = vi.fn().mockResolvedValue(null);
+    const db = {
+      contentItem: { findUnique, findFirst: vi.fn(), create: vi.fn().mockResolvedValue({ id: "c1" }), findUniqueOrThrow: vi.fn().mockResolvedValue({ id: "c1", source: null, contentType: null, topics: [] }) },
+      contentSource: { upsert: vi.fn().mockResolvedValue(null) },
+      contentType: { upsert: vi.fn().mockResolvedValue(null) },
+    } as any;
+    await ingestUrl("https://example.com/essay", db);
+    expect(findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { canonicalUrl: "https://example.com/essay" } }));
+    expect(db.contentItem.findFirst).not.toHaveBeenCalled();
   });
 });
