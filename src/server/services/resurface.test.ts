@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DbClient } from "@/server/db";
 import { enqueueResurfaceFor, selectResurfaceCandidate } from "@/server/services/resurface";
+import { localDayIndex } from "@/server/services/streak";
 
 /**
  * The selection engine's whole job is judgement: say the most interesting true
@@ -68,6 +69,10 @@ function fakeDb(args: {
   edges?: Edge[];
   existing?: Notif[];
   challenge?: Challenge;
+  /** Local days with a /today visit, as the streak column records them. */
+  activityDays?: number[];
+  /** When the account was created; null means the read failed or predates it. */
+  signupAt?: Date | null;
 }) {
   const notifications: Notif[] = [...(args.existing ?? [])];
   const byId = new Map(args.captures.map((c) => [c.id, c]));
@@ -113,7 +118,12 @@ function fakeDb(args: {
     positionChallenge: {
       findFirst: async () => args.challenge ?? null,
     },
-    user: { findUnique: async () => null },
+    userPreference: {
+      findUnique: async () => ({ tzOffsetMinutes: 0, streakActivityDays: args.activityDays ?? [] }),
+    },
+    user: {
+      findUnique: async () => (args.signupAt ? { createdAt: args.signupAt } : null),
+    },
   } as unknown as DbClient;
 
   return { db, notifications };
@@ -142,39 +152,177 @@ function richCorpus(): Capture[] {
 }
 
 describe("selectResurfaceCandidate", () => {
-  it("keeps the day-2 promise: a first fragment comes back the next morning", async () => {
-    // One capture from yesterday — every observational tier is silenced by the
-    // corpus floor, but the onboarding ritual promised this exact comeback.
+  it("prompts a thin account toward the floor rather than echoing what it saved", async () => {
+    // One capture from yesterday. Nothing has changed about it since, so
+    // there is nothing to bring back — the useful thing is a question about
+    // what they have read since, and the honest distance to the floor.
     const { db } = fakeDb({
       captures: [capture("c1", 1, ["attention"], { title: "walking unsticks thinking" })],
     });
 
     const pick = await selectResurfaceCandidate({ userId: "u1", db, now: NOW });
 
-    expect(pick?.type).toBe("RESURFACE");
-    expect(pick?.key).toBe("first-thought:c1");
-    expect(pick?.title).toBe("still on your mind?");
-    expect(pick?.body).toContain("walking unsticks thinking");
-    expect(pick?.body).toContain("yesterday");
-    expect(pick?.deepLink).toBe("/today");
+    expect(pick?.type).toBe("NUDGE");
+    expect(pick?.key).toMatch(/^growth:\d+$/);
+    expect(pick?.body).toContain("1 of 5");
+    expect(pick?.body).not.toContain("walking unsticks thinking");
+    expect(pick?.deepLink).toBe("/(tabs)");
+    expect(pick?.payload.kind).toBe("growth");
   });
 
-  it("brings early fragments back oldest first, each exactly once, then goes quiet", async () => {
+  it("prompts every other day while the account is active and under the target", async () => {
+    // A /today visit every day: the user keeps showing up, just not capturing.
+    // The fake reads this array by reference, so each morning credits the day
+    // before — the sweep runs at 9am, before today's visit.
+    const activityDays: number[] = [];
     const { db } = fakeDb({
-      captures: [
-        capture("c1", 2, ["attention"], { title: "first thought" }),
-        capture("c2", 1, ["attention"], { title: "second thought" }),
-      ],
+      captures: [capture("c1", 3, ["attention"]), capture("c2", 4, ["attention"])],
+      activityDays,
     });
 
     const keys: string[] = [];
-    for (let day = 0; day < 4; day += 1) {
+    for (let day = 0; day < 8; day += 1) {
       const now = new Date(NOW.getTime() + day * DAY);
+      activityDays.push(localDayIndex(now, 0) - 1);
       const picked = await enqueueResurfaceFor({ userId: "u1", db, now });
-      if (picked) keys.push(picked.key);
+      keys.push(picked ? picked.key : "-");
     }
 
-    expect(keys).toEqual(["first-thought:c1", "first-thought:c2"]);
+    const spoken = keys.filter((k) => k !== "-");
+    expect(spoken.every((k) => k.startsWith("growth:"))).toBe(true);
+    expect(new Set(spoken).size).toBe(spoken.length);
+    // Every other day: eight mornings yield four prompts, give or take the
+    // bucket boundary, and never two in a row.
+    expect(spoken.length).toBeGreaterThanOrEqual(3);
+    expect(spoken.length).toBeLessThanOrEqual(5);
+    for (let i = 1; i < keys.length; i += 1) {
+      expect(keys[i] !== "-" && keys[i - 1] !== "-").toBe(false);
+    }
+  });
+
+  it("rotates the prompts, and never asks about what was already saved", async () => {
+    const activityDays: number[] = [];
+    const { db } = fakeDb({
+      captures: [capture("c1", 5, ["attention"], { title: "the one thing saved" })],
+      activityDays,
+    });
+
+    const titles = new Set<string>();
+    for (let day = 0; day < 8; day += 1) {
+      const now = new Date(NOW.getTime() + day * DAY);
+      activityDays.push(localDayIndex(now, 0) - 1);
+      const picked = await enqueueResurfaceFor({ userId: "u1", db, now });
+      if (picked) {
+        titles.add(picked.title);
+        expect(picked.body).not.toContain("the one thing saved");
+      }
+    }
+    expect(titles.size).toBeGreaterThan(1);
+  });
+
+  it("stops prompting once the account reaches the growth target", async () => {
+    const today = localDayIndex(NOW, 0);
+    // Fifteen single-source, single-topic-each captures with no signal, all
+    // over a week old so nothing is rising; a /today visit yesterday.
+    const captures = Array.from({ length: 15 }, (_, i) =>
+      capture(`c${i}`, 8 + i, [`topic${i}`], { source: "Aeon" }),
+    );
+    const { db } = fakeDb({ captures, activityDays: [today - 1] });
+
+    expect(await selectResurfaceCandidate({ userId: "u1", db, now: NOW })).toBeNull();
+  });
+
+  it("climbs the inactivity ladder for an absent thin account — one rung each, then quiet", async () => {
+    // Two captures, three weeks old, nothing since. Twenty days quiet is past
+    // the 14-day rung, so that one speaks now; the 30-day rung ten days later;
+    // nothing else, ever, until they come back.
+    const { db } = fakeDb({
+      captures: [capture("c1", 21, ["attention"]), capture("c2", 20, ["attention"])],
+    });
+
+    const keys: string[] = [];
+    for (let day = 0; day < 25; day += 1) {
+      const now = new Date(NOW.getTime() + day * DAY);
+      const picked = await enqueueResurfaceFor({ userId: "u1", db, now });
+      if (picked) keys.push(`${day}:${picked.key}`);
+    }
+
+    const lastActive = localDayIndex(daysAgo(20), 0);
+    expect(keys).toEqual([`0:inactive:14:${lastActive}`, `10:inactive:30:${lastActive}`]);
+  });
+
+  it("asks a thin absent account what it has been reading, with the honest distance left", async () => {
+    const { db } = fakeDb({ captures: [capture("c1", 3, ["attention"]), capture("c2", 4, ["attention"])] });
+
+    const pick = await selectResurfaceCandidate({ userId: "u1", db, now: NOW });
+
+    expect(pick?.type).toBe("NUDGE");
+    expect(pick?.key).toMatch(/^inactive:3:/);
+    expect(pick?.title).toBe("read or watched anything cool recently?");
+    expect(pick?.body).toContain("three days since your last capture");
+    expect(pick?.body).toContain("2 of 5");
+    expect(pick?.deepLink).toBe("/(tabs)");
+  });
+
+  it("points an absent rich account back at the thread it was building", async () => {
+    // Sixteen captures, mostly on one specific thread, all over a week old and
+    // single-source: nothing is rising, nothing dormant yet, no convergence,
+    // no anniversary — so the ladder is what speaks, and it names the thread.
+    const captures = [
+      ...Array.from({ length: 10 }, (_, i) => capture(`a${i}`, 8 + i, ["attention", "philosophy"], { source: "Aeon" })),
+      ...Array.from({ length: 6 }, (_, i) => capture(`b${i}`, 9 + i, [`other${i}`], { source: "Aeon" })),
+    ];
+    const { db } = fakeDb({ captures });
+
+    const pick = await selectResurfaceCandidate({ userId: "u1", db, now: NOW });
+
+    expect(pick?.type).toBe("NUDGE");
+    expect(pick?.key).toMatch(/^inactive:7:/);
+    expect(pick?.title).toBe("you were building something on attention");
+    expect(pick?.body).toContain("a week quiet");
+    expect(pick?.deepLink).toBe("/archive/t-attention");
+  });
+
+  it("an observation always beats an invitation for an absent account", async () => {
+    // Rich corpus, a week quiet, and a contradiction available: the ladder
+    // waits. No rung is burned while it waits, so it still speaks once the
+    // observations run out.
+    const captures = richCorpus().map((c) => ({ ...c, capturedAt: new Date(c.capturedAt.getTime() - 7 * DAY) }));
+    const { db } = fakeDb({ captures, edges: [{ fromItemId: "a1", toItemId: "a3" }] });
+
+    const first = await enqueueResurfaceFor({ userId: "u1", db, now: NOW });
+    expect(first?.type).toBe("CONTRADICTION_FOUND");
+
+    const keys: string[] = [];
+    for (let day = 1; day < 14; day += 1) {
+      const picked = await enqueueResurfaceFor({ userId: "u1", db, now: new Date(NOW.getTime() + day * DAY) });
+      if (picked) keys.push(picked.key);
+    }
+    const firstInvite = keys.findIndex((k) => k.startsWith("inactive:"));
+    expect(firstInvite).toBeGreaterThan(0);
+    expect(keys.slice(0, firstInvite).every((k) => !k.startsWith("growth:"))).toBe(true);
+  });
+
+  it("nudges an account that signed up and never captured, from the signup day", async () => {
+    const { db: fresh } = fakeDb({ captures: [], signupAt: daysAgo(1) });
+    const day1 = await selectResurfaceCandidate({ userId: "u1", db: fresh, now: NOW });
+    expect(day1?.type).toBe("NUDGE");
+    expect(day1?.key).toMatch(/^growth:/);
+    expect(day1?.body).toContain("nothing captured yet");
+
+    const { db: gone } = fakeDb({ captures: [], signupAt: daysAgo(7) });
+    const day7 = await selectResurfaceCandidate({ userId: "u1", db: gone, now: NOW });
+    expect(day7?.key).toMatch(/^inactive:7:/);
+    expect(day7?.body).toContain("a week since you joined");
+  });
+
+  it("leaves a never-captured account alone after a month, and says nothing without a clock", async () => {
+    const { db: old } = fakeDb({ captures: [], signupAt: daysAgo(45) });
+    expect(await selectResurfaceCandidate({ userId: "u1", db: old, now: NOW })).toBeNull();
+
+    // No captures, no visits, no signup date: no day to measure from.
+    const { db: unknown } = fakeDb({ captures: [], signupAt: null });
+    expect(await selectResurfaceCandidate({ userId: "u1", db: unknown, now: NOW })).toBeNull();
   });
 
   it("never brings back a capture from the same morning", async () => {
@@ -182,16 +330,6 @@ describe("selectResurfaceCandidate", () => {
     const captures = [capture("c1", 0, ["attention"])];
     captures[0]!.capturedAt = new Date(NOW.getTime() - 2 * 60 * 60 * 1000);
     const { db } = fakeDb({ captures });
-
-    expect(await selectResurfaceCandidate({ userId: "u1", db, now: NOW })).toBeNull();
-  });
-
-  it("gives a stalled weeks-old thin account silence, not a random echo", async () => {
-    // Two captures, but the account's first save is three weeks old — the
-    // comeback window has passed and the observational floor still applies.
-    const { db } = fakeDb({
-      captures: [capture("c1", 21, ["attention"]), capture("c2", 20, ["attention"])],
-    });
 
     expect(await selectResurfaceCandidate({ userId: "u1", db, now: NOW })).toBeNull();
   });
@@ -425,6 +563,10 @@ describe("selectResurfaceCandidate", () => {
     );
     const { db } = fakeDb({ captures });
 
-    expect(await selectResurfaceCandidate({ userId: "u1", db, now: NOW })).toBeNull();
+    const pick = await selectResurfaceCandidate({ userId: "u1", db, now: NOW });
+    // What comes instead is the ladder — the newest capture is a month old —
+    // never the anniversary dressed up on too little history.
+    expect(pick?.type).toBe("NUDGE");
+    expect(pick?.title).not.toContain("you saved this");
   });
 });

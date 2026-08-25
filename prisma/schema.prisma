@@ -47,9 +47,13 @@ enum NotificationType {
   DORMANT_REVIVAL
   RESURFACE
   // Sent only AFTER a freeze has already been spent on a day that was missed.
-  // There is deliberately no "your streak is about to die" counterpart — see
-  // services/streak.ts.
   STREAK_HELD
+  // The evening reminder that a live run has nothing on it yet today. An
+  // invitation, not a countdown — see services/streak.ts.
+  STREAK_AT_RISK
+  // Re-engagement: the inactivity ladder and the growth prompts for accounts
+  // still under the pattern floors. See services/resurface.ts.
+  NUDGE
 }
 
 enum NotificationStatus {

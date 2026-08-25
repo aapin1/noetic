@@ -2,13 +2,19 @@ import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/server/db";
 import { withLease } from "@/server/services/jobs";
 import { dispatchPendingNotifications, type DispatchResult } from "@/server/services/notifications";
-import { dueThisHourWhere } from "@/server/services/notification-policy";
+import {
+  DAILY_SEND_HOUR,
+  dueThisHourWhere,
+  EVENING_SEND_HOUR,
+  localHour,
+} from "@/server/services/notification-policy";
 import { runResurfaceSweep } from "@/server/services/resurface";
-import { runStreakGuardSweep } from "@/server/services/streak";
+import { runStreakGuardSweep, runStreakRiskSweep } from "@/server/services/streak";
 
 /**
  * The hourly notification job: hold the streaks a missed day would end, pick one
- * thing worth saying to each user due this hour, then push what is pending.
+ * thing worth saying to each user due this hour, remind the evening's users of
+ * a run still open, then push what is pending.
  *
  * Why hourly rather than nightly. Quiet hours are enforced per user in their own
  * local time, and there is no single instant that is morning everywhere — a
@@ -40,6 +46,13 @@ const DISPATCH_LIMIT = 500;
 const STREAK_ACTIVE_DAYS = 3;
 /** Resurfacing looks much further back — a dormant thread is the whole point. */
 const RESURFACE_ACTIVE_DAYS = 90;
+/**
+ * An account that has never captured is still swept for this long after
+ * signup, so the growth prompts and the inactivity ladder can reach the people
+ * who most need them — the ones with nothing in the app yet. After this it is
+ * left alone: a month of unanswered nudges is an answer.
+ */
+const NEVER_CAPTURED_ACTIVE_DAYS = 30;
 const DAY_MS = 86_400_000;
 
 export type NotificationJobResult = {
@@ -49,6 +62,8 @@ export type NotificationJobResult = {
   due: number;
   streak: { considered: number; held: number };
   resurface: { considered: number; queued: number };
+  /** The evening reminder: users at the evening hour with an open run. */
+  streakRisk: { considered: number; queued: number };
   dispatch: DispatchResult;
 };
 
@@ -57,26 +72,39 @@ const SKIPPED: NotificationJobResult = {
   due: 0,
   streak: { considered: 0, held: 0 },
   resurface: { considered: 0, queued: 0 },
+  streakRisk: { considered: 0, queued: 0 },
   dispatch: {
     considered: 0, sent: 0, failed: 0, held: 0, deactivatedTokens: 0, suppressed: false,
   },
 };
 
 /**
- * Everyone due this hour, with just enough about each to decide which sweeps
- * apply — resolved in one read rather than one per sweep.
+ * Everyone due this hour — at the morning send hour or the evening one — with
+ * just enough about each to decide which sweeps apply, resolved in one read
+ * rather than one per sweep. The two hours are disjoint slices of the world
+ * (no offset is at 9am and 7pm at once), so the rows are split afterwards by
+ * recomputing each user's local hour from the offset the query matched on.
  */
 async function resolveDueUsers(db: DbClient, now: Date) {
   return db.user.findMany({
     where: {
-      ...dueThisHourWhere(now),
-      capturedItems: { some: { capturedAt: { gte: new Date(now.getTime() - RESURFACE_ACTIVE_DAYS * DAY_MS) } } },
+      OR: [
+        dueThisHourWhere(now, undefined, DAILY_SEND_HOUR),
+        dueThisHourWhere(now, undefined, EVENING_SEND_HOUR),
+      ],
+      AND: [{
+        OR: [
+          { capturedItems: { some: { capturedAt: { gte: new Date(now.getTime() - RESURFACE_ACTIVE_DAYS * DAY_MS) } } } },
+          { createdAt: { gte: new Date(now.getTime() - NEVER_CAPTURED_ACTIVE_DAYS * DAY_MS) } },
+        ],
+      }],
     },
     select: {
       id: true,
-      // Only the flag the resurfacing sweep gates on. The streak guard reads no
-      // preference here on purpose — see runStreakGuardSweep.
-      preference: { select: { pushResurface: true } },
+      // The flags the push-only sweeps gate on, and the clock that says which
+      // hour this row is due for. The streak guard reads no preference here on
+      // purpose — see runStreakGuardSweep.
+      preference: { select: { pushResurface: true, pushStreak: true, tzOffsetMinutes: true } },
       // Existence checks, not lists: `take: 1` keeps this a cheap probe even for
       // a user with thousands of captures and several devices.
       deviceTokens: {
@@ -120,18 +148,35 @@ export async function runNotificationJob(args: {
     const dueUsers = await resolveDueUsers(db, now);
     const streakCutoff = new Date(now.getTime() - STREAK_ACTIVE_DAYS * DAY_MS);
 
-    const streakCandidates = dueUsers
+    // A null offset was matched by the query as UTC, so it is read as UTC here
+    // too — the two must agree or a user could be selected and then sorted
+    // into neither hour.
+    const hourFor = (user: { preference: { tzOffsetMinutes: number | null } | null }) =>
+      localHour(now, user.preference?.tzOffsetMinutes ?? 0);
+    const morning = dueUsers.filter((user) => hourFor(user) === DAILY_SEND_HOUR);
+    const evening = dueUsers.filter((user) => hourFor(user) === EVENING_SEND_HOUR);
+
+    const reachable = (user: { deviceTokens: { id: string }[] }) => user.deviceTokens.length > 0;
+
+    const streakCandidates = morning
       .filter((user) => {
         const last = user.capturedItems[0]?.capturedAt;
         return last !== undefined && last >= streakCutoff;
       })
       .map((user) => user.id);
 
-    const resurfaceCandidates = dueUsers
-      .filter((user) => user.deviceTokens.length > 0)
+    const resurfaceCandidates = morning
+      .filter(reachable)
       // A missing preferences row means "hasn't touched settings", which is a
       // yes. Only an explicit false opts out.
       .filter((user) => user.preference?.pushResurface !== false)
+      .map((user) => user.id);
+
+    // The evening reminder is a push and nothing else, so unlike the guard it
+    // is scoped to who can receive it and who wants to.
+    const riskCandidates = evening
+      .filter(reachable)
+      .filter((user) => user.preference?.pushStreak !== false)
       .map((user) => user.id);
 
     // Order is the arbitration. The streak guard runs first and reports who it
@@ -148,6 +193,8 @@ export async function runNotificationJob(args: {
       skipUserIds: streak.heldUserIds,
     });
 
+    const streakRisk = await runStreakRiskSweep({ db, now, userIds: riskCandidates });
+
     const dispatch = await dispatchPendingNotifications({ limit: DISPATCH_LIMIT }, db, now);
 
     return {
@@ -155,6 +202,7 @@ export async function runNotificationJob(args: {
       due: dueUsers.length,
       streak: { considered: streak.considered, held: streak.held },
       resurface,
+      streakRisk,
       dispatch,
     };
   }, db, now).catch((error) => {
@@ -175,8 +223,8 @@ export async function runNotificationJob(args: {
     event: "notifications_cron",
     ran: result.ran,
     due: result.due,
-    considered: result.streak.considered + result.resurface.considered,
-    queued: result.streak.held + result.resurface.queued,
+    considered: result.streak.considered + result.resurface.considered + result.streakRisk.considered,
+    queued: result.streak.held + result.resurface.queued + result.streakRisk.queued,
     pending: result.dispatch.considered,
     sent: result.dispatch.sent,
     failed: result.dispatch.failed,

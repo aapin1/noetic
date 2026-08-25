@@ -195,7 +195,7 @@ export default function NotificationSettingsScreen() {
             />
             <PrefRow
               label="Streaks"
-              description="Only the note that a freeze held your streak. Never a warning."
+              description="An evening reminder when a run has nothing on it yet, and the note when a freeze held it."
               rightElement={
                 <OnOff
                   value={view.pushStreak}

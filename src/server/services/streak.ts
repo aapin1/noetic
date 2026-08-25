@@ -12,12 +12,17 @@ import { computeStreaks } from "@/server/services/wrapped";
  * spent silently, and the user is told afterwards — warmly, once, and only
  * about something that has already happened.
  *
- * The thing this file most carefully does NOT do is warn anyone. There is no
- * "your streak is at risk", no countdown, no evening nudge. A warning turns a
- * quiet record of attention into a debt the app collects on, which is the
- * opposite of the intent: this should read as the app being generous, not as a
- * game mechanic. `planStreakFreeze` returns null in every at-risk case, and
- * `STREAK_HELD` is the only notification type this module can emit.
+ * There is one reminder, and it is deliberately narrow. The freeze path
+ * (`planStreakFreeze`, `STREAK_HELD`) never warns: it returns null in every
+ * at-risk case and only speaks after a day has been bridged. The evening
+ * reminder (`planStreakRisk`, `STREAK_AT_RISK`) is the one place the app says
+ * something *before* the day ends — once, at the evening send hour, only when
+ * a run of real days has nothing on it yet today. No countdown, no deadline in
+ * the copy; it is phrased as the same invitation the freeze copy uses, because
+ * the honest amount of information is the same: the run is open, today settles
+ * it. It is also purely a notification — nothing about the account changes
+ * whether it goes out or not, which is why it can be gated on a push token and
+ * the streak preference where the freeze cannot.
  */
 
 const DAY_MS = 86_400_000;
@@ -307,6 +312,150 @@ export type StreakHeld = {
   /** The run it saved, in real capture days. */
   streak: number;
 };
+
+export type RiskPlan = {
+  /** The live run, in real active days, that today has not yet extended. */
+  streak: number;
+};
+
+/**
+ * Is there a run worth reminding someone about this evening? Pure, like
+ * planStreakFreeze, and it says yes in exactly one shape: the user was active
+ * through yesterday (a frozen yesterday counts — the freeze bridged it for
+ * precisely this), has done nothing today, and the run is long enough to be
+ * worth a sentence. Anything else is either not at risk or already the freeze
+ * path's problem tomorrow morning.
+ */
+export function planStreakRisk(args: {
+  /** Local day indices with a capture or a /today visit. */
+  activeDays: number[];
+  frozenDays: number[];
+  todayIdx: number;
+}): RiskPlan | null {
+  const { todayIdx } = args;
+  const active = new Set(args.activeDays);
+  // Today is done. Nothing to say.
+  if (active.has(todayIdx)) return null;
+
+  const covered = new Set<number>([...args.activeDays, ...args.frozenDays]);
+  // Yesterday missed: the run is either dead or the freeze's to bridge. Either
+  // way "your run is open" would be false.
+  if (!covered.has(todayIdx - 1)) return null;
+
+  let streak = 0;
+  for (let day = todayIdx - 1; covered.has(day); day -= 1) {
+    if (active.has(day)) streak += 1;
+  }
+  if (streak < MIN_STREAK_TO_PROTECT) return null;
+
+  return { streak };
+}
+
+/** Once per local day: a second evening tick must not remind twice. */
+const RISK_REPEAT_WINDOW_MS = 20 * 60 * 60 * 1000;
+
+function riskCopy(streak: number): { title: string; body: string } {
+  return {
+    title: `${streak} days running`,
+    body: "nothing captured today yet. read or watched anything worth keeping?",
+  };
+}
+
+export type StreakAtRisk = {
+  userId: string;
+  /** Local day the reminder is about. */
+  day: number;
+  streak: number;
+};
+
+/**
+ * Queue the evening reminder for one user, or return null.
+ *
+ * Unlike applyStreakGuard this writes nothing to the account: it is a
+ * notification and only a notification, so a user who never receives it has
+ * lost nothing but the sentence.
+ */
+export async function applyStreakRisk(args: {
+  userId: string;
+  db?: DbClient;
+  now?: Date;
+}): Promise<StreakAtRisk | null> {
+  const db = args.db ?? prisma;
+  const now = args.now ?? new Date();
+
+  const prefs = await db.userPreference.findUnique({
+    where: { userId: args.userId },
+    select: { tzOffsetMinutes: true, streakFrozenDays: true, streakActivityDays: true },
+  });
+
+  const offset = clampOffset(prefs?.tzOffsetMinutes);
+  const todayIdx = localDayIndex(now, offset);
+
+  const captureDays = await loadCaptureDays({ userId: args.userId, db, now, tzOffsetMinutes: offset });
+  const activeDays = [...new Set([...captureDays, ...(prefs?.streakActivityDays ?? [])])];
+
+  const plan = planStreakRisk({
+    activeDays,
+    frozenDays: prefs?.streakFrozenDays ?? [],
+    todayIdx,
+  });
+  if (!plan) return null;
+
+  const recent = await db.notification.findFirst({
+    where: {
+      recipientId: args.userId,
+      type: NotificationType.STREAK_AT_RISK,
+      createdAt: { gte: new Date(now.getTime() - RISK_REPEAT_WINDOW_MS) },
+    },
+    select: { id: true },
+  });
+  if (recent) return null;
+
+  const copy = riskCopy(plan.streak);
+  await createNotification({
+    db,
+    recipientId: args.userId,
+    type: NotificationType.STREAK_AT_RISK,
+    title: copy.title,
+    body: copy.body,
+    deepLink: "/(tabs)",
+    payload: { streakRisk: true, day: todayIdx, streak: plan.streak },
+  });
+
+  return { userId: args.userId, day: todayIdx, streak: plan.streak };
+}
+
+export type StreakRiskSweepResult = {
+  considered: number;
+  queued: number;
+};
+
+/**
+ * The evening sweep. Candidates are pre-resolved by the hourly job — everyone
+ * for whom it is the evening send hour, with a live token and streak pushes
+ * on — because unlike the freeze this has no effect beyond the push, so there
+ * is no reason to consider anyone who could not receive it.
+ */
+export async function runStreakRiskSweep(args: {
+  db?: DbClient;
+  now?: Date;
+  userIds: string[];
+}): Promise<StreakRiskSweepResult> {
+  const db = args.db ?? prisma;
+  const now = args.now ?? new Date();
+
+  let queued = 0;
+  for (const userId of args.userIds) {
+    try {
+      const result = await applyStreakRisk({ userId, db, now });
+      if (result) queued += 1;
+    } catch (error) {
+      console.error("[streak] risk reminder failed", userId, error);
+    }
+  }
+
+  return { considered: args.userIds.length, queued };
+}
 
 /**
  * Apply the guard for one user: spend a freeze if a missed day would otherwise

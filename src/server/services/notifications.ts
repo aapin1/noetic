@@ -108,6 +108,20 @@ function buildNotificationCopy(type: NotificationType, actorName: string | null 
         body: "you missed yesterday — we bridged it. capture today and the run holds.",
         deepLink,
       };
+    case NotificationType.STREAK_AT_RISK:
+      return {
+        title: "your run is still open today",
+        body: "nothing captured yet. read or watched anything worth keeping?",
+        deepLink,
+      };
+
+    // ── re-engagement ─────────────────────────────────────────────────────────
+    case NotificationType.NUDGE:
+      return {
+        title: "read or watched anything cool recently?",
+        body: "one capture is enough.",
+        deepLink,
+      };
   }
 }
 
