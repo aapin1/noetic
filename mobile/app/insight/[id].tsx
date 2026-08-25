@@ -418,15 +418,15 @@ export default function InsightDetailScreen() {
             ) : editing ? (
               <View style={[styles.editBox, { borderColor: c.border }]}>
                 {!aboutText && (
-                  <Text variant="monoSmall" color="muted" style={{ marginBottom: Spacing[3] }}>
-                    We couldn't understand this source — nothing readable came through. Tell mneme what it was about, by typing or speaking.
+                  <Text variant="mono" color="muted" style={styles.editPrompt}>
+                    We couldn't read this source too well — please explain what it's about.
                   </Text>
                 )}
                 <TextInput
                   style={[styles.editInput, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
                   value={contextDraft}
                   onChangeText={setContextDraft}
-                  placeholder="what was this actually about, in your own words?"
+                  placeholder="use voice or type."
                   placeholderTextColor={c.muted}
                   multiline
                   autoFocus={focusEdit}
@@ -448,14 +448,11 @@ export default function InsightDetailScreen() {
                     </Pressable>
                   </View>
                 </View>
-                <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[3] }}>
-                  saving re-reads this capture and rebuilds its topics, connections, and insight from your words.
-                </Text>
               </View>
             ) : (
               <>
                 <Text variant="body" color="secondary" style={{ marginTop: Spacing[4] }}>
-                  {aboutText ?? "The source couldn't be read. Tell mneme what it was about."}
+                  {aboutText ?? "We couldn't read this source too well — please explain what it's about."}
                 </Text>
                 {data.userContext ? (
                   <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[2] }}>
@@ -603,6 +600,9 @@ const styles = StyleSheet.create({
   savingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2], marginTop: Spacing[4] },
   editBox: { borderWidth: 1, borderRadius: Radius.md, padding: Spacing[4], marginTop: Spacing[4] },
   editInput: { minHeight: 88, paddingVertical: Spacing[1] },
+  // Same size as the field below it — a small label over big input text was
+  // what made this box read as two unrelated pieces.
+  editPrompt: { fontSize: FontSize.base, lineHeight: FontSize.base * 1.5, marginBottom: Spacing[3] },
   editActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing[3] },
   saveBtn: { paddingVertical: Spacing[2], paddingHorizontal: Spacing[4], borderRadius: Radius.xs },
   rel: {

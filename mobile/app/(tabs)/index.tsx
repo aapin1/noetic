@@ -1257,18 +1257,9 @@ function PreflightStatus({ loading, preflight, c }: {
   if (preflight.usageLimit) {
     return <LimitNotice message={preflight.usageLimit.message} style={{ marginTop: Spacing[3] }} />;
   }
-  if (preflight.confidence === 'partial') {
-    return (
-      <View style={sh.preflightRow}>
-        <Text variant="monoSmall" style={{ color: c.muted }}>only got a short excerpt of this source.</Text>
-      </View>
-    );
-  }
-  return (
-    <View style={sh.preflightRow}>
-      <Text variant="monoSmall" color="danger">couldn't read this source.</Text>
-    </View>
-  );
+  // Anything short of a clean read says so once, inside the context box below.
+  // Repeating it here made the step a wall of small print.
+  return null;
 }
 
 function StepTwo({
@@ -1287,7 +1278,6 @@ function StepTwo({
   // The fail-safe: when we couldn't read the source (or barely could), the
   // user's own account becomes the ground truth the insight pipeline works from.
   const needsContext = isLink && !preflightLoading && !!preflight && preflight.confidence !== 'rich';
-  const contextThin = preflight?.confidence === 'thin';
   // Commit is never gated on the preflight: the server dedupes a racing
   // scrape (createManualContentItem catches the unique-key collision), and if
   // the source turns out unreadable the insight screen asks for the user's
@@ -1319,10 +1309,10 @@ function StepTwo({
           />
         </View>
         {needsContext && (
-          <View style={[sh.inputBox, { borderColor: contextThin ? c.danger : c.border }]}>
+          <View style={[sh.inputBox, { borderColor: c.border }]}>
             <View style={sh.contextHeader}>
-              <Text variant="monoSmall" style={[sh.inputLabel, { color: contextThin ? c.danger : c.muted }]}>
-                WHAT WAS IT ABOUT?_
+              <Text variant="mono" style={[sh.contextPrompt, { color: c.muted }]}>
+                We couldn't read this source too well — tell mneme what it's about.
               </Text>
               <VoiceNoteButton
                 onText={(t) => setUserContext(userContext ? `${userContext.trim()} ${t}` : t)}
@@ -1333,15 +1323,10 @@ function StepTwo({
               style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
               value={userContext}
               onChangeText={setUserContext}
-              placeholder="a few sentences in your own words. speak or type."
+              placeholder="use voice or type."
               placeholderTextColor={c.faint}
               multiline
             />
-            <Text variant="monoSmall" style={{ color: c.faint, marginTop: Spacing[2] }}>
-              {contextThin
-                ? 'we build the connections and insight from this.'
-                : 'optional. helps when the excerpt is short.'}
-            </Text>
           </View>
         )}
         {!!error && (errorIsLimit
@@ -1382,7 +1367,10 @@ const sh = StyleSheet.create({
   inputBox: { borderWidth: 1, borderRadius: Radius.xs, padding: Spacing[4], marginTop: Spacing[2] },
   inputLabel: { marginBottom: Spacing[2] },
   preflightRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2], marginTop: Spacing[3] },
-  contextHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  contextHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing[3] },
+  // Same size as the field below it — a small label over big input text was
+  // the thing that made this box read as two unrelated pieces.
+  contextPrompt: { flex: 1, fontSize: FontSize.base, lineHeight: FontSize.base * 1.5 },
   inputField: { minHeight: 72, paddingVertical: Spacing[1] },
   actions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   actionsRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
