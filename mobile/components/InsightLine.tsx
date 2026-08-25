@@ -13,7 +13,7 @@ const TYPE_LABEL: Record<InsightType, string> = {
   CONTRADICTS: 'contradicts',
   NOVELTY: 'novelty',
   RECUR: 'recur',
-  READING: 'the claim',
+  READING: 'reading',
   MIRROR: 'a read on you',
 };
 
@@ -25,6 +25,10 @@ interface Props {
 export function InsightLine({ insight, compact = false }: Props) {
   const c = useThemeColors();
   const strengthBars = Math.max(1, Math.min(4, Math.round(insight.strength * 4)));
+  const rawKicker = insight.type === 'READING'
+    ? (insight.evidence as { kicker?: unknown } | null)?.kicker
+    : undefined;
+  const noteKicker = typeof rawKicker === 'string' && rawKicker.trim() ? rawKicker.trim() : null;
 
   const barStyles = useMemo(
     () =>
@@ -54,13 +58,14 @@ export function InsightLine({ insight, compact = false }: Props) {
       <Text variant={compact ? 'serif' : 'serifLg'} color="primary" style={styles.headline}>
         {insight.headline}
       </Text>
-      {/* A READING is a contract, not a paragraph: the headline is the claim
-          the content makes and the body is the catch in it. The kicker names
-          the first half; this names the second, so the two read as a pair
-          rather than as a headline with an explanatory sentence under it. */}
-      {!compact && insight.body && insight.type === 'READING' ? (
-        <Text variant="label" color="muted" style={styles.catchLabel}>
-          the catch
+      {/* A READING is a line and then a move made on it — the catch, where it
+          comes from, the test, the cost — and it names its own move in
+          evidence.kicker. That name labels the note, so the two read as a
+          pair rather than as a headline with a sentence under it, and the
+          label is whatever this reading chose, not one fixed heading. */}
+      {!compact && insight.body && noteKicker ? (
+        <Text variant="label" color="muted" style={styles.noteLabel}>
+          {noteKicker}
         </Text>
       ) : null}
       {!compact && insight.body ? (
@@ -95,7 +100,7 @@ const styles = StyleSheet.create({
     height: 2,
   },
   headline: {},
-  catchLabel: {
+  noteLabel: {
     marginTop: Spacing[3],
   },
   body: {

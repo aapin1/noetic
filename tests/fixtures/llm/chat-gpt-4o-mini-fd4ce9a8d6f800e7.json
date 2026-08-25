@@ -8,16 +8,16 @@
   "response": {
     "status": 200,
     "body": {
-      "id": "chatcmpl-EGaqv09uGKJ9ts7G3YOHK4M0SMDYM",
+      "id": "chatcmpl-EGbWTzPblFU3kDFwuz43BJ5iTdYHx",
       "object": "chat.completion",
-      "created": 1787623617,
+      "created": 1787626193,
       "model": "gpt-4o-mini-2024-07-18",
       "choices": [
         {
           "index": 0,
           "message": {
             "role": "assistant",
-            "content": "{\"reading\": {\"claim\": \"Environment design is more effective for behavior change than willpower.\", \"catch\": \"Many people successfully change their behavior through sheer willpower, suggesting that it can be effective in certain contexts.\"}, \"insights\": [{\"index\": 0, \"headline\": \"This captures a shift from willpower to environment design in behavior change.\", \"body\": \"It challenges the belief that self-control alone can drive lasting change.\"}]}",
+            "content": "{\"reading\": {\"line\": \"Relying on willpower for change is ineffective; designing your environment to support good habits is more effective.\", \"kicker\": \"the cost\", \"note\": \"If you depend on willpower, you risk failure and frustration.\"}, \"insights\": [{\"index\": 0, \"headline\": \"This captures a shift from willpower to environment in behavior change.\", \"body\": \"It emphasizes that making positive habits easier and negative ones harder is key to lasting change.\"}]}",
             "refusal": null,
             "annotations": []
           },
@@ -26,9 +26,9 @@
         }
       ],
       "usage": {
-        "prompt_tokens": 922,
-        "completion_tokens": 92,
-        "total_tokens": 1014,
+        "prompt_tokens": 1183,
+        "completion_tokens": 105,
+        "total_tokens": 1288,
         "prompt_tokens_details": {
           "cached_tokens": 0,
           "audio_tokens": 0
@@ -41,7 +41,7 @@
         }
       },
       "service_tier": "default",
-      "system_fingerprint": "fp_0950b7f384"
+      "system_fingerprint": "fp_c73dd82b09"
     }
   }
 }

@@ -92,6 +92,19 @@ const INSIGHT_RANK: Partial<Record<InsightType, number>> = {
   [InsightType.READING]: 1,
 };
 
+/**
+ * The moves (kickers) of the user's recent READINGs, newest first — "the
+ * catch", "where it comes from", "the test". Handed back to the polish as the
+ * moves it should not make again, the same way recentInsightTypes keeps a
+ * burst of saves from leading with the same trajectory reading every time.
+ */
+export function recentReadingMoves(rows: { type: InsightType; evidence: unknown }[]): string[] {
+  return rows
+    .filter((row) => row.type === InsightType.READING)
+    .map((row) => (row.evidence as { kicker?: unknown } | null)?.kicker)
+    .filter((kicker): kicker is string => typeof kicker === "string" && kicker.length > 0);
+}
+
 export function sortInsights<T extends { type: InsightType; strength: number; createdAt?: Date }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => {
     const rank = (INSIGHT_RANK[a.type] ?? 2) - (INSIGHT_RANK[b.type] ?? 2);

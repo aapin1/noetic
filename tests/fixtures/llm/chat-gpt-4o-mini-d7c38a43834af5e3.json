@@ -8,16 +8,16 @@
   "response": {
     "status": 200,
     "body": {
-      "id": "chatcmpl-EGaq8K2QqkXzb8B2lUvHXDiQoDxZJ",
+      "id": "chatcmpl-EGbVhuXjvnAGaIT0GiR6tl3MwxCPq",
       "object": "chat.completion",
-      "created": 1787623568,
+      "created": 1787626145,
       "model": "gpt-4o-mini-2024-07-18",
       "choices": [
         {
           "index": 0,
           "message": {
             "role": "assistant",
-            "content": "{\"reading\": {\"claim\": \"Decoherence explains the appearance of collapse in quantum mechanics without resolving the selection of the outcome.\", \"catch\": \"Decoherence does not address why a specific outcome is chosen from the superposition.\"}, \"insights\": [{\"index\": 0, \"headline\": \"Decoherence does not fully resolve the measurement problem in quantum mechanics.\", \"body\": \"While it explains the appearance of collapse, it leaves unanswered why one outcome is selected over others.\"}]}",
+            "content": "{\"reading\": {\"line\": \"Decoherence describes how superpositions appear to collapse but doesn't clarify the mechanism behind the outcome selection.\", \"kicker\": \"the catch\", \"note\": \"The measurement problem remains unresolved despite advances in understanding decoherence.\"}, \"insights\": [{\"index\": 0, \"headline\": \"Decoherence fails to explain outcome selection.\", \"body\": \"While decoherence accounts for the appearance of collapse, it does not address why a particular outcome is chosen during measurement.\"}]}",
             "refusal": null,
             "annotations": []
           },
@@ -26,11 +26,11 @@
         }
       ],
       "usage": {
-        "prompt_tokens": 912,
-        "completion_tokens": 101,
-        "total_tokens": 1013,
+        "prompt_tokens": 1167,
+        "completion_tokens": 104,
+        "total_tokens": 1271,
         "prompt_tokens_details": {
-          "cached_tokens": 0,
+          "cached_tokens": 1024,
           "audio_tokens": 0
         },
         "completion_tokens_details": {
@@ -41,7 +41,7 @@
         }
       },
       "service_tier": "default",
-      "system_fingerprint": "fp_0950b7f384"
+      "system_fingerprint": "fp_c73dd82b09"
     }
   }
 }

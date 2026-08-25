@@ -35,6 +35,7 @@ import {
   draftInsights,
   RELATED_LIMIT,
   RELATED_MIN_WEIGHT,
+  recentReadingMoves,
   sortInsights,
   type Neighbor,
   type TopicCount,
@@ -714,11 +715,13 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   // Types of the last few insights — drives draftInsights' repetition guard
   // (a burst of saves must not lead every capture with the same trajectory
   // reading). Indexed on (userId, createdAt); costs nothing next to the rest.
+  // `evidence` rides along for the READING moves (recentReadingMoves) — the
+  // polish's own repetition guard.
   const recentInsightTypesPromise = db.insight.findMany({
     where: { userId: payload.userId },
     orderBy: { createdAt: "desc" },
     take: 6,
-    select: { type: true },
+    select: { type: true, evidence: true },
   });
   // If the capture aborts before these are awaited (extraction can throw), a
   // late rejection must not crash the process. Awaiting them below still
@@ -919,6 +922,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   const fallbackText = (payload.text ?? payload.caption ?? "").slice(0, 80);
   const itemTitle = contentTitle ?? (fallbackText.length > 0 ? fallbackText : "Untitled capture");
   const threadContext = computeThreadContext(topicCounts);
+  const recentInsights = await recentInsightTypesPromise;
 
   const drafts = draftInsights({
     style: insightStyle,
@@ -929,7 +933,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     shift: trajectory,
     isFirstCapture,
     contentThin,
-    recentInsightTypes: (await recentInsightTypesPromise).map((row) => row.type),
+    recentInsightTypes: recentInsights.map((row) => row.type),
   });
 
   // The insight rows are created from the local drafts immediately and
@@ -1141,6 +1145,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
       contentGrounding,
       userContext: payload.userContext,
       mediaContext: mediaContextFor({ origin: payload.origin, kind: contentKind, title: contentTitle, siteName: contentSiteName }),
+      recentReadingKickers: recentReadingMoves(recentInsights),
       topicNames: classified.map((topic) => topic.name),
       neighborContext: neighborInfo.neighbors.map((n) => ({
         title: n.title,
@@ -1263,6 +1268,12 @@ export async function updateCaptureContext(args: {
   const topicCounts = computeTopicCounts(neighborInfo.rawPriors, topicMap);
   const trajectory = computeTrajectory(neighborInfo.rawPriors, topicMap);
   const itemTitle = contentTitle ?? (rawText ?? caption ?? "Untitled capture").slice(0, 80);
+  const recentInsights = await db.insight.findMany({
+    where: { userId: args.userId },
+    orderBy: { createdAt: "desc" },
+    take: 6,
+    select: { type: true, evidence: true },
+  });
 
   const drafts = draftInsights({
     style: insightStyle,
@@ -1273,14 +1284,7 @@ export async function updateCaptureContext(args: {
     shift: trajectory,
     isFirstCapture: false,
     contentThin: false,
-    recentInsightTypes: (
-      await db.insight.findMany({
-        where: { userId: args.userId },
-        orderBy: { createdAt: "desc" },
-        take: 6,
-        select: { type: true },
-      })
-    ).map((row) => row.type),
+    recentInsightTypes: recentInsights.map((row) => row.type),
   });
 
   const oldTopicIds = new Set(item.topics.map((row) => row.topicId));
@@ -1373,6 +1377,7 @@ export async function updateCaptureContext(args: {
     contentGrounding,
     userContext,
     mediaContext: mediaContextFor({ origin: item.origin, kind: item.contentItem?.contentType?.name, title: item.contentItem?.title, siteName: item.contentItem?.siteName ?? undefined }),
+    recentReadingKickers: recentReadingMoves(recentInsights),
     topicNames: classified.map((topic) => topic.name),
     neighborContext: neighborInfo.neighbors.map((n) => ({
       title: n.title,

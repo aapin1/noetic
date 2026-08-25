@@ -39,11 +39,12 @@ afterEach(() => {
 });
 
 describe("polishInsights — the READING", () => {
-  it("returns the model's claim and catch as a READING draft beside the rewritten drafts", async () => {
+  it("returns the model's line and note as a READING draft, with the move it chose in evidence", async () => {
     const fetchMock = mockChat({
       reading: {
-        claim: "Public speaking nerves are a training problem, not a personality trait.",
-        catch: "It assumes the nerves were ever the thing holding the talk back.",
+        line: "Public speaking nerves are a training problem, not a personality trait.",
+        kicker: "The Test.",
+        note: "If that were true, the tenth rehearsal would be calmer than the first for everyone, and for a lot of people it isn't.",
       },
       insights: [{ index: 0, headline: "First under psychology.", body: "Nothing near it yet." }],
     });
@@ -53,6 +54,7 @@ describe("polishInsights — the READING", () => {
       itemTitle: "mental training is important!!",
       contentText: "A transcript about rehearsing under pressure so the stage feels familiar.",
       contentGrounding: "rich",
+      recentReadingKickers: ["the catch", "the catch"],
       drafts: [NOVELTY_DRAFT],
     });
 
@@ -61,19 +63,24 @@ describe("polishInsights — the READING", () => {
     expect(result.reading).toMatchObject({
       type: InsightType.READING,
       headline: "Public speaking nerves are a training problem, not a personality trait.",
-      body: "It assumes the nerves were ever the thing holding the talk back.",
+      body: "If that were true, the tenth rehearsal would be calmer than the first for everyone, and for a lot of people it isn't.",
       strength: 1,
-      evidence: { grounding: "rich" },
+      // Normalised: lowercase, trailing punctuation dropped.
+      evidence: { grounding: "rich", kicker: "the test" },
     });
-    // The contract is in the prompt and the output shape asks for it.
+    // The contract is in the prompt, the output shape asks for it, and the
+    // user's recent moves are handed over so the next reading differs.
     const body = sentBody(fetchMock);
     expect(body.messages[0].content).toContain("READING");
     expect(body.messages[0].content).toContain('"reading"');
+    expect(body.messages[0].content).toMatch(/no template|move of your own/i);
+    const user = JSON.parse(body.messages[1].content) as { recent_reading_moves: string[] };
+    expect(user.recent_reading_moves).toEqual(["the catch", "the catch"]);
   });
 
   it("never asks for a reading on a title-only capture, and ignores one if the model offers it anyway", async () => {
     const fetchMock = mockChat({
-      reading: { claim: "Invented.", catch: "Also invented." },
+      reading: { line: "Invented.", kicker: "the catch", note: "Also invented." },
       insights: [{ index: 0, headline: "First under psychology.", body: "Nothing near it yet." }],
     });
 
@@ -90,8 +97,8 @@ describe("polishInsights — the READING", () => {
     expect(sentBody(fetchMock).messages[0].content).not.toContain("READING");
   });
 
-  it("a claim without a catch is a summary, not a reading", async () => {
-    mockChat({ reading: { claim: "Mental training matters.", catch: "" }, insights: [] });
+  it("a line without a note is a summary, not a reading", async () => {
+    mockChat({ reading: { line: "Mental training matters.", kicker: "the catch", note: "" }, insights: [] });
     const result = await polishInsights({
       style: "DIRECT",
       itemTitle: "t",
@@ -130,6 +137,13 @@ describe("polishInsights — the READING", () => {
     expect(user.content_text).toHaveLength(3000);
   });
 
+  it("keeps a reading whose move went unnamed, just without a label", async () => {
+    mockChat({ reading: { line: "A line.", note: "A note on it." }, insights: [] });
+    const result = await polishInsights({ style: "DIRECT", itemTitle: "t", contentGrounding: "rich", drafts: [NOVELTY_DRAFT] });
+    expect(result.reading?.headline).toBe("A line.");
+    expect(result.reading?.evidence).toEqual({ grounding: "rich" });
+  });
+
   it("tells the polish that NOVELTY is a footnote that never promises", async () => {
     const fetchMock = mockChat({ reading: null, insights: [] });
     await polishInsights({ style: "DIRECT", itemTitle: "t", contentGrounding: "rich", drafts: [NOVELTY_DRAFT] });
@@ -158,6 +172,9 @@ describe("generateMirror", () => {
     });
     const body = sentBody(fetchMock);
     expect(body.messages[0].content).toContain("exactly 3 things");
+    // No shape example to copy, and the construction it kept copying is out.
+    expect(body.messages[0].content).toMatch(/no template/i);
+    expect(body.messages[0].content).not.toMatch(/techniques for controlling your own mind/);
     const user = JSON.parse(body.messages[1].content) as { captures: { title: string; gist: string }[] };
     expect(user.captures).toHaveLength(3);
     expect(user.captures[1].gist).toBe("");

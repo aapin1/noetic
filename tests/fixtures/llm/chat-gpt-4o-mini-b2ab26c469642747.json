@@ -8,16 +8,16 @@
   "response": {
     "status": 200,
     "body": {
-      "id": "chatcmpl-EGaq85Qfe0AXX8IRjxrTKwhIU32uj",
+      "id": "chatcmpl-EGbVgTDuDKc33ftMd2kGdPzmw89LC",
       "object": "chat.completion",
-      "created": 1787623568,
+      "created": 1787626144,
       "model": "gpt-4o-mini-2024-07-18",
       "choices": [
         {
           "index": 0,
           "message": {
             "role": "assistant",
-            "content": "{\"reading\": {\"claim\": \"Freedom comes from correctly judging what is within our power, not from controlling events.\", \"catch\": \"Many people feel they can gain freedom by trying to control external circumstances.\"}, \"insights\": [{\"index\": 0, \"headline\": \"This captures a key Stoic idea about freedom.\", \"body\": \"It emphasizes the importance of internal judgment over external control.\"}]}",
+            "content": "{\"reading\": {\"line\": \"True freedom lies in understanding what we can and cannot control, rather than trying to control external events.\", \"kicker\": \"the sharper version\", \"note\": \"Stoic ethics emphasizes inner judgment over external circumstances.\"}, \"insights\": [{\"index\": 0, \"headline\": \"This aligns with Stoic principles on control.\", \"body\": \"Epictetus reinforces the idea that personal freedom stems from internal judgment rather than external influence.\"}]}",
             "refusal": null,
             "annotations": []
           },
@@ -26,11 +26,11 @@
         }
       ],
       "usage": {
-        "prompt_tokens": 919,
-        "completion_tokens": 83,
-        "total_tokens": 1002,
+        "prompt_tokens": 1170,
+        "completion_tokens": 98,
+        "total_tokens": 1268,
         "prompt_tokens_details": {
-          "cached_tokens": 0,
+          "cached_tokens": 1024,
           "audio_tokens": 0
         },
         "completion_tokens_details": {
@@ -41,7 +41,7 @@
         }
       },
       "service_tier": "default",
-      "system_fingerprint": "fp_0950b7f384"
+      "system_fingerprint": "fp_c73dd82b09"
     }
   }
 }
