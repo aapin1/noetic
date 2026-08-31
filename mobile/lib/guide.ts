@@ -40,4 +40,5 @@ export function welcomeOfferFlag(userId: string): string {
 export const WELCOME_INTRO_LINE =
   "this is a map. save the things you read and watch, and yours will grow like this.";
 
-export const WELCOME_OFFER_LINE = "want a quick tour?";
+export const WELCOME_OFFER_LINE =
+  "start with one thing that stuck with you — a book, a film, a game, anything.";

@@ -207,25 +207,11 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     hint: 'tap delete, then confirm',
   },
   {
-    id: 'lenses',
-    title: 'two lenses',
-    body: 'semantic groups ideas by meaning. time replays them in the order you saved them.',
-    target: { kind: 'registered', id: TUTORIAL_TARGET.atlasLenses },
-    hint: 'tap either one',
-  },
-  {
     id: 'recenter',
     title: 'recenter',
     body: 'lost? this snaps the map back into view.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.atlasRecenter },
     hint: 'tap recenter',
-  },
-  {
-    id: 'multi-select',
-    title: 'multi-select',
-    body: 'the crosshair selects several nodes at once, so mneme can show you what runs between them — a connection, a contradiction, an insight. the magnifier searches.',
-    target: { kind: 'registered', id: TUTORIAL_TARGET.atlasDiscover },
-    hint: 'tap the crosshair',
   },
   {
     id: 'share',
@@ -244,7 +230,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'done',
     title: "that's mneme",
-    body: "you're on your own now. go save something real today — and replay this tour any time from the ⓣ.",
+    body: "you're on your own now — replay this tour any time from the ⓣ. the map grows from whatever catches you next.",
     target: { kind: 'card' },
     deferUntilAtlas: true,
   },

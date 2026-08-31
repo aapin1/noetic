@@ -249,6 +249,21 @@ export const captureTranscribeSchema = z.object({
   mimeType: z.string().min(3).max(80).optional(),
 });
 
+/** The kinds the keyless work resolver can look up (see imports/resolve). */
+export const recognizeKindSchema = z.enum(["film", "tv", "book", "anime", "game", "album"]);
+
+export const recognizePreviewSchema = z.object({
+  title: z.string().trim().min(1).max(300),
+  kind: recognizeKindSchema,
+  year: z.coerce.number().int().min(1000).max(3000).optional(),
+});
+
+export const recognizeCaptureSchema = recognizePreviewSchema.extend({
+  /** The person's one line on why it stuck — lands as the reaction. */
+  words: z.string().trim().max(500).optional(),
+  tzOffsetMinutes: z.number().int().min(-840).max(840).optional(),
+});
+
 export const captureUpdateSchema = z
   .object({
     userContext: z.string().min(1).max(4000).optional(),

@@ -86,6 +86,7 @@ import {
 } from '@/constants/ghostMap';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { ComebackPromise } from '@/components/ritual/ComebackPromise';
+import { RecognitionSheet } from '@/components/onboarding/RecognitionSheet';
 import { GuidePill } from '@/components/ui/GuidePill';
 import {
   GUIDE_MAX_CORPUS,
@@ -104,6 +105,7 @@ import type {
   CaptureKind,
   CapturePreflight,
   MemoryGraphResponse,
+  RecognizeKind,
 } from '@/types/api';
 
 type GraphNode = MemoryGraphResponse['nodes'][number];
@@ -3273,6 +3275,9 @@ export default function MapScreen() {
 
   // ── Capture state ─────────────────────────────────────────────
   const [showCapture, setShowCapture] = useState(false);
+  // The recognition opener: "name one thing that stuck with you". Offered by
+  // the welcome pill and after a tour that ends on an empty map.
+  const [showRecognition, setShowRecognition] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
   const [mode, setMode] = useState<CaptureMode>('link');
   const [payload, setPayload] = useState('');
@@ -3711,7 +3716,7 @@ export default function MapScreen() {
   // minutes. It does not need to be soon; it needs to be alone.
   useEffect(() => {
     if (!pushPrimerArmed) return;
-    if (savedPill || pillPending || showCapture || drawerVisible || !screenFocused) return;
+    if (savedPill || pillPending || showCapture || showRecognition || drawerVisible || !screenFocused) return;
     if (tutorialActive) return;
     // A real pause after things settle — long enough that the node landing
     // and the pill leaving are over, so this reads as its own moment rather
@@ -3721,7 +3726,7 @@ export default function MapScreen() {
       setPushPrimerArmed(false);
     }, 3000);
     return () => clearTimeout(timer);
-  }, [pushPrimerArmed, savedPill, pillPending, showCapture, drawerVisible, screenFocused, tutorialActive]);
+  }, [pushPrimerArmed, savedPill, pillPending, showCapture, showRecognition, drawerVisible, screenFocused, tutorialActive]);
 
   // Both paths mark it asked: iOS grants exactly one system prompt per install,
   // so a "not now" that we later re-asked would just be a sheet with no prompt
@@ -3834,7 +3839,7 @@ export default function MapScreen() {
   const [reviewArmed, setReviewArmed] = useState(false);
   useEffect(() => {
     if (!reviewArmed) return;
-    if (savedPill || showCapture || drawerVisible || !screenFocused) return;
+    if (savedPill || showCapture || showRecognition || drawerVisible || !screenFocused) return;
     if (pushPrimerArmed || showPushPrimer) return;
     if (tutorialActive) return;
     const timer = setTimeout(() => {
@@ -3849,6 +3854,7 @@ export default function MapScreen() {
     reviewArmed,
     savedPill,
     showCapture,
+    showRecognition,
     drawerVisible,
     screenFocused,
     pushPrimerArmed,
@@ -3873,6 +3879,35 @@ export default function MapScreen() {
       setReviewArmed(true);
     });
   }, [showSavedPill, maybeAskForPush]));
+
+  // A recognition capture: named work → real node, awaited so the sheet can
+  // narrate the wait and celebrate the landing. Unlike the composer there IS
+  // a fly-to: the whole point of the opener is watching your first star land.
+  const commitRecognition = useCallback(
+    async (args: { title: string; kind: RecognizeKind; words?: string }) => {
+      const startedAt = Date.now();
+      track('capture_started', { kind: 'LINK', source: 'recognition' });
+      try {
+        const res = await api.captures.recognize(args);
+        track('capture_succeeded', { kind: 'LINK', source: 'recognition', duration_ms: Date.now() - startedAt });
+        refetchMapData();
+        void prefetchQuery(`capture:${res.id}`, () => api.captures.get(res.id));
+        setNewNodeId(res.id);
+        maybeAskForPush();
+        noteCaptureForReview();
+        setReviewArmed(true);
+      } catch (e) {
+        track('capture_failed', {
+          kind: 'LINK',
+          source: 'recognition',
+          duration_ms: Date.now() - startedAt,
+          reason: failureReason(e),
+        });
+        throw e;
+      }
+    },
+    [refetchMapData, maybeAskForPush],
+  );
 
   const commit = useCallback(async () => {
     // Drop the keyboard the moment they commit, so it doesn't linger over the
@@ -4317,7 +4352,7 @@ export default function MapScreen() {
   const [welcomePill, setWelcomePill] = useState<'intro' | 'offer' | null>(null);
   useEffect(() => {
     const quiet =
-      !savedPill && !showCapture && !drawerVisible && screenFocused &&
+      !savedPill && !showCapture && !showRecognition && !drawerVisible && screenFocused &&
       !promiseState && !showPushPrimer && !tutorialActive;
     if (!welcomeStage || !quiet) {
       setWelcomePill(null);
@@ -4327,7 +4362,7 @@ export default function MapScreen() {
     const timer = setTimeout(() => setWelcomePill(welcomeStage), delay);
     return () => clearTimeout(timer);
   }, [
-    welcomeStage, savedPill, showCapture, drawerVisible, screenFocused,
+    welcomeStage, savedPill, showCapture, showRecognition, drawerVisible, screenFocused,
     promiseState, showPushPrimer, tutorialActive,
   ]);
 
@@ -4351,6 +4386,18 @@ export default function MapScreen() {
       }
     });
   }, [disclosure, ghostFade, reduceMotion, startTutorial, welcomeUid]);
+
+  // A tour that ends on an empty map hands off to the recognition opener —
+  // fifteen tips and zero nodes was the old dead end. Fires on the active →
+  // inactive edge only, and only when there is still nothing on the map.
+  const prevTutorialRef = useRef(false);
+  useEffect(() => {
+    const wasActive = prevTutorialRef.current;
+    prevTutorialRef.current = tutorialActive;
+    if (!wasActive || tutorialActive) return;
+    if ((graphData?.totalCount ?? 0) > 0 || !screenFocused) return;
+    setShowRecognition(true);
+  }, [tutorialActive, graphData, screenFocused]);
 
   // The clipboard door: while the map is still forming, notice a copied URL
   // on each return to the screen. Checked (hasUrlAsync), never read — reading
@@ -4382,7 +4429,7 @@ export default function MapScreen() {
   }, [disclosure, promiseArmed, promiseState, graphData]);
   useEffect(() => {
     if (!promiseArmed) return;
-    if (savedPill || pillPending || showCapture || drawerVisible || !screenFocused) return;
+    if (savedPill || pillPending || showCapture || showRecognition || drawerVisible || !screenFocused) return;
     if (tutorialActive || showPushPrimer) return;
     const timer = setTimeout(() => {
       setPromiseArmed(false);
@@ -4391,7 +4438,7 @@ export default function MapScreen() {
     }, 3000);
     return () => clearTimeout(timer);
   }, [
-    promiseArmed, savedPill, pillPending, showCapture, drawerVisible, screenFocused,
+    promiseArmed, savedPill, pillPending, showCapture, showRecognition, drawerVisible, screenFocused,
     tutorialActive, showPushPrimer, disclosure, graphData,
   ]);
 
@@ -4812,6 +4859,16 @@ export default function MapScreen() {
           body="mneme tried to read the page but was blocked — some sites shut out automated readers. when that happens, just give it a few words about the piece, typed or spoken with the mic, and mneme builds the node and its connections from your summary instead."
         />
 
+        <RecognitionSheet
+          visible={showRecognition}
+          capturedCount={graphData?.totalCount ?? 0}
+          onClose={() => setShowRecognition(false)}
+          onCommit={commitRecognition}
+          // The tour alternative only makes sense while the welcome is still
+          // open; afterwards the ⓣ owns replays.
+          onTour={ghostExit === 'pending' ? () => { setShowRecognition(false); retireGhost(true); } : undefined}
+        />
+
         {/* Summary strip — baseline counts along the bottom, above the tab bar */}
         {stripVisible && (
           <InfoStrip
@@ -5023,8 +5080,14 @@ export default function MapScreen() {
             enter="right"
             art="cat"
             text={WELCOME_OFFER_LINE}
-            cta="sure"
-            onCta={() => retireGhost(true)}
+            cta="name one"
+            // Deliberately does NOT retire the ghost or mark the offer seen:
+            // closing the sheet without capturing brings this pill back, and a
+            // capture landing retires the whole welcome by itself.
+            onCta={() => {
+              track('onboarding_step', { step: 'recognition', action: 'completed' });
+              setShowRecognition(true);
+            }}
             onSkip={() => retireGhost(false)}
           />
         )}

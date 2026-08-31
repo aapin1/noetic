@@ -123,6 +123,19 @@ export interface ArchiveFolderDetail {
   entries: CaptureSummary[];
 }
 
+/** The kinds the server's keyless work resolver can look up. */
+export type RecognizeKind = 'film' | 'tv' | 'book' | 'anime' | 'game' | 'album';
+
+/** What the resolver found for a named work — the "this one?" card. */
+export interface RecognizePreview {
+  hit: boolean;
+  url?: string;
+  title?: string;
+  description?: string;
+  imageUrl?: string;
+  author?: string;
+}
+
 export type ContentConfidence = 'rich' | 'partial' | 'thin';
 
 export interface CapturePreflight {
