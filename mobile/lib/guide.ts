@@ -41,4 +41,14 @@ export const WELCOME_INTRO_LINE =
   "this is a map. save the things you read and watch, and yours will grow like this.";
 
 export const WELCOME_OFFER_LINE =
-  "start with one thing that stuck with you — a book, a film, a game, anything.";
+  "start with one thing you love. a book, a film, a thought, anything.";
+
+/**
+ * The full-tour offer, spoken once per account at a quiet moment after the
+ * first captures exist (the welcome no longer offers it up front).
+ */
+export function tourOfferFlag(userId: string): string {
+  return `welcome:tour:${userId}`;
+}
+
+export const TOUR_OFFER_LINE = "want the full tour?";

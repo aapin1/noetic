@@ -74,13 +74,13 @@ function ghostNode(
 
 export const GHOST_NODES: GraphNode[] = [
   // attention — a thinking cluster (philosophy).
-  ghostNode('depth', 'deep work — on depth', 'LINK', [T.phil, T.attention], 0.32, 0.26),
+  ghostNode('depth', 'deep work, on depth', 'LINK', [T.phil, T.attention], 0.32, 0.26),
   ghostNode('walks', 'walking unsticks thinking', 'TEXT', [T.phil, T.attention], 0.41, 0.32),
   ghostNode('generosity', 'attention is generosity', 'TEXT', [T.phil, T.attention], 0.33, 0.39),
   ghostNode('tabs', 'why 40 open tabs feel heavy', 'TEXT', [T.phil, T.attention], 0.25, 0.33),
   ghostNode('boredom', 'in defense of boredom', 'LINK', [T.phil, T.attention], 0.4, 0.22),
   // craft — a making cluster (design).
-  ghostNode('kintsugi', 'kintsugi — repair as ornament', 'LINK', [T.design, T.craft], 0.64, 0.34),
+  ghostNode('kintsugi', 'kintsugi: repair as ornament', 'LINK', [T.design, T.craft], 0.64, 0.34),
   ghostNode('shokunin', 'the shokunin ideal', 'LINK', [T.design, T.craft], 0.72, 0.41),
   ghostNode('notebooks', "da vinci's notebooks", 'LINK', [T.design, T.craft], 0.61, 0.45),
   ghostNode('negative', 'negative space does the work', 'TEXT', [T.design, T.craft], 0.7, 0.5),
@@ -91,7 +91,7 @@ export const GHOST_NODES: GraphNode[] = [
   ghostNode('spacing', 'the spacing effect', 'LINK', [T.psych, T.memory], 0.35, 0.71),
   ghostNode('smell', 'smell is a time machine', 'TEXT', [T.psych, T.memory], 0.44, 0.76),
   // systems — a how-things-work cluster (science).
-  ghostNode('meadows', 'thinking in systems — meadows', 'LINK', [T.science, T.systems], 0.66, 0.63),
+  ghostNode('meadows', 'thinking in systems, meadows', 'LINK', [T.science, T.systems], 0.66, 0.63),
   ghostNode('ants', 'ant colonies vote', 'LINK', [T.science, T.systems], 0.74, 0.69),
   ghostNode('cities', 'cities behave like organisms', 'LINK', [T.science, T.systems], 0.62, 0.72),
   // strays — every real map has them.

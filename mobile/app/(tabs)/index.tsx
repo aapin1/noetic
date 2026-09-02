@@ -90,8 +90,10 @@ import { RecognitionSheet, type RecognitionCommit } from '@/components/onboardin
 import { GuidePill } from '@/components/ui/GuidePill';
 import {
   GUIDE_MAX_CORPUS,
+  TOUR_OFFER_LINE,
   WELCOME_INTRO_LINE,
   WELCOME_OFFER_LINE,
+  tourOfferFlag,
   welcomeIntroFlag,
   welcomeOfferFlag,
   visitedTabFlag,
@@ -4335,9 +4337,9 @@ export default function MapScreen() {
 
   // ── Welcome ────────────────────────────────────────────────────
   // The whole spoken onboarding is two pills over the ghost map: what the
-  // map is, then the offer of the walkthrough. Answering the offer, yes or
-  // ✕, fades the constellation out (see retireGhost). After that the app
-  // explains nothing unprompted.
+  // map is, then the recognition ask ("start with one thing you love").
+  // A capture landing, or ✕ on the ask, retires the constellation; the
+  // walkthrough is offered later, at a quiet moment (see tour offer below).
   const welcomeStage: 'intro' | 'offer' | null =
     disclosure.ready && welcomeUid && ghostActive && ghostExit === 'pending'
       ? !disclosure.hasSeen(welcomeIntroFlag(welcomeUid)) ? 'intro' : 'offer'
@@ -4403,9 +4405,11 @@ export default function MapScreen() {
     const wasActive = prevTutorialRef.current;
     prevTutorialRef.current = tutorialActive;
     if (!wasActive || tutorialActive) return;
+    // However they reached the tour, having had it retires the later offer.
+    if (welcomeUid) disclosure.markSeen(tourOfferFlag(welcomeUid));
     if ((graphData?.totalCount ?? 0) > 0 || !screenFocused) return;
     setShowRecognition(true);
-  }, [tutorialActive, graphData, screenFocused]);
+  }, [tutorialActive, disclosure, graphData, screenFocused, welcomeUid]);
 
   // The clipboard door: while the map is still forming, notice a copied URL
   // on each return to the screen. Checked (hasUrlAsync), never read — reading
@@ -4449,6 +4453,40 @@ export default function MapScreen() {
     promiseArmed, savedPill, pillPending, showCapture, showRecognition, drawerVisible, screenFocused,
     tutorialActive, showPushPrimer, disclosure, graphData,
   ]);
+
+  // ── The full-tour offer ───────────────────────────────────────────────
+  // The welcome no longer offers the walkthrough up front; it arrives like
+  // the push primer instead: once per account, at a quiet moment, after the
+  // map holds something to tour around. Primer and promise both outrank it.
+  const [tourOfferArmed, setTourOfferArmed] = useState(false);
+  const [tourOfferPill, setTourOfferPill] = useState(false);
+  useEffect(() => {
+    if (!disclosure.ready || !welcomeUid || tourOfferArmed || tourOfferPill) return;
+    if (disclosure.hasSeen(tourOfferFlag(welcomeUid))) return;
+    const count = graphData?.totalCount ?? 0;
+    if (count < 1 || count >= GUIDE_MAX_CORPUS) return;
+    if (ghostExit !== 'gone') return;
+    setTourOfferArmed(true);
+  }, [disclosure, tourOfferArmed, tourOfferPill, welcomeUid, graphData, ghostExit]);
+  useEffect(() => {
+    if (!tourOfferArmed) return;
+    if (savedPill || pillPending || showCapture || showRecognition || drawerVisible || !screenFocused) return;
+    if (tutorialActive || showPushPrimer || pushPrimerArmed || promiseState || promiseArmed) return;
+    const timer = setTimeout(() => {
+      setTourOfferArmed(false);
+      setTourOfferPill(true);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [
+    tourOfferArmed, savedPill, pillPending, showCapture, showRecognition, drawerVisible,
+    screenFocused, tutorialActive, showPushPrimer, pushPrimerArmed, promiseState, promiseArmed,
+  ]);
+  const answerTourOffer = useCallback((take: boolean) => {
+    setTourOfferPill(false);
+    if (welcomeUid) disclosure.markSeen(tourOfferFlag(welcomeUid));
+    track('onboarding_step', { step: 'walkthrough', action: take ? 'completed' : 'skipped' });
+    if (take) startTutorial();
+  }, [disclosure, startTutorial, welcomeUid]);
 
   // Discovery (multi-select) highlights — the selected edges and nodes, drawn
   // ON TOP of the base graph in their own tiny layer. Kept out of graphLayer so
@@ -4872,9 +4910,6 @@ export default function MapScreen() {
           capturedCount={graphData?.totalCount ?? 0}
           onClose={() => setShowRecognition(false)}
           onCommit={commitRecognition}
-          // The tour alternative only makes sense while the welcome is still
-          // open; afterwards the ⓣ owns replays.
-          onTour={ghostExit === 'pending' ? () => { setShowRecognition(false); retireGhost(true); } : undefined}
         />
 
         {/* Summary strip — baseline counts along the bottom, above the tab bar */}
@@ -5069,8 +5104,8 @@ export default function MapScreen() {
         )}
 
         {/* The welcome pills — the capture pill's glass-and-cat idiom, from
-            the right edge. Two beats: what the map is, then the tour offer.
-            Either answer to the offer retires the ghost constellation. */}
+            the right edge. Two beats: what the map is, then the recognition
+            ask. A landed capture (or ✕) retires the ghost constellation. */}
         {welcomePill === 'intro' && (
           <GuidePill
             frame={{ top: insets.top + 58, right: Spacing[4] }}
@@ -5097,6 +5132,20 @@ export default function MapScreen() {
               setShowRecognition(true);
             }}
             onSkip={() => retireGhost(false)}
+          />
+        )}
+
+        {/* The full-tour offer, in the welcome pills' voice: fires once, at a
+            quiet moment after the first captures exist. */}
+        {tourOfferPill && !savedPill && !showCapture && !drawerVisible && welcomePill === null && (
+          <GuidePill
+            frame={{ top: insets.top + 58, right: Spacing[4] }}
+            enter="right"
+            art="cat"
+            text={TOUR_OFFER_LINE}
+            cta="sure"
+            onCta={() => answerTourOffer(true)}
+            onSkip={() => answerTourOffer(false)}
           />
         )}
 

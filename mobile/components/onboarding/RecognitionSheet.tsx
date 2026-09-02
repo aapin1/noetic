@@ -1,10 +1,10 @@
 import React, { useCallback, useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   TextInput,
   View,
@@ -29,10 +29,13 @@ import type { RecognizeKind, RecognizePreview } from '@/types/api';
 
 /**
  * The recognition opener: instead of asking a brand-new user to produce a URL
- * or a thought, ask them to point at something that stuck with them — a work
+ * or a thought, ask them to point at something that stuck with them. A work
  * they love, a thought, a quote, or a link. Recognition, not production, is
  * the first ask, and understanding is a ladder that never fails silently:
  * catalogues → the model's own knowledge → the person themselves.
+ *
+ * Layout rule: one fixed-height sheet pinned to the bottom edge, no
+ * scrolling. Every stage lays its content out top-down in the same frame.
  */
 
 /** The named-work kinds the server resolver speaks, plus the person's own words. */
@@ -49,7 +52,7 @@ const KINDS: { key: SheetKind; label: string }[] = [
   { key: 'quote', label: 'quote' },
 ];
 
-/** Broadly-known works, one per resolver kind — recognition without typing. */
+/** Broadly-known works, one per resolver kind: recognition without typing. */
 const EXAMPLES: { title: string; kind: RecognizeKind }[] = [
   { title: 'Sapiens', kind: 'book' },
   { title: 'Interstellar', kind: 'film' },
@@ -78,16 +81,14 @@ export type RecognitionCommit =
 
 interface Props {
   visible: boolean;
-  /** Captures already on the map — drives the "two more…" line. */
+  /** Captures already on the map: drives the "two more…" line. */
   capturedCount: number;
   onClose: (stage: 'input' | 'confirm' | 'done') => void;
   /** Runs the capture; resolves once the node is on the map. */
   onCommit: (args: RecognitionCommit) => Promise<void>;
-  /** "or take the quick tour instead" — offered from the welcome flow only. */
-  onTour?: () => void;
 }
 
-export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, onTour }: Props) {
+export function RecognitionSheet({ visible, capturedCount, onClose, onCommit }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [stage, setStage] = useState<Stage>('input');
@@ -95,20 +96,28 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
   const [kind, setKind] = useState<SheetKind | null>(null);
   const [preview, setPreview] = useState<RecognizePreview | null>(null);
   const [words, setWords] = useState('');
-  // Rung three of the understanding ladder: the person's own account — what
+  // Rung three of the understanding ladder: the person's own account. What
   // an unfound work IS, or their answer to the probing questions.
   const [context, setContext] = useState('');
   const [probeQuestions, setProbeQuestions] = useState<string[]>([]);
   const [error, setError] = useState('');
-  // Landed count this sheet session — the close-vs-skip signal, and the
+  // Landed count this sheet session: the close-vs-skip signal, and the
   // "two more…" copy between a commit and the map refetch reporting it.
   const [landed, setLanded] = useState(0);
 
   const isWorkKind = (k: SheetKind | null): k is RecognizeKind => k !== null && k !== 'thought' && k !== 'quote';
   const looksLikeUrl = URL_RE.test(entry.trim());
 
+  // Stage changes while the keyboard is up leave KeyboardAvoidingView holding
+  // stale padding inside the Modal, which lifted the sheet off the bottom edge
+  // and clipped the landed stage. Every transition drops the keyboard first.
+  const goStage = useCallback((next: Stage) => {
+    Keyboard.dismiss();
+    setStage(next);
+  }, []);
+
   const reset = useCallback(() => {
-    setStage('input');
+    goStage('input');
     setEntry('');
     setKind(null);
     setPreview(null);
@@ -116,7 +125,7 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
     setContext('');
     setProbeQuestions([]);
     setError('');
-  }, []);
+  }, [goStage]);
 
   const close = useCallback(() => {
     if (landed > 0) {
@@ -132,35 +141,35 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
 
   const runCommit = useCallback(
     async (args: RecognitionCommit) => {
-      setStage('committing');
+      goStage('committing');
       try {
         await onCommit(args);
         const index = landed + 1;
         setLanded(index);
         track('recognition_captured', { index });
-        setStage('landed');
+        goStage('landed');
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'could not save that — try again?');
-        setStage(args.mode === 'work' ? 'confirm' : 'input');
+        setError(e instanceof Error ? e.message : 'couldn’t save that. try again?');
+        goStage(args.mode === 'work' ? 'confirm' : 'input');
       }
     },
-    [landed, onCommit],
+    [goStage, landed, onCommit],
   );
 
   const resolveWork = useCallback(async (lookupTitle: string, lookupKind: RecognizeKind) => {
     setError('');
-    setStage('resolving');
+    goStage('resolving');
     try {
       const found = await api.captures.recognizePreview({ title: lookupTitle, kind: lookupKind });
       track('recognition_resolved', { kind: lookupKind, hit: found.hit });
       setPreview(found);
-      setStage('confirm');
+      goStage('confirm');
     } catch {
       // Network hiccup ≠ "not found": let them retry rather than mislabel it.
-      setError('couldn’t look that up — try again?');
-      setStage('input');
+      setError('couldn’t look that up. try again?');
+      goStage('input');
     }
-  }, []);
+  }, [goStage]);
 
   // The one CTA on the input stage, routed by what they gave us: a link goes
   // straight to the pipeline (it reads the page itself), a named work goes to
@@ -179,7 +188,7 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
     }
     if (kind === 'thought' || kind === 'quote') {
       setError('');
-      setStage('resolving');
+      goStage('resolving');
       let questions: string[] = [];
       try {
         const res = await api.captures.recognizeProbe({ kind, text: trimmed });
@@ -190,12 +199,12 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
       track('recognition_probed', { questions: questions.length });
       if (questions.length > 0) {
         setProbeQuestions(questions);
-        setStage('probe');
+        goStage('probe');
         return;
       }
       await runCommit({ mode: 'text', kind: kind === 'quote' ? 'QUOTE' : 'TEXT', text: trimmed });
     }
-  }, [entry, kind, looksLikeUrl, resolveWork, runCommit]);
+  }, [entry, kind, looksLikeUrl, goStage, resolveWork, runCommit]);
 
   const commitWork = useCallback(async () => {
     if (!isWorkKind(kind)) return;
@@ -226,12 +235,11 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
   // gap between a commit landing and that refetch reporting it.
   const captured = Math.max(capturedCount, landed);
   const remaining = Math.max(0, 3 - captured);
-  const isFirst = captured === 0;
 
   const inputPlaceholder =
     kind === 'thought' ? 'what’s on your mind?'
       : kind === 'quote' ? 'the line, as you remember it'
-        : 'a title is enough — or paste a link';
+        : 'a title, a thought, or a link';
 
   const ctaLabel = looksLikeUrl ? 'put it on the map'
     : kind === 'thought' || kind === 'quote' ? 'add it'
@@ -247,20 +255,15 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
           <View
             style={[
               styles.sheet,
-              { paddingBottom: insets.bottom + Spacing[6], backgroundColor: MAP_BG, borderColor: GLASS_BORDER_GLOW },
+              { paddingBottom: insets.bottom + Spacing[4], backgroundColor: MAP_BG, borderColor: GLASS_BORDER_GLOW },
             ]}
           >
-            <View style={styles.header}>
-              <Text variant="monoSmall" style={{ color: INK_MUTED, letterSpacing: 1 }}>
-                {stage === 'landed' ? 'on the map' : 'start with what stuck'}
-              </Text>
-              <Pressable onPress={close} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
-                <Text style={{ color: INK_FAINT, fontSize: 16 }}>✕</Text>
-              </Pressable>
-            </View>
+            <Pressable onPress={close} hitSlop={12} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close">
+              <Text style={{ color: INK_FAINT, fontSize: 16 }}>✕</Text>
+            </Pressable>
 
             {stage === 'input' && (
-              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <View>
                 <Text variant="h1" style={[styles.ask, { color: INK }]}>
                   Name one thing that stuck with you.
                 </Text>
@@ -277,7 +280,7 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
                 />
                 {looksLikeUrl ? (
                   <Text variant="monoSmall" style={{ color: INK_FAINT, marginBottom: Spacing[3] }}>
-                    that’s a link — mneme will read the page itself.
+                    that’s a link. mneme will read the page itself.
                   </Text>
                 ) : (
                   <View style={styles.chips}>
@@ -323,7 +326,7 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
 
                 <View style={[styles.sep, { backgroundColor: GLASS_SEP }]} />
                 <Text variant="monoSmall" style={{ color: INK_FAINT, marginBottom: Spacing[2] }}>
-                  or tap one you know:
+                  or tap a classic:
                 </Text>
                 <View style={styles.chips}>
                   {EXAMPLES.map((ex) => (
@@ -344,28 +347,20 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
                   ))}
                 </View>
 
-                <View style={styles.footer}>
-                  <Pressable
-                    onPress={() => {
-                      close();
-                      router.push('/connections' as never);
-                    }}
-                    hitSlop={8}
-                    accessibilityRole="link"
-                  >
-                    <Text variant="monoSmall" style={{ color: INK_FAINT }}>
-                      already log books or films somewhere? connect an account →
-                    </Text>
-                  </Pressable>
-                  {onTour && (
-                    <Pressable onPress={onTour} hitSlop={8} style={{ marginTop: Spacing[3] }} accessibilityRole="link">
-                      <Text variant="monoSmall" style={{ color: INK_FAINT }}>
-                        or take the quick tour instead →
-                      </Text>
-                    </Pressable>
-                  )}
-                </View>
-              </ScrollView>
+                <Pressable
+                  onPress={() => {
+                    close();
+                    router.push('/connections' as never);
+                  }}
+                  hitSlop={8}
+                  style={styles.footer}
+                  accessibilityRole="link"
+                >
+                  <Text variant="monoSmall" style={{ color: INK_FAINT }}>
+                    log books or films elsewhere? connect an account →
+                  </Text>
+                </Pressable>
+              </View>
             )}
 
             {(stage === 'resolving' || stage === 'committing') && (
@@ -384,7 +379,7 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
             )}
 
             {stage === 'confirm' && (
-              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <View>
                 {preview?.hit ? (
                   <View style={[styles.card, { borderColor: GLASS_BORDER }]}>
                     {preview.imageUrl ? (
@@ -409,7 +404,7 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
                 ) : (
                   <>
                     <Text variant="body" style={{ color: INK_MUTED, marginBottom: Spacing[3] }}>
-                      mneme doesn’t know “{entry.trim()}” — tell it what this is, so the map can actually understand it.
+                      mneme doesn’t know “{entry.trim()}” yet. tell it what this is.
                     </Text>
                     <TextInput
                       value={context}
@@ -421,20 +416,20 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
                     />
                   </>
                 )}
-                {isFirst && (
-                  <Text variant="monoSmall" style={{ color: INK_FAINT, marginBottom: Spacing[2] }}>
-                    recommended for your first — a line from you makes the reading yours.
-                  </Text>
-                )}
                 <TextInput
                   value={words}
                   onChangeText={setWords}
-                  placeholder="why did it stick? one line, optional"
+                  placeholder="why did it stick? optional"
                   placeholderTextColor={INK_FAINT}
                   style={[styles.input, { borderColor: GLASS_BORDER, color: INK }]}
                   maxLength={500}
                   returnKeyType="done"
                 />
+                {captured === 0 && (
+                  <Text variant="monoSmall" style={{ color: INK_FAINT, marginBottom: Spacing[2] }}>
+                    a line from you makes the first reading yours.
+                  </Text>
+                )}
                 {error ? (
                   <Text variant="caption" style={{ marginBottom: Spacing[3], color: DANGER }}>
                     {error}
@@ -450,16 +445,16 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
                     put it on the map
                   </Text>
                 </Pressable>
-                <Pressable onPress={() => setStage('input')} hitSlop={8} style={styles.backLink} accessibilityRole="button">
+                <Pressable onPress={() => goStage('input')} hitSlop={8} style={styles.backLink} accessibilityRole="button">
                   <Text variant="monoSmall" style={{ color: INK_FAINT }}>
-                    {preview?.hit ? 'not it — search again' : '← back'}
+                    {preview?.hit ? 'not it? search again' : '← back'}
                   </Text>
                 </Pressable>
-              </ScrollView>
+              </View>
             )}
 
             {stage === 'probe' && (
-              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <View>
                 <Text variant="body" style={{ color: INK_MUTED, marginBottom: Spacing[3] }}>
                   mneme wants to understand this well enough to say something back:
                 </Text>
@@ -472,7 +467,7 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
                   <TextInput
                     value={context}
                     onChangeText={setContext}
-                    placeholder="answer here — or speak it"
+                    placeholder="type or speak your answer"
                     placeholderTextColor={INK_FAINT}
                     style={[styles.input, styles.answerInput, { borderColor: GLASS_BORDER, color: INK }]}
                     multiline
@@ -502,7 +497,7 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
                     save it as is →
                   </Text>
                 </Pressable>
-              </ScrollView>
+              </View>
             )}
 
             {stage === 'landed' && (
@@ -516,7 +511,7 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit, on
                     ? 'two more and the map starts reading you.'
                     : remaining === 1
                       ? 'one more and the map starts reading you.'
-                      : 'the map is forming — watch the lines.'}
+                      : 'the map is forming. watch the lines.'}
                 </Text>
                 <Pressable
                   onPress={reset}
@@ -545,19 +540,16 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(5,4,3,0.55)' },
   backdropTouch: StyleSheet.absoluteFill as object,
   sheet: {
+    // Fixed and tall: every stage fits without scrolling, and the frame never
+    // hops between stages. Pinned to the true bottom edge, no gap.
+    height: '78%',
     borderTopLeftRadius: Radius.xl,
     borderTopRightRadius: Radius.xl,
     borderTopWidth: 1,
     paddingHorizontal: Spacing[6],
-    paddingTop: Spacing[5],
-    maxHeight: '86%',
+    paddingTop: Spacing[4],
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing[4],
-  },
+  closeBtn: { alignSelf: 'flex-end', padding: Spacing[1], marginBottom: Spacing[2] },
   ask: { marginBottom: Spacing[4] },
   input: {
     borderWidth: 1,
@@ -584,7 +576,7 @@ const styles = StyleSheet.create({
   },
   disabled: { opacity: 0.4 },
   sep: { height: 1, marginVertical: Spacing[5] },
-  footer: { marginTop: Spacing[5], marginBottom: Spacing[2] },
+  footer: { marginTop: Spacing[5] },
   loading: { alignItems: 'center', paddingVertical: Spacing[10] },
   card: {
     flexDirection: 'row',

@@ -128,7 +128,7 @@ export const TUTORIAL_DEMO_CAPTURE = {
       type: 'READING' as const,
       headline: 'Curiosity is a better guide to great work than ambition, because it points at problems you will actually stay with.',
       body:
-        'Following it means years of work nobody asked for before anyone can tell whether it was worth it — advice that reads differently from someone whose bets already paid off.',
+        'Following it means years of work nobody asked for before anyone can tell whether it was worth it. advice that reads differently from someone whose bets already paid off.',
       strength: 1,
       evidence: { kicker: 'the cost' },
     },
@@ -148,7 +148,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'welcome',
     title: 'welcome to mneme',
-    body: 'log anything that catches your mind and mneme plots it on this map — spatially, the way your brain organizes concepts.',
+    body: 'log anything that catches your mind and mneme plots it on this map, spatially, the way your brain organizes concepts.',
     target: { kind: 'card' },
   },
   {
@@ -161,28 +161,28 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'capture-next',
     title: 'the source',
-    body: 'mneme reads the page itself and understands it — an article, a video, a paper, anything you throw at it — so the tedious part of logging is never yours.',
+    body: 'mneme reads the page itself and understands it: an article, a video, a paper, anything you throw at it. the tedious part of logging is never yours.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.captureNext },
     hint: 'tap next',
   },
   {
     id: 'capture-commit',
     title: 'make it yours',
-    body: 'you can leave a reaction — agree, disagree, a one-line review — and it saves along with what you logged. always optional.',
+    body: 'you can leave a reaction (agree, disagree, a one-line review) and it saves along with what you logged. always optional.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.captureCommit },
     hint: 'tap commit',
   },
   {
     id: 'seven-seconds',
     title: 'under 7 seconds',
-    body: 'mneme is reading the page right now. everything you log — articles, videos, podcasts — takes under 7 seconds, start to finish.',
+    body: 'mneme is reading the page right now. everything you log takes under 7 seconds, start to finish.',
     target: { kind: 'card' },
     autoAdvance: true,
   },
   {
     id: 'atlas',
     title: 'your first node',
-    body: 'there it lands. as you log more, related ideas settle close together — and the connections, contradictions, and tensions between them surface as insights for you to review.',
+    body: 'there it lands. as you log more, related ideas settle close together, and the connections, contradictions, and tensions between them surface as insights for you to review.',
     target: { kind: 'card' },
   },
   {
@@ -195,14 +195,14 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'node-manage-info',
     title: 'the detail panel',
-    body: 'here you see the source, the date you logged it, and the topics mneme filed it under. view insight opens the full read — what it says, and how it fits everything else you save.',
+    body: 'here you see the source, the date you logged it, and the topics mneme filed it under. view insight opens the full read: what it says, and how it fits everything else you save.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.nodePanel },
     dismissible: true,
   },
   {
     id: 'node-delete',
     title: "you're in control",
-    body: 'this node was practice — clear it and the map is yours.',
+    body: 'this node was practice. clear it and the map is yours.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.nodeDelete },
     hint: 'tap delete, then confirm',
   },
@@ -216,7 +216,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'share',
     title: 'the fast way in',
-    body: "from an article in your browser, a youtube video, anything you want to log — hit share and scroll until you find mneme. it saves without pulling you out of what you're reading, and mneme handles the rest.",
+    body: "from an article in your browser, a youtube video, anything you want to log: hit share and scroll until you find mneme. it saves without pulling you out of what you're reading, and mneme handles the rest.",
     target: { kind: 'card' },
     visual: 'share',
   },
@@ -230,7 +230,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'done',
     title: "that's mneme",
-    body: "you're on your own now — replay this tour any time from the ⓣ. the map grows from whatever catches you next.",
+    body: "you're on your own now. replay this tour any time from the ⓣ. the map grows from whatever catches you next.",
     target: { kind: 'card' },
     deferUntilAtlas: true,
   },
