@@ -127,6 +127,13 @@ export interface ArchiveFolderDetail {
 export type RecognizeKind = 'film' | 'tv' | 'book' | 'anime' | 'game' | 'album';
 
 /** What the resolver found for a named work — the "this one?" card. */
+/** A sibling candidate for a named work: "maybe you meant". */
+export interface RecognizeAlternative {
+  title: string;
+  year?: number;
+  hint?: string;
+}
+
 export interface RecognizePreview {
   hit: boolean;
   url?: string;
@@ -134,6 +141,7 @@ export interface RecognizePreview {
   description?: string;
   imageUrl?: string;
   author?: string;
+  alternatives?: RecognizeAlternative[];
 }
 
 export type ContentConfidence = 'rich' | 'partial' | 'thin';

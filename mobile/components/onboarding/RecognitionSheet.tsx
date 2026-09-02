@@ -75,7 +75,7 @@ type Stage = 'input' | 'resolving' | 'confirm' | 'probe' | 'committing' | 'lande
 
 /** What the sheet hands up when the person commits. The host owns the API. */
 export type RecognitionCommit =
-  | { mode: 'work'; title: string; kind: RecognizeKind; words?: string; context?: string }
+  | { mode: 'work'; title: string; kind: RecognizeKind; year?: number; words?: string; context?: string }
   | { mode: 'text'; kind: 'TEXT' | 'QUOTE'; text: string; context?: string }
   | { mode: 'link'; url: string };
 
@@ -94,6 +94,8 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit }: 
   const [stage, setStage] = useState<Stage>('input');
   const [entry, setEntry] = useState('');
   const [kind, setKind] = useState<SheetKind | null>(null);
+  // Set when a "maybe you meant" pick carried one; disambiguates the commit.
+  const [year, setYear] = useState<number | undefined>(undefined);
   const [preview, setPreview] = useState<RecognizePreview | null>(null);
   const [words, setWords] = useState('');
   // Rung three of the understanding ladder: the person's own account. What
@@ -120,6 +122,7 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit }: 
     goStage('input');
     setEntry('');
     setKind(null);
+    setYear(undefined);
     setPreview(null);
     setWords('');
     setContext('');
@@ -156,11 +159,11 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit }: 
     [goStage, landed, onCommit],
   );
 
-  const resolveWork = useCallback(async (lookupTitle: string, lookupKind: RecognizeKind) => {
+  const resolveWork = useCallback(async (lookupTitle: string, lookupKind: RecognizeKind, lookupYear?: number) => {
     setError('');
     goStage('resolving');
     try {
-      const found = await api.captures.recognizePreview({ title: lookupTitle, kind: lookupKind });
+      const found = await api.captures.recognizePreview({ title: lookupTitle, kind: lookupKind, year: lookupYear });
       track('recognition_resolved', { kind: lookupKind, hit: found.hit });
       setPreview(found);
       goStage('confirm');
@@ -183,6 +186,7 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit }: 
     }
     if (isWorkKind(kind)) {
       setEntry(trimmed);
+      setYear(undefined);
       await resolveWork(trimmed, kind);
       return;
     }
@@ -212,10 +216,11 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit }: 
       mode: 'work',
       title: entry.trim(),
       kind,
+      year,
       words: words.trim() || undefined,
       context: context.trim() || undefined,
     });
-  }, [kind, entry, words, context, runCommit]);
+  }, [kind, entry, year, words, context, runCommit]);
 
   const commitProbed = useCallback(
     async (withAnswer: boolean) => {
@@ -416,6 +421,33 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit }: 
                     />
                   </>
                 )}
+                {(preview?.alternatives?.length ?? 0) > 0 && (
+                  <>
+                    <Text variant="monoSmall" style={{ color: INK_FAINT, marginBottom: Spacing[2] }}>
+                      {preview?.hit ? 'not this one? maybe you meant:' : 'maybe you meant:'}
+                    </Text>
+                    <View style={styles.chips}>
+                      {preview?.alternatives?.map((alt) => (
+                        <Pressable
+                          key={`${alt.title}|${alt.year ?? ''}`}
+                          onPress={() => {
+                            if (!isWorkKind(kind)) return;
+                            setEntry(alt.title);
+                            setYear(alt.year);
+                            void resolveWork(alt.title, kind, alt.year);
+                          }}
+                          style={[styles.chip, { borderColor: GLASS_BORDER }]}
+                          accessibilityRole="button"
+                        >
+                          <Text variant="monoSmall" style={{ color: INK_MUTED }}>
+                            {alt.title}
+                            {alt.hint ? ` · ${alt.hint}` : alt.year ? ` · ${alt.year}` : ''}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </>
+                )}
                 <TextInput
                   value={words}
                   onChangeText={setWords}
@@ -511,7 +543,7 @@ export function RecognitionSheet({ visible, capturedCount, onClose, onCommit }: 
                     ? 'two more and the map starts reading you.'
                     : remaining === 1
                       ? 'one more and the map starts reading you.'
-                      : 'the map is forming. watch the lines.'}
+                      : 'connected into the rest of your map.'}
                 </Text>
                 <Pressable
                   onPress={reset}

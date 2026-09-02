@@ -11,12 +11,15 @@ const captureItem = vi.fn(async (payload: Record<string, unknown>) => ({ id: "ca
 const createManualContentItem = vi.fn(async () => ({ id: "content-1" }));
 const resolveWork = vi.fn(async (..._args: unknown[]) => null as unknown);
 
+const providerFetch = vi.fn();
+
+vi.mock("@/server/connections/http", () => ({ providerFetch: (...a: unknown[]) => providerFetch(...a) }));
 vi.mock("@/server/services/cognition", () => ({ captureItem: (...a: unknown[]) => captureItem(a[0] as Record<string, unknown>) }));
 vi.mock("@/server/services/content", () => ({ createManualContentItem: (...a: unknown[]) => createManualContentItem(...(a as [])) }));
 vi.mock("@/server/imports/resolve", () => ({ resolveWork: (...a: unknown[]) => resolveWork(...a) }));
 vi.mock("@/server/services/admission", () => ({ capturePipeline: { run: (fn: () => Promise<unknown>) => fn() } }));
 
-import { captureRecognizedWork, probeCapture } from "@/server/services/recognize";
+import { captureRecognizedWork, findWorkAlternatives, probeCapture } from "@/server/services/recognize";
 
 /** Stub the OpenAI endpoint the in-file LLM helpers call. */
 function stubLlm(content: unknown) {
@@ -146,6 +149,38 @@ describe("captureRecognizedWork", () => {
 
     expect(createManualContentItem).toHaveBeenCalledWith(expect.objectContaining({ contentType: "music" }));
     expect(captureItem.mock.calls[0][0].reaction).toBeUndefined();
+  });
+});
+
+describe("findWorkAlternatives", () => {
+  it("returns deduped wikipedia siblings with their descriptions as hints", async () => {
+    providerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        query: {
+          pages: {
+            "1": { title: "Her (film)", description: "2013 film by Spike Jonze" },
+            "2": { title: "Death Becomes Her", description: "1992 film" },
+            "3": { title: "Her", pageprops: { disambiguation: "" } },
+            "4": { title: "Her (film)", description: "2013 film by Spike Jonze" },
+            "5": { title: "Her (album)", description: "2017 album" },
+          },
+        },
+      }),
+    });
+
+    const alts = await findWorkAlternatives({ kind: "film", title: "her" });
+
+    expect(alts).toEqual([
+      { title: "Her (film)", hint: "2013 film by Spike Jonze" },
+      { title: "Death Becomes Her", hint: "1992 film" },
+      { title: "Her (album)", hint: "2017 album" },
+    ]);
+  });
+
+  it("returns [] when the source errors", async () => {
+    providerFetch.mockRejectedValueOnce(new Error("down"));
+    expect(await findWorkAlternatives({ kind: "book", title: "anything" })).toEqual([]);
   });
 });
 

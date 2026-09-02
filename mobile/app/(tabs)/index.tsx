@@ -1089,7 +1089,7 @@ function Divider({ c }: { c: AppThemeColors }) {
 
 function StepOne({
   mode, setMode, payload, setPayload, imageUri, uploading, onPickImage, error, onNext, onClose, onPaste, c,
-  onQuickSave, busy, clipboardHasUrl,
+  onQuickSave, busy, clipboardHasUrl, onLogWork,
 }: {
   mode: CaptureMode; setMode: (m: CaptureMode) => void;
   payload: string; setPayload: (s: string) => void;
@@ -1097,6 +1097,8 @@ function StepOne({
   error: string; onNext: () => boolean; onClose: () => void; onPaste: () => void;
   c: AppThemeColors;
   onQuickSave: () => void; busy: boolean; clipboardHasUrl: boolean;
+  /** Hands off to the recognition sheet: log a work by naming it. */
+  onLogWork: () => void;
 }) {
   const nextTarget = useTutorialTarget(TUTORIAL_TARGET.captureNext);
   // The copied-link fast path: when the clipboard is known to hold a URL and
@@ -1128,6 +1130,13 @@ function StepOne({
           );
         })}
       </View>
+      {/* The everyday door into recognition: a finished book or film has no
+          URL to paste, so naming it is the natural way in. */}
+      <Pressable onPress={onLogWork} hitSlop={8} style={{ marginBottom: Spacing[4] }} accessibilityRole="link">
+        <Text variant="monoSmall" style={{ color: c.muted }}>
+          logging a book, film, show, or game? name it →
+        </Text>
+      </Pressable>
       {/* Wrapped as one region so the tutorial's spotlight (and its tap
           passthrough) covers the whole visible form, not just the button.
           collapsable={false} is load-bearing: this View carries no style, so
@@ -3895,7 +3904,7 @@ export default function MapScreen() {
       try {
         const res =
           args.mode === 'work'
-            ? await api.captures.recognize({ title: args.title, kind: args.kind, words: args.words, context: args.context })
+            ? await api.captures.recognize({ title: args.title, kind: args.kind, year: args.year, words: args.words, context: args.context })
             : args.mode === 'link'
               ? await api.captures.create({ kind: 'LINK', url: normalizeLinkInput(args.url) })
               : await api.captures.create({ kind: args.kind, text: args.text, userContext: args.context });
@@ -5482,6 +5491,7 @@ export default function MapScreen() {
                         onQuickSave={quickSave}
                         busy={busy}
                         clipboardHasUrl={clipboardHasUrl}
+                        onLogWork={() => { closeCapture(); setShowRecognition(true); }}
                       />
                     </View>
                   )}

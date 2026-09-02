@@ -1,4 +1,5 @@
 import { CaptureKind } from "@prisma/client";
+import { providerFetch } from "@/server/connections/http";
 import type { ProviderItem } from "@/server/connections/types";
 import { resolveWork, type Resolved } from "@/server/imports/resolve";
 import { capturePipeline } from "@/server/services/admission";
@@ -117,6 +118,113 @@ export async function findWork(lookup: Lookup): Promise<{ resolved: Resolved | n
   if (resolved?.description) return { resolved, recalled: null };
   const recalled = await describeWork(lookup);
   return { resolved, recalled };
+}
+
+// ── "maybe you meant" ──────────────────────────────────────────────────
+// A short title often names several works ("Her" the Jonze film vs half a
+// dozen others), and the resolver's one best guess can pick the wrong one.
+// The preview therefore also carries a few sibling candidates from the same
+// keyless sources; choosing one re-resolves with its exact title and year,
+// so the commit stays consistent with the card the person confirmed.
+
+export type WorkAlternative = { title: string; year?: number; hint?: string };
+
+const WIKI_UA = "Mneme/1.0 (https://mneme-app.com; hello@mneme-app.com) recognize-alternatives";
+
+const WIKI_TEMPLATE: Record<string, string> = {
+  film: 'hastemplate:"Infobox film"',
+  tv: 'hastemplate:"Infobox television"',
+  album: 'hastemplate:"Infobox album"',
+  book: 'hastemplate:"Infobox book"',
+  game: 'hastemplate:"Infobox video game"',
+  anime: 'hastemplate:"Infobox animanga/Header"',
+};
+
+async function wikipediaAlternatives(title: string, kind: string): Promise<WorkAlternative[]> {
+  const params = new URLSearchParams({
+    action: "query",
+    generator: "search",
+    gsrsearch: `${title} ${WIKI_TEMPLATE[kind] ?? ""}`.trim(),
+    gsrlimit: "5",
+    prop: "description|pageprops",
+    ppprop: "disambiguation",
+    format: "json",
+  });
+  const res = await providerFetch(`https://en.wikipedia.org/w/api.php?${params}`, { providerName: "wikipedia", headers: { "user-agent": WIKI_UA } });
+  if (!res.ok) return [];
+  const data = (await res.json()) as { query?: { pages?: Record<string, { title: string; description?: string; pageprops?: { disambiguation?: string } }> } };
+  return Object.values(data.query?.pages ?? {})
+    // Presence check, not truthiness: the API marks disambiguation pages with
+    // an EMPTY string, which is falsy.
+    .filter((p) => p.pageprops?.disambiguation === undefined)
+    .map((p) => ({ title: p.title, hint: p.description }));
+}
+
+async function openLibraryAlternatives(title: string, author?: string): Promise<WorkAlternative[]> {
+  const params = new URLSearchParams({ title, limit: "4", fields: "title,author_name,first_publish_year" });
+  if (author) params.set("author", author);
+  const res = await providerFetch(`https://openlibrary.org/search.json?${params}`, { providerName: "open library", headers: { "user-agent": WIKI_UA } });
+  if (!res.ok) return [];
+  const data = (await res.json()) as { docs?: { title: string; author_name?: string[]; first_publish_year?: number }[] };
+  return (data.docs ?? []).map((d) => ({ title: d.title, year: d.first_publish_year, hint: d.author_name?.[0] }));
+}
+
+async function anilistAlternatives(title: string): Promise<WorkAlternative[]> {
+  const res = await providerFetch("https://graphql.anilist.co", {
+    providerName: "anilist",
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      query: `query ($q: String) { Page(perPage: 4) { media(search: $q, type: ANIME) { startDate { year } format title { english romaji } } } }`,
+      variables: { q: title },
+    }),
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as { data?: { Page?: { media?: { startDate?: { year?: number }; format?: string; title: { english?: string | null; romaji?: string | null } }[] } } };
+  return (data.data?.Page?.media ?? [])
+    .map((m) => ({ title: m.title.english || m.title.romaji || "", year: m.startDate?.year, hint: m.format?.toLowerCase() }))
+    .filter((a) => a.title.length > 0);
+}
+
+async function steamAlternatives(title: string): Promise<WorkAlternative[]> {
+  const res = await providerFetch(`https://steamcommunity.com/actions/SearchApps/${encodeURIComponent(title)}`, { providerName: "steam" });
+  if (!res.ok) return [];
+  const apps = (await res.json()) as { name: string }[];
+  return apps.slice(0, 4).map((a) => ({ title: a.name }));
+}
+
+const altKey = (a: WorkAlternative) => `${a.title.toLowerCase().trim()}|${a.year ?? ""}`;
+
+/** Sibling candidates for the confirm card (the caller drops the shown pick). */
+export async function findWorkAlternatives(lookup: Lookup): Promise<WorkAlternative[]> {
+  let all: WorkAlternative[] = [];
+  try {
+    switch (lookup.kind) {
+      case "book":
+        all = await openLibraryAlternatives(lookup.title, lookup.author);
+        break;
+      case "anime":
+        all = await anilistAlternatives(lookup.title);
+        break;
+      case "game":
+        all = await steamAlternatives(lookup.title);
+        break;
+      default:
+        all = await wikipediaAlternatives(lookup.title, lookup.kind);
+    }
+  } catch {
+    return [];
+  }
+  const seen = new Set<string>();
+  const out: WorkAlternative[] = [];
+  for (const alt of all) {
+    const key = altKey(alt);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(alt);
+    if (out.length === 4) break;
+  }
+  return out;
 }
 
 export async function captureRecognizedWork(args: {
