@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The onboarding recognition capture: a named work becomes a real first
@@ -16,10 +16,27 @@ vi.mock("@/server/services/content", () => ({ createManualContentItem: (...a: un
 vi.mock("@/server/imports/resolve", () => ({ resolveWork: (...a: unknown[]) => resolveWork(...a) }));
 vi.mock("@/server/services/admission", () => ({ capturePipeline: { run: (fn: () => Promise<unknown>) => fn() } }));
 
-import { captureRecognizedWork } from "@/server/services/recognize";
+import { captureRecognizedWork, probeCapture } from "@/server/services/recognize";
+
+/** Stub the OpenAI endpoint the in-file LLM helpers call. */
+function stubLlm(content: unknown) {
+  process.env.OPENAI_API_KEY = "test-key";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: JSON.stringify(content) } }] }),
+    })),
+  );
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
+  delete process.env.OPENAI_API_KEY;
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("captureRecognizedWork", () => {
@@ -87,6 +104,37 @@ describe("captureRecognizedWork", () => {
     expect(payload.reaction).toBeUndefined();
   });
 
+  it("falls back to the model's own knowledge of the work when the catalogues miss", async () => {
+    resolveWork.mockResolvedValueOnce(null);
+    stubLlm({ description: "A 2019 novella about grief told through letters.", author: "Q. Author" });
+
+    await captureRecognizedWork({
+      userId: "user-1",
+      lookup: { kind: "book", title: "A Niche Novella" },
+    });
+
+    expect(createManualContentItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "A Niche Novella",
+        description: "A 2019 novella about grief told through letters.",
+        authorName: "Q. Author",
+        canonicalUrl: undefined,
+      }),
+    );
+  });
+
+  it("passes the person's own account through as userContext", async () => {
+    resolveWork.mockResolvedValueOnce(null);
+
+    await captureRecognizedWork({
+      userId: "user-1",
+      lookup: { kind: "book", title: "An Obscure Zine" },
+      context: "A photocopied zine about bike co-ops from the 90s.",
+    });
+
+    expect(captureItem.mock.calls[0][0].userContext).toBe("A photocopied zine about bike co-ops from the 90s.");
+  });
+
   it("maps the album kind to the music content type and drops empty words", async () => {
     resolveWork.mockResolvedValueOnce({ url: "https://en.wikipedia.org/wiki/OK_Computer", title: "OK Computer" });
 
@@ -98,5 +146,20 @@ describe("captureRecognizedWork", () => {
 
     expect(createManualContentItem).toHaveBeenCalledWith(expect.objectContaining({ contentType: "music" }));
     expect(captureItem.mock.calls[0][0].reaction).toBeUndefined();
+  });
+});
+
+describe("probeCapture", () => {
+  it("returns at most two trimmed questions from the judge", async () => {
+    stubLlm({ questions: ["  Where did you run into this idea?  ", "What would make it false?", "A third question?"] });
+
+    const questions = await probeCapture({ kind: "thought", text: "love is real" });
+
+    expect(questions).toEqual(["Where did you run into this idea?", "What would make it false?"]);
+  });
+
+  it("treats a judge failure as strong-enough (no gate)", async () => {
+    const questions = await probeCapture({ kind: "quote", text: "the unexamined life is not worth living" });
+    expect(questions).toEqual([]);
   });
 });

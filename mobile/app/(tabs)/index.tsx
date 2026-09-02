@@ -86,7 +86,7 @@ import {
 } from '@/constants/ghostMap';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { ComebackPromise } from '@/components/ritual/ComebackPromise';
-import { RecognitionSheet } from '@/components/onboarding/RecognitionSheet';
+import { RecognitionSheet, type RecognitionCommit } from '@/components/onboarding/RecognitionSheet';
 import { GuidePill } from '@/components/ui/GuidePill';
 import {
   GUIDE_MAX_CORPUS,
@@ -105,7 +105,6 @@ import type {
   CaptureKind,
   CapturePreflight,
   MemoryGraphResponse,
-  RecognizeKind,
 } from '@/types/api';
 
 type GraphNode = MemoryGraphResponse['nodes'][number];
@@ -3880,16 +3879,25 @@ export default function MapScreen() {
     });
   }, [showSavedPill, maybeAskForPush]));
 
-  // A recognition capture: named work → real node, awaited so the sheet can
-  // narrate the wait and celebrate the landing. Unlike the composer there IS
-  // a fly-to: the whole point of the opener is watching your first star land.
+  // A recognition capture, awaited so the sheet can narrate the wait and
+  // celebrate the landing. Unlike the composer there IS a fly-to: the whole
+  // point of the opener is watching your first star land. Three shapes: a
+  // named work goes through the resolver route, the person's own words go
+  // through the ordinary capture POST (probe answers ride as userContext,
+  // the pipeline's ground-truth fail-safe), a link through the link pipeline.
   const commitRecognition = useCallback(
-    async (args: { title: string; kind: RecognizeKind; words?: string }) => {
+    async (args: RecognitionCommit) => {
       const startedAt = Date.now();
-      track('capture_started', { kind: 'LINK', source: 'recognition' });
+      const kind: CaptureKind = args.mode === 'text' ? args.kind : 'LINK';
+      track('capture_started', { kind, source: 'recognition' });
       try {
-        const res = await api.captures.recognize(args);
-        track('capture_succeeded', { kind: 'LINK', source: 'recognition', duration_ms: Date.now() - startedAt });
+        const res =
+          args.mode === 'work'
+            ? await api.captures.recognize({ title: args.title, kind: args.kind, words: args.words, context: args.context })
+            : args.mode === 'link'
+              ? await api.captures.create({ kind: 'LINK', url: normalizeLinkInput(args.url) })
+              : await api.captures.create({ kind: args.kind, text: args.text, userContext: args.context });
+        track('capture_succeeded', { kind, source: 'recognition', duration_ms: Date.now() - startedAt });
         refetchMapData();
         void prefetchQuery(`capture:${res.id}`, () => api.captures.get(res.id));
         setNewNodeId(res.id);
@@ -3898,7 +3906,7 @@ export default function MapScreen() {
         setReviewArmed(true);
       } catch (e) {
         track('capture_failed', {
-          kind: 'LINK',
+          kind,
           source: 'recognition',
           duration_ms: Date.now() - startedAt,
           reason: failureReason(e),

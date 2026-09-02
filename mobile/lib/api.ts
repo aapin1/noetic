@@ -434,7 +434,13 @@ export const api = {
         body: JSON.stringify(body),
       });
     },
-    recognize(body: { title: string; kind: RecognizeKind; year?: number; words?: string }) {
+    recognizeProbe(body: { kind: 'thought' | 'quote'; text: string }) {
+      return request<{ questions: string[] }>('/api/captures/recognize/probe', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+    },
+    recognize(body: { title: string; kind: RecognizeKind; year?: number; words?: string; context?: string }) {
       return request<CaptureResponse>('/api/captures/recognize', {
         method: 'POST',
         // A recognition is a capture, so it carries the same streak clock.

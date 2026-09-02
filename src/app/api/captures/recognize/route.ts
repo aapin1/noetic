@@ -17,6 +17,7 @@ export async function POST(request: Request) {
       userId,
       lookup: { kind: input.kind, title: input.title, year: input.year },
       words: input.words,
+      context: input.context,
     });
     // Same shape the ordinary capture POST returns, so the map lands the node
     // through the one code path it already has. No position check: this flow

@@ -261,7 +261,14 @@ export const recognizePreviewSchema = z.object({
 export const recognizeCaptureSchema = recognizePreviewSchema.extend({
   /** The person's one line on why it stuck — lands as the reaction. */
   words: z.string().trim().max(500).optional(),
+  /** Their account of what the work IS, when neither catalogue nor model knew it. */
+  context: z.string().trim().max(4000).optional(),
   tzOffsetMinutes: z.number().int().min(-840).max(840).optional(),
+});
+
+export const recognizeProbeSchema = z.object({
+  kind: z.enum(["thought", "quote"]),
+  text: z.string().trim().min(1).max(4000),
 });
 
 export const captureUpdateSchema = z

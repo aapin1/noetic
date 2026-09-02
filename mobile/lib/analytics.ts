@@ -105,6 +105,8 @@ type EventProps = {
   recognition_captured: { index: number };
   /** The sheet was closed without capturing, from the named stage. */
   recognition_skipped: { stage: 'input' | 'confirm' };
+  /** The weak-material judge answered for a thought/quote; 0 = strong enough. */
+  recognition_probed: { questions: number };
   capture_started: { kind: CaptureKind; source: CaptureSource };
   capture_succeeded: { kind: CaptureKind; source: CaptureSource; duration_ms: number };
   capture_failed: {
