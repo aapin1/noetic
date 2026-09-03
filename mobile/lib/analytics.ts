@@ -101,12 +101,6 @@ type EventProps = {
   onboarding_step: { step: OnboardingStep; action: 'completed' | 'skipped' };
   /** The "name a work" resolver answered — hit lands the confirm card. */
   recognition_resolved: { kind: string; hit: boolean };
-  /** A recognition capture landed; index counts them within this session. */
-  recognition_captured: { index: number };
-  /** The sheet was closed without capturing, from the named stage. */
-  recognition_skipped: { stage: 'input' | 'confirm' };
-  /** The weak-material judge answered for a thought/quote; 0 = strong enough. */
-  recognition_probed: { questions: number };
   capture_started: { kind: CaptureKind; source: CaptureSource };
   capture_succeeded: { kind: CaptureKind; source: CaptureSource; duration_ms: number };
   capture_failed: {

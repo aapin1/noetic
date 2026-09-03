@@ -86,7 +86,6 @@ import {
 } from '@/constants/ghostMap';
 import { useReduceMotion } from '@/hooks/useReduceMotion';
 import { ComebackPromise } from '@/components/ritual/ComebackPromise';
-import { RecognitionSheet, type RecognitionCommit } from '@/components/onboarding/RecognitionSheet';
 import { GuidePill } from '@/components/ui/GuidePill';
 import {
   GUIDE_MAX_CORPUS,
@@ -107,6 +106,9 @@ import type {
   CaptureKind,
   CapturePreflight,
   MemoryGraphResponse,
+  RecognizeAlternative,
+  RecognizeKind,
+  RecognizePreview,
 } from '@/types/api';
 
 type GraphNode = MemoryGraphResponse['nodes'][number];
@@ -1073,7 +1075,27 @@ function computeCameraFit(nodes: GraphNode[], positions: PositionMap): { x: numb
 
 // ── Capture step components ────────────────────────────────────────
 
-type CaptureMode = 'link' | 'text' | 'image';
+type CaptureMode = 'link' | 'text' | 'image' | 'work';
+
+/** The named-work kinds the server's keyless resolver speaks. */
+const WORK_KINDS: { key: RecognizeKind; label: string }[] = [
+  { key: 'book', label: 'book' },
+  { key: 'film', label: 'film' },
+  { key: 'tv', label: 'show' },
+  { key: 'anime', label: 'anime' },
+  { key: 'game', label: 'game' },
+  { key: 'album', label: 'album' },
+];
+
+/** Broadly-known works: recognition without typing, shown on an empty map only. */
+const CLASSICS: { title: string; kind: RecognizeKind }[] = [
+  { title: 'Sapiens', kind: 'book' },
+  { title: 'Interstellar', kind: 'film' },
+  { title: 'Breaking Bad', kind: 'tv' },
+  { title: 'Spirited Away', kind: 'anime' },
+  { title: 'Elden Ring', kind: 'game' },
+  { title: 'Abbey Road', kind: 'album' },
+];
 
 function normalizeLinkInput(raw: string): string {
   const v = raw.trim();
@@ -1089,7 +1111,7 @@ function Divider({ c }: { c: AppThemeColors }) {
 
 function StepOne({
   mode, setMode, payload, setPayload, imageUri, uploading, onPickImage, error, onNext, onClose, onPaste, c,
-  onQuickSave, busy, clipboardHasUrl, onLogWork,
+  onQuickSave, busy, clipboardHasUrl, workKind, setWorkKind, showClassics, onFind, onFindClassic, finding,
 }: {
   mode: CaptureMode; setMode: (m: CaptureMode) => void;
   payload: string; setPayload: (s: string) => void;
@@ -1097,8 +1119,12 @@ function StepOne({
   error: string; onNext: () => boolean; onClose: () => void; onPaste: () => void;
   c: AppThemeColors;
   onQuickSave: () => void; busy: boolean; clipboardHasUrl: boolean;
-  /** Hands off to the recognition sheet: log a work by naming it. */
-  onLogWork: () => void;
+  /** The finished-work path: a kind chip flips the form to title + find. */
+  workKind: RecognizeKind | null; setWorkKind: (k: RecognizeKind) => void;
+  /** Empty map only: tappable well-known works, so the first log needs no typing. */
+  showClassics: boolean;
+  onFind: () => void; onFindClassic: (classic: { title: string; kind: RecognizeKind }) => void;
+  finding: boolean;
 }) {
   const nextTarget = useTutorialTarget(TUTORIAL_TARGET.captureNext);
   // The copied-link fast path: when the clipboard is known to hold a URL and
@@ -1111,7 +1137,7 @@ function StepOne({
         What are you saving?
       </Text>
       <Text variant="monoSmall" color="muted" style={sh.sub}>
-        A link, thought, or image.
+        A link, thought, image, or something you finished.
       </Text>
       <Divider c={c} />
       <View style={sh.modeRow}>
@@ -1130,13 +1156,24 @@ function StepOne({
           );
         })}
       </View>
-      {/* The everyday door into recognition: a finished book or film has no
-          URL to paste, so naming it is the natural way in. */}
-      <Pressable onPress={onLogWork} hitSlop={8} style={{ marginBottom: Spacing[4] }} accessibilityRole="link">
-        <Text variant="monoSmall" style={{ color: c.muted }}>
-          logging a book, film, show, or game? name it →
-        </Text>
-      </Pressable>
+      {/* The finished-work kinds, first-class on the form: naming a book or
+          film IS a capture, and it has no URL to paste. */}
+      <View style={sh.modeRow}>
+        {WORK_KINDS.map((k) => {
+          const active = mode === 'work' && workKind === k.key;
+          return (
+            <Pressable
+              key={k.key}
+              onPress={() => setWorkKind(k.key)}
+              style={[sh.modeChip, { borderColor: active ? c.text : c.borderSubtle, backgroundColor: active ? c.elevated : 'transparent' }]}
+            >
+              <Text variant="monoSmall" style={{ color: active ? c.text : c.muted }}>
+                {k.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
       {/* Wrapped as one region so the tutorial's spotlight (and its tap
           passthrough) covers the whole visible form, not just the button.
           collapsable={false} is load-bearing: this View carries no style, so
@@ -1168,28 +1205,48 @@ function StepOne({
         ) : (
           <View style={[sh.inputBox, { borderColor: c.border }]}>
             <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>
-              {mode === 'link' ? 'URL' : 'THOUGHT'}
+              {mode === 'link' ? 'URL' : mode === 'work' ? 'TITLE' : 'THOUGHT'}
             </Text>
             <TextInput
               style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
               value={payload}
               onChangeText={setPayload}
-              placeholder={mode === 'link' ? 'https://...' : 'a thought, a quote, a fragment.'}
+              placeholder={mode === 'link' ? 'https://...' : mode === 'work' ? 'the title is enough.' : 'a thought, a quote, a fragment.'}
               placeholderTextColor={c.faint}
-              multiline={mode !== 'link'}
-              autoCapitalize={mode === 'link' ? 'none' : 'sentences'}
+              multiline={mode === 'text'}
+              autoCapitalize={mode === 'link' ? 'none' : mode === 'work' ? 'words' : 'sentences'}
               keyboardType={mode === 'link' ? 'url' : 'default'}
               autoFocus={!nextTarget.isActive}
             />
-            <Pressable onPress={onPaste} accessibilityLabel="Paste from clipboard">
-              {promotePaste ? (
-                <View style={[sh.clipChip, { borderColor: c.border, backgroundColor: c.elevated }]}>
-                  <Text variant="monoSmall" style={{ color: c.text }}>↳ use copied link</Text>
-                </View>
-              ) : (
-                <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>paste from clipboard ↑</Text>
-              )}
-            </Pressable>
+            {mode !== 'work' && (
+              <Pressable onPress={onPaste} accessibilityLabel="Paste from clipboard">
+                {promotePaste ? (
+                  <View style={[sh.clipChip, { borderColor: c.border, backgroundColor: c.elevated }]}>
+                    <Text variant="monoSmall" style={{ color: c.text }}>↳ use copied link</Text>
+                  </View>
+                ) : (
+                  <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>paste from clipboard ↑</Text>
+                )}
+              </Pressable>
+            )}
+          </View>
+        )}
+        {showClassics && mode === 'work' && (
+          <View style={{ marginTop: Spacing[4] }}>
+            <Text variant="monoSmall" style={{ color: c.muted, marginBottom: Spacing[2] }}>
+              or tap a classic:
+            </Text>
+            <View style={[sh.modeRow, { marginBottom: 0 }]}>
+              {CLASSICS.map((classic) => (
+                <Pressable
+                  key={classic.title}
+                  onPress={() => onFindClassic(classic)}
+                  style={[sh.modeChip, { borderColor: c.borderSubtle }]}
+                >
+                  <Text variant="monoSmall" style={{ color: c.muted }}>{classic.title}</Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
         )}
         {!!error && (
@@ -1213,6 +1270,18 @@ function StepOne({
               style={[sh.primaryBtn, { backgroundColor: c.text }]}
             >
               <Text variant="monoSmall" style={{ color: c.background }}>next →</Text>
+            </Pressable>
+          ) : mode === 'work' ? (
+            /* A named work is looked up first: find shows the match to
+               confirm, and the save happens on that screen. */
+            <Pressable
+              onPress={onFind}
+              disabled={finding || !payload.trim() || !workKind}
+              style={[sh.primaryBtn, { backgroundColor: c.text, opacity: finding || !payload.trim() || !workKind ? 0.55 : 1 }]}
+            >
+              <Text variant="monoSmall" style={{ color: c.background }}>
+                {finding ? 'finding...' : 'find →'}
+              </Text>
             </Pressable>
           ) : (
             /* Real captures are one step: save commits right here. The
@@ -1369,6 +1438,132 @@ function StepTwo({
   );
 }
 
+/**
+ * The named-work confirm step: the resolver's match as a cover card, sibling
+ * candidates one tap away, and the save. A miss asks the person what the work
+ * is (their account becomes the pipeline's ground truth), so an unfindable
+ * title still lands understood.
+ */
+function StepVerify({
+  title, preview, finding, onPickAlternative, reaction, setReaction,
+  userContext, setUserContext, error, busy, onBack, onCommit, onVoiceError, c,
+}: {
+  title: string;
+  preview: RecognizePreview | null;
+  finding: boolean;
+  onPickAlternative: (alt: RecognizeAlternative) => void;
+  reaction: string; setReaction: (s: string) => void;
+  userContext: string; setUserContext: (s: string) => void;
+  error: string; busy: boolean; onBack: () => void; onCommit: () => void;
+  onVoiceError: (message: string, code?: string) => void;
+  c: AppThemeColors;
+}) {
+  const hit = !!preview?.hit;
+  return (
+    <View>
+      <Text variant="serifLg" color="primary" style={sh.heading}>
+        {hit ? 'This one?' : 'New to mneme.'}
+      </Text>
+      <Text variant="monoSmall" color="muted" style={sh.sub}>
+        {hit ? 'Confirm and save.' : `It doesn't know "${title}" yet.`}
+      </Text>
+      <Divider c={c} />
+      {finding ? (
+        <View style={sh.preflightRow}>
+          <LoadingDots size={4} />
+          <Text variant="monoSmall" style={{ color: c.muted }}>finding it…</Text>
+        </View>
+      ) : hit ? (
+        <View style={[sh.workCard, { borderColor: c.border }]}>
+          {preview?.imageUrl ? (
+            <Image source={{ uri: preview.imageUrl }} style={[sh.workCover, { backgroundColor: c.elevated }]} contentFit="cover" transition={150} />
+          ) : null}
+          <View style={sh.workCardBody}>
+            <Text variant="bodyMedium" color="primary">{preview?.title ?? title}</Text>
+            {preview?.author ? (
+              <Text variant="monoSmall" style={{ color: c.muted, marginTop: 2 }}>{preview.author}</Text>
+            ) : null}
+            {preview?.description ? (
+              <Text variant="caption" style={{ color: c.muted, marginTop: Spacing[2] }} numberOfLines={5}>
+                {preview.description}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+      ) : (
+        <View style={[sh.inputBox, { borderColor: c.border }]}>
+          <View style={sh.contextHeader}>
+            <Text variant="mono" style={[sh.contextPrompt, { color: c.muted }]}>
+              Tell mneme what it is, so the map can understand it.
+            </Text>
+            <VoiceNoteButton
+              onText={(t) => setUserContext(userContext ? `${userContext.trim()} ${t}` : t)}
+              onError={onVoiceError}
+            />
+          </View>
+          <TextInput
+            style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
+            value={userContext}
+            onChangeText={setUserContext}
+            placeholder="a line or two."
+            placeholderTextColor={c.faint}
+            multiline
+          />
+        </View>
+      )}
+      {!finding && (preview?.alternatives?.length ?? 0) > 0 && (
+        <View style={{ marginTop: Spacing[4] }}>
+          <Text variant="monoSmall" style={{ color: c.muted, marginBottom: Spacing[2] }}>
+            {hit ? 'not this one? maybe you meant:' : 'maybe you meant:'}
+          </Text>
+          <View style={[sh.modeRow, { marginBottom: 0 }]}>
+            {preview?.alternatives?.map((alt) => (
+              <Pressable
+                key={`${alt.title}|${alt.year ?? ''}`}
+                onPress={() => onPickAlternative(alt)}
+                style={[sh.modeChip, { borderColor: c.borderSubtle }]}
+              >
+                <Text variant="monoSmall" style={{ color: c.muted }}>
+                  {alt.title}
+                  {alt.hint ? ` · ${alt.hint}` : alt.year ? ` · ${alt.year}` : ''}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
+      <View style={[sh.inputBox, { borderColor: c.border }]}>
+        <TextInput
+          style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
+          value={reaction}
+          onChangeText={setReaction}
+          placeholder="why did it stick? optional."
+          placeholderTextColor={c.faint}
+          multiline
+        />
+      </View>
+      {!!error && (
+        <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
+      )}
+      <Divider c={c} />
+      <View style={sh.actions}>
+        <Pressable onPress={onBack} style={sh.secondaryBtn}>
+          <Text variant="monoSmall" style={{ color: c.muted }}>← back</Text>
+        </Pressable>
+        <Pressable
+          onPress={onCommit}
+          disabled={busy || finding}
+          style={[sh.primaryBtn, { backgroundColor: c.text, opacity: busy || finding ? 0.55 : 1 }]}
+        >
+          <Text variant="monoSmall" style={{ color: c.background }}>
+            {busy ? 'saving...' : 'save →'}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 const sh = StyleSheet.create({
   divider: { height: 1, marginVertical: Spacing[5] },
   heading: { marginTop: Spacing[6], marginBottom: Spacing[2] },
@@ -1377,6 +1572,9 @@ const sh = StyleSheet.create({
   modeChip: { paddingVertical: Spacing[2], paddingHorizontal: Spacing[3], borderRadius: Radius.xs, borderWidth: 1 },
   thumb: { width: '100%', height: 180, borderRadius: Radius.xs, marginBottom: Spacing[2] },
   inputBox: { borderWidth: 1, borderRadius: Radius.xs, padding: Spacing[4], marginTop: Spacing[2] },
+  workCard: { flexDirection: 'row', borderWidth: 1, borderRadius: Radius.xs, padding: Spacing[4], gap: Spacing[4], marginTop: Spacing[2] },
+  workCover: { width: 72, height: 104, borderRadius: Radius.xs },
+  workCardBody: { flex: 1 },
   inputLabel: { marginBottom: Spacing[2] },
   preflightRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2], marginTop: Spacing[3] },
   contextHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing[3] },
@@ -3285,12 +3483,15 @@ export default function MapScreen() {
 
   // ── Capture state ─────────────────────────────────────────────
   const [showCapture, setShowCapture] = useState(false);
-  // The recognition opener: "name one thing that stuck with you". Offered by
-  // the welcome pill and after a tour that ends on an empty map.
-  const [showRecognition, setShowRecognition] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
   const [mode, setMode] = useState<CaptureMode>('link');
   const [payload, setPayload] = useState('');
+  // The finished-work path: which kind chip is lit, what the resolver found,
+  // and the year a "maybe you meant" pick carried (disambiguates the save).
+  const [workKind, setWorkKindState] = useState<RecognizeKind | null>(null);
+  const [workPreview, setWorkPreview] = useState<RecognizePreview | null>(null);
+  const [workYear, setWorkYear] = useState<number | undefined>(undefined);
+  const [finding, setFinding] = useState(false);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -3421,6 +3622,7 @@ export default function MapScreen() {
     setStep(1); setPayload(''); setReaction('');
     setImageUri(null); setMediaUrl(null); setUploading(false);
     setCaptureError(''); setMode('link');
+    setWorkKindState(null); setWorkPreview(null); setWorkYear(undefined); setFinding(false);
     setPreflight(null); setPreflightLoading(false); setUserContext('');
     lastPreflightUrl.current = null;
     setClipboardHasUrl(false);
@@ -3429,6 +3631,41 @@ export default function MapScreen() {
     slideY.setValue(SH);
     RNAnimated.spring(slideY, { toValue: 0, useNativeDriver: true, damping: 22, stiffness: 170 }).start();
   }, [closeDrawer, slideY]);
+
+  // A kind chip flips the form to the work path; picking LINK/TEXT/IMAGE
+  // flips it back (setMode is what StepOne's mode chips call).
+  const setWorkKind = useCallback((k: RecognizeKind) => {
+    setWorkKindState(k);
+    setMode('work');
+    setCaptureError('');
+  }, []);
+
+  // The welcome pill and the tour's empty-map ending both land here: the
+  // ordinary composer, opened straight onto the work path.
+  const openRecognition = useCallback(() => {
+    openCapture();
+    setMode('work');
+  }, [openCapture]);
+
+  // Look the named work up and move to the confirm step. Also the re-lookup
+  // a "maybe you meant" pick triggers, which stays on the confirm step.
+  const findWork = useCallback(async (title: string, kind: RecognizeKind, year?: number) => {
+    Keyboard.dismiss();
+    setCaptureError('');
+    setFinding(true);
+    setWorkYear(year);
+    setStep(2);
+    try {
+      const found = await api.captures.recognizePreview({ title, kind, year });
+      track('recognition_resolved', { kind, hit: found.hit });
+      setWorkPreview(found);
+    } catch {
+      setStep(1);
+      setCaptureError('Couldn’t look that up. Try again?');
+    } finally {
+      setFinding(false);
+    }
+  }, []);
 
   // The + during the walkthrough: open capture pre-loaded with the example link
   // and advance the tutorial to its "tap next" step.
@@ -3726,7 +3963,7 @@ export default function MapScreen() {
   // minutes. It does not need to be soon; it needs to be alone.
   useEffect(() => {
     if (!pushPrimerArmed) return;
-    if (savedPill || pillPending || showCapture || showRecognition || drawerVisible || !screenFocused) return;
+    if (savedPill || pillPending || showCapture || drawerVisible || !screenFocused) return;
     if (tutorialActive) return;
     // A real pause after things settle — long enough that the node landing
     // and the pill leaving are over, so this reads as its own moment rather
@@ -3736,7 +3973,7 @@ export default function MapScreen() {
       setPushPrimerArmed(false);
     }, 3000);
     return () => clearTimeout(timer);
-  }, [pushPrimerArmed, savedPill, pillPending, showCapture, showRecognition, drawerVisible, screenFocused, tutorialActive]);
+  }, [pushPrimerArmed, savedPill, pillPending, showCapture, drawerVisible, screenFocused, tutorialActive]);
 
   // Both paths mark it asked: iOS grants exactly one system prompt per install,
   // so a "not now" that we later re-asked would just be a sheet with no prompt
@@ -3849,7 +4086,7 @@ export default function MapScreen() {
   const [reviewArmed, setReviewArmed] = useState(false);
   useEffect(() => {
     if (!reviewArmed) return;
-    if (savedPill || showCapture || showRecognition || drawerVisible || !screenFocused) return;
+    if (savedPill || showCapture || drawerVisible || !screenFocused) return;
     if (pushPrimerArmed || showPushPrimer) return;
     if (tutorialActive) return;
     const timer = setTimeout(() => {
@@ -3864,7 +4101,6 @@ export default function MapScreen() {
     reviewArmed,
     savedPill,
     showCapture,
-    showRecognition,
     drawerVisible,
     screenFocused,
     pushPrimerArmed,
@@ -3889,44 +4125,6 @@ export default function MapScreen() {
       setReviewArmed(true);
     });
   }, [showSavedPill, maybeAskForPush]));
-
-  // A recognition capture, awaited so the sheet can narrate the wait and
-  // celebrate the landing. Unlike the composer there IS a fly-to: the whole
-  // point of the opener is watching your first star land. Three shapes: a
-  // named work goes through the resolver route, the person's own words go
-  // through the ordinary capture POST (probe answers ride as userContext,
-  // the pipeline's ground-truth fail-safe), a link through the link pipeline.
-  const commitRecognition = useCallback(
-    async (args: RecognitionCommit) => {
-      const startedAt = Date.now();
-      const kind: CaptureKind = args.mode === 'text' ? args.kind : 'LINK';
-      track('capture_started', { kind, source: 'recognition' });
-      try {
-        const res =
-          args.mode === 'work'
-            ? await api.captures.recognize({ title: args.title, kind: args.kind, year: args.year, words: args.words, context: args.context })
-            : args.mode === 'link'
-              ? await api.captures.create({ kind: 'LINK', url: normalizeLinkInput(args.url) })
-              : await api.captures.create({ kind: args.kind, text: args.text, userContext: args.context });
-        track('capture_succeeded', { kind, source: 'recognition', duration_ms: Date.now() - startedAt });
-        refetchMapData();
-        void prefetchQuery(`capture:${res.id}`, () => api.captures.get(res.id));
-        setNewNodeId(res.id);
-        maybeAskForPush();
-        noteCaptureForReview();
-        setReviewArmed(true);
-      } catch (e) {
-        track('capture_failed', {
-          kind,
-          source: 'recognition',
-          duration_ms: Date.now() - startedAt,
-          reason: failureReason(e),
-        });
-        throw e;
-      }
-    },
-    [refetchMapData, maybeAskForPush],
-  );
 
   const commit = useCallback(async () => {
     // Drop the keyboard the moment they commit, so it doesn't linger over the
@@ -3981,6 +4179,7 @@ export default function MapScreen() {
     let text: string | undefined;
     if (mode === 'link') { kind = 'LINK'; url = normalizeLinkInput(payload); }
     else if (mode === 'image') { kind = 'IMAGE'; }
+    else if (mode === 'work') { kind = 'LINK'; }
     else { kind = 'TEXT'; text = payload.trim(); }
     const body = {
       kind,
@@ -3996,12 +4195,23 @@ export default function MapScreen() {
     // After the optimistic close, never before it: instrumentation does not get
     // to sit in front of the sheet dismissing.
     const startedAt = Date.now();
-    track('capture_started', { kind, source: 'composer' });
-    void api.captures.create(body)
+    const source = mode === 'work' ? ('recognition' as const) : ('composer' as const);
+    track('capture_started', { kind, source });
+    const save = mode === 'work' && workKind
+      ? api.captures.recognize({
+          title: payload.trim(),
+          kind: workKind,
+          year: workYear,
+          words: reaction.trim() || undefined,
+          // Only a miss shows the tell-mneme box; its account is ground truth.
+          context: userContext.trim() || undefined,
+        })
+      : api.captures.create(body);
+    void save
       .then((res) => {
         track('capture_succeeded', {
           kind,
-          source: 'composer',
+          source,
           duration_ms: Date.now() - startedAt,
         });
         // The node plots via the refetch — deliberately NO camera fly-to or
@@ -4038,7 +4248,7 @@ export default function MapScreen() {
       .catch((e) => {
         track('capture_failed', {
           kind,
-          source: 'composer',
+          source,
           duration_ms: Date.now() - startedAt,
           reason: failureReason(e),
         });
@@ -4049,7 +4259,7 @@ export default function MapScreen() {
           e instanceof Error ? e.message : 'Could not save that. Try again.',
         );
       });
-  }, [mode, payload, mediaUrl, reaction, userContext, refetchMapData, closeCapture, slideY, tutorialActive, notifyTargetPressed, nextTutorialStep, showSavedPill, maybeAskForPush, disclosure, router]);
+  }, [mode, payload, mediaUrl, reaction, userContext, workKind, workYear, refetchMapData, closeCapture, slideY, tutorialActive, notifyTargetPressed, nextTutorialStep, showSavedPill, maybeAskForPush, disclosure, router]);
 
   const quickSave = useCallback(() => {
     if (!validatePayload()) return;
@@ -4371,7 +4581,7 @@ export default function MapScreen() {
   const [welcomePill, setWelcomePill] = useState<'intro' | 'offer' | null>(null);
   useEffect(() => {
     const quiet =
-      !savedPill && !showCapture && !showRecognition && !drawerVisible && screenFocused &&
+      !savedPill && !showCapture && !drawerVisible && screenFocused &&
       !promiseState && !showPushPrimer && !tutorialActive;
     if (!welcomeStage || !quiet) {
       setWelcomePill(null);
@@ -4381,7 +4591,7 @@ export default function MapScreen() {
     const timer = setTimeout(() => setWelcomePill(welcomeStage), delay);
     return () => clearTimeout(timer);
   }, [
-    welcomeStage, savedPill, showCapture, showRecognition, drawerVisible, screenFocused,
+    welcomeStage, savedPill, showCapture, drawerVisible, screenFocused,
     promiseState, showPushPrimer, tutorialActive,
   ]);
 
@@ -4417,8 +4627,8 @@ export default function MapScreen() {
     // However they reached the tour, having had it retires the later offer.
     if (welcomeUid) disclosure.markSeen(tourOfferFlag(welcomeUid));
     if ((graphData?.totalCount ?? 0) > 0 || !screenFocused) return;
-    setShowRecognition(true);
-  }, [tutorialActive, disclosure, graphData, screenFocused, welcomeUid]);
+    openRecognition();
+  }, [tutorialActive, disclosure, graphData, screenFocused, welcomeUid, openRecognition]);
 
   // The clipboard door: while the map is still forming, notice a copied URL
   // on each return to the screen. Checked (hasUrlAsync), never read — reading
@@ -4450,7 +4660,7 @@ export default function MapScreen() {
   }, [disclosure, promiseArmed, promiseState, graphData]);
   useEffect(() => {
     if (!promiseArmed) return;
-    if (savedPill || pillPending || showCapture || showRecognition || drawerVisible || !screenFocused) return;
+    if (savedPill || pillPending || showCapture || drawerVisible || !screenFocused) return;
     if (tutorialActive || showPushPrimer) return;
     const timer = setTimeout(() => {
       setPromiseArmed(false);
@@ -4459,7 +4669,7 @@ export default function MapScreen() {
     }, 3000);
     return () => clearTimeout(timer);
   }, [
-    promiseArmed, savedPill, pillPending, showCapture, showRecognition, drawerVisible, screenFocused,
+    promiseArmed, savedPill, pillPending, showCapture, drawerVisible, screenFocused,
     tutorialActive, showPushPrimer, disclosure, graphData,
   ]);
 
@@ -4479,7 +4689,7 @@ export default function MapScreen() {
   }, [disclosure, tourOfferArmed, tourOfferPill, welcomeUid, graphData, ghostExit]);
   useEffect(() => {
     if (!tourOfferArmed) return;
-    if (savedPill || pillPending || showCapture || showRecognition || drawerVisible || !screenFocused) return;
+    if (savedPill || pillPending || showCapture || drawerVisible || !screenFocused) return;
     if (tutorialActive || showPushPrimer || pushPrimerArmed || promiseState || promiseArmed) return;
     const timer = setTimeout(() => {
       setTourOfferArmed(false);
@@ -4487,7 +4697,7 @@ export default function MapScreen() {
     }, 3000);
     return () => clearTimeout(timer);
   }, [
-    tourOfferArmed, savedPill, pillPending, showCapture, showRecognition, drawerVisible,
+    tourOfferArmed, savedPill, pillPending, showCapture, drawerVisible,
     screenFocused, tutorialActive, showPushPrimer, pushPrimerArmed, promiseState, promiseArmed,
   ]);
   const answerTourOffer = useCallback((take: boolean) => {
@@ -4914,13 +5124,6 @@ export default function MapScreen() {
           body="mneme tried to read the page but was blocked — some sites shut out automated readers. when that happens, just give it a few words about the piece, typed or spoken with the mic, and mneme builds the node and its connections from your summary instead."
         />
 
-        <RecognitionSheet
-          visible={showRecognition}
-          capturedCount={graphData?.totalCount ?? 0}
-          onClose={() => setShowRecognition(false)}
-          onCommit={commitRecognition}
-        />
-
         {/* Summary strip — baseline counts along the bottom, above the tab bar */}
         {stripVisible && (
           <InfoStrip
@@ -5045,7 +5248,8 @@ export default function MapScreen() {
                 color="rgba(240,232,214,0.77)"
               />
               <Text style={[styles.discoveryCount, { color: 'rgba(240,232,214,0.69)', flex: 1 }]}>
-                {savedPill.phase === 'logging' ? 'reading & mapping…' : 'saved ✓'}
+                {savedPill.phase === 'logging' ? 'reading & mapping…'
+                  : totalCaptureCount <= 1 ? 'your map has begun ✓' : 'saved ✓'}
               </Text>
               <Pressable onPress={() => setSavedPill(null)} hitSlop={10}>
                 <Text style={[styles.discoveryCount, { color: 'rgba(240,232,214,0.49)' }]}>✕</Text>
@@ -5134,11 +5338,11 @@ export default function MapScreen() {
             text={WELCOME_OFFER_LINE}
             cta="name one"
             // Deliberately does NOT retire the ghost or mark the offer seen:
-            // closing the sheet without capturing brings this pill back, and a
-            // capture landing retires the whole welcome by itself.
+            // closing the composer without capturing brings this pill back,
+            // and a capture landing retires the whole welcome by itself.
             onCta={() => {
               track('onboarding_step', { step: 'recognition', action: 'completed' });
-              setShowRecognition(true);
+              openRecognition();
             }}
             onSkip={() => retireGhost(false)}
           />
@@ -5468,7 +5672,7 @@ export default function MapScreen() {
                   ))}
                 </View>
                 <Text variant="monoSmall" style={[styles.stepLabel, { color: c.muted }]}>
-                  {step === 1 ? '01 / CAPTURE' : '02 / REACT'}
+                  {step === 1 ? '01 / CAPTURE' : mode === 'work' ? '02 / CONFIRM' : '02 / REACT'}
                 </Text>
                 <View style={styles.modalBody}>
                   {step === 1 && (
@@ -5491,7 +5695,17 @@ export default function MapScreen() {
                         onQuickSave={quickSave}
                         busy={busy}
                         clipboardHasUrl={clipboardHasUrl}
-                        onLogWork={() => { closeCapture(); setShowRecognition(true); }}
+                        workKind={workKind}
+                        setWorkKind={setWorkKind}
+                        showClassics={totalCaptureCount === 0}
+                        onFind={() => { if (workKind) void findWork(payload.trim(), workKind); }}
+                        onFindClassic={(classic) => {
+                          setPayload(classic.title);
+                          setWorkKindState(classic.kind);
+                          setMode('work');
+                          void findWork(classic.title, classic.kind);
+                        }}
+                        finding={finding}
                       />
                     </View>
                   )}
@@ -5525,7 +5739,30 @@ export default function MapScreen() {
                       after the save would re-fire the reaction field's
                       autoFocus and flash the keyboard over the closing
                       sheet / the map. */}
-                  {step === 2 && (
+                  {step === 2 && mode === 'work' && (
+                    <View
+                      style={busy ? styles.hidden : null}
+                      pointerEvents={busy ? 'none' : 'auto'}
+                    >
+                      <StepVerify
+                        title={payload.trim()}
+                        preview={workPreview}
+                        finding={finding}
+                        onPickAlternative={(alt) => {
+                          setPayload(alt.title);
+                          if (workKind) void findWork(alt.title, workKind, alt.year);
+                        }}
+                        reaction={reaction} setReaction={setReaction}
+                        userContext={userContext} setUserContext={setUserContext}
+                        error={captureError} busy={busy}
+                        onBack={() => { setStep(1); setCaptureError(''); setWorkPreview(null); }}
+                        onCommit={() => void commit()}
+                        onVoiceError={(message, code) => { setCaptureError(message); setCaptureErrorIsLimit(code === 'USAGE_LIMIT'); }}
+                        c={c}
+                      />
+                    </View>
+                  )}
+                  {step === 2 && mode !== 'work' && (
                     <View
                       style={busy ? styles.hidden : null}
                       pointerEvents={busy ? 'none' : 'auto'}
