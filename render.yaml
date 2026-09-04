@@ -133,17 +133,19 @@ services:
     # into a burst of concurrent drains against it. --max-time is under the hour
     # so a wedged request can never overlap the next tick.
     #
-    # No shell wrapper and no quotes, deliberately. Render does not give
+    # No shell, no quotes, no $VARS — deliberately. Render does not give
     # dockerCommand a real shell parse: a quoted payload after `/bin/sh -c`
-    # reaches the inner shell as ONE literal word (single- or double-quoted,
-    # with $VARS expanded or not), so every run until 2026-09-04 died with
-    # `sh: curl ...: not found` (exit 127). Render does expand $VARS in the
-    # command, and --oauth2-bearer builds the Authorization header without a
-    # space that would need quoting, so plain curl is the whole command.
+    # reached the inner shell as ONE literal word, so every run until
+    # 2026-09-04 died with `sh: curl ...: not found` (exit 127). And with no
+    # shell in the picture nothing would expand a `$VAR`. So curl does it all:
+    # `--variable %NAME` imports the env var, and the `--expand-` prefix
+    # substitutes {{NAME}} into the option — no token here contains a space.
+    # Verified against prod from a laptop with the same env names.
     dockerCommand: >-
-      curl --fail-with-body --silent --show-error --max-time 3000
-      -X POST --oauth2-bearer $NOTIFICATIONS_DISPATCH_SECRET
-      $MNEME_BASE_URL/api/notifications/resurface
+      curl --fail-with-body --silent --show-error --max-time 3000 -X POST
+      --variable %NOTIFICATIONS_DISPATCH_SECRET --variable %MNEME_BASE_URL
+      --expand-oauth2-bearer {{NOTIFICATIONS_DISPATCH_SECRET}}
+      --expand-url {{MNEME_BASE_URL}}/api/notifications/resurface
     envVars:
       # Both pulled from the web service rather than re-entered, so the secret
       # has exactly one value and rotating it in one place cannot leave the
@@ -171,11 +173,12 @@ services:
     region: oregon
     plan: starter
     schedule: "30 * * * *"
-    # Same no-shell, no-quotes rule as mneme-notifications above.
+    # Same no-shell, curl-expands-its-own-vars rule as mneme-notifications.
     dockerCommand: >-
-      curl --fail-with-body --silent --show-error --max-time 3000
-      -X POST --oauth2-bearer $NOTIFICATIONS_DISPATCH_SECRET
-      $MNEME_BASE_URL/api/connections/sync
+      curl --fail-with-body --silent --show-error --max-time 3000 -X POST
+      --variable %NOTIFICATIONS_DISPATCH_SECRET --variable %MNEME_BASE_URL
+      --expand-oauth2-bearer {{NOTIFICATIONS_DISPATCH_SECRET}}
+      --expand-url {{MNEME_BASE_URL}}/api/connections/sync
     envVars:
       - key: NOTIFICATIONS_DISPATCH_SECRET
         fromService:
