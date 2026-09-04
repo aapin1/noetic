@@ -132,10 +132,18 @@ services:
     # waiting would not — while a retrying clock turns one bad minute at Expo
     # into a burst of concurrent drains against it. --max-time is under the hour
     # so a wedged request can never overlap the next tick.
+    #
+    # No shell wrapper and no quotes, deliberately. Render does not give
+    # dockerCommand a real shell parse: a quoted payload after `/bin/sh -c`
+    # reaches the inner shell as ONE literal word (single- or double-quoted,
+    # with $VARS expanded or not), so every run until 2026-09-04 died with
+    # `sh: curl ...: not found` (exit 127). Render does expand $VARS in the
+    # command, and --oauth2-bearer builds the Authorization header without a
+    # space that would need quoting, so plain curl is the whole command.
     dockerCommand: >-
-      /bin/sh -c 'curl --fail-with-body --silent --show-error --max-time 3000
-      -X POST -H "Authorization: Bearer $NOTIFICATIONS_DISPATCH_SECRET"
-      "$MNEME_BASE_URL/api/notifications/resurface"'
+      curl --fail-with-body --silent --show-error --max-time 3000
+      -X POST --oauth2-bearer $NOTIFICATIONS_DISPATCH_SECRET
+      $MNEME_BASE_URL/api/notifications/resurface
     envVars:
       # Both pulled from the web service rather than re-entered, so the secret
       # has exactly one value and rotating it in one place cannot leave the
@@ -163,10 +171,11 @@ services:
     region: oregon
     plan: starter
     schedule: "30 * * * *"
+    # Same no-shell, no-quotes rule as mneme-notifications above.
     dockerCommand: >-
-      /bin/sh -c 'curl --fail-with-body --silent --show-error --max-time 3000
-      -X POST -H "Authorization: Bearer $NOTIFICATIONS_DISPATCH_SECRET"
-      "$MNEME_BASE_URL/api/connections/sync"'
+      curl --fail-with-body --silent --show-error --max-time 3000
+      -X POST --oauth2-bearer $NOTIFICATIONS_DISPATCH_SECRET
+      $MNEME_BASE_URL/api/connections/sync
     envVars:
       - key: NOTIFICATIONS_DISPATCH_SECRET
         fromService:
