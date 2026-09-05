@@ -31,6 +31,25 @@ import {
  * are the honest, uninformative thing to say when the specific thing is
  * missing.
  */
+/**
+ * The longest title iOS shows in full on a lock-screen banner at the default
+ * text size. Anything longer is cut with an ellipsis by the OS, which is the
+ * one thing a title must never do: "you left existential themes in fil..."
+ * says less than no topic at all. So every title is either its preferred form
+ * or a fixed fallback that fits, never a truncation.
+ */
+export const PUSH_TITLE_MAX = 30;
+
+/** The preferred title when it fits the banner, otherwise the fallback. */
+export function fitTitle(preferred: string, fallback: string): string {
+  return preferred.length <= PUSH_TITLE_MAX ? preferred : fallback;
+}
+
+/** Sentence case: topic names are stored lowercase, titles start capitalised. */
+export function sentence(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 function buildNotificationCopy(type: NotificationType, actorName: string | null | undefined, deepLink: string): {
   title: string;
   body: string;
@@ -41,32 +60,32 @@ function buildNotificationCopy(type: NotificationType, actorName: string | null 
   switch (type) {
     case NotificationType.NEW_FOLLOW:
       return {
-        title: `${subject} followed you`,
-        body: `${subject} is now following your intellectual profile.`,
+        title: fitTitle(`${subject} followed you`, "You have a new follower"),
+        body: `${subject} is now following you.`,
         deepLink,
       };
     case NotificationType.NEW_LIKE:
       return {
-        title: `${subject} liked your review`,
-        body: `${subject} liked one of your public reviews.`,
+        title: fitTitle(`${subject} liked your review`, "Someone liked your review"),
+        body: `${subject} liked one of your reviews.`,
         deepLink,
       };
     case NotificationType.NEW_COMMENT:
       return {
-        title: `${subject} commented on your review`,
-        body: `${subject} added a comment to one of your reviews.`,
+        title: fitTitle(`New comment from ${subject}`, "New comment on your review"),
+        body: `${subject} commented on one of your reviews.`,
         deepLink,
       };
     case NotificationType.NEW_REPLY:
       return {
-        title: `${subject} replied to your comment`,
+        title: fitTitle(`${subject} replied to you`, "New reply to your comment"),
         body: `${subject} replied in a discussion you joined.`,
         deepLink,
       };
     case NotificationType.RANKING_UPDATED:
       return {
-        title: `${subject} updated a ranking`,
-        body: `${subject} updated a ranking list you follow.`,
+        title: fitTitle(`${subject} updated a ranking`, "A ranking you follow changed"),
+        body: `${subject} updated a ranking you follow.`,
         deepLink,
       };
 
@@ -75,26 +94,26 @@ function buildNotificationCopy(type: NotificationType, actorName: string | null 
     // the true general shape of its tier without inventing a specific claim.
     case NotificationType.CONTRADICTION_FOUND:
       return {
-        title: "two things you saved disagree",
-        body: "see where they split.",
+        title: "Two things you saved disagree",
+        body: "See where they split.",
         deepLink,
       };
     case NotificationType.THREAD_MOMENTUM:
       return {
-        title: "a thread is picking up",
-        body: "you've been circling it all week.",
+        title: "A thread is picking up",
+        body: "You keep coming back to it. See how it connects.",
         deepLink,
       };
     case NotificationType.DORMANT_REVIVAL:
       return {
-        title: "you left a thread unfinished",
-        body: "nothing new in a while. it's still there.",
+        title: "You left a thread unfinished",
+        body: "Nothing new in a while. It is still there.",
         deepLink,
       };
     case NotificationType.RESURFACE:
       return {
-        title: "something you saved a while back",
-        body: "does it still hold?",
+        title: "Something from your archive",
+        body: "Does it still hold?",
         deepLink,
       };
 
@@ -104,22 +123,22 @@ function buildNotificationCopy(type: NotificationType, actorName: string | null 
     // become false the moment a second day is missed.
     case NotificationType.STREAK_HELD:
       return {
-        title: "your streak is still alive",
-        body: "you missed yesterday — we bridged it. capture today and the run holds.",
+        title: "Your streak is still alive",
+        body: "We bridged yesterday for you. Capture today and the run holds.",
         deepLink,
       };
     case NotificationType.STREAK_AT_RISK:
       return {
-        title: "your run is still open today",
-        body: "nothing captured yet. read or watched anything worth keeping?",
+        title: "Your run is still open today",
+        body: "Nothing captured yet today. Anything worth keeping?",
         deepLink,
       };
 
     // ── re-engagement ─────────────────────────────────────────────────────────
     case NotificationType.NUDGE:
       return {
-        title: "read or watched anything cool recently?",
-        body: "one capture is enough.",
+        title: "Read anything good lately?",
+        body: "One capture is enough.",
         deepLink,
       };
   }

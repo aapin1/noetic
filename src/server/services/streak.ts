@@ -159,8 +159,8 @@ export function planStreakFreeze(args: {
  */
 function freezeCopy(streak: number): { title: string; body: string } {
   return {
-    title: `your ${streak} days are still alive`,
-    body: "you missed yesterday — we bridged it. capture today and the run holds.",
+    title: `Your ${streak} days are still alive`,
+    body: "We bridged yesterday for you. Capture today and the run holds.",
   };
 }
 
@@ -357,7 +357,7 @@ const RISK_REPEAT_WINDOW_MS = 20 * 60 * 60 * 1000;
 function riskCopy(streak: number): { title: string; body: string } {
   return {
     title: `${streak} days running`,
-    body: "nothing captured today yet. read or watched anything worth keeping?",
+    body: "Nothing captured yet today. Anything worth keeping?",
   };
 }
 

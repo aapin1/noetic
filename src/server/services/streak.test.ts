@@ -228,9 +228,9 @@ describe("the guard never warns", () => {
 
     const [notification] = notifications;
     expect(notification.type).toBe("STREAK_HELD");
-    expect(notification.title).toBe("your 12 days are still alive");
+    expect(notification.title).toBe("Your 12 days are still alive");
     expect(notification.body).toBe(
-      "you missed yesterday — we bridged it. capture today and the run holds.",
+      "We bridged yesterday for you. Capture today and the run holds.",
     );
 
     // No language that turns this into a deadline.

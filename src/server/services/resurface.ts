@@ -11,7 +11,7 @@ import {
 } from "@/server/services/intelligence";
 import { rankTopicMomentum } from "@/server/services/memory";
 import { clampOffset, dueThisHourWhere } from "@/server/services/notification-policy";
-import { createNotification } from "@/server/services/notifications";
+import { createNotification, fitTitle, sentence } from "@/server/services/notifications";
 import { localDayIndex } from "@/server/services/streak";
 
 /**
@@ -115,7 +115,7 @@ function short(label: string, max = 52): string {
 }
 
 function monthName(date: Date): string {
-  return date.toLocaleString("en-US", { month: "long" }).toLowerCase();
+  return date.toLocaleString("en-US", { month: "long" });
 }
 
 function anniversaryPhrase(days: number): string {
@@ -203,8 +203,8 @@ async function loadActivity(
  * is one the app keeps.
  */
 function progressLine(count: number): string {
-  if (count < MIN_CORPUS) return `${count} of ${MIN_CORPUS} — mneme starts noticing patterns at ${MIN_CORPUS}.`;
-  return `${count} of ${GROWTH_TARGET} — the map starts connecting at ${GROWTH_TARGET}.`;
+  if (count < MIN_CORPUS) return `You're at ${count} of ${MIN_CORPUS}. Patterns start at ${MIN_CORPUS}.`;
+  return `You're at ${count} of ${GROWTH_TARGET}. The map connects at ${GROWTH_TARGET}.`;
 }
 
 function quietPhrase(rung: number): string {
@@ -220,10 +220,10 @@ function quietPhrase(rung: number): string {
  * about what they saved before, which has not changed since they saw it.
  */
 const GROWTH_PROMPTS: { title: string; lead: string }[] = [
-  { title: "read or watched anything cool recently?", lead: "one capture is enough." },
-  { title: "what's the best thing you read this week?", lead: "save it before it slips." },
-  { title: "saved anything you disagreed with lately?", lead: "disagreement is where mneme gets interesting." },
-  { title: "a podcast, a thread, a page of a book", lead: "anything counts." },
+  { title: "Read anything good lately?", lead: "One capture is enough." },
+  { title: "Best thing you read this week?", lead: "Save it before it slips." },
+  { title: "Anything you disagreed with?", lead: "That is where Mneme gets interesting." },
+  { title: "A podcast, a thread, a page", lead: "Anything counts." },
 ];
 
 /**
@@ -336,8 +336,11 @@ export async function selectResurfaceCandidate(args: {
       return {
         type: NotificationType.CONTRADICTION_FOUND,
         key,
-        title: `a new capture challenges your position on ${challenge.position.topic.name.toLowerCase()}`,
-        body: `“${label}” pushes against what you staked. revise or hold.`,
+        title: fitTitle(
+          sentence(`Your view on ${challenge.position.topic.name.toLowerCase()}`),
+          "A capture challenges your view",
+        ),
+        body: `“${label}” cuts against your position. Revise or hold?`,
         // The /today ritual, where the collision takes over the surface and
         // carries its revise/hold response. Opening it credits the day.
         deepLink: "/today",
@@ -396,8 +399,8 @@ export async function selectResurfaceCandidate(args: {
     const mirrored = `contradiction:${edge.toItemId}:${edge.fromItemId}`;
     if (seen.has(key) || seen.has(mirrored)) continue;
 
-    const labelA = short(edge.fromItem.contentItem?.title ?? edge.fromItem.rawText ?? "one of your captures", 40);
-    const labelB = short(edge.toItem.contentItem?.title ?? edge.toItem.rawText ?? "another", 40);
+    const labelA = short(edge.fromItem.contentItem?.title ?? edge.fromItem.rawText ?? "one of your captures", 30);
+    const labelB = short(edge.toItem.contentItem?.title ?? edge.toItem.rawText ?? "another", 30);
 
     // Name the topic they share — "about attention" is what makes this a
     // reason to open the app rather than a notification about notifications.
@@ -411,9 +414,9 @@ export async function selectResurfaceCandidate(args: {
       type: NotificationType.CONTRADICTION_FOUND,
       key,
       title: sharedTopic
-        ? `two things you saved about ${sharedTopic.name.toLowerCase()} disagree`
-        : "two things you saved disagree",
-      body: `“${labelA}” and “${labelB}”. see where they split.`,
+        ? fitTitle(sentence(`Disagreement on ${sharedTopic.name.toLowerCase()}`), "Two things you saved disagree")
+        : "Two things you saved disagree",
+      body: `“${labelA}” and “${labelB}” take opposite sides.`,
       deepLink: "/(tabs)/mind",
       payload: { resurfaceKey: key, itemAId: edge.fromItemId, itemBId: edge.toItemId },
     };
@@ -438,8 +441,8 @@ export async function selectResurfaceCandidate(args: {
     return {
       type: NotificationType.THREAD_MOMENTUM,
       key,
-      title: `${topic.name.toLowerCase()} is picking up`,
-      body: "you've been circling it all week. mneme pulled the thread together.",
+      title: fitTitle(sentence(`${topic.name.toLowerCase()} is picking up`), "A thread is picking up"),
+      body: "You keep coming back to it. See how it connects.",
       deepLink: "/(tabs)/mind",
       payload: { resurfaceKey: key, topicId: topic.topicId },
     };
@@ -460,8 +463,8 @@ export async function selectResurfaceCandidate(args: {
     return {
       type: NotificationType.DORMANT_REVIVAL,
       key,
-      title: `you left ${thread.topicName.toLowerCase()} unfinished`,
-      body: `nothing new since ${monthName(new Date(thread.lastCapturedAt))}. the thread is still there.`,
+      title: fitTitle(`You left ${thread.topicName.toLowerCase()} unfinished`, "You left a thread unfinished"),
+      body: `Nothing new on ${thread.topicName.toLowerCase()} since ${monthName(new Date(thread.lastCapturedAt))}.`,
       deepLink: `/archive/${thread.topicId}`,
       payload: { resurfaceKey: key, topicId: thread.topicId },
     };
@@ -485,7 +488,7 @@ export async function selectResurfaceCandidate(args: {
     return {
       type: NotificationType.RESURFACE,
       key,
-      title: `${group.topicName.toLowerCase()} keeps finding you`,
+      title: fitTitle(sentence(`${group.topicName.toLowerCase()} keeps finding you`), "One idea keeps finding you"),
       body: `${short(sources[0], 24)} and ${short(sources[1], 24)} are pointing the same way.`,
       deepLink: "/(tabs)/mind",
       payload: { resurfaceKey: key, topicId: group.topicId },
@@ -511,8 +514,8 @@ export async function selectResurfaceCandidate(args: {
     return {
       type: NotificationType.RESURFACE,
       key,
-      title: `${anniversaryPhrase(days)}, you saved this`,
-      body: `“${short(match.label)}”. does it still hold?`,
+      title: sentence(`${anniversaryPhrase(days)} you saved this`),
+      body: `“${short(match.label)}” Does it still hold?`,
       // The /today ritual screen, not the bare insight: it carries the same
       // capture plus its strongest edge, and opening it credits the day.
       deepLink: "/today",
@@ -545,8 +548,8 @@ function inactivityCandidate(args: {
     if (top) {
       return {
         ...base,
-        title: `you were building something on ${top.topicName.toLowerCase()}`,
-        body: `${quiet} quiet, and it's still there. read anything since?`,
+        title: fitTitle(`Back to ${top.topicName.toLowerCase()}?`, "Back to your last thread?"),
+        body: sentence(`${quiet} quiet, and your notes on ${top.topicName.toLowerCase()} are still there.`),
         deepLink: `/archive/${top.topicId}`,
         payload: { resurfaceKey: key, kind: "inactive", days: rung, topicId: top.topicId },
       };
@@ -555,10 +558,10 @@ function inactivityCandidate(args: {
 
   return {
     ...base,
-    title: "read or watched anything cool recently?",
+    title: "Read anything good lately?",
     body: captures.length === 0
-      ? `${quiet} since you joined and nothing captured yet. one is enough to start.`
-      : `${quiet} since your last capture. ${progressLine(captures.length)}`,
+      ? sentence(`${quiet} since you joined. One capture is enough to start.`)
+      : sentence(`${quiet} since your last capture. ${progressLine(captures.length)}`),
     deepLink: "/(tabs)",
     payload: { resurfaceKey: key, kind: "inactive", days: rung, captures: captures.length },
   };
@@ -593,7 +596,7 @@ function growthCandidate(args: {
     key,
     title: prompt.title,
     body: captures.length === 0
-      ? `${prompt.lead} nothing captured yet — the first one starts the map.`
+      ? `${prompt.lead} Nothing captured yet. The first one starts the map.`
       : `${prompt.lead} ${progressLine(captures.length)}`,
     deepLink: "/(tabs)",
     payload: { resurfaceKey: key, kind: "growth", captures: captures.length },

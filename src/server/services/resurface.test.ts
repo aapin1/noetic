@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DbClient } from "@/server/db";
+import { PUSH_TITLE_MAX } from "@/server/services/notifications";
 import { enqueueResurfaceFor, selectResurfaceCandidate } from "@/server/services/resurface";
 import { localDayIndex } from "@/server/services/streak";
 
@@ -258,8 +259,8 @@ describe("selectResurfaceCandidate", () => {
 
     expect(pick?.type).toBe("NUDGE");
     expect(pick?.key).toMatch(/^inactive:3:/);
-    expect(pick?.title).toBe("read or watched anything cool recently?");
-    expect(pick?.body).toContain("three days since your last capture");
+    expect(pick?.title).toBe("Read anything good lately?");
+    expect(pick?.body).toContain("Three days since your last capture");
     expect(pick?.body).toContain("2 of 5");
     expect(pick?.deepLink).toBe("/(tabs)");
   });
@@ -278,8 +279,8 @@ describe("selectResurfaceCandidate", () => {
 
     expect(pick?.type).toBe("NUDGE");
     expect(pick?.key).toMatch(/^inactive:7:/);
-    expect(pick?.title).toBe("you were building something on attention");
-    expect(pick?.body).toContain("a week quiet");
+    expect(pick?.title).toBe("Back to attention?");
+    expect(pick?.body).toContain("A week quiet");
     expect(pick?.deepLink).toBe("/archive/t-attention");
   });
 
@@ -308,12 +309,12 @@ describe("selectResurfaceCandidate", () => {
     const day1 = await selectResurfaceCandidate({ userId: "u1", db: fresh, now: NOW });
     expect(day1?.type).toBe("NUDGE");
     expect(day1?.key).toMatch(/^growth:/);
-    expect(day1?.body).toContain("nothing captured yet");
+    expect(day1?.body).toContain("Nothing captured yet");
 
     const { db: gone } = fakeDb({ captures: [], signupAt: daysAgo(7) });
     const day7 = await selectResurfaceCandidate({ userId: "u1", db: gone, now: NOW });
     expect(day7?.key).toMatch(/^inactive:7:/);
-    expect(day7?.body).toContain("a week since you joined");
+    expect(day7?.body).toContain("A week since you joined");
   });
 
   it("leaves a never-captured account alone after a month, and says nothing without a clock", async () => {
@@ -360,8 +361,8 @@ describe("selectResurfaceCandidate", () => {
 
     expect(pick?.type).toBe("CONTRADICTION_FOUND");
     expect(pick?.key).toBe("position-challenge:ch1");
-    expect(pick?.title).toBe("a new capture challenges your position on attention");
-    expect(pick?.body).toContain("revise or hold");
+    expect(pick?.title).toBe("Your view on attention");
+    expect(pick?.body).toContain("Revise or hold");
     expect(pick?.deepLink).toBe("/today");
   });
 
@@ -420,7 +421,7 @@ describe("selectResurfaceCandidate", () => {
 
     expect(pick?.type).toBe("CONTRADICTION_FOUND");
     // Names the actual topic — the thing that makes it worth opening.
-    expect(pick?.title).toBe("two things you saved about attention disagree");
+    expect(pick?.title).toBe("Disagreement on attention");
     expect(pick?.key).toBe("contradiction:a1:a3");
   });
 
@@ -430,7 +431,7 @@ describe("selectResurfaceCandidate", () => {
     const pick = await selectResurfaceCandidate({ userId: "u1", db, now: NOW });
 
     expect(pick?.type).toBe("THREAD_MOMENTUM");
-    expect(pick?.title).toBe("attention is picking up");
+    expect(pick?.title).toBe("Attention is picking up");
   });
 
   it("falls to dormancy when nothing is accelerating", async () => {
@@ -442,8 +443,32 @@ describe("selectResurfaceCandidate", () => {
     const pick = await selectResurfaceCandidate({ userId: "u1", db, now: NOW });
 
     expect(pick?.type).toBe("DORMANT_REVIVAL");
-    expect(pick?.title).toBe("you left stoicism unfinished");
+    expect(pick?.title).toBe("You left stoicism unfinished");
     expect(pick?.deepLink).toBe("/archive/t-stoicism");
+  });
+
+  it("drops the topic from the title rather than let the OS truncate it", async () => {
+    // "you left existential themes in fil..." said less than no topic at all.
+    // A name that would push the title past the lock-screen budget gives way
+    // to the fixed fallback; the body still carries the name in full.
+    const long = "existential themes in film";
+    const captures = richCorpus()
+      .filter((c) => !c.id.startsWith("a") || c.id === "a5")
+      .map((c) => ({
+        ...c,
+        topics: c.topics.map((t) => (t.topic.name === "stoicism"
+          ? { topicId: "t-long", topic: { name: long } }
+          : t)),
+      }));
+    const { db } = fakeDb({ captures });
+
+    const pick = await selectResurfaceCandidate({ userId: "u1", db, now: NOW });
+
+    expect(pick?.type).toBe("DORMANT_REVIVAL");
+    expect(pick?.title).toBe("You left a thread unfinished");
+    expect(pick?.title.length).toBeLessThanOrEqual(PUSH_TITLE_MAX);
+    expect(pick?.body).toContain(long);
+    expect(pick?.deepLink).toBe("/archive/t-long");
   });
 
   it("never names a general field, only a specific thread", async () => {
@@ -552,7 +577,7 @@ describe("selectResurfaceCandidate", () => {
     const pick = await selectResurfaceCandidate({ userId: "u1", db, now: NOW });
 
     expect(pick?.type).toBe("RESURFACE");
-    expect(pick?.title).toBe("a month ago, you saved this");
+    expect(pick?.title).toBe("A month ago you saved this");
     expect(pick?.deepLink).toBe("/today");
   });
 
