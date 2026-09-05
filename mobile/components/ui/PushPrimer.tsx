@@ -6,23 +6,22 @@ import { Text } from './Text';
 
 interface Props {
   visible: boolean;
-  /** Dismissed without asking — we never show this again either way. */
+  /** "Not now". The card may come back later; see lib/push-ask.ts. */
   onDecline: () => void;
   /** Proceed to the system prompt. */
   onAccept: () => void;
 }
 
 /**
- * The pre-permission sheet, shown once, at the first quiet moment after a
- * first capture has landed and its pill has gone.
+ * The pre-permission sheet, shown at the first quiet moment after a capture
+ * has landed and its pill has gone (or on a later launch, if that moment was
+ * missed).
  *
- * Two rules shape the copy. It promises the thing rather than the mechanism —
- * "when two things you saved disagree", not "enable notifications" — because
- * the system prompt that follows is one-shot per install and a vague ask spends
- * it for nothing. And it states the ceiling up front, since the honest answer to
- * "how often will this bother me" is the main thing standing between a person
- * and yes. Three short lines: it arrives after the pill has already had the
- * user's attention once, so it earns none of it back by being long.
+ * The copy is direct: it says "notifications", says what they are for, and
+ * asks. An earlier version led with the mechanism's poetry ("want a nudge?")
+ * and tested as unclear. It still states the ceiling up front, since the
+ * honest answer to "how often will this bother me" is the main thing standing
+ * between a person and yes.
  */
 export function PushPrimer({ visible, onDecline, onAccept }: Props) {
   const c = useThemeColors();
@@ -32,20 +31,21 @@ export function PushPrimer({ visible, onDecline, onAccept }: Props) {
       <View style={styles.overlay}>
         <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
           <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 2, marginBottom: Spacing[3] }}>
-            WHILE YOU'RE AWAY
+            NOTIFICATIONS
           </Text>
 
           <Text variant="serif" color="secondary" style={{ lineHeight: 26 }}>
-            mneme keeps reading after you save — and notices when two things you
-            saved disagree, or a thread starts moving.
+            turn on notifications and mneme will keep you on track with what
+            you're learning: a reminder when your streak needs one capture, and a
+            heads-up when two things you saved disagree or a thread picks up.
           </Text>
 
           <Text variant="serif" style={{ lineHeight: 26, marginTop: Spacing[4], color: c.text }}>
-            want to hear when it does?
+            turn on notifications?
           </Text>
 
           <Text variant="monoSmall" style={{ color: c.faint, marginTop: Spacing[5], letterSpacing: 1 }}>
-            once a day at most. no badges.
+            a few a day at most. no badges.
           </Text>
 
           <View style={styles.actions}>
@@ -56,7 +56,7 @@ export function PushPrimer({ visible, onDecline, onAccept }: Props) {
             </Pressable>
             <Pressable onPress={onAccept} hitSlop={8} style={styles.action}>
               <Text variant="monoSmall" style={{ color: c.text, letterSpacing: 1 }}>
-                yes, tell me →
+                turn on →
               </Text>
             </Pressable>
           </View>

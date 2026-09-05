@@ -8,7 +8,7 @@ interface Props {
   visible: boolean;
   /** How many captures exist — the promise speaks about them. */
   fragmentCount: number;
-  /** Declined. We never show this again either way. */
+  /** "Not now". The ask may come back later, as the primer; see lib/push-ask.ts. */
   onDecline: () => void;
   /** Proceed to the system prompt. */
   onAccept: () => void;
@@ -26,8 +26,8 @@ interface Props {
  * notices something (see services/resurface.ts), and checks in when the
  * user has gone quiet — not "tomorrow morning", which nothing guarantees.
  *
- * Same one-shot discipline as PushPrimer: iOS grants one system prompt per
- * install, so both paths mark the ask spent.
+ * Same ask state as PushPrimer (lib/push-ask.ts): "turn on" spends the one
+ * system prompt, "not now" holds the card back for a while.
  */
 export function ComebackPromise({ visible, fragmentCount, onDecline, onAccept }: Props) {
   const c = useThemeColors();
@@ -42,16 +42,16 @@ export function ComebackPromise({ visible, fragmentCount, onDecline, onAccept }:
 
           <Text variant="serif" color="secondary" style={{ lineHeight: 26 }}>
             {fragmentCount === 1
-              ? 'that thought is on your map now. as more land, mneme starts to notice things — two that disagree, a thread picking up.'
-              : 'those thoughts are on your map now. as more land, mneme starts to notice things — two that disagree, a thread picking up.'}
+              ? 'that thought is on your map now. as more land, mneme starts to notice things: two that disagree, a thread picking up, a streak worth keeping.'
+              : 'those thoughts are on your map now. as more land, mneme starts to notice things: two that disagree, a thread picking up, a streak worth keeping.'}
           </Text>
 
           <Text variant="serif" style={{ lineHeight: 26, marginTop: Spacing[4], color: c.text }}>
-            want a nudge when that happens?
+            turn on notifications to stay on track with what you're learning?
           </Text>
 
           <Text variant="monoSmall" style={{ color: c.faint, marginTop: Spacing[5], letterSpacing: 1 }}>
-            once a day at most. no badges.
+            a few a day at most. no badges.
           </Text>
 
           <View style={styles.actions}>
@@ -62,7 +62,7 @@ export function ComebackPromise({ visible, fragmentCount, onDecline, onAccept }:
             </Pressable>
             <Pressable onPress={onAccept} hitSlop={8} style={styles.action}>
               <Text variant="monoSmall" style={{ color: c.text, letterSpacing: 1 }}>
-                yes →
+                turn on →
               </Text>
             </Pressable>
           </View>

@@ -6,6 +6,7 @@ import {
   Easing,
   Keyboard,
   KeyboardAvoidingView,
+  Linking,
   PanResponder,
   Platform,
   Pressable,
@@ -68,7 +69,7 @@ import { InfoModal } from '@/components/ui/InfoModal';
 import { PushPrimer } from '@/components/ui/PushPrimer';
 import { StreakMark } from '@/components/ui/StreakMark';
 import { useNotifications } from '@/contexts/NotificationContext';
-import { hasAskedForPush, markAskedForPush } from '@/lib/storage';
+import { hasAskedForPush, markPushPromptSpent, recordPushDeclined, shouldOfferPush } from '@/lib/storage';
 import { maybeRequestReview, noteCaptureForReview } from '@/lib/review';
 import { TopicPickerModal } from '@/components/ui/TopicPickerModal';
 import { failureReason, track } from '@/lib/analytics';
@@ -3926,23 +3927,53 @@ export default function MapScreen() {
   // ── push pre-permission ───────────────────────────────────────────────────
   const { requestPermission, granted: pushGranted } = useNotifications();
   const [showPushPrimer, setShowPushPrimer] = useState(false);
-  // Mirrors the one-shot flag in storage, so the summary strip's notifications
-  // hint knows whether the system prompt has already been spent.
+  // Whether the person has ever been asked, so the summary strip's
+  // notifications hint knows when it is its turn.
   const [pushAsked, setPushAsked] = useState(false);
   useEffect(() => { void hasAskedForPush().then(setPushAsked); }, []);
-  const markPushAsked = useCallback(() => {
+  /** "Not now" on either card. Comes back after a while; see lib/push-ask.ts. */
+  const declinePushAsk = useCallback(() => {
     setPushAsked(true);
-    void markAskedForPush();
+    setPushPrimerArmed(false);
+    void recordPushDeclined();
   }, []);
-  // Armed by a successful capture, fired later once the user is actually free.
+  /**
+   * "Turn on" on either card: show the system prompt, which iOS displays once
+   * per install. If it has already been spent (an old install that said no),
+   * requestPermission resolves denied without showing anything, and the only
+   * way to the switch is the iOS Settings page for Mneme, so go there.
+   */
+  const spendPushAsk = useCallback(() => {
+    setPushAsked(true);
+    setPushPrimerArmed(false);
+    void markPushPromptSpent();
+    void requestPermission().then((ok) => {
+      if (!ok) void Linking.openSettings();
+    });
+  }, [requestPermission]);
+  // Armed by a successful capture (or a launch with captures already on the
+  // map), fired later once the user is actually free.
   const [pushPrimerArmed, setPushPrimerArmed] = useState(false);
+  // The comeback promise (declared here because the primer's timing defers to
+  // it; armed and fired further down, once the map holds two captures).
+  const [promiseState, setPromiseState] = useState<{ fragments: number } | null>(null);
+  const [promiseArmed, setPromiseArmed] = useState(false);
 
-  /** Called on a capture that actually succeeded. No-op after the first time. */
+  /** Arm the card if the ask policy says it is due. Safe to call often. */
   const maybeAskForPush = useCallback(() => {
-    void hasAskedForPush().then((asked) => {
-      if (!asked) setPushPrimerArmed(true);
+    void shouldOfferPush().then((due) => {
+      if (due) setPushPrimerArmed(true);
     });
   }, []);
+
+  // The capture-time arming above is in-memory only: someone who saves a
+  // thought and leaves before the quiet moment arrives would otherwise not be
+  // asked until their next capture. So every launch with at least one capture
+  // on the map re-arms it, and the policy decides whether it is actually due.
+  useEffect(() => {
+    if (pushGranted || totalCaptureCount < 1) return;
+    maybeAskForPush();
+  }, [pushGranted, totalCaptureCount, maybeAskForPush]);
 
   // Whether the map is the thing the user is currently looking at. The primer
   // must not fire while they're off reading an insight — they'd come back to a
@@ -3965,6 +3996,11 @@ export default function MapScreen() {
     if (!pushPrimerArmed) return;
     if (savedPill || pillPending || showCapture || drawerVisible || !screenFocused) return;
     if (tutorialActive) return;
+    // Permission arrived some other way (iOS Settings) while this was armed.
+    if (pushGranted) return;
+    // The comeback promise is the same ask in a better moment; when it is
+    // armed or showing, this stands down rather than stacking a second card.
+    if (promiseArmed || promiseState) return;
     // A real pause after things settle — long enough that the node landing
     // and the pill leaving are over, so this reads as its own moment rather
     // than the next thing in a queue.
@@ -3973,21 +4009,20 @@ export default function MapScreen() {
       setPushPrimerArmed(false);
     }, 3000);
     return () => clearTimeout(timer);
-  }, [pushPrimerArmed, savedPill, pillPending, showCapture, drawerVisible, screenFocused, tutorialActive]);
+  }, [
+    pushPrimerArmed, savedPill, pillPending, showCapture, drawerVisible, screenFocused,
+    tutorialActive, pushGranted, promiseArmed, promiseState,
+  ]);
 
-  // Both paths mark it asked: iOS grants exactly one system prompt per install,
-  // so a "not now" that we later re-asked would just be a sheet with no prompt
-  // behind it.
   const closePushPrimer = useCallback(() => {
     setShowPushPrimer(false);
-    markPushAsked();
-  }, [markPushAsked]);
+    declinePushAsk();
+  }, [declinePushAsk]);
 
   const acceptPushPrimer = useCallback(() => {
     setShowPushPrimer(false);
-    markPushAsked();
-    void requestPermission();
-  }, [markPushAsked, requestPermission]);
+    spendPushAsk();
+  }, [spendPushAsk]);
 
   // ── the comeback promise ──────────────────────────────────────────────────
   // The push ask, fused with the product's spine: with their own thoughts
@@ -3996,18 +4031,16 @@ export default function MapScreen() {
   // permission request. Same one-shot bookkeeping as the primer; whichever
   // asks first spends the install's only prompt. Armed by the corpus-watching
   // effect further down, once two captures exist.
-  const [promiseState, setPromiseState] = useState<{ fragments: number } | null>(null);
 
   const closePromise = useCallback(() => {
     setPromiseState(null);
-    markPushAsked();
-  }, [markPushAsked]);
+    declinePushAsk();
+  }, [declinePushAsk]);
 
   const acceptPromise = useCallback(() => {
     setPromiseState(null);
-    markPushAsked();
-    void requestPermission();
-  }, [markPushAsked, requestPermission]);
+    spendPushAsk();
+  }, [spendPushAsk]);
 
   // ── Feature hints for the summary strip ─────────────────────────
   // The strip's counts are baseline furniture; when there's a feature the
@@ -4064,7 +4097,7 @@ export default function MapScreen() {
     // Only once the install's single system prompt is spent (primer or
     // promise) and the answer was no — before that, those flows own the ask.
     if (pushAsked && !pushGranted && fresh('notifications')) {
-      out.push({ key: 'notifications', priority: 50, text: 'let mneme nudge you when the map stirs →', onPress: go('notifications', '/notification-settings') });
+      out.push({ key: 'notifications', priority: 50, text: 'turn on notifications to stay on track →', onPress: go('notifications', '/notification-settings') });
     }
     if (totalCaptureCount >= 5 && fresh('today')) {
       out.push({ key: 'today', priority: 60, text: 'one old capture, handed back each day →', onPress: go('today', '/today') });
@@ -4643,27 +4676,28 @@ export default function MapScreen() {
   // Fires once, at a quiet moment, when a young account reaches two captures
   // with the install's one system prompt still unspent — the moment "i'll
   // bring one of these back to you" is about things that actually exist.
-  const [promiseArmed, setPromiseArmed] = useState(false);
   useEffect(() => {
-    if (!disclosure.ready || promiseArmed || promiseState) return;
+    if (!disclosure.ready || promiseArmed || promiseState || pushGranted) return;
     if (disclosure.hasSeen(EVENT_FLAGS.promiseOffered)) return;
     const count = graphData?.totalCount ?? 0;
     if (count < 2 || count >= GUIDE_MAX_CORPUS) return;
-    void hasAskedForPush().then((asked) => {
-      if (asked) {
-        // The prompt is spent; the promise moment can never be honest again.
+    void shouldOfferPush().then((due) => {
+      if (!due) {
+        // Spent, or declined too recently: the promise moment has passed.
         disclosure.markSeen(EVENT_FLAGS.promiseOffered);
         return;
       }
       setPromiseArmed(true);
     });
-  }, [disclosure, promiseArmed, promiseState, graphData]);
+  }, [disclosure, promiseArmed, promiseState, graphData, pushGranted]);
   useEffect(() => {
     if (!promiseArmed) return;
     if (savedPill || pillPending || showCapture || drawerVisible || !screenFocused) return;
     if (tutorialActive || showPushPrimer) return;
     const timer = setTimeout(() => {
       setPromiseArmed(false);
+      // This card IS the ask for this launch; the primer must not follow it.
+      setPushPrimerArmed(false);
       disclosure.markSeen(EVENT_FLAGS.promiseOffered);
       setPromiseState({ fragments: graphData?.totalCount ?? 2 });
     }, 3000);

@@ -5,6 +5,7 @@ import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { markPushPromptSpent } from '@/lib/storage';
 
 /**
  * Push: permission, token registration, and what happens when a notification is
@@ -150,6 +151,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         const { status } = await Notifications.getPermissionsAsync();
         if (status !== 'granted') return;
         setGranted(true);
+        // Permission is on, so there is nothing left to ask. Recorded here so
+        // an install that granted it before the ask state existed is never
+        // shown the card.
+        void markPushPromptSpent();
         await registerToken();
       } catch {
         // Nothing here is worth interrupting a launch for.

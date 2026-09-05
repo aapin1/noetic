@@ -161,8 +161,8 @@ export default function NotificationSettingsScreen() {
               accessibilityLabel="Open iOS notification settings"
             >
               <Text variant="monoSmall" color="muted">
-                push is off at the system level — nothing below can arrive until you turn it on in
-                iOS Settings. →
+                notifications are off in iOS Settings. turn them on there to get streak reminders
+                and updates from mneme. →
               </Text>
             </Pressable>
           )}
