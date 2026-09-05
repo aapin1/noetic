@@ -3,7 +3,7 @@ import { AppError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import type { ProviderItem } from "@/server/connections/types";
 import type { DbClient } from "@/server/db";
-import { resolveWork } from "@/server/imports/resolve";
+import { recallWork, resolveWork } from "@/server/imports/resolve";
 import { capturePipeline } from "@/server/services/admission";
 import { captureItem } from "@/server/services/cognition";
 import { createManualContentItem } from "@/server/services/content";
@@ -100,6 +100,12 @@ export async function captureProviderItem(args: {
         item.imageUrl = item.imageUrl ?? found.imageUrl;
         item.author = item.author ?? found.author;
       }
+      // Still nothing: no catalogue page carries this one (a one-word title, a
+      // translated title, a release the search ranking hasn't caught up with).
+      // The model almost always knows the work itself, and knowing what
+      // "Sinners (2025)" IS is the difference between reading someone's review
+      // against the film and treating it as words about a bare string.
+      if (!item.description) item.description = (await recallWork(lookup)) ?? undefined;
     }
   }
 

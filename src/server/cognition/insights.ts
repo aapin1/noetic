@@ -139,6 +139,10 @@ export function draftInsights(args: {
    * NOVELTY boilerplate (which describes the app rather than the content) and
    * emit only insights grounded in real neighbor/pattern signal. */
   contentThin?: boolean;
+  /** "film", "book", "game"… when the capture is a diary entry about a named
+   * work rather than a page that was fetched. Only changes what the thin
+   * fallback says: there was never a page to fail to read. */
+  workKind?: string;
   /** Types of the user's most recent insights (newest first, ~6). Drives the
    * repetition guard: volume/direction readings (TRAJECTORY, PATTERN) that
    * already led the last few captures must clear a much higher bar to lead
@@ -159,10 +163,15 @@ export function draftInsights(args: {
   // until the user says what the content was, which reprocesses the capture
   // and rebuilds real insights from real grounding.
   if (args.contentThin) {
+    const work = args.workKind;
     drafts.push({
       type: InsightType.NOVELTY,
-      headline: "This source couldn't be read.",
-      body: "The page itself couldn't be extracted — a paywall, a robot wall, or an unsupported format — so this capture is grounded only in its title so far. Tell mneme what it was about (About this capture → edit), and its topics, connections, and insight will be rebuilt from your words.",
+      headline: work ? `This ${work} couldn't be placed.` : "This source couldn't be read.",
+      body: work
+        // A logged film or book had no page to fail on: what's missing is not
+        // an extraction but any account of what the work IS.
+        ? `Nothing on record says what "${args.itemTitle}" is — no catalogue page for it, and mneme doesn't recognize the title — so this capture is grounded only in that title so far. Tell mneme what it was (About this capture → edit), and its topics, connections, and insight will be rebuilt from your words.`
+        : "The page itself couldn't be extracted — a paywall, a robot wall, or an unsupported format — so this capture is grounded only in its title so far. Tell mneme what it was about (About this capture → edit), and its topics, connections, and insight will be rebuilt from your words.",
       evidence: { contentThin: true },
       strength: 1,
     });

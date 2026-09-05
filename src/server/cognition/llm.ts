@@ -195,6 +195,89 @@ export async function cleanContentMetadata(args: {
   }
 }
 
+/**
+ * What a named work IS, from the model's own knowledge.
+ *
+ * A diary entry names a film or a book and nothing else — Letterboxd and
+ * Goodreads have no page worth reading, and the keyless resolvers
+ * (Wikipedia, Open Library, Steam) miss on one-word titles, translated
+ * titles, and anything newer than their search ranking handles. Without a
+ * description the pipeline sees a bare title and treats a full review as an
+ * unreadable source. The model usually knows the work outright, so ask it.
+ *
+ * Returns null whenever the model does not recognize the work with
+ * confidence: a confabulated blurb would be embedded, classified, and shown
+ * as fact, which is far worse than having none. That makes the model's
+ * training cutoff the limit of what this can do — the mini model declines a
+ * 2025 release outright — so it runs on OPENAI_INSIGHT_MODEL, where a newer
+ * model recognizes more of what people are actually logging.
+ */
+export async function identifyWork(args: {
+  kind: string;
+  title: string;
+  year?: number;
+  author?: string;
+}): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CAPTURE_TIMEOUT_MS);
+
+  const systemPrompt = [
+    "You identify a published work from its title for a personal knowledge library. The person logged it in a diary app, so all that is known about it is what you are given.",
+    "",
+    "If you recognize this exact work, describe it in 2-3 plain sentences: what it is (form, year, who made it) and what it is actually about — its subject, setting, and themes. Enough that someone who has never encountered it could read the person's review of it and follow.",
+    "Never guess. Return known: false if the title is ambiguous, if you are not sure this is the work meant, or if it may postdate what you know. A wrong description is worse than none.",
+    "State only what the work is. No opinion, no reception or ratings, no ending or twist, no invented cast, credits, or awards.",
+    "",
+    "Return strictly valid JSON (no markdown): {\"known\": true|false, \"description\": \"...\"}",
+  ].join("\n");
+
+  const userMessage = {
+    kind: args.kind,
+    title: args.title,
+    year: args.year ?? "",
+    author: args.author ?? "",
+  };
+
+  try {
+    const response = await fetch(OPENAI_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: INSIGHT_MODEL(),
+        temperature: 0.1,
+        max_tokens: 220,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: JSON.stringify(userMessage) },
+        ],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    const raw = payload.choices?.[0]?.message?.content;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { known?: unknown; description?: unknown };
+    if (parsed.known !== true) return null;
+    const description = typeof parsed.description === "string" ? parsed.description.trim() : "";
+    return description.length > 0 ? description : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export type ImageDescription = {
   title: string;
   description: string;

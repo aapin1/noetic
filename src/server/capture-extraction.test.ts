@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchMetadata, parseMetadataFromHtml, scoreContentConfidence } from "@/server/metadata";
+import { fetchMetadata, parseMetadataFromHtml, scoreContentConfidence, scoreGrounding } from "@/server/metadata";
 
 describe("scoreContentConfidence", () => {
   it("scores substantive body text as rich", () => {
@@ -22,6 +22,33 @@ describe("scoreContentConfidence", () => {
     // clear a character check, nowhere near the source's content.
     expect(scoreContentConfidence({ bodyText: "Subscribe Sign in Watch later Copy link Tap to unmute" })).toBe("thin");
     expect(scoreContentConfidence({ bodyText: "x".repeat(900) })).toBe("thin");
+  });
+});
+
+describe("scoreGrounding", () => {
+  const REVIEW =
+    "Coogler shoots the juke joint like a church and the vampires like a congregation, " +
+    "and the film is better for refusing to pick between the two readings.";
+
+  it("counts the person's own review as content", () => {
+    // A Letterboxd entry arrives with the review in `reaction` and nothing
+    // else: no page to scrape, no catalogue blurb. Calling that unreadable is
+    // what made mneme ask a person who had just written a paragraph to explain
+    // what they had watched.
+    const { contentThin, contentGrounding } = scoreGrounding({ reaction: REVIEW });
+    expect(contentThin).toBe(false);
+    expect(contentGrounding).toBe("partial");
+  });
+
+  it("is thin only when there is nothing but a title", () => {
+    expect(scoreGrounding({}).contentThin).toBe(true);
+    expect(scoreGrounding({ description: "what the work is" }).contentThin).toBe(false);
+    expect(scoreGrounding({ userContext: "the user's own account" }).contentThin).toBe(false);
+  });
+
+  it("adds the review to the source's own text rather than replacing it", () => {
+    const grounding = scoreGrounding({ bodyText: "attention decays ".repeat(40), reaction: REVIEW }).contentGrounding;
+    expect(grounding).toBe("rich");
   });
 });
 

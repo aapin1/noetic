@@ -12,11 +12,15 @@ import type { DbClient } from "@/server/db";
 const captureItem = vi.fn();
 const createManualContentItem = vi.fn();
 const resolveWork = vi.fn(async (..._args: unknown[]) => null as unknown);
+const recallWork = vi.fn(async (..._args: unknown[]) => null as unknown);
 const providerFetch = vi.fn();
 const providerLink = vi.fn();
 
 vi.mock("@/server/services/cognition", () => ({ captureItem: (...a: unknown[]) => captureItem(...a) }));
-vi.mock("@/server/imports/resolve", () => ({ resolveWork: (...a: unknown[]) => resolveWork(...a) }));
+vi.mock("@/server/imports/resolve", () => ({
+  resolveWork: (...a: unknown[]) => resolveWork(...a),
+  recallWork: (...a: unknown[]) => recallWork(...a),
+}));
 vi.mock("@/server/services/content", () => ({ createManualContentItem: (...a: unknown[]) => createManualContentItem(...a) }));
 vi.mock("@/server/services/admission", () => ({ capturePipeline: { run: (fn: () => Promise<unknown>) => fn() } }));
 vi.mock("@/server/connections", async (importOriginal) => {
@@ -351,14 +355,42 @@ describe("work resolution", () => {
     expect(manual.canonicalUrl).toContain("letterboxd.com");
   });
 
-  it("a resolver miss leaves the item exactly as it was", async () => {
+  // The point of the model backstop: a catalogue that has never heard of the
+  // film is not the same as nobody knowing what the film is, and a review of a
+  // work mneme can't place used to be filed as an unreadable source.
+  it("falls back to what the model knows when no catalogue has the work", async () => {
     const { db, connections } = fakeDb();
     connections.push({ id: "c1", userId: "u1", provider: "LETTERBOXD", handle: "dave", secret: null, status: "OK", lastError: null, syncingSince: null, lastSyncedAt: null, lastSync: null, cursor: null, label: null, createdAt: new Date("2026-08-01T00:00:00Z") });
     resolveWork.mockResolvedValueOnce(null as never);
+    recallWork.mockResolvedValueOnce("A 1997 action film in which two men swap faces." as never);
+    providerFetch.mockResolvedValue({ label: "Dave", seen: 1, items: [item("r1")] });
+    await syncConnection({ connectionId: "c1", cap: 10, db, now: NOW });
+    expect(recallWork).toHaveBeenCalledWith(expect.objectContaining({ kind: "film", title: "Film r1" }));
+    const manual = createManualContentItem.mock.calls.at(-1)?.[0] as { description?: string };
+    expect(manual.description).toBe("A 1997 action film in which two men swap faces.");
+  });
+
+  it("a miss on both leaves the item exactly as it was", async () => {
+    const { db, connections } = fakeDb();
+    connections.push({ id: "c1", userId: "u1", provider: "LETTERBOXD", handle: "dave", secret: null, status: "OK", lastError: null, syncingSince: null, lastSyncedAt: null, lastSync: null, cursor: null, label: null, createdAt: new Date("2026-08-01T00:00:00Z") });
+    resolveWork.mockResolvedValueOnce(null as never);
+    recallWork.mockResolvedValueOnce(null as never);
     providerFetch.mockResolvedValue({ label: "Dave", seen: 1, items: [item("r1")] });
     await syncConnection({ connectionId: "c1", cap: 10, db, now: NOW });
     const manual = createManualContentItem.mock.calls.at(-1)?.[0] as { description?: string };
     expect(manual.description).toBeUndefined();
+  });
+
+  // A page the person kept (a saved article, a playlist video) is read by the
+  // link pipeline; asking the model to describe it from a title would be
+  // guessing about arbitrary URLs.
+  it("never asks about a kept page", async () => {
+    const { db, connections } = fakeDb();
+    connections.push({ id: "c1", userId: "u1", provider: "LETTERBOXD", handle: "dave", secret: null, status: "OK", lastError: null, syncingSince: null, lastSyncedAt: null, lastSync: null, cursor: null, label: null, createdAt: new Date("2026-08-01T00:00:00Z") });
+    providerFetch.mockResolvedValue({ label: "Dave", seen: 1, items: [{ ...item("r1"), mode: "link" }] });
+    await syncConnection({ connectionId: "c1", cap: 10, db, now: NOW });
+    expect(recallWork).not.toHaveBeenCalled();
+    expect(resolveWork).not.toHaveBeenCalled();
   });
 });
 

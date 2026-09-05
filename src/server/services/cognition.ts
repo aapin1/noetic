@@ -50,7 +50,7 @@ import {
   type PolishResult,
   type Recommendation,
 } from "@/server/cognition/llm";
-import { isPaidTranscriptHost, scoreContentConfidence } from "@/server/metadata";
+import { isPaidTranscriptHost, scoreGrounding } from "@/server/metadata";
 import { blendSearchScore, rankCaptureText, SEMANTIC_MIN_SIM } from "@/server/search-ranking";
 import { applyTopicWeights, incrementTasteProfileVersion } from "@/server/services/activity";
 import { scheduleIntelligenceWarm } from "@/server/services/intelligence";
@@ -906,21 +906,13 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     captureSummary = deriveCaptureSummary(contentDescription, contentBodyText);
   }
 
-  // "Thin" = we have essentially only a title (e.g. a YouTube video whose
-  // transcript/description scrape failed). With no real content, the drafting
-  // layer falls back to boilerplate that describes the app itself ("the memory
-  // graph starts here…") instead of the capture — so we suppress that fallback
-  // rather than emit a self-referential insight.
-  const contentThin = !(
-    contentDescription || contentBodyText || payload.text || payload.caption || payload.userContext
-  );
-
-  // How much actual substance grounds this capture — drives the anti-
-  // confabulation directive in insight polishing. The user's own account and
-  // notes count as grounding; the title alone does not.
-  const contentGrounding = scoreContentConfidence({
-    bodyText: [contentBodyText, payload.userContext, payload.text].filter(Boolean).join("\n"),
-    description: contentDescription ?? payload.caption,
+  const { contentThin, contentGrounding } = scoreGrounding({
+    description: contentDescription,
+    bodyText: contentBodyText,
+    text: payload.text,
+    caption: payload.caption,
+    reaction: payload.reaction,
+    userContext: payload.userContext,
   });
 
   const classifyDoneAt = Date.now();
@@ -951,6 +943,8 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   const threadContext = computeThreadContext(topicCounts);
   const recentInsights = await recentInsightTypesPromise;
 
+  const mediaContext = mediaContextFor({ origin: payload.origin, kind: contentKind, title: contentTitle, siteName: contentSiteName });
+
   const drafts = draftInsights({
     style: insightStyle,
     itemTitle,
@@ -960,6 +954,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     shift: trajectory,
     isFirstCapture,
     contentThin,
+    workKind: mediaContext?.kind,
     recentInsightTypes: recentInsights.map((row) => row.type),
   });
 
@@ -1171,7 +1166,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
       contentText: combinedText,
       contentGrounding,
       userContext: payload.userContext,
-      mediaContext: mediaContextFor({ origin: payload.origin, kind: contentKind, title: contentTitle, siteName: contentSiteName }),
+      mediaContext,
       recentReadings: recentReadingContext(await recentReadingsPromise),
       topicNames: classified.map((topic) => topic.name),
       neighborContext: neighborInfo.neighbors.map((n) => ({
@@ -1259,9 +1254,13 @@ export async function updateCaptureContext(args: {
     .filter(Boolean)
     .join("\n\n");
 
-  const contentGrounding = scoreContentConfidence({
-    bodyText: [contentBodyText, userContext, rawText].filter(Boolean).join("\n"),
-    description: contentDescription ?? caption,
+  const { contentGrounding } = scoreGrounding({
+    description: contentDescription,
+    bodyText: contentBodyText,
+    text: rawText,
+    caption,
+    reaction,
+    userContext,
   });
 
   const [classified, insightStyle, embedding] = await Promise.all([

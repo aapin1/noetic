@@ -1,3 +1,4 @@
+import { identifyWork } from "@/server/cognition/llm";
 import { providerFetch } from "@/server/connections/http";
 import { clampText, htmlToText } from "@/server/connections/text";
 import type { ProviderItem } from "@/server/connections/types";
@@ -17,13 +18,37 @@ export type Resolved = { url: string; title: string; description?: string; image
 
 const cache = new Map<string, Promise<Resolved | null>>();
 
+function cacheKey(lookup: NonNullable<ProviderItem["lookup"]>): string {
+  return `${lookup.kind}|${lookup.title.toLowerCase()}|${lookup.year ?? ""}|${(lookup.author ?? "").toLowerCase()}`;
+}
+
 export function resolveWork(lookup: NonNullable<ProviderItem["lookup"]>): Promise<Resolved | null> {
-  const key = `${lookup.kind}|${lookup.title.toLowerCase()}|${lookup.year ?? ""}|${(lookup.author ?? "").toLowerCase()}`;
+  const key = cacheKey(lookup);
   let p = cache.get(key);
   if (!p) {
     p = resolveUncached(lookup).catch(() => null);
     cache.set(key, p);
     if (cache.size > 5000) cache.delete(cache.keys().next().value as string);
+  }
+  return p;
+}
+
+const recalled = new Map<string, Promise<string | null>>();
+
+/**
+ * What the work is, from the model's own knowledge — the backstop for when
+ * every keyless source above missed. Description only: there is no page, so
+ * `resolveWork`'s contract (a readable URL) is left alone and only the
+ * description hole is filled. Cached per work like the resolvers, so a sync
+ * that logs the same film twice asks once.
+ */
+export function recallWork(lookup: NonNullable<ProviderItem["lookup"]>): Promise<string | null> {
+  const key = cacheKey(lookup);
+  let p = recalled.get(key);
+  if (!p) {
+    p = identifyWork(lookup).catch(() => null);
+    recalled.set(key, p);
+    if (recalled.size > 5000) recalled.delete(recalled.keys().next().value as string);
   }
   return p;
 }

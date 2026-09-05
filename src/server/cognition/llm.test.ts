@@ -1,7 +1,7 @@
 import { InsightType } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InsightDraft } from "./insights";
-import { chooseReadingNote, generateMirror, polishInsights } from "./llm";
+import { chooseReadingNote, generateMirror, identifyWork, polishInsights } from "./llm";
 
 const NOVELTY_DRAFT: InsightDraft = {
   type: InsightType.NOVELTY,
@@ -269,6 +269,49 @@ describe("generateMirror", () => {
     expect(await generateMirror({ style: "DIRECT", captures })).toBeNull();
     const fetchMock = mockChat({ read: "x", because: "y" });
     expect(await generateMirror({ style: "DIRECT", captures: [] })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("identifyWork", () => {
+  it("returns what the model says the work is, and shows it the title, year and author", async () => {
+    const fetchMock = mockChat({
+      known: true,
+      description: "A 2025 horror film written and directed by Ryan Coogler, set in 1930s Mississippi.",
+    });
+
+    const description = await identifyWork({ kind: "film", title: "Sinners", year: 2025 });
+
+    expect(description).toBe("A 2025 horror film written and directed by Ryan Coogler, set in 1930s Mississippi.");
+    const sent = JSON.parse(sentBody(fetchMock).messages[1].content) as Record<string, unknown>;
+    expect(sent).toMatchObject({ kind: "film", title: "Sinners", year: 2025 });
+  });
+
+  // The whole reason this call is safe to make: a blurb it isn't sure about
+  // would be embedded, classified, and shown as the capture's About text.
+  it("returns null when the model declines, even if it drafted a description anyway", async () => {
+    mockChat({ known: false, description: "A film of some kind, probably." });
+    expect(await identifyWork({ kind: "film", title: "Sinners", year: 2025 })).toBeNull();
+  });
+
+  it("returns null on an empty description, a failed request, and unparseable JSON", async () => {
+    mockChat({ known: true, description: "   " });
+    expect(await identifyWork({ kind: "book", title: "Ulysses" })).toBeNull();
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false } as unknown as Response));
+    expect(await identifyWork({ kind: "book", title: "Ulysses" })).toBeNull();
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "not json" } }] }),
+    } as unknown as Response));
+    expect(await identifyWork({ kind: "book", title: "Ulysses" })).toBeNull();
+  });
+
+  it("makes no call without an api key", async () => {
+    const fetchMock = mockChat({ known: true, description: "…" });
+    delete process.env.OPENAI_API_KEY;
+    expect(await identifyWork({ kind: "film", title: "Heat", year: 1995 })).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

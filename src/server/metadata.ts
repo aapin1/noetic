@@ -64,6 +64,37 @@ export function scoreContentConfidence(args: {
   return "thin";
 }
 
+/**
+ * How much real substance a capture has, in the two forms the pipeline needs:
+ * `contentThin` (essentially a bare title — suppress every draft that argues
+ * from neighbours, since a title-only embedding's neighbours are artifacts)
+ * and `contentGrounding` (how far the insight polish may go before it is
+ * confabulating).
+ *
+ * The person's own words count as content, `reaction` included. Leaving that
+ * one field out is what filed a full Letterboxd review as a source that
+ * "couldn't be read": the review lands in `reaction`, so a film whose
+ * catalogue lookup missed had a paragraph of real writing and was told it had
+ * nothing.
+ */
+export function scoreGrounding(args: {
+  description?: string | null;
+  bodyText?: string | null;
+  text?: string | null;
+  caption?: string | null;
+  reaction?: string | null;
+  userContext?: string | null;
+}): { contentThin: boolean; contentGrounding: ContentConfidence } {
+  const own = [args.bodyText, args.userContext, args.text, args.reaction].filter(Boolean).join("\n");
+  return {
+    contentThin: !(args.description || args.bodyText || args.text || args.caption || args.reaction || args.userContext),
+    contentGrounding: scoreContentConfidence({
+      bodyText: own,
+      description: args.description ?? args.caption,
+    }),
+  };
+}
+
 /** Below this, an extracted body is debris rather than the source's content. */
 const MIN_BODY_WORDS = 25;
 

@@ -98,3 +98,34 @@ describe("sortInsights", () => {
     expect(rows.map((r) => r.id)).toEqual(before);
   });
 });
+
+describe("draftInsights — the thin fallback", () => {
+  const thin = (extra: Partial<Parameters<typeof draftInsights>[0]> = {}) =>
+    draftInsights({
+      style: "DIRECT",
+      itemTitle: "Sinners (2025)",
+      topicNames: [],
+      topNeighbors: [],
+      topicCounts: [],
+      shift: null,
+      isFirstCapture: false,
+      contentThin: true,
+      ...extra,
+    });
+
+  it("blames the page when there was a page", () => {
+    const [draft] = thin();
+    expect(draft.headline).toBe("This source couldn't be read.");
+    expect(draft.body).toContain("paywall");
+  });
+
+  // A diary entry has no page to fail on — saying the extraction failed
+  // describes a fetch that never happened.
+  it("says it couldn't place the work when the capture is a logged film or book", () => {
+    const [draft] = thin({ workKind: "film" });
+    expect(draft.headline).toBe("This film couldn't be placed.");
+    expect(draft.body).toContain("Sinners (2025)");
+    expect(draft.body).not.toContain("paywall");
+    expect(draft.evidence).toEqual({ contentThin: true });
+  });
+});
