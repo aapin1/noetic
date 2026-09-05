@@ -702,8 +702,10 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
 
   // Thin = a title and nothing else. The grounding directive already forbids
   // inventing the content's argument; a READING is nothing but the content's
-  // argument, so it is not even asked for.
-  const wantReading = args.contentGrounding !== "thin";
+  // argument, so it is not even asked for. A named WORK is the exception:
+  // for a work the model actually knows, its own knowledge is the content,
+  // and the about-a-work directive handles the unknown case (null reading).
+  const wantReading = args.contentGrounding !== "thin" || Boolean(args.mediaContext);
 
   const systemPrompt = [
     "You are a knowledge analyst in a personal memory graph.",
@@ -757,12 +759,15 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
     "Do not start with 'This capture', 'This article', or the title verbatim. Do not overstate thin evidence.",
     args.mediaContext
       ? [
-          `ABOUT A WORK: the capture is the user's own words (a review, notes, a reaction) about the ${args.mediaContext.kind} "${args.mediaContext.title}"${args.mediaContext.siteName ? `, from their ${args.mediaContext.siteName} account` : ""}.`,
-          `- FIRST try to read their words in relation to that ${args.mediaContext.kind} — its themes, subject, or craft — if you know the work or content_text describes it.`,
-          "- If you do not know the work, do NOT guess or invent anything about it (no plot, no reception, no genre claims). Treat their words on their own terms instead.",
+          `ABOUT A WORK: the capture logs the ${args.mediaContext.kind} "${args.mediaContext.title}"${args.mediaContext.siteName ? `, from their ${args.mediaContext.siteName} account` : ""}, with any words of the user's own alongside.`,
+          `- If you KNOW this ${args.mediaContext.kind}, use that knowledge as the content: read the work itself (its actual themes, argument, craft, place in its tradition), and read the user's words, if any, in relation to it. content_text may carry only a catalogue synopsis; your reliable knowledge of the work outranks its brevity.`,
+          "- If you do not know the work, do NOT guess or invent anything about it (no plot, no reception, no genre claims). Work only from content_text and the user's words, or return a null reading.",
         ].join("\n")
       : "",
-    groundingDirective(args.contentGrounding),
+    // The excerpt-leash exists for scraped pages; for a named work the
+    // about-a-work rules above govern instead (a known film is not "a short
+    // excerpt" — the model knows the whole thing).
+    args.mediaContext ? "" : groundingDirective(args.contentGrounding),
     args.userContext
       ? "user_account_of_content is the user's own description of what the content was about — treat it as the authoritative account of the content."
       : "",

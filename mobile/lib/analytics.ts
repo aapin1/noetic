@@ -66,10 +66,10 @@ const log = (...args: unknown[]) => {
 export type { CaptureKind } from '@/types/api';
 /** Captures arrive from two places and the difference matters: the share
  *  extension is a different funnel with a different failure profile. */
-export type CaptureSource = 'composer' | 'share_extension';
+export type CaptureSource = 'composer' | 'share_extension' | 'recognition';
 /** identity/notifications/walkthrough are the retired 2026-07 flow — kept so
  *  historical dashboards still parse. New accounts only emit `guide`. */
-export type OnboardingStep = 'identity' | 'notifications' | 'walkthrough' | 'guide' | 'welcome-offer';
+export type OnboardingStep = 'identity' | 'notifications' | 'walkthrough' | 'guide' | 'welcome-offer' | 'recognition';
 export type TabName = 'atlas' | 'mind' | 'archive' | 'pulse' | 'you';
 /**
  * Where an insight was opened from. `unknown` is reachable and intentional:
@@ -99,6 +99,8 @@ type EventProps = {
   session_start: { is_first_session: boolean };
   signup: { method: 'email' | 'apple' };
   onboarding_step: { step: OnboardingStep; action: 'completed' | 'skipped' };
+  /** The "name a work" resolver answered — hit lands the confirm card. */
+  recognition_resolved: { kind: string; hit: boolean };
   capture_started: { kind: CaptureKind; source: CaptureSource };
   capture_succeeded: { kind: CaptureKind; source: CaptureSource; duration_ms: number };
   capture_failed: {

@@ -8,6 +8,8 @@ import type {
   ReportReason,
   CaptureKind,
   CapturePreflight,
+  RecognizeKind,
+  RecognizePreview,
   CaptureResponse,
   CaptureDetail,
   CaptureSummary,
@@ -424,6 +426,19 @@ export const api = {
       return request<CapturePreflight>('/api/captures/preflight', {
         method: 'POST',
         body: JSON.stringify({ url }),
+      });
+    },
+    recognizePreview(body: { title: string; kind: RecognizeKind; year?: number }) {
+      return request<RecognizePreview>('/api/captures/recognize/preview', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+    },
+    recognize(body: { title: string; kind: RecognizeKind; year?: number; words?: string; context?: string }) {
+      return request<CaptureResponse>('/api/captures/recognize', {
+        method: 'POST',
+        // A recognition is a capture, so it carries the same streak clock.
+        body: JSON.stringify({ ...body, tzOffsetMinutes: -new Date().getTimezoneOffset() }),
       });
     },
     transcribe(audioBase64: string, mimeType?: string) {
