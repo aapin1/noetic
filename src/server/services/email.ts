@@ -13,6 +13,8 @@ export type EmailMessage = {
   to: string;
   subject: string;
   text: string;
+  /** Extra headers, e.g. List-Unsubscribe for anything that isn't a reply to the user. */
+  headers?: Record<string, string>;
 };
 
 const DEFAULT_FROM = "mneme <onboarding@resend.dev>";
@@ -44,6 +46,7 @@ export async function sendEmail(message: EmailMessage): Promise<boolean> {
         to: [message.to],
         subject: message.subject,
         text: message.text,
+        ...(message.headers ? { headers: message.headers } : {}),
       }),
     });
 
