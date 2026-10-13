@@ -8,6 +8,7 @@ import {
   EVENING_SEND_HOUR,
   localHour,
 } from "@/server/services/notification-policy";
+import { runFirstCaptureEmailSweep } from "@/server/services/first-capture-email";
 import { runResurfaceSweep } from "@/server/services/resurface";
 import { runStreakGuardSweep, runStreakRiskSweep } from "@/server/services/streak";
 
@@ -64,6 +65,8 @@ export type NotificationJobResult = {
   resurface: { considered: number; queued: number };
   /** The evening reminder: users at the evening hour with an open run. */
   streakRisk: { considered: number; queued: number };
+  /** Accounts with no captures and no push token, reached by email instead. */
+  firstCaptureEmail: { considered: number; sent: number };
   dispatch: DispatchResult;
 };
 
@@ -73,6 +76,7 @@ const SKIPPED: NotificationJobResult = {
   streak: { considered: 0, held: 0 },
   resurface: { considered: 0, queued: 0 },
   streakRisk: { considered: 0, queued: 0 },
+  firstCaptureEmail: { considered: 0, sent: 0 },
   dispatch: {
     considered: 0, sent: 0, failed: 0, held: 0, deactivatedTokens: 0, suppressed: false,
   },
@@ -101,10 +105,16 @@ async function resolveDueUsers(db: DbClient, now: Date) {
     },
     select: {
       id: true,
+      // For the first-capture email, the one channel that is not push.
+      email: true,
+      name: true,
+      createdAt: true,
       // The flags the push-only sweeps gate on, and the clock that says which
       // hour this row is due for. The streak guard reads no preference here on
       // purpose — see runStreakGuardSweep.
-      preference: { select: { pushResurface: true, pushStreak: true, tzOffsetMinutes: true } },
+      preference: {
+        select: { pushResurface: true, pushStreak: true, emailNudges: true, tzOffsetMinutes: true },
+      },
       // Existence checks, not lists: `take: 1` keeps this a cheap probe even for
       // a user with thousands of captures and several devices.
       deviceTokens: {
@@ -195,6 +205,16 @@ export async function runNotificationJob(args: {
 
     const streakRisk = await runStreakRiskSweep({ db, now, userIds: riskCandidates });
 
+    // Push cannot reach an account that never captured: the app only asks for
+    // permission after a capture. Email can, so these get it instead.
+    const firstCaptureEmail = await runFirstCaptureEmailSweep({
+      db,
+      now,
+      users: morning
+        .filter((user) => user.capturedItems.length === 0 && !reachable(user))
+        .filter((user) => user.preference?.emailNudges !== false),
+    });
+
     const dispatch = await dispatchPendingNotifications({ limit: DISPATCH_LIMIT }, db, now);
 
     return {
@@ -203,6 +223,7 @@ export async function runNotificationJob(args: {
       streak: { considered: streak.considered, held: streak.held },
       resurface,
       streakRisk,
+      firstCaptureEmail,
       dispatch,
     };
   }, db, now).catch((error) => {
@@ -228,6 +249,7 @@ export async function runNotificationJob(args: {
     pending: result.dispatch.considered,
     sent: result.dispatch.sent,
     failed: result.dispatch.failed,
+    emailed: result.firstCaptureEmail.sent,
     // Quiet hours or the daily ceiling. These arrive in a later hour rather
     // than being lost, so a nonzero value here is normal, not an error.
     held: result.dispatch.held,

@@ -778,6 +778,10 @@ model UserPreference {
   pushResurface       Boolean @default(true)
   /// STREAK_HELD, and nothing else — the guard never warns.
   pushStreak          Boolean @default(true)
+  /// The first-capture emails (services/first-capture-email.ts). Off once the
+  /// user follows an unsubscribe link; nothing else in the app sends email
+  /// that isn't a direct answer to something the user did.
+  emailNudges         Boolean @default(true)
   /// Connected accounts: ASK stages new finds for the Atlas pill; AUTO maps them.
   connectionsMode     ConnectionsMode @default(ASK)
 

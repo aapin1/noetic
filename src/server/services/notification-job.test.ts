@@ -224,6 +224,9 @@ type DueUser = {
   /** Days of a run ending yesterday, in the user's local days. */
   run: number;
   tokens?: number;
+  emailNudges?: boolean;
+  /** Days since signup. Defaults to well past every first-capture email rung's start. */
+  signedUpDaysAgo?: number;
 };
 
 function busyDb(users: DueUser[]) {
@@ -251,7 +254,15 @@ function busyDb(users: DueUser[]) {
         queries["user.findMany"] = (queries["user.findMany"] ?? 0) + 1;
         return users.map((u) => ({
           id: u.id,
-          preference: { pushResurface: true, pushStreak: u.pushStreak ?? true, tzOffsetMinutes: u.tzOffsetMinutes },
+          email: `${u.id}@x.test`,
+          name: null,
+          createdAt: new Date(SIXTEEN_UTC.getTime() - (u.signedUpDaysAgo ?? 2) * DAY_MS),
+          preference: {
+            pushResurface: true,
+            pushStreak: u.pushStreak ?? true,
+            emailNudges: u.emailNudges ?? true,
+            tzOffsetMinutes: u.tzOffsetMinutes,
+          },
           deviceTokens: Array.from({ length: u.tokens ?? 1 }, (_, i) => ({ id: `t${i}` })),
           capturedItems: capturedAtFor(u).slice(0, 1),
         }));
@@ -349,5 +360,56 @@ describe("the evening hour", () => {
     await runNotificationJob({ db, now: SIXTEEN_UTC });
 
     expect(loggedRuns(errorSpy)[0]).toMatchObject({ due: 1, considered: 1, queued: 1 });
+  });
+});
+
+describe("the first-capture email", () => {
+  beforeEach(() => {
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.DATABASE_URL ??= "postgres://unit";
+    process.env.DIRECT_URL ??= "postgres://unit";
+    process.env.NEXTAUTH_URL ??= "https://mneme.test";
+    process.env.NEXTAUTH_SECRET ??= "unit-test-secret-value";
+    process.env.MNEME_BASE_URL ??= "https://mneme.test";
+  });
+  afterEach(() => {
+    delete process.env.RESEND_API_KEY;
+  });
+
+  /** Recipients of every email the run handed to Resend. */
+  function resendRecipients(fetchMock: { mock: { calls: unknown[][] } }) {
+    return fetchMock.mock.calls
+      .filter(([url]) => String(url).includes("api.resend.com"))
+      .map(([, init]) => (JSON.parse((init as { body: string }).body) as { to: string[] }).to[0]);
+  }
+
+  it("emails only morning accounts with no captures, no push token, and email left on", async () => {
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+    global.fetch = fetchMock as never;
+    const { db } = busyDb([
+      { id: "fresh", tzOffsetMinutes: MORNING_TZ, run: 0, tokens: 0 },
+      { id: "has-token", tzOffsetMinutes: MORNING_TZ, run: 0, tokens: 1 },
+      { id: "has-capture", tzOffsetMinutes: MORNING_TZ, run: 2, tokens: 0 },
+      { id: "unsubscribed", tzOffsetMinutes: MORNING_TZ, run: 0, tokens: 0, emailNudges: false },
+      { id: "evening", tzOffsetMinutes: EVENING_TZ, run: 0, tokens: 0 },
+    ]);
+
+    const result = await runNotificationJob({ db, now: SIXTEEN_UTC });
+
+    expect(resendRecipients(fetchMock)).toEqual(["fresh@x.test"]);
+    expect(result.firstCaptureEmail.sent).toBe(1);
+    expect(loggedRuns(errorSpy)[0]?.emailed).toBe(1);
+  });
+
+  it("sends nothing and claims nothing when email is not configured", async () => {
+    delete process.env.RESEND_API_KEY;
+    const fetchMock = vi.fn();
+    global.fetch = fetchMock as never;
+    const { db, notifications } = busyDb([{ id: "fresh", tzOffsetMinutes: MORNING_TZ, run: 0, tokens: 0 }]);
+
+    await runNotificationJob({ db, now: SIXTEEN_UTC });
+
+    expect(resendRecipients(fetchMock)).toEqual([]);
+    expect(notifications).toHaveLength(0);
   });
 });
