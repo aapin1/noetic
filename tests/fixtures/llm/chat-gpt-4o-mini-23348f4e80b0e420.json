@@ -1,0 +1,47 @@
+{
+  "request": {
+    "url": "https://api.openai.com/v1/chat/completions",
+    "endpoint": "chat",
+    "model": "gpt-4o-mini",
+    "summary": "{\"title\":\"Epictetus argues that freedom comes not from controlling events but from correct\",\"content_text\":\"Epictetus argues that freedom comes not from control"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "chatcmpl-EYcXCRQiVL8zr1xh1uOkcZA4lVJbc",
+      "object": "chat.completion",
+      "created": 1791919986,
+      "model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"reading\":{\"line\":\"True freedom, according to Epictetus, hinges on understanding the limits of our control rather than trying to manipulate external circumstances.\",\"options\":[{\"move\":\"the mechanism\",\"note\":\"This perspective emphasizes cognitive appraisal, where our emotional responses are shaped by how we interpret events rather than the events themselves.\"},{\"move\":\"the boundary\",\"note\":\"Epictetus's view applies primarily to internal states and personal reactions, not to external factors like societal structures or natural events.\"},{\"move\":\"the sharper version\",\"note\":\"The stronger claim is that freedom is entirely dependent on internal judgment, dismissing the influence of external situations.\"}],\"pick\":0},\"insights\":[{\"index\":0,\"headline\":\"Epictetus emphasizes internal judgment over external control.\",\"body\":\"This aligns with Stoic principles that prioritize personal agency in emotional responses. It contrasts with views that advocate for direct control over circumstances.\"}]}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 1749,
+        "completion_tokens": 182,
+        "total_tokens": 1931,
+        "prompt_tokens_details": {
+          "cached_tokens": 1664,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "service_tier": "default",
+      "system_fingerprint": "fp_ef9c31077e"
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "request": {
+    "url": "https://api.openai.com/v1/chat/completions",
+    "endpoint": "chat",
+    "model": "gpt-4o-mini",
+    "summary": "{\"title\":\"Willpower is a poor foundation for change; environment design is a better one. M\",\"content_text\":\"Willpower is a poor foundation for change; environme"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "chatcmpl-EYcXyAOFBsZjs11gEBgvzSVLoRpjn",
+      "object": "chat.completion",
+      "created": 1791920034,
+      "model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"reading\":{\"line\":\"Changing behavior effectively relies more on structuring the environment than on sheer willpower.\",\"options\":[{\"move\":\"the catch\",\"note\":\"This approach assumes that individuals have the capacity to change their environment, which may not always be feasible.\"},{\"move\":\"the cost\",\"note\":\"Relying solely on environment design may lead to neglecting personal accountability, which is crucial for lasting change.\"},{\"move\":\"the missing step\",\"note\":\"Transitioning to a new environment design requires initial effort and planning, which is often overlooked.\"}],\"pick\":0},\"insights\":[{\"index\":0,\"headline\":\"Environment design is more effective than willpower for behavior change.\",\"body\":\"This perspective reinforces the belief that external factors significantly influence personal habits and choices.\",\"open_question\":\"What specific environmental changes have proven most effective in promoting positive habits?\"}]}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 1808,
+        "completion_tokens": 171,
+        "total_tokens": 1979,
+        "prompt_tokens_details": {
+          "cached_tokens": 1536,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "service_tier": "default",
+      "system_fingerprint": "fp_ef9c31077e"
+    }
+  }
+}

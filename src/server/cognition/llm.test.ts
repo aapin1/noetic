@@ -115,6 +115,45 @@ describe("polishInsights — the READING", () => {
     expect(sentBody(fetchMock).messages[0].content).not.toContain("READING");
   });
 
+  it("asks for a reading on a typed one-liner and tells the model the text is complete as given", async () => {
+    const fetchMock = mockChat({
+      reading: {
+        line: "Doubt itself is the one act that cannot be doubted.",
+        options: [{ move: "where it comes from", note: "Descartes, Discourse on the Method, 1637 — 'je pense, donc je suis' before the Latin." }],
+        pick: 0,
+      },
+      insights: [{ index: 0, headline: "First under philosophy.", body: "Nothing near it yet." }],
+    });
+
+    const result = await polishInsights({
+      style: "DIRECT",
+      itemTitle: "I think, therefore I am",
+      contentText: "I think, therefore I am",
+      contentGrounding: "rich",
+      authored: true,
+      drafts: [NOVELTY_DRAFT],
+    });
+
+    expect(result.reading?.headline).toBe("Doubt itself is the one act that cannot be doubted.");
+    expect(result.reading?.evidence).toEqual({ grounding: "rich", kicker: "where it comes from" });
+    const prompt = sentBody(fetchMock).messages[0].content;
+    expect(prompt).toContain("READING");
+    expect(prompt).toContain("THE USER'S OWN TEXT");
+    expect(prompt).not.toContain("GROUNDING");
+  });
+
+  it("says nothing about the user's own text on a scraped capture", async () => {
+    const fetchMock = mockChat({ reading: null, insights: [] });
+    await polishInsights({
+      style: "DIRECT",
+      itemTitle: "t",
+      contentText: "attention decays ".repeat(60),
+      contentGrounding: "rich",
+      drafts: [NOVELTY_DRAFT],
+    });
+    expect(sentBody(fetchMock).messages[0].content).not.toContain("THE USER'S OWN TEXT");
+  });
+
   it("a line without a note is a summary, not a reading", async () => {
     mockChat({ reading: { line: "Mental training matters.", options: [{ move: "the catch", note: "" }], pick: 0 }, insights: [] });
     const result = await polishInsights({
