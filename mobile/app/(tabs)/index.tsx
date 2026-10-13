@@ -1147,7 +1147,7 @@ function StepOne({
   const promotePaste = mode === 'link' && clipboardHasUrl && !payload.trim();
   return (
     <View>
-      <Text variant="serifLg" color="primary" style={sh.heading}>
+      <Text variant="h4" color="primary" style={sh.heading}>
         What are you saving?
       </Text>
       <Text variant="caption" color="muted" style={sh.sub}>
@@ -1362,7 +1362,7 @@ function StepTwo({
 
   return (
     <View>
-      <Text variant="serifLg" color="primary" style={sh.heading}>Your reaction.</Text>
+      <Text variant="h4" color="primary" style={sh.heading}>Your reaction</Text>
       <Text variant="caption" color="muted" style={sh.sub}>Optional. Just for you.</Text>
       {isLink && <PreflightStatus loading={preflightLoading} preflight={preflight} c={c} />}
       <Divider c={c} />
@@ -1450,8 +1450,8 @@ function StepVerify({
   const hit = !!preview?.hit;
   return (
     <View>
-      <Text variant="serifLg" color="primary" style={sh.heading}>
-        {hit ? 'This one?' : 'New to mneme.'}
+      <Text variant="h4" color="primary" style={sh.heading}>
+        {hit ? 'Is this it?' : 'New to Mneme'}
       </Text>
       <Text variant="caption" color="muted" style={sh.sub}>
         {hit ? 'Confirm and save.' : `It doesn't know "${title}" yet.`}
@@ -5569,7 +5569,7 @@ export default function MapScreen() {
                       {!!selectedNode.keyIdea && (
                         <>
                           <View style={[styles.drawerHairline, { backgroundColor: c.border }]} />
-                          <Text variant="subheadline" color="secondary" style={{ fontStyle: 'italic', marginTop: Spacing[3], marginBottom: Spacing[3] }} numberOfLines={3}>
+                          <Text variant="subheadline" color="secondary" style={{ marginTop: Spacing[3], marginBottom: Spacing[3] }} numberOfLines={3}>
                             {selectedNode.keyIdea}
                           </Text>
                         </>

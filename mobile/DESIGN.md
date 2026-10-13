@@ -19,13 +19,20 @@ second family, tracking, or capitals.
 | Dates, counts, hints, status | `caption` (13, `color="muted"` or `"faint"`) |
 | Tiny axis ticks | `captionSmall` (12) |
 | Numbers that must align | `tabular` |
-| Quotes, bios, long insight prose | `serif` |
+| Big stat numbers | `hero` / `display` (bold, tabular) |
 | The brand mark only | `wordmark` |
 
-`mono` and `monoSmall` now render as ordinary footnote text so old call sites
-fall into line, but new code does not use them. Do not add `letterSpacing`,
-`textTransform: 'uppercase'`, `.toUpperCase()` or `.toLowerCase()` to UI text.
-Do not use `FontFamily.mono` for anything that is not code.
+`mono`, `monoSmall`, `serif` and `serifLg` are historical names that now
+render in the system face (footnote, footnote, body, title 3) so old call
+sites fall into line; new code does not use them. The Times serif exists only
+in `wordmark` and the share-card artwork. Do not add `letterSpacing`,
+`textTransform: 'uppercase'`, `fontStyle: 'italic'`, `.toUpperCase()` or
+`.toLowerCase()` to UI text. Do not use `FontFamily.mono` or
+`FontFamily.serif` for anything that is not code or the share cards.
+
+Copy the server sends for display (Today's "why now" line, push bodies,
+insight kickers) follows the same rules; the client sentence-cases a model
+kicker before printing it.
 
 ## Copy
 

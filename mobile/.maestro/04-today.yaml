@@ -75,7 +75,7 @@ appId: app.mneme.mobile
 # The ritual still runs underneath the takeover.
 - scrollUntilVisible:
     element:
-      text: "a month ago today, you saved this. does it still hold?"
+      text: "You saved this a month ago today. Does it still hold?"
     direction: DOWN
 - assertVisible: "Memory Is Reconstructive"
 - scrollUntilVisible:

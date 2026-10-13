@@ -229,7 +229,7 @@ export default function CompanionScreen() {
               <Text
                 variant="serif"
                 color="secondary"
-                style={{ fontStyle: 'italic', textAlign: 'center' }}
+                style={{ textAlign: 'center' }}
               >
                 Ask anything about your knowledge map.
               </Text>

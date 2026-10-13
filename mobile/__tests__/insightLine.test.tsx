@@ -30,44 +30,44 @@ describe('InsightLine', () => {
 
     expect(screen.getByText('Reading')).toBeTruthy();
     expect(screen.getByText(LINE)).toBeTruthy();
-    expect(screen.getByText('the test')).toBeTruthy();
+    expect(screen.getByText('The test')).toBeTruthy();
     expect(screen.getByText(NOTE)).toBeTruthy();
   });
 
   it('shows whichever move the reading named — there is no fixed label', async () => {
     await renderScreen(<InsightLine insight={card('READING', { kicker: 'where it comes from' })} />);
 
-    expect(screen.getByText('where it comes from')).toBeTruthy();
-    expect(screen.queryByText('the catch')).toBeNull();
-    expect(screen.queryByText('the test')).toBeNull();
+    expect(screen.getByText('Where it comes from')).toBeTruthy();
+    expect(screen.queryByText('The catch')).toBeNull();
+    expect(screen.queryByText('The test')).toBeNull();
   });
 
   it('shows the note unlabelled when the reading named no move', async () => {
     await renderScreen(<InsightLine insight={card('READING', { grounding: 'rich' })} />);
 
     expect(screen.getByText(NOTE)).toBeTruthy();
-    expect(screen.queryByText('the catch')).toBeNull();
+    expect(screen.queryByText('The catch')).toBeNull();
   });
 
   it('labels the MIRROR as a read on the person and ignores any kicker on it', async () => {
     await renderScreen(<InsightLine insight={card('MIRROR', { kicker: 'the test' })} />);
 
     expect(screen.getByText('A read on you')).toBeTruthy();
-    expect(screen.queryByText('the test')).toBeNull();
+    expect(screen.queryByText('The test')).toBeNull();
   });
 
   it('shows no note label on graph-derived kinds', async () => {
     await renderScreen(<InsightLine insight={card('NOVELTY', { kicker: 'the test' })} />);
 
     expect(screen.getByText('Novelty')).toBeTruthy();
-    expect(screen.queryByText('the test')).toBeNull();
+    expect(screen.queryByText('The test')).toBeNull();
   });
 
   it('drops the note label with the body in compact mode', async () => {
     await renderScreen(<InsightLine insight={card('READING', { kicker: 'the test' })} compact />);
 
     expect(screen.getByText('Reading')).toBeTruthy();
-    expect(screen.queryByText('the test')).toBeNull();
+    expect(screen.queryByText('The test')).toBeNull();
     expect(screen.queryByText(NOTE)).toBeNull();
   });
 });

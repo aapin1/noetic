@@ -128,9 +128,9 @@ export const TUTORIAL_DEMO_CAPTURE = {
       type: 'READING' as const,
       headline: 'Curiosity is a better guide to great work than ambition, because it points at problems you will actually stay with.',
       body:
-        'Following it means years of work nobody asked for before anyone can tell whether it was worth it. advice that reads differently from someone whose bets already paid off.',
+        'Following it means years of work nobody asked for before anyone can tell whether it was worth it. Advice that reads differently from someone whose bets already paid off.',
       strength: 1,
-      evidence: { kicker: 'the cost' },
+      evidence: { kicker: 'The cost' },
     },
   ],
   related: [],

@@ -22,48 +22,35 @@ interface Props {
   compact?: boolean;
 }
 
+/** The model writes its kicker in lowercase ("the catch"); the screen prints it as a title. */
+function sentenceCase(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * One insight: a small type label, the line itself, and (for a READING) the
+ * note the model made on it, titled by the move it chose. No meters, no
+ * decoration; the type label is the only metadata.
+ */
 export function InsightLine({ insight, compact = false }: Props) {
   const c = useThemeColors();
-  const strengthBars = Math.max(1, Math.min(4, Math.round(insight.strength * 4)));
   const rawKicker = insight.type === 'READING'
     ? (insight.evidence as { kicker?: unknown } | null)?.kicker
     : undefined;
-  const noteKicker = typeof rawKicker === 'string' && rawKicker.trim() ? rawKicker.trim() : null;
+  const noteKicker = typeof rawKicker === 'string' && rawKicker.trim() ? sentenceCase(rawKicker.trim()) : null;
 
-  const barStyles = useMemo(
-    () =>
-      StyleSheet.create({
-        bar: { backgroundColor: c.borderSubtle },
-        barFilled: { backgroundColor: c.text },
-        border: { borderTopColor: c.border },
-      }),
-    [c],
-  );
+  const border = useMemo(() => ({ borderTopColor: c.borderSubtle }), [c]);
 
   return (
-    <View style={[styles.container, compact && styles.compact, barStyles.border]}>
-      <View style={styles.meta}>
-        <Text variant="caption" color="muted">
-          {TYPE_LABEL[insight.type]}
-        </Text>
-        <View style={styles.strength}>
-          {Array.from({ length: 4 }).map((_, idx) => (
-            <View
-              key={idx}
-              style={[styles.strengthBar, barStyles.bar, idx < strengthBars && barStyles.barFilled]}
-            />
-          ))}
-        </View>
-      </View>
-      <Text variant={compact ? 'serif' : 'serifLg'} color="primary" style={styles.headline}>
+    <View style={[styles.container, compact && styles.compact, border]}>
+      <Text variant="caption" color="muted" style={styles.type}>
+        {TYPE_LABEL[insight.type]}
+      </Text>
+      <Text variant={compact ? 'bodyMedium' : 'bodySemiBold'} color="primary">
         {insight.headline}
       </Text>
-      {/* A READING is a line and then a move made on it (the catch, where it
-          comes from, the test, the cost) and it names its own move in
-          evidence.kicker. That name titles the note, so the two read as a
-          pair rather than as a headline with a sentence under it. */}
       {!compact && insight.body && noteKicker ? (
-        <Text variant="headline" style={styles.noteLabel}>
+        <Text variant="subheadline" color="muted" style={styles.noteLabel}>
           {noteKicker}
         </Text>
       ) : null}
@@ -78,31 +65,19 @@ export function InsightLine({ insight, compact = false }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: Spacing[5],
-    borderTopWidth: 1,
+    paddingVertical: Spacing[4],
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   compact: {
-    paddingVertical: Spacing[4],
+    paddingVertical: Spacing[3],
   },
-  meta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: Spacing[2],
+  type: {
+    marginBottom: Spacing[1],
   },
-  strength: {
-    flexDirection: 'row',
-    gap: 3,
-  },
-  strengthBar: {
-    width: 10,
-    height: 2,
-  },
-  headline: {},
   noteLabel: {
     marginTop: Spacing[3],
   },
   body: {
-    marginTop: Spacing[2],
+    marginTop: Spacing[1],
   },
 });

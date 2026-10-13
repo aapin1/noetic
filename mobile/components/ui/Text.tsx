@@ -7,7 +7,7 @@ import { useThemeColors } from '@/contexts/ThemeContext';
  * The app's type scale, mapped onto Apple's text styles so a screen built from
  * these variants reads like any other iOS app:
  *
- *   hero / display   big serif numbers and marks (brand voice only)
+ *   hero / display   big bold numbers (56 / 40), tabular figures
  *   h1               large title, 34 bold
  *   h2               title 1, 28 bold
  *   h3               title 2, 22 bold
@@ -25,8 +25,8 @@ import { useThemeColors } from '@/contexts/ThemeContext';
  *                    so that hundreds of call sites fall into line at once;
  *                    reach for `tabular` when you actually want aligned digits.
  *   tabular          13 with tabular figures, for counts and times in columns
- *   serif / serifLg  reading-size serif (quotes, bios, long insight prose)
- *   wordmark         the brand mark
+ *   serif / serifLg  historical names; body (17) and title-3 (20) regular
+ *   wordmark         the brand mark, the one serif left in the app
  */
 type Variant =
   | 'hero'
@@ -65,18 +65,8 @@ const sans = (size: number, weight: '400' | '500' | '600' | '700', lh: number = 
 });
 
 const variantStyles: Record<Variant, object> = {
-  hero: {
-    fontFamily: FontFamily.serif,
-    fontSize: FontSize.display,
-    lineHeight: FontSize.display * LineHeight.tight,
-    letterSpacing: LetterSpacing.tight,
-  },
-  display: {
-    fontFamily: FontFamily.serif,
-    fontSize: FontSize['4xl'],
-    lineHeight: FontSize['4xl'] * LineHeight.tight,
-    letterSpacing: LetterSpacing.tight,
-  },
+  hero: { ...sans(FontSize.display, '700', LineHeight.tight), fontVariant: ['tabular-nums'] as const },
+  display: { ...sans(FontSize['4xl'], '700', LineHeight.tight), fontVariant: ['tabular-nums'] as const },
   h1: sans(FontSize['3xl'], '700', LineHeight.tight),
   h2: sans(FontSize['2xl'], '700', LineHeight.snug),
   h3: sans(FontSize.xl, '700', LineHeight.snug),
@@ -92,16 +82,12 @@ const variantStyles: Record<Variant, object> = {
   mono: sans(FontSize.sm, '400'),
   monoSmall: sans(12, '400'),
   tabular: { ...sans(FontSize.sm, '400'), fontVariant: ['tabular-nums'] as const },
-  serif: {
-    fontFamily: FontFamily.serif,
-    fontSize: FontSize.md,
-    lineHeight: FontSize.md * LineHeight.relaxed,
-  },
-  serifLg: {
-    fontFamily: FontFamily.serif,
-    fontSize: FontSize.lg,
-    lineHeight: FontSize.lg * LineHeight.relaxed,
-  },
+  // Historical names. These were the Times serif for reading prose and now
+  // render as the system face at body and title-3 size, so quotes, bios and
+  // insight prose sit in the same family as everything around them. The
+  // serif is a brand mark only (see `wordmark`).
+  serif: sans(FontSize.md, '400', LineHeight.relaxed),
+  serifLg: sans(FontSize.lg, '400', LineHeight.relaxed),
   wordmark: {
     fontFamily: FontFamily.serif,
     fontSize: FontSize.xl,

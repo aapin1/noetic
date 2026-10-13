@@ -152,7 +152,7 @@ export default function SocraticScreen() {
               <Text
                 variant="serif"
                 color="secondary"
-                style={{ fontStyle: 'italic', textAlign: 'center' }}
+                style={{ textAlign: 'center' }}
               >
                 This starts when you reply.
               </Text>
