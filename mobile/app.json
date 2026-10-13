@@ -89,6 +89,7 @@
           ]
         }
       ],
+      "./plugins/withShareExtensionCapture.js",
       [
         "expo-notifications",
         {

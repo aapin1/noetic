@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import {
   declinePushAsk,
@@ -11,6 +13,20 @@ import {
 
 const TOKEN_KEY = 'mneme_auth_token';
 const USER_ID_KEY = 'mneme_user_id';
+
+/**
+ * The iOS app group shared with the share extension — the same rule the
+ * expo-share-intent config plugin uses (`group.<bundle id>`), so the dev
+ * variant gets its own group. An app group is also a keychain access group,
+ * so a token stored under it is readable from the extension process.
+ */
+const SHARE_ACCESS_GROUP = `group.${Constants.expoConfig?.ios?.bundleIdentifier ?? 'app.mneme.mobile'}`;
+const SHARE_KEYCHAIN_OPTIONS: SecureStore.SecureStoreOptions = {
+  accessGroup: SHARE_ACCESS_GROUP,
+  // The share sheet can only appear on an unlocked phone, but the item must
+  // not depend on the app having run since boot.
+  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
+};
 /** Legacy boolean flag; read once for migration, never written again. */
 const PUSH_ASKED_KEY = 'mneme_push_asked';
 const PUSH_ASK_KEY = 'mneme_push_ask';
@@ -29,6 +45,32 @@ function asSecureString(label: string, value: unknown): string {
 
 export async function storeToken(token: string): Promise<void> {
   await SecureStore.setItemAsync(TOKEN_KEY, asSecureString('Auth token', token));
+  await mirrorTokenForShareExtension(token);
+}
+
+/**
+ * Copies the session token into the keychain access group the iOS share
+ * extension reads, so sharing into Mneme is captured from the share sheet
+ * itself — no app launch. A separate keychain item on purpose: the in-app
+ * session keeps reading its original item, so existing installs stay signed
+ * in across the update. Best-effort: a failure here never touches the session.
+ */
+export async function mirrorTokenForShareExtension(token: string): Promise<void> {
+  if (Platform.OS !== 'ios') return;
+  try {
+    await SecureStore.setItemAsync(TOKEN_KEY, token, SHARE_KEYCHAIN_OPTIONS);
+  } catch {
+    // The extension falls back to asking for a sign-in; the app is unaffected.
+  }
+}
+
+async function clearShareExtensionToken(): Promise<void> {
+  if (Platform.OS !== 'ios') return;
+  try {
+    await SecureStore.deleteItemAsync(TOKEN_KEY, SHARE_KEYCHAIN_OPTIONS);
+  } catch {
+    // ignore — nothing to clear, or the keychain is unavailable
+  }
 }
 
 export async function getToken(): Promise<string | null> {
@@ -37,6 +79,7 @@ export async function getToken(): Promise<string | null> {
 
 export async function removeToken(): Promise<void> {
   await SecureStore.deleteItemAsync(TOKEN_KEY);
+  await clearShareExtensionToken();
 }
 
 export async function storeUserId(userId: string): Promise<void> {
@@ -100,6 +143,7 @@ export async function clearAuth(): Promise<void> {
   await Promise.all([
     SecureStore.deleteItemAsync(TOKEN_KEY),
     SecureStore.deleteItemAsync(USER_ID_KEY),
+    clearShareExtensionToken(),
   ]);
   // Deliberately NOT clearing PUSH_ASKED_KEY: the OS-level permission decision
   // survives sign-out too, so re-asking the next account on this device would

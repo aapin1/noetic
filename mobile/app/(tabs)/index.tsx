@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import {
   Alert,
   Animated as RNAnimated,
+  AppState,
   Dimensions,
   Easing,
   Keyboard,
@@ -2224,6 +2225,16 @@ export default function MapScreen() {
     [],
     { cacheKey: 'memory.graph' },
   );
+
+  // Captures can now land while the app is backgrounded (the share extension
+  // posts them itself), so coming back to the foreground revalidates the map.
+  // Silent: useApiQuery keeps the current graph on screen while it refetches.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void refetchGraph();
+    });
+    return () => sub.remove();
+  }, [refetchGraph]);
 
   // ── Focus mode / topic sub-maps ───────────────────────────────
   // Focusing a topic opens that topic's COMPLETE map — every capture in it
