@@ -24,10 +24,10 @@ appId: app.mneme.mobile
 # prompt or the app's atlas header appears next.
 - extendedWaitUntil:
     visible:
-      text: "Not Now|Atlas"
+      text: "Not now|Atlas"
     timeout: 45000
 - runFlow:
     when:
-      visible: "Not Now"
+      visible: "Not now"
     commands:
-      - tapOn: "Not Now"
+      - tapOn: "Not now"
