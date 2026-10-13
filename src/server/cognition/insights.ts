@@ -118,6 +118,28 @@ export function recentReadingContext(
   });
 }
 
+/**
+ * The user's recent graph-derived insights as the polish sees them. The
+ * READING varies in its note, so recentReadingContext reads the body; a
+ * connection insight varies in its headline, which is where the hinge is
+ * ("If X is right, then…", "Because X shows…"). Titles are stripped before
+ * the opening is taken, so two hinges that differ only in which save they
+ * name read as the same opening — which, to the reader, they are.
+ */
+export function recentInsightContext(
+  rows: { headline: string; evidence: unknown }[],
+): { move?: string; opened_with: string }[] {
+  return rows.map((row) => {
+    const kicker = (row.evidence as { kicker?: unknown } | null)?.kicker;
+    const untitled = row.headline.replace(/["“”][^"“”]*["“”]|'[^']*'|‘[^’]*’/g, "").replace(/\s+/g, " ").trim();
+    const opened_with = untitled.split(" ").filter(Boolean).slice(0, 4).join(" ");
+    return {
+      ...(typeof kicker === "string" && kicker.length > 0 ? { move: kicker } : {}),
+      opened_with,
+    };
+  });
+}
+
 export function sortInsights<T extends { type: InsightType; strength: number; createdAt?: Date }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => {
     const rank = (INSIGHT_RANK[a.type] ?? 2) - (INSIGHT_RANK[b.type] ?? 2);
@@ -206,7 +228,11 @@ export function draftInsights(args: {
     drafts.push({
       type: InsightType.RECUR,
       headline: voice.recur(args.topNeighbors.length, recurrence.title),
-      body: `You have ${args.topNeighbors.length} semantically similar captures across your record, with "${recurrence.title}" being the closest match (similarity ${Number(recurrence.similarity.toFixed(2))}). Recurring encounters with the same ideas can signal either deep interest or an unresolved question that keeps pulling you back. It may be worth asking what new angle — if any — this capture adds.`,
+      // Draft bodies are the bare fact behind the insight. The polish writes
+      // what the fact means from the related items' own substance; a draft
+      // that leaks through unpolished should read as a short fact, not the
+      // same three-sentence sermon on every capture.
+      body: `Closest to "${recurrence.title}", one of ${args.topNeighbors.length} nearby saves.`,
       evidence: {
         capturedItemId: recurrence.capturedItemId,
         similarity: Number(recurrence.similarity.toFixed(3)),
@@ -219,7 +245,7 @@ export function draftInsights(args: {
     drafts.push({
       type: InsightType.REINFORCES,
       headline: voice.reinforces(reinforcement.title),
-      body: `This capture shares significant topic overlap and similar language with "${reinforcement.title}" (topic overlap ${Number(reinforcement.topicJaccard.toFixed(2))}, similarity ${Number(reinforcement.similarity.toFixed(2))}). Reinforcing evidence can strengthen a conviction — but it can also create an echo. Consider whether you are encountering genuinely new support or the same idea in a different package.`,
+      body: `Sits near "${reinforcement.title}" in both subject and language.`,
       evidence: {
         capturedItemId: reinforcement.capturedItemId,
         similarity: Number(reinforcement.similarity.toFixed(3)),
@@ -233,7 +259,7 @@ export function draftInsights(args: {
     drafts.push({
       type: InsightType.CONTRADICTS,
       headline: voice.contradicts(contradiction.title),
-      body: `This capture shares topics with "${contradiction.title}" but uses meaningfully different language and framing (polarity divergence detected). These two items are pulling in different directions within the same intellectual territory. That tension is worth examining — contradictions in your reading often mark the boundary of a real open question.`,
+      body: `Shares ground with "${contradiction.title}" and pulls the other way.`,
       evidence: {
         capturedItemId: contradiction.capturedItemId,
         similarity: Number(contradiction.similarity.toFixed(3)),
@@ -260,7 +286,7 @@ export function draftInsights(args: {
     ? {
       type: InsightType.PATTERN,
       headline: voice.pattern(dominantCount.count, dominantCount.name),
-      body: `You have returned to ${dominantCount.name} ${dominantCount.count} times across your saved items — a clear sustained interest. Repeated engagement with a topic is often the precursor to genuine expertise or a crystallised point of view. It may be worth asking: what is the unresolved question that keeps drawing you back here?`,
+      body: `${dominantCount.count} saves under ${dominantCount.name} so far.`,
       evidence: {
         topicId: dominantCount.topicId,
         topic: dominantCount.name,
@@ -278,7 +304,7 @@ export function draftInsights(args: {
     ? {
       type: InsightType.TRAJECTORY,
       headline: args.shift.delta > 0 ? voice.trajectoryUp(args.shift.name) : voice.trajectoryDown(args.shift.name),
-      body: `Your attention on ${args.shift.name} is ${args.shift.delta > 0 ? "rising" : "declining"}: ${args.shift.recentCount} captures in the recent window versus ${args.shift.priorCount} in the prior period (delta ${args.shift.delta > 0 ? "+" : ""}${args.shift.delta}). Trajectory shifts often precede a period of consolidation or a pivot. Whether this is deliberate or a drift is worth noticing.`,
+      body: `${args.shift.recentCount} recent saves on ${args.shift.name} against ${args.shift.priorCount} before.`,
       evidence: args.shift,
       strength: Math.min(1, Math.abs(args.shift.delta) / 5 + 0.3) * (trajectoryFatigued ? 0.5 : 1),
     }
@@ -300,20 +326,32 @@ export function draftInsights(args: {
     if (trajectoryDraft) drafts.push(trajectoryDraft);
   }
 
-  if (args.topNeighbors.length > 0 && drafts.length < 2) {
-    const neighborTitles = args.topNeighbors.slice(0, 2).map((n) => `"${n.title}"`).join(" and ");
+  // A CONNECTION names the nearest saves no other draft already covers. When
+  // the closest neighbour is the one the RECUR/REINFORCES/CONTRADICTS draft
+  // just named, a second insight about the same item is the same insight
+  // twice — and the polish, seeing the duplicate, skipped one of them on
+  // most captures, leaving the bare draft on screen.
+  const covered = new Set(
+    [recurrence, reinforcement, contradiction]
+      .filter((n): n is Neighbor => Boolean(n))
+      .map((n) => n.capturedItemId),
+  );
+  const uncovered = args.topNeighbors.filter((n) => !covered.has(n.capturedItemId));
+  if (uncovered.length > 0 && drafts.length < 2) {
+    const named = uncovered.slice(0, 2);
+    const neighborTitles = named.map((n) => `"${n.title}"`).join(" and ");
     drafts.push({
       type: InsightType.CONNECTION,
-      headline: voice.connection(args.topNeighbors.slice(0, 2).map((n) => n.title)),
-      body: `This capture is most closely connected to ${neighborTitles} in your memory graph. These connections are based on shared topics and semantic similarity — they form a cluster of related thinking. Reviewing them together may surface a synthesis you haven't articulated yet.`,
+      headline: voice.connection(named.map((n) => n.title)),
+      body: `Closest to ${neighborTitles}.`,
       evidence: {
-        neighbors: args.topNeighbors.slice(0, 3).map((n) => ({
+        neighbors: uncovered.slice(0, 3).map((n) => ({
           capturedItemId: n.capturedItemId,
           similarity: Number(n.similarity.toFixed(3)),
           edgeType: n.edgeType,
         })),
       },
-      strength: args.topNeighbors[0].similarity,
+      strength: named[0].similarity,
     });
   }
 

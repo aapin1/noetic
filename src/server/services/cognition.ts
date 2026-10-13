@@ -35,8 +35,10 @@ import {
   draftInsights,
   RELATED_LIMIT,
   RELATED_MIN_WEIGHT,
+  recentInsightContext,
   recentReadingContext,
   sortInsights,
+  type InsightDraft,
   type Neighbor,
   type TopicCount,
   type TrajectoryShift,
@@ -47,6 +49,7 @@ import {
   embedText,
   generateMirror,
   polishInsights,
+  type PolishContext,
   type PolishResult,
   type Recommendation,
 } from "@/server/cognition/llm";
@@ -641,6 +644,99 @@ async function applyPolish(db: DbClient, args: {
   });
 }
 
+const polishSubjectSelect = {
+  id: true,
+  rawText: true,
+  userContext: true,
+  summary: true,
+  contentItem: { select: { title: true, description: true } },
+} satisfies Prisma.CapturedItemSelect;
+
+/** A capture's substance as the polish reads it: the user's own account
+ * outranks the AI summary, which outranks the note's own text and the
+ * scraped excerpt. Null when only a title is known. */
+function polishGist(row: { rawText: string | null; userContext: string | null; summary: string | null; contentItem: { description: string | null } | null }): string | null {
+  return row.userContext ?? row.summary ?? row.rawText?.slice(0, 400) ?? row.contentItem?.description ?? null;
+}
+
+/**
+ * What the polish writes from, loaded in the background after the response
+ * is sent: the gists of the captures this one sits near, the person's record
+ * under the topic a PATTERN/TRAJECTORY draft names, and the moves their last
+ * few insights made. None of it touches the capture path — loadPriorCaptures
+ * stays narrow for latency, and this reads only the handful of rows the
+ * drafts actually name. Before this, the polish saw neighbours as titles and
+ * could only restyle a graph statistic ("connects to X; Y") into a sentence
+ * that said nothing about X or Y.
+ */
+async function loadPolishContext(db: DbClient, args: {
+  userId: string;
+  capturedItemId: string;
+  drafts: InsightDraft[];
+  neighbors: Neighbor[];
+}): Promise<Pick<PolishContext, "neighborContext" | "topicContext" | "recentInsights">> {
+  const neighborIds = args.neighbors.slice(0, 4).map((n) => n.capturedItemId);
+  const topicDraft = args.drafts.find((d) => d.type === InsightType.PATTERN || d.type === InsightType.TRAJECTORY);
+  const topicEvidence = topicDraft?.evidence as
+    | { topicId?: unknown; topic?: unknown; name?: unknown; count?: unknown; recentCount?: unknown; priorCount?: unknown }
+    | undefined;
+  const topicId = typeof topicEvidence?.topicId === "string" ? topicEvidence.topicId : null;
+
+  const [neighborRows, topicRows, recentRows] = await Promise.all([
+    neighborIds.length > 0
+      ? db.capturedItem.findMany({ where: { id: { in: neighborIds }, userId: args.userId }, select: polishSubjectSelect })
+      : [],
+    topicId
+      ? db.capturedItem.findMany({
+        where: { userId: args.userId, id: { not: args.capturedItemId }, topics: { some: { topicId } } },
+        orderBy: { capturedAt: "desc" },
+        take: 5,
+        select: polishSubjectSelect,
+      })
+      : [],
+    // This capture's own rows are excluded: they are the unpolished drafts
+    // the polish is about to rewrite, not moves already made.
+    db.insight.findMany({
+      where: {
+        userId: args.userId,
+        capturedItemId: { not: args.capturedItemId },
+        type: { notIn: [InsightType.READING, InsightType.MIRROR, InsightType.NOVELTY] },
+      },
+      orderBy: { createdAt: "desc" },
+      take: RECENT_READINGS,
+      select: { headline: true, evidence: true },
+    }),
+  ]);
+
+  const rowById = new Map(neighborRows.map((row) => [row.id, row]));
+  const neighborContext = args.neighbors.slice(0, 4).map((n) => {
+    const row = rowById.get(n.capturedItemId);
+    return {
+      capturedItemId: n.capturedItemId,
+      title: n.title,
+      edgeType: n.edgeType,
+      similarity: n.similarity,
+      gist: row ? polishGist(row) : null,
+    };
+  });
+
+  const topicName = typeof topicEvidence?.topic === "string"
+    ? topicEvidence.topic
+    : typeof topicEvidence?.name === "string" ? topicEvidence.name : null;
+  const count = typeof topicEvidence?.count === "number"
+    ? topicEvidence.count
+    : (Number(topicEvidence?.recentCount ?? 0) || 0) + (Number(topicEvidence?.priorCount ?? 0) || 0);
+  const topicContext = topicId && topicName
+    ? {
+      topic: topicName,
+      count: Math.max(count, topicRows.length),
+      items: topicRows.map((row) => ({ title: row.contentItem?.title ?? row.rawText?.slice(0, 80) ?? "Untitled capture", gist: polishGist(row) })),
+    }
+    : null;
+
+  return { neighborContext, topicContext, recentInsights: recentInsightContext(recentRows) };
+}
+
 /**
  * The read at three (see generateMirror). Fires from the capture that makes
  * the corpus MIRROR_AT deep, in the background, and attaches to that capture —
@@ -1160,21 +1256,20 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
   // lands and adds the reading as a new row. Failure leaves the drafts.
   if (txResult.insights.length > 0) {
     const insightIds = txResult.insights.map((row) => row.id);
-    void polishInsights({
-      style: insightStyle,
-      itemTitle,
-      contentText: combinedText,
-      contentGrounding,
-      userContext: payload.userContext,
-      mediaContext,
-      recentReadings: recentReadingContext(await recentReadingsPromise),
-      topicNames: classified.map((topic) => topic.name),
-      neighborContext: neighborInfo.neighbors.map((n) => ({
-        title: n.title,
-        edgeType: n.edgeType,
-      })),
-      drafts,
-    })
+    const recentReadings = recentReadingContext(await recentReadingsPromise);
+    void loadPolishContext(db, { userId: payload.userId, capturedItemId: txResult.id, drafts, neighbors: neighborInfo.neighbors })
+      .then((context) => polishInsights({
+        style: insightStyle,
+        itemTitle,
+        contentText: combinedText,
+        contentGrounding,
+        userContext: payload.userContext,
+        mediaContext,
+        recentReadings,
+        topicNames: classified.map((topic) => topic.name),
+        ...context,
+        drafts,
+      }))
       .then(async (polished) => {
         await applyPolish(db, { userId: payload.userId, capturedItemId: txResult.id, insightIds, polished });
         console.log(`[capture] background polish done in ${Date.now() - txDoneAt}ms`);
@@ -1406,21 +1501,19 @@ export async function updateCaptureContext(args: {
   // was 5–10s the user sat on the "re-mapping connections…" state for (and a
   // timeout-class failure on slow networks). The rows exist with readable
   // draft text; the sharpened version swaps in when it lands.
-  void polishInsights({
-    style: insightStyle,
-    itemTitle,
-    contentText: combinedText,
-    contentGrounding,
-    userContext,
-    mediaContext: mediaContextFor({ origin: item.origin, kind: item.contentItem?.contentType?.name, title: item.contentItem?.title, siteName: item.contentItem?.siteName ?? undefined }),
-    recentReadings: recentReadingContext(recentReadings),
-    topicNames: classified.map((topic) => topic.name),
-    neighborContext: neighborInfo.neighbors.map((n) => ({
-      title: n.title,
-      edgeType: n.edgeType,
-    })),
-    drafts,
-  })
+  void loadPolishContext(db, { userId: args.userId, capturedItemId: item.id, drafts, neighbors: neighborInfo.neighbors })
+    .then((context) => polishInsights({
+      style: insightStyle,
+      itemTitle,
+      contentText: combinedText,
+      contentGrounding,
+      userContext,
+      mediaContext: mediaContextFor({ origin: item.origin, kind: item.contentItem?.contentType?.name, title: item.contentItem?.title, siteName: item.contentItem?.siteName ?? undefined }),
+      recentReadings: recentReadingContext(recentReadings),
+      topicNames: classified.map((topic) => topic.name),
+      ...context,
+      drafts,
+    }))
     .then((polished) => applyPolish(db, { userId: args.userId, capturedItemId: item.id, insightIds, polished }))
     .catch((err) => console.error("[capture] context-edit background polish failed", err));
 
