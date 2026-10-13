@@ -60,10 +60,12 @@ export function ScreenHeader({
       >
         <ChevronLeftIcon size={22} color={c.deepInk} />
       </Pressable>
+      {/* Both variants are the standard 17pt semibold navigation title. The
+          old `mono` breadcrumb is kept as a name so callers don't churn. */}
       <Text
-        variant={variant === 'title' ? 'h4' : 'monoSmall'}
+        variant="headline"
         numberOfLines={1}
-        style={[styles.title, { color: variant === 'title' ? c.deepInk : c.deepInkMuted }]}
+        style={[styles.title, { color: c.deepInk }]}
       >
         {title}
       </Text>

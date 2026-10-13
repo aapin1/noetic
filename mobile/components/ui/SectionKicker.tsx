@@ -4,39 +4,41 @@ import { Spacing } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
 
 /**
- * The label that names a block of a screen: a short tick in the block's accent,
- * then the name in tracked mono.
+ * The title that names a block of a screen, the way a grouped iOS list names
+ * its sections: title 3, semibold, sentence case, no eyebrow, no tick. An
+ * optional trailing action ("See all") sits on the same baseline.
  *
- * These used to be plain `label`/`muted` text floating above a card — "your
- * mneme, wrapped", "share" — which is to say they were the only thing on the
- * page not participating in the colour-plus-mark grammar everything else uses
- * (a region on the Atlas, a topic in the archive, a section on an insight).
- * Grey type on the page above a card doesn't read as that card's title; it
- * reads as a stray line someone forgot to style.
- *
- * A tick rather than a dot: it sits beside tracked-out upper case, where a dot
- * reads as punctuation and a bar reads as a rule.
+ * `accent` is accepted for compatibility with older call sites and ignored:
+ * a section header carries weight, not colour.
  */
 export function SectionKicker({
   label,
-  accent,
+  action,
   style,
 }: {
   label: string;
-  accent: string;
+  accent?: string;
+  action?: React.ReactNode;
   style?: object;
 }) {
   return (
     <View style={[styles.row, style]}>
-      <View style={[styles.tick, { backgroundColor: accent }]} />
-      <Text variant="label" style={{ color: accent }}>
+      <Text variant="h4" style={styles.title} numberOfLines={1}>
         {label}
       </Text>
+      {action}
     </View>
   );
 }
 
+export const SectionTitle = SectionKicker;
+
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center' },
-  tick: { width: 12, height: 2, borderRadius: 1, marginRight: Spacing[2] },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: Spacing[3],
+  },
+  title: { flexShrink: 1 },
 });

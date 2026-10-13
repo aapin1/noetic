@@ -15,7 +15,7 @@ interface Props {
   id: WhisperId;
   /** The condition under which this whisper wants to speak. */
   when: boolean;
-  /** One lowercase line. No punctuation ceremony, no exclamation marks. */
+  /** One short sentence, sentence case, no exclamation marks. */
   text: string;
   /** Tapping the line performs the thing it points at, then retires it. */
   onPress?: () => void;
@@ -23,7 +23,7 @@ interface Props {
 }
 
 /**
- * One lowercase mono line anchored to the thing it describes. Render it where
+ * One footnote line anchored to the thing it describes. Render it where
  * the subject lives; the disclosure context guarantees at most one whisper is
  * speaking at a time and that each id fires exactly once per install.
  */
@@ -62,7 +62,7 @@ export function Whisper({ id, when, text, onPress, style }: Props) {
   if (!rendered) return null;
 
   const line = (
-    <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 0.5 }}>
+    <Text variant="caption" style={{ color: c.faint }}>
       {text}
     </Text>
   );

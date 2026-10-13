@@ -3,6 +3,31 @@ import { Text as RNText, TextProps, StyleSheet } from 'react-native';
 import { FontFamily, FontSize, LetterSpacing, LineHeight } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 
+/**
+ * The app's type scale, mapped onto Apple's text styles so a screen built from
+ * these variants reads like any other iOS app:
+ *
+ *   hero / display   big serif numbers and marks (brand voice only)
+ *   h1               large title, 34 bold
+ *   h2               title 1, 28 bold
+ *   h3               title 2, 22 bold
+ *   h4               title 3, 20 semibold
+ *   headline         17 semibold  (row titles, section headers)
+ *   body             17 regular
+ *   bodyMedium       17 medium
+ *   bodySemiBold     17 semibold
+ *   subheadline      15 regular   (secondary lines under a title)
+ *   caption          13 regular   (footnote: dates, counts, hints)
+ *   captionSmall     12 regular   (caption 1: axis ticks, tiny meta)
+ *   label            13 regular   (same as caption; kept for old call sites)
+ *   mono / monoSmall 13 / 12 in the system face. Historical names: these used
+ *                    to be tracked Menlo. They are now ordinary footnote text
+ *                    so that hundreds of call sites fall into line at once;
+ *                    reach for `tabular` when you actually want aligned digits.
+ *   tabular          13 with tabular figures, for counts and times in columns
+ *   serif / serifLg  reading-size serif (quotes, bios, long insight prose)
+ *   wordmark         the brand mark
+ */
 type Variant =
   | 'hero'
   | 'display'
@@ -10,12 +35,16 @@ type Variant =
   | 'h2'
   | 'h3'
   | 'h4'
+  | 'headline'
   | 'body'
   | 'bodyMedium'
   | 'bodySemiBold'
+  | 'subheadline'
   | 'caption'
+  | 'captionSmall'
   | 'mono'
   | 'monoSmall'
+  | 'tabular'
   | 'label'
   | 'serif'
   | 'serifLg'
@@ -27,6 +56,13 @@ interface Props extends TextProps {
   variant?: Variant;
   color?: Color;
 }
+
+const sans = (size: number, weight: '400' | '500' | '600' | '700', lh: number = LineHeight.normal) => ({
+  fontFamily: FontFamily.sans,
+  fontSize: size,
+  lineHeight: Math.round(size * lh),
+  fontWeight: weight,
+});
 
 const variantStyles: Record<Variant, object> = {
   hero: {
@@ -41,28 +77,21 @@ const variantStyles: Record<Variant, object> = {
     lineHeight: FontSize['4xl'] * LineHeight.tight,
     letterSpacing: LetterSpacing.tight,
   },
-  h1: {
-    fontFamily: FontFamily.serif,
-    fontSize: FontSize['3xl'],
-    lineHeight: FontSize['3xl'] * LineHeight.snug,
-    letterSpacing: LetterSpacing.tight,
-  },
-  h2: {
-    fontFamily: FontFamily.serif,
-    fontSize: FontSize['2xl'],
-    lineHeight: FontSize['2xl'] * LineHeight.snug,
-    letterSpacing: LetterSpacing.tight,
-  },
-  h3: {
-    fontFamily: FontFamily.serif,
-    fontSize: FontSize.xl,
-    lineHeight: FontSize.xl * LineHeight.snug,
-  },
-  h4: {
-    fontFamily: FontFamily.serif,
-    fontSize: FontSize.lg,
-    lineHeight: FontSize.lg * LineHeight.snug,
-  },
+  h1: sans(FontSize['3xl'], '700', LineHeight.tight),
+  h2: sans(FontSize['2xl'], '700', LineHeight.snug),
+  h3: sans(FontSize.xl, '700', LineHeight.snug),
+  h4: sans(FontSize.lg, '600', LineHeight.snug),
+  headline: sans(FontSize.md, '600'),
+  body: sans(FontSize.md, '400', LineHeight.relaxed),
+  bodyMedium: sans(FontSize.md, '500'),
+  bodySemiBold: sans(FontSize.md, '600'),
+  subheadline: sans(FontSize.base, '400'),
+  caption: sans(FontSize.sm, '400'),
+  captionSmall: sans(12, '400'),
+  label: sans(FontSize.sm, '400'),
+  mono: sans(FontSize.sm, '400'),
+  monoSmall: sans(12, '400'),
+  tabular: { ...sans(FontSize.sm, '400'), fontVariant: ['tabular-nums'] as const },
   serif: {
     fontFamily: FontFamily.serif,
     fontSize: FontSize.md,
@@ -72,47 +101,6 @@ const variantStyles: Record<Variant, object> = {
     fontFamily: FontFamily.serif,
     fontSize: FontSize.lg,
     lineHeight: FontSize.lg * LineHeight.relaxed,
-  },
-  body: {
-    fontFamily: FontFamily.sans,
-    fontSize: FontSize.base,
-    lineHeight: FontSize.base * LineHeight.relaxed,
-  },
-  bodyMedium: {
-    fontFamily: FontFamily.sansMedium,
-    fontSize: FontSize.base,
-    lineHeight: FontSize.base * LineHeight.normal,
-    fontWeight: '500' as const,
-  },
-  bodySemiBold: {
-    fontFamily: FontFamily.sansMedium,
-    fontSize: FontSize.base,
-    lineHeight: FontSize.base * LineHeight.normal,
-    fontWeight: '600' as const,
-  },
-  caption: {
-    fontFamily: FontFamily.sans,
-    fontSize: FontSize.sm,
-    lineHeight: FontSize.sm * LineHeight.normal,
-  },
-  mono: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.sm,
-    lineHeight: FontSize.sm * LineHeight.normal,
-    letterSpacing: 0.3,
-  },
-  monoSmall: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    lineHeight: FontSize.xs * LineHeight.normal,
-    letterSpacing: 0.25,
-  },
-  label: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    lineHeight: FontSize.xs * LineHeight.normal,
-    letterSpacing: LetterSpacing.label,
-    textTransform: 'uppercase' as const,
   },
   wordmark: {
     fontFamily: FontFamily.serif,

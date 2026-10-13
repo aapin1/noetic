@@ -131,11 +131,13 @@ export function Button({
         <View style={styles.inner}>
           {leftIcon && <View style={styles.iconLeft}>{leftIcon}</View>}
           <Text
+            variant="bodySemiBold"
             style={[
               styles.label,
               styles[`label_${size}`],
-              { color: dynamic.labelColor, fontFamily: FontFamily.sansMedium },
+              { color: dynamic.labelColor, fontFamily: FontFamily.sans },
             ]}
+            numberOfLines={1}
           >
             {label}
           </Text>
@@ -175,10 +177,8 @@ const styles = StyleSheet.create({
   disabled: {
     opacity: 0.35,
   },
-  label: {
-    letterSpacing: 0.5,
-  },
-  label_sm: { fontSize: FontSize.sm },
-  label_md: { fontSize: FontSize.base },
-  label_lg: { fontSize: FontSize.md },
+  label: {},
+  label_sm: { fontSize: FontSize.base, lineHeight: 20 },
+  label_md: { fontSize: FontSize.md, lineHeight: 22 },
+  label_lg: { fontSize: FontSize.md, lineHeight: 22 },
 });

@@ -149,9 +149,14 @@ function TabsRoot() {
           // user can still read, not a disabled control — too far down and the
           // four inactive icons, which are most of the bar, all mumble.
           tabBarInactiveTintColor: c.deepInkMuted,
-          // Icons only — the labels crowded the bar; the title still names the
-          // tab for screen readers via accessibility.
-          tabBarShowLabel: false,
+          // Labelled, the way every iOS tab bar is. The icon sits on its
+          // rounded fill, the title underneath at the system's 10pt medium.
+          tabBarShowLabel: true,
+          tabBarLabelStyle: {
+            fontSize: 10,
+            fontWeight: '500',
+            marginTop: 1,
+          },
           tabBarStyle: {
             backgroundColor: c.tabBar,
             // A hairline, not a 1px rule. At 1px against the old neutral border
@@ -164,8 +169,8 @@ function TabsRoot() {
             // so most of the old 86 was empty band below the icons. Keep in
             // step with TAB_H in (tabs)/index.tsx — the Atlas lays its FAB and
             // summary strip out against this exact number.
-            height: Platform.OS === 'ios' ? 74 : 64,
-            paddingTop: 4,
+            height: Platform.OS === 'ios' ? 84 : 68,
+            paddingTop: 6,
           },
           tabBarItemStyle: {
             paddingVertical: 0,
@@ -175,10 +180,10 @@ function TabsRoot() {
         <Tabs.Screen
           name="index"
           options={{
-            title: 'atlas',
+            title: 'Atlas',
             // The bar hides labels (tabBarShowLabel: false), so without this
             // the tabs are invisible to VoiceOver and UI tests alike.
-            tabBarAccessibilityLabel: 'atlas',
+            tabBarAccessibilityLabel: 'Atlas',
             tabBarIcon: ({ color, focused }) => (
               <TabBarIcon color={color} icon={GitGraphIcon} focused={focused} activeBg={c.tabBarActive} />
             ),
@@ -187,8 +192,8 @@ function TabsRoot() {
         <Tabs.Screen
           name="mind"
           options={{
-            title: 'mind',
-            tabBarAccessibilityLabel: 'mind',
+            title: 'Mind',
+            tabBarAccessibilityLabel: 'Mind',
             tabBarIcon: ({ color, focused }) => (
               <TabBarIcon color={color} icon={ZapIcon} focused={focused} activeBg={c.tabBarActive} glow={glows.mind} />
             ),
@@ -197,8 +202,8 @@ function TabsRoot() {
         <Tabs.Screen
           name="memory"
           options={{
-            title: 'archive',
-            tabBarAccessibilityLabel: 'archive',
+            title: 'Archive',
+            tabBarAccessibilityLabel: 'Archive',
             tabBarIcon: ({ color, focused }) => (
               <TabBarIcon color={color} icon={ListIcon} focused={focused} activeBg={c.tabBarActive} glow={glows.archive} />
             ),
@@ -207,8 +212,8 @@ function TabsRoot() {
         <Tabs.Screen
           name="pulse"
           options={{
-            title: 'pulse',
-            tabBarAccessibilityLabel: 'pulse',
+            title: 'Pulse',
+            tabBarAccessibilityLabel: 'Pulse',
             tabBarIcon: ({ color, focused }) => (
               <TabBarIcon color={color} icon={UsersIcon} focused={focused} activeBg={c.tabBarActive} glow={glows.pulse} />
             ),
@@ -217,8 +222,8 @@ function TabsRoot() {
         <Tabs.Screen
           name="profile"
           options={{
-            title: 'you',
-            tabBarAccessibilityLabel: 'you',
+            title: 'You',
+            tabBarAccessibilityLabel: 'You',
             tabBarIcon: ({ color, focused }) => (
               <TabBarIcon color={color} icon={UserIcon} focused={focused} activeBg={c.tabBarActive} glow={glows.you} />
             ),

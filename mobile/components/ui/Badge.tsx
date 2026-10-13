@@ -72,7 +72,7 @@ export function Badge({ label, variant = 'topic', selected = false, onPress, sma
       ]}
     >
       <Text
-        variant="monoSmall"
+        variant="caption"
         color={selected ? 'inverse' : 'secondary'}
         // The label takes the accent too, so the chip is one coloured object
         // rather than grey type in a coloured box. Not when `selected` — that
@@ -83,7 +83,7 @@ export function Badge({ label, variant = 'topic', selected = false, onPress, sma
           accent ? { color: selected ? INK_ON_ACCENT : accent } : null,
         ]}
       >
-        {variant === 'edge' ? label.toUpperCase() : label}
+        {label}
       </Text>
     </View>
   );
@@ -121,6 +121,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   labelSmall: {
-    fontSize: 10,
+    fontSize: 11,
+    lineHeight: 14,
   },
 });

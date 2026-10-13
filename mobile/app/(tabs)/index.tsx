@@ -117,7 +117,7 @@ type GraphEdge = MemoryGraphResponse['edges'][number];
 
 const { width: SW, height: SH } = Dimensions.get('window');
 // Must match `tabBarStyle.height` in (tabs)/_layout.tsx.
-const TAB_H = Platform.OS === 'ios' ? 74 : 64;
+const TAB_H = Platform.OS === 'ios' ? 84 : 68;
 const FAB_SIZE = 82;
 // Just barely larger than the button itself — a subtle breathing ring, not a halo.
 const FAB_GLOW_SIZE = FAB_SIZE * 1.14;

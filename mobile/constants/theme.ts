@@ -1,6 +1,12 @@
 import { Platform } from 'react-native';
 
-/** Times-adjacent serif for headlines; system defaults elsewhere. */
+/**
+ * Type. The UI is set in the system face (SF Pro on iOS, Roboto on Android):
+ * one family, weight for hierarchy, sizes tracking Apple's text styles. `serif`
+ * survives only as a brand voice: the wordmark, the big numbers on You, the
+ * share cards. `mono` is for tabular numbers and code, never for captions,
+ * labels or hints.
+ */
 export const FontFamily = {
   serif: Platform.select({
     ios: 'Times New Roman',
@@ -13,13 +19,13 @@ export const FontFamily = {
     default: 'Georgia',
   }) as string,
   sans: Platform.select({
-    ios: 'Helvetica Neue',
+    ios: 'System',
     android: 'sans-serif',
     default: 'sans-serif',
   }) as string,
   sansMedium: Platform.select({
-    ios: 'Helvetica Neue',
-    android: 'sans-serif',
+    ios: 'System',
+    android: 'sans-serif-medium',
     default: 'sans-serif',
   }) as string,
   mono: Platform.select({
@@ -260,15 +266,20 @@ export function hourAccent(hour: number): string {
   return Accents.slate;
 }
 
+/**
+ * Apple's text styles at the default content size: caption 2 (11), footnote
+ * (13), subheadline (15), body/headline (17), title 3 (20), title 2 (22),
+ * title 1 (28), large title (34). Keys are kept so call sites don't churn.
+ */
 export const FontSize = {
-  xs: 10,
-  sm: 12,
-  base: 14,
-  md: 16,
-  lg: 18,
+  xs: 11,
+  sm: 13,
+  base: 15,
+  md: 17,
+  lg: 20,
   xl: 22,
-  '2xl': 26,
-  '3xl': 32,
+  '2xl': 28,
+  '3xl': 34,
   '4xl': 40,
   '5xl': 52,
   display: 56,
@@ -277,16 +288,17 @@ export const FontSize = {
 export const LineHeight = {
   tight: 1.12,
   snug: 1.22,
-  normal: 1.4,
-  relaxed: 1.55,
+  normal: 1.35,
+  relaxed: 1.47,
 } as const;
 
+/** Tracking is the system's job. These exist for the serif brand marks only. */
 export const LetterSpacing = {
-  tight: -0.5,
+  tight: -0.4,
   normal: 0,
-  wide: 0.8,
-  wider: 1.4,
-  label: 2,
+  wide: 0.4,
+  wider: 1.2,
+  label: 0,
 } as const;
 
 export const Spacing = {
