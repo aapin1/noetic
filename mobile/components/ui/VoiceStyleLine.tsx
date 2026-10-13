@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { XIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
@@ -9,9 +10,9 @@ import type { InsightStyle } from '@/types/api';
 import { Text } from './Text';
 
 const CHOICES: { value: InsightStyle; label: string }[] = [
-  { value: 'DIRECT', label: 'direct' },
-  { value: 'REFLECTIVE', label: 'reflective' },
-  { value: 'ANALYTICAL', label: 'analytical' },
+  { value: 'DIRECT', label: 'Direct' },
+  { value: 'REFLECTIVE', label: 'Reflective' },
+  { value: 'ANALYTICAL', label: 'Analytical' },
 ];
 
 /**
@@ -38,8 +39,8 @@ export function VoiceStyleLine() {
   if (chosen) {
     return (
       <View style={styles.row}>
-        <Text variant="monoSmall" style={{ color: c.faint }}>
-          noted — insights will be {CHOICES.find((ch) => ch.value === chosen)?.label}
+        <Text variant="caption" color="muted">
+          Insights set to {CHOICES.find((ch) => ch.value === chosen)?.label}
         </Text>
       </View>
     );
@@ -47,12 +48,12 @@ export function VoiceStyleLine() {
 
   return (
     <View style={styles.row}>
-      <Text variant="monoSmall" style={{ color: c.faint }}>
-        how should these read?
+      <Text variant="caption" color="muted">
+        Insight style
       </Text>
       {CHOICES.map((choice) => (
         <Pressable key={choice.value} onPress={() => choose(choice.value)} hitSlop={6}>
-          <Text variant="monoSmall" style={{ color: c.muted, textDecorationLine: 'underline' }}>
+          <Text variant="caption" style={{ color: c.text, textDecorationLine: 'underline' }}>
             {choice.label}
           </Text>
         </Pressable>
@@ -62,9 +63,7 @@ export function VoiceStyleLine() {
         hitSlop={8}
         accessibilityLabel="Keep the current insight voice"
       >
-        <Text variant="monoSmall" style={{ color: c.faint }}>
-          ✕
-        </Text>
+        <XIcon size={14} color={c.faint} />
       </Pressable>
     </View>
   );

@@ -70,10 +70,10 @@ export default function ResetPasswordScreen() {
             mneme
           </Text>
           <Text variant="h1" style={styles.title}>
-            Password updated.
+            Password updated
           </Text>
-          <Text variant="monoSmall" color="muted" style={styles.subtitle}>
-            sign in with the new one.
+          <Text variant="subheadline" color="secondary" style={styles.subtitle}>
+            Sign in with your new password.
           </Text>
           <Button
             label="Back to sign in"
@@ -114,10 +114,10 @@ export default function ResetPasswordScreen() {
               mneme
             </Text>
             <Text variant="h1" style={styles.title}>
-              Enter your code.
+              Enter your code
             </Text>
-            <Text variant="monoSmall" color="muted" style={styles.subtitle}>
-              check your email — it expires in 15 minutes.
+            <Text variant="subheadline" color="secondary" style={styles.subtitle}>
+              Check your email. The code expires in 15 minutes.
             </Text>
           </View>
 

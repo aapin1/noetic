@@ -2,6 +2,7 @@ import React from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
+import { XIcon } from 'lucide-react-native';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
@@ -52,11 +53,11 @@ export function DetailShell({
       <SafeAreaView edges={['top']} style={styles.safe}>
         <View style={styles.header}>
           <Pressable onPress={onClose} hitSlop={12} accessibilityLabel="Close detail view">
-            <Text variant="monoSmall" style={{ color: ink(0.55) }}>close</Text>
+            <XIcon size={22} color={ink(0.7)} />
           </Pressable>
           <View style={styles.headLeft}>
             <View style={[styles.dot, { backgroundColor: accent }]} />
-            <Text variant="monoSmall" style={{ color: accent, letterSpacing: 2 }}>
+            <Text variant="headline" style={{ color: ink(0.92) }}>
               {typeLabel}
             </Text>
           </View>

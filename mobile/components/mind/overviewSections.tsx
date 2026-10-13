@@ -32,21 +32,15 @@ function hashId(id: string): number {
 
 export function SectionHeader({
   title,
-  whisper,
-  color,
+  subtitle,
 }: {
   title: string;
-  whisper: string;
-  color: string;
+  subtitle: string;
 }) {
-  const ink = useStageInk();
   return (
     <View style={styles.sectionHead}>
-      <View style={styles.sectionTitleRow}>
-        <View style={[styles.tick, { backgroundColor: color }]} />
-        <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>{title}</Text>
-      </View>
-      <Text variant="monoSmall" style={{ color: ink(0.4), marginTop: 2 }}>{whisper}</Text>
+      <Text variant="h4">{title}</Text>
+      <Text variant="subheadline" color="secondary" style={{ marginTop: 2 }}>{subtitle}</Text>
     </View>
   );
 }
@@ -104,10 +98,10 @@ export function ThreadStrand({
     <Pressable onPress={onPress} style={styles.strandRow} accessibilityLabel={`Open thread: ${data.topicName}`}>
       {/* Title first, larger, so each strand clearly belongs to its name */}
       <View style={styles.strandTitleRow}>
-        <Text variant="h3" numberOfLines={1} style={{ color: ink(0.92), flex: 1 }}>
+        <Text variant="headline" numberOfLines={1} style={{ color: ink(0.92), flex: 1 }}>
           {data.topicName}
         </Text>
-        <Text variant="monoSmall" style={{ color: ink(0.35) }}>{data.captureCount} captures</Text>
+        <Text variant="caption" color="muted">{data.captureCount} captures</Text>
       </View>
       <Svg width={INNER_W} height={STRAND_H}>
         <Path d={path} fill="none" stroke={color} strokeOpacity={0.45} strokeWidth={thickness} />
@@ -132,8 +126,8 @@ export function ThreadStrand({
         />
       </Svg>
       {data.heading ? (
-        <Text variant="monoSmall" numberOfLines={1} style={{ color, marginTop: Spacing[1] }}>
-          → {data.heading}
+        <Text variant="caption" numberOfLines={1} style={{ color, marginTop: Spacing[1] }}>
+          {data.heading}
         </Text>
       ) : null}
     </Pressable>
@@ -201,7 +195,7 @@ export function FaultWall({
           </View>
           {/* Opaque themed chip so the crack reads as passing BEHIND the crux. */}
           <View style={[styles.cruxChip, { borderColor: color, backgroundColor: c.surface }]}>
-            <Text variant="monoSmall" numberOfLines={2} style={{ color, textAlign: 'center' }}>
+            <Text variant="caption" numberOfLines={2} style={{ color, textAlign: 'center' }}>
               {card.crux ?? 'Tap to see what this turns on'}
             </Text>
           </View>
@@ -255,12 +249,12 @@ export function ConfluenceRow({
           {data.topicName}
         </Text>
         {data.arrival ? (
-          <Text variant="monoSmall" numberOfLines={2} style={{ color, marginTop: 2 }}>
-            ⌾ {data.arrival}
+          <Text variant="caption" numberOfLines={2} style={{ color, marginTop: 2 }}>
+            {data.arrival}
           </Text>
         ) : null}
-        <Text variant="monoSmall" style={{ color: ink(0.35), marginTop: 2 }}>
-          {data.sourceCount} sources · {data.captureCount} captures
+        <Text variant="caption" color="muted" style={{ marginTop: 2 }}>
+          {data.sourceCount} sources, {data.captureCount} captures
         </Text>
       </View>
     </Pressable>
@@ -295,8 +289,8 @@ export function EmberRow({
       <Text variant="bodyMedium" numberOfLines={1} style={{ color: ink(0.28 + heat * 0.62), flex: 1 }}>
         {data.topicName}
       </Text>
-      <Text variant="monoSmall" style={{ color: ink(0.35) }}>
-        quiet {data.daysSilent}d
+      <Text variant="caption" color="muted">
+        Quiet for {data.daysSilent} {data.daysSilent === 1 ? 'day' : 'days'}
       </Text>
     </Pressable>
   );
@@ -304,8 +298,6 @@ export function EmberRow({
 
 const styles = StyleSheet.create({
   sectionHead: { paddingHorizontal: PAD, marginTop: Spacing[8], marginBottom: Spacing[4] },
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center' },
-  tick: { width: 8, height: 2, borderRadius: 1, marginRight: Spacing[2] },
 
   strandRow: { paddingHorizontal: PAD, marginBottom: Spacing[10] },
   strandTitleRow: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing[3], marginBottom: Spacing[2] },

@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Dimensions,
   Pressable,
   RefreshControl,
@@ -12,22 +11,25 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
-import { MoreHorizontalIcon } from 'lucide-react-native';
+import { InfoIcon, MoreHorizontalIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { promptModerationActions } from '@/lib/moderation';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { FontFamily, FontSize, Radius, Spacing, accentForKey } from '@/constants/theme';
+import { Radius, Spacing, accentForKey } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { isAnonymousHandle } from '@/lib/disclosure';
 import { Text } from '@/components/ui/Text';
+import { Button } from '@/components/ui/Button';
+import { SearchField } from '@/components/ui/SearchField';
+import { shortDate } from '@/lib/dates';
 import { Whisper } from '@/components/ui/Whisper';
 import { Avatar } from '@/components/ui/Avatar';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { ScreenIntro } from '@/components/ui/ScreenIntro';
 import { SponsoredCard } from '@/components/ui/SponsoredCard';
 import { MiniMap } from '@/components/MiniMap';
-import type { PulseFriend, PulseLatestItem } from '@/types/api';
+import type { CaptureKind, PulseFriend, PulseLatestItem } from '@/types/api';
 
 const CARD_W = Dimensions.get('window').width - Spacing[6] * 2;
 /**
@@ -37,23 +39,34 @@ const CARD_W = Dimensions.get('window').width - Spacing[6] * 2;
  */
 const AD_AFTER_FRIEND_INDEX = 0;
 
+const KIND_LABELS: Record<CaptureKind, string> = {
+  LINK: 'Link',
+  TEXT: 'Note',
+  QUOTE: 'Quote',
+  IMAGE: 'Image',
+};
+
+function kindLabel(kind: CaptureKind): string {
+  return KIND_LABELS[kind] ?? 'Note';
+}
+
 function LatestRow({ item }: { item: PulseLatestItem }) {
   const c = useThemeColors();
-  const date = new Date(item.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const date = shortDate(item.capturedAt);
   const normalizedTitle = (item.title ?? '').trim().toLowerCase();
   const showKeyIdea = !!item.keyIdea && item.keyIdea.trim().toLowerCase() !== normalizedTitle;
 
   return (
     <View style={[styles.latestRow, { borderTopColor: c.borderSubtle }]}>
       <View style={styles.latestMeta}>
-        <Text variant="monoSmall" style={{ color: c.muted }}>{item.kind.toLowerCase()}</Text>
-        <Text variant="monoSmall" style={{ color: c.faint }}>{date}</Text>
+        <Text variant="caption" color="muted">{kindLabel(item.kind)}</Text>
+        <Text variant="caption" color="faint">{date}</Text>
       </View>
       <Text variant="serif" color="primary" numberOfLines={2} style={styles.latestTitle}>
         {item.title}
       </Text>
       {showKeyIdea && (
-        <Text variant="monoSmall" color="muted" numberOfLines={2} style={styles.latestIdea}>
+        <Text variant="caption" color="muted" numberOfLines={2} style={styles.latestIdea}>
           {item.keyIdea}
         </Text>
       )}
@@ -78,7 +91,7 @@ function FriendCard({
     .sort((a, b) => b.count - a.count)
     .slice(0, 3)
     .map((cl) => cl.name)
-    .join(' · ');
+    .join(', ');
 
   // The same shape of summary the reader gets for their own map on Atlas, so a
   // friend's card is legible at a glance. Segments drop out when they'd be zero.
@@ -86,7 +99,7 @@ function FriendCard({
   const stats = [
     `${captureCount} ${captureCount === 1 ? 'point' : 'points'}`,
     fieldCount > 0 ? `${fieldCount} ${fieldCount === 1 ? 'field' : 'fields'}` : null,
-  ].filter(Boolean).join(' · ');
+  ].filter(Boolean).join(', ');
 
   // The whole card is the doorway to the person's page; the header buttons
   // (unfollow, report) sit on top and win their own taps. Header fields ride
@@ -122,11 +135,9 @@ function FriendCard({
         <Avatar uri={user.avatarUrl} displayName={user.displayName} size="sm" />
         <View style={styles.cardMeta}>
           <Text variant="bodyMedium" numberOfLines={1}>{user.displayName}</Text>
-          <Text variant="monoSmall" style={{ color: c.faint }} numberOfLines={1}>@{user.handle}</Text>
+          <Text variant="caption" color="faint" numberOfLines={1}>@{user.handle}</Text>
         </View>
-        <Pressable onPress={() => onUnfollow(user.id)} hitSlop={8} style={[styles.unfollowBtn, { borderColor: c.faint }]}>
-          <Text variant="monoSmall" style={{ color: c.faint }}>following</Text>
-        </Pressable>
+        <Button label="Following" variant="secondary" size="sm" onPress={() => onUnfollow(user.id)} />
         <Pressable
           onPress={() =>
             promptModerationActions({
@@ -144,7 +155,7 @@ function FriendCard({
         </Pressable>
       </View>
 
-      <Text variant="monoSmall" color="muted" numberOfLines={1} style={styles.identity}>
+      <Text variant="caption" color="muted" numberOfLines={1} style={styles.identity}>
         {stats}
       </Text>
 
@@ -157,20 +168,20 @@ function FriendCard({
             width={CARD_W - Spacing[5] * 2}
           />
           {!!topRegions && (
-            <Text variant="monoSmall" style={[styles.regions, { color: c.faint }]} numberOfLines={1}>
+            <Text variant="caption" color="faint" style={styles.regions} numberOfLines={1}>
               {topRegions}
             </Text>
           )}
         </View>
       ) : (
         <View style={[styles.emptyMap, { borderColor: c.borderSubtle }]}>
-          <Text variant="monoSmall" style={{ color: c.faint }}>nothing on their map yet</Text>
+          <Text variant="caption" color="faint">Nothing on their map yet</Text>
         </View>
       )}
 
       {latest.length > 0 && (
         <View style={[styles.latestSection, { borderTopColor: c.border }]}>
-          <Text variant="monoSmall" style={[styles.latestLabel, { color: c.faint }]}>latest</Text>
+          <Text variant="headline" style={styles.latestLabel}>Latest</Text>
           {latest.map((item) => (
             <LatestRow key={item.id} item={item} />
           ))}
@@ -215,22 +226,15 @@ function UserResult({
       <Avatar uri={user.avatarUrl} displayName={user.displayName} size="sm" />
       <View style={styles.userInfo}>
         <Text variant="bodyMedium">{user.displayName}</Text>
-        <Text variant="monoSmall" style={{ color: c.muted }}>@{user.handle}</Text>
+        <Text variant="caption" color="muted">@{user.handle}</Text>
       </View>
-      <Pressable
-        onPress={() => void handleFollow()}
+      <Button
+        label={followed ? 'Following' : 'Follow'}
+        variant={followed ? 'secondary' : 'primary'}
+        size="sm"
         disabled={followed}
-        hitSlop={8}
-        style={({ pressed }) => [
-          styles.followBtn,
-          { borderColor: followed ? c.faint : c.text },
-          pressed && !followed && styles.followBtnPressed,
-        ]}
-      >
-        <Text variant="monoSmall" style={{ color: followed ? c.faint : c.text }}>
-          {followed ? 'following' : 'follow'}
-        </Text>
-      </Pressable>
+        onPress={() => void handleFollow()}
+      />
       <Pressable
         onPress={() =>
           promptModerationActions({
@@ -390,24 +394,24 @@ export default function PulseScreen() {
           The safe-area strip above takes the same colour, so the notch region
           reads as part of the header rather than as a pale sliver over it. */}
       <View style={[styles.header, { borderBottomColor: c.deepBorder, backgroundColor: c.deep }]}>
-        <Text variant="wordmark" style={{ color: c.deepInk }}>pulse</Text>
+        <Text variant="headline" style={{ color: c.deepInk }}>Pulse</Text>
         {/* First touch of the social surface: the one moment a generated
             handle is worth a line, since here it's about to be seen. */}
         <Whisper
           id="identity-claim"
           when={isAnonymousHandle(profile?.handle)}
-          text={`you're @${profile?.handle ?? ''} — make it yours?`}
+          text={`You're @${profile?.handle ?? ''}. Make it yours?`}
           onPress={() => router.push('/profile/edit' as never)}
           style={{ flex: 1, alignItems: 'center' }}
         />
-        <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About pulse">
-          <Text style={{ color: c.deepInkFaint, fontSize: 16 }}>ⓘ</Text>
+        <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityRole="button" accessibilityLabel="About Pulse">
+          <InfoIcon size={20} color={c.deepInkFaint} />
         </Pressable>
       </View>
       <InfoModal
         visible={infoVisible}
         onClose={() => setInfoVisible(false)}
-        title="pulse"
+        title="About Pulse"
         body="Follow people by their handle and watch a small version of their map, and their latest logs, appear here. Search is always open at the top to find more."
       />
 
@@ -418,10 +422,8 @@ export default function PulseScreen() {
           flight the page simply shows its (empty) layout. */}
       {error && !data ? (
         <View style={styles.centered}>
-          <Text variant="monoSmall" style={{ color: c.muted }}>pulse unavailable</Text>
-          <Pressable onPress={() => void refetch()} style={{ marginTop: Spacing[4] }}>
-            <Text variant="monoSmall" style={{ color: c.text }}>retry</Text>
-          </Pressable>
+          <Text variant="h4">Pulse is unavailable</Text>
+          <Button label="Try again" variant="secondary" size="sm" onPress={() => void refetch()} style={{ marginTop: Spacing[4] }} />
         </View>
       ) : (
         <ScrollView
@@ -431,28 +433,19 @@ export default function PulseScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={[styles.searchWrap, { borderBottomColor: c.border }]}>
-            {/* Recessed, not dark — see the archive's field. */}
-            <View style={[styles.searchBox, { borderColor: c.border, backgroundColor: c.elevated }]}>
-              <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: c.faint, marginRight: Spacing[2], letterSpacing: 1.5 }}>
-                FIND_
-              </Text>
-              <TextInput
-                ref={searchInputRef}
-                style={{ flex: 1, fontFamily: FontFamily.mono, fontSize: FontSize.sm, color: c.text, paddingVertical: 0 }}
-                value={searchQuery}
-                onChangeText={handleSearchChange}
-                placeholder="find people by handle..."
-                placeholderTextColor={c.faint}
-                autoCapitalize="none"
-              />
-              {searching && <ActivityIndicator size="small" color={c.muted} />}
-            </View>
+            <SearchField
+              ref={searchInputRef}
+              value={searchQuery}
+              onChangeText={handleSearchChange}
+              busy={searching}
+              placeholder="Search by handle"
+            />
           </View>
 
           {searchQuery.trim().length > 0 ? (
             <View>
               {searchResults.length === 0 && !searching && searchedFor === searchQuery.trim() && (
-                <Text variant="monoSmall" style={{ color: c.faint, paddingHorizontal: Spacing[6], paddingTop: Spacing[4] }}>no results</Text>
+                <Text variant="caption" color="faint" style={{ paddingHorizontal: Spacing[6], paddingTop: Spacing[4] }}>No results</Text>
               )}
               {searchResults.map((u) => (
                 <UserResult key={u.id} user={u} onFollow={handleFollowed} onBlocked={handleBlocked} />
@@ -467,7 +460,7 @@ export default function PulseScreen() {
                   body="Pulse shows the maps and latest saves of people you follow. Search a handle above to find someone, or send a friend your handle so they can find you."
                   actions={[
                     {
-                      label: handleCopied ? 'copied — send it to someone' : `copy your handle @${profile?.handle ?? ''} →`,
+                      label: handleCopied ? 'Copied' : 'Copy your handle',
                       onPress: () => void copyHandle(),
                     },
                   ]}
@@ -500,11 +493,6 @@ const styles = StyleSheet.create({
   body: { flex: 1 },
   content: { paddingBottom: Spacing[16] },
   searchWrap: { paddingHorizontal: Spacing[6], paddingVertical: Spacing[4], borderBottomWidth: StyleSheet.hairlineWidth },
-  searchBox: {
-    flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1, borderRadius: Radius.full,
-    paddingHorizontal: Spacing[4], paddingVertical: 8,
-  },
   card: {
     marginHorizontal: Spacing[6],
     marginTop: Spacing[5],
@@ -527,11 +515,10 @@ const styles = StyleSheet.create({
   cardPressed: { opacity: 0.7 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
   cardMeta: { flex: 1, gap: 2 },
-  unfollowBtn: { borderWidth: 1, borderRadius: Radius.xs, paddingVertical: Spacing[1], paddingHorizontal: Spacing[2] },
   moreBtn: { paddingLeft: Spacing[2], paddingVertical: Spacing[1] },
   identity: { marginTop: Spacing[3], lineHeight: 18 },
   mapWrap: { marginTop: Spacing[4] },
-  regions: { marginTop: Spacing[3], letterSpacing: 0.5 },
+  regions: { marginTop: Spacing[3] },
   emptyMap: {
     marginTop: Spacing[4], borderWidth: 1, borderRadius: Radius.md,
     paddingVertical: Spacing[8], alignItems: 'center',
@@ -541,7 +528,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     paddingTop: Spacing[4],
   },
-  latestLabel: { textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: Spacing[1] },
+  latestLabel: { marginBottom: Spacing[1] },
   latestRow: { paddingTop: Spacing[3], marginTop: Spacing[1], borderTopWidth: StyleSheet.hairlineWidth },
   latestMeta: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing[1] },
   latestTitle: { marginBottom: Spacing[1] },
@@ -552,7 +539,5 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   userInfo: { flex: 1, gap: 2 },
-  followBtn: { borderWidth: 1, borderRadius: Radius.xs, paddingVertical: Spacing[2], paddingHorizontal: Spacing[3] },
-  followBtnPressed: { opacity: 0.5 },
   centered: { paddingTop: Spacing[12], alignItems: 'center', paddingHorizontal: Spacing[6] },
 });

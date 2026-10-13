@@ -102,7 +102,7 @@ export function EditableAvatar({ profile, onChanged }: Props) {
       </Pressable>
 
       {error ? (
-        <Text variant="monoSmall" color="danger" style={styles.error}>
+        <Text variant="caption" color="danger" style={styles.error}>
           {error}
         </Text>
       ) : null}

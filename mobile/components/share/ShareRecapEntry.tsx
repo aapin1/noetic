@@ -9,7 +9,7 @@ import { SectionKicker } from '@/components/ui/SectionKicker';
 
 /**
  * Bottom-of-profile entry point into the recap composer. Styled to sit beside
- * the Wrapped cards — same surface, border, and mono/serif rhythm — so it reads
+ * the stats cards (same surface, border, and type) so it reads
  * as one more shelf on the "you" page rather than a bolted-on button.
  */
 export function ShareRecapEntry({ accent = Accents.ochre }: { accent?: string }) {
@@ -18,11 +18,11 @@ export function ShareRecapEntry({ accent = Accents.ochre }: { accent?: string })
 
   return (
     <View style={styles.wrap}>
-      <SectionKicker label="share" accent={accent} style={styles.kicker} />
+      <SectionKicker label="Share" style={styles.kicker} />
       <Pressable
         onPress={() => router.push('/share-recap' as never)}
         accessibilityRole="button"
-        accessibilityLabel="Share what you've been up to"
+        accessibilityLabel="Share a recap"
         style={({ pressed }) => [
           styles.card,
           { borderColor: c.border, backgroundColor: c.surface },
@@ -33,8 +33,8 @@ export function ShareRecapEntry({ accent = Accents.ochre }: { accent?: string })
           <Share2Icon size={20} color={accent} strokeWidth={1.6} />
         </View>
         <View style={styles.text}>
-          <Text variant="h4">Share what you've been up to</Text>
-          <Text variant="serif" color="secondary" style={styles.sub}>
+          <Text variant="headline">Share a recap</Text>
+          <Text variant="subheadline" color="secondary" style={styles.sub}>
             Turn your favorite saves into a set of cards to post.
           </Text>
         </View>
@@ -70,9 +70,9 @@ export function ShareAtlasEntry({ accent = Accents.ochre }: { accent?: string })
           <WaypointsIcon size={20} color={accent} strokeWidth={1.6} />
         </View>
         <View style={styles.text}>
-          <Text variant="h4">Share your atlas</Text>
-          <Text variant="serif" color="secondary" style={styles.sub}>
-            Everything you've saved, as one constellation.
+          <Text variant="headline">Share your atlas</Text>
+          <Text variant="subheadline" color="secondary" style={styles.sub}>
+            Everything you have saved, as one map.
           </Text>
         </View>
         <ChevronRightIcon size={20} color={c.faint} />

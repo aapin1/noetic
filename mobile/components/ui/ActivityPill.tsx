@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
+import { XIcon } from 'lucide-react-native';
 
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { GLASS_BG, GLASS_BORDER } from '@/constants/mapPalette';
@@ -10,7 +11,7 @@ type Props = {
   top: number;
   /** busy: something is reading/mapping right now. done: it just finished. */
   phase: 'busy' | 'done';
-  /** "reading your letterboxd…" */
+  /** "Reading your Letterboxd" */
   line: string;
   /** Optional second line: "34 of 120 on your map". */
   sub?: string;
@@ -48,7 +49,7 @@ export function ActivityPill({ top, phase, line, sub, onClose }: Props) {
         <AsciiLoader inline variant={phase === 'busy' ? 'mail' : 'cat'} idle={phase !== 'busy'} size={30} color="rgba(240,232,214,0.77)" />
         <Text style={[styles.mono, { color: 'rgba(240,232,214,0.69)', flex: 1 }]}>{line}</Text>
         <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Dismiss">
-          <Text style={[styles.mono, { color: 'rgba(240,232,214,0.49)' }]}>✕</Text>
+          <XIcon size={14} color="rgba(240,232,214,0.55)" />
         </Pressable>
       </View>
       {sub ? (
@@ -72,5 +73,5 @@ const styles = StyleSheet.create({
     gap: Spacing[3],
   },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
-  mono: { fontFamily: FontFamily.mono, fontSize: FontSize.xs, letterSpacing: 1 },
+  mono: { fontFamily: FontFamily.sans, fontSize: FontSize.sm },
 });

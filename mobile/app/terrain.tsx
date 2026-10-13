@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
-import { ArrowDownRight, ArrowUpRight, ChevronLeftIcon } from 'lucide-react-native';
+import { ArrowDownRight, ArrowLeftRight, ArrowRight, ArrowUpRight, ChevronLeftIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { AccentList, Radius, Spacing, accentFor } from '@/constants/theme';
@@ -28,7 +28,7 @@ export default function TerrainScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="Back">
           <ChevronLeftIcon size={24} color={c.text} />
         </Pressable>
-        <Text variant="wordmark">terrain</Text>
+        <Text variant="headline">Terrain</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -36,21 +36,21 @@ export default function TerrainScreen() {
         <AsciiLoader
           variant="cat"
           size={72}
-          message={['reading the long view…', 'measuring the drift…', 'tracing where you’ve moved…']}
+          message="Loading"
         />
       ) : !data || !data.unlocked ? (
         data?.forming ? (
           <Forming data={data} accent={accent} />
         ) : (
           <EmptyState
-            title="not yet"
-            body="terrain opens once you’ve logged enough to have a past to look back on."
+            title="Not yet"
+            body="Terrain opens once you have saved enough to have a past to look back on."
           />
         )
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <Text variant="serif" color="secondary" style={styles.lede}>
-            {data.captureCount} captures, {data.earlyLabel} → {data.recentLabel}.
+            {data.captureCount} captures, {data.earlyLabel} to {data.recentLabel}.
           </Text>
 
           {data.arc ? (
@@ -69,8 +69,8 @@ export default function TerrainScreen() {
           <LeftBehind data={data} />
           <Convictions data={data} accent={accent} />
 
-          <Text variant="monoSmall" color="faint" style={styles.footnote}>
-            measured across your earliest and most recent {data.eraSize} captures.
+          <Text variant="caption" color="muted" style={styles.footnote}>
+            Measured across your earliest and most recent {data.eraSize} captures.
           </Text>
         </ScrollView>
       )}
@@ -82,7 +82,7 @@ export default function TerrainScreen() {
 
 /**
  * The pre-unlock glimpse: what is already true of a young corpus, with the
- * full portrait as a countable horizon. Nothing era-based is faked — drift,
+ * full portrait as a countable horizon. Nothing era-based is faked: drift,
  * eras and bridges are named as what the remaining captures buy.
  */
 function Forming({ data, accent }: { data: TerrainResponse; accent: string }) {
@@ -93,16 +93,15 @@ function Forming({ data, accent }: { data: TerrainResponse; accent: string }) {
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <Text variant="serif" color="secondary" style={styles.lede}>
-        {data.captureCount} captures{forming.chartingSince ? ` since ${forming.chartingSince}` : ''}. the
-        long view is forming.
+        {data.captureCount} captures{forming.chartingSince ? ` since ${forming.chartingSince}` : ''}. The long view is forming.
       </Text>
 
-      <Chapter kicker="terrain forming">
+      <Chapter kicker="Terrain forming">
         <View style={styles.formingCountRow}>
           <Text variant="hero" style={{ color: accent }}>
             {data.captureCount}
           </Text>
-          <Text variant="serif" color="secondary" style={styles.formingOf}>
+          <Text variant="subheadline" color="secondary">
             of {forming.target}
           </Text>
         </View>
@@ -110,24 +109,24 @@ function Forming({ data, accent }: { data: TerrainResponse; accent: string }) {
           <View style={[styles.formingFill, { width: `${pct * 100}%`, backgroundColor: accent }]} />
         </View>
         <Text variant="serif" color="secondary" style={styles.body}>
-          drift, eras and bridges need a past to measure against. keep charting — the full portrait
+          Drift, eras and bridges need a past to measure against. Keep saving. The full portrait
           opens at {forming.target}.
         </Text>
       </Chapter>
 
       {forming.distinctTopics > 0 || forming.fields.length > 0 ? (
-        <Chapter kicker="first contours">
+        <Chapter kicker="First contours">
           {forming.distinctTopics > 0 ? (
             <Text variant="h3" style={styles.rangeHeadline}>
-              {forming.distinctTopics === 1 ? 'one subject staked out' : `${forming.distinctTopics} subjects staked out`}
+              {forming.distinctTopics === 1 ? 'One subject so far' : `${forming.distinctTopics} subjects so far`}
             </Text>
           ) : null}
           {forming.fields.length > 0 ? (
             <View style={styles.chipWrap}>
               {forming.fields.map((f) => (
                 <View key={f.name} style={[styles.chip, { borderColor: c.borderSubtle }]}>
-                  <Text variant="monoSmall" style={{ color: c.faint, fontSize: 12 }}>
-                    {f.name} · {Math.round(f.share * 100)}%
+                  <Text variant="captionSmall" color="muted">
+                    {f.name}, {Math.round(f.share * 100)}%
                   </Text>
                 </View>
               ))}
@@ -137,13 +136,13 @@ function Forming({ data, accent }: { data: TerrainResponse; accent: string }) {
       ) : null}
 
       {forming.topSources.length > 0 ? (
-        <Chapter kicker="what feeds it">
-          <BarList title="where your saves come from" items={forming.topSources} accent={accent} />
+        <Chapter kicker="What feeds it">
+          <BarList title="Where your saves come from" items={forming.topSources} accent={accent} />
         </Chapter>
       ) : null}
 
-      <Text variant="monoSmall" color="faint" style={styles.footnote}>
-        an early sketch — the full terrain compares your first era to your latest.
+      <Text variant="caption" color="muted" style={styles.footnote}>
+        An early sketch. The full terrain compares your first era to your latest.
       </Text>
     </ScrollView>
   );
@@ -155,7 +154,7 @@ function Chapter({ kicker, children }: { kicker: string; children: React.ReactNo
   const c = useThemeColors();
   return (
     <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
-      <Text variant="label" color="muted" style={styles.kicker}>
+      <Text variant="headline" style={styles.kicker}>
         {kicker}
       </Text>
       {children}
@@ -205,7 +204,7 @@ function Distance({ data, accent }: { data: TerrainResponse; accent: string }) {
   if (data.driftDegrees === null || data.driftBand === null) return null;
 
   return (
-    <Chapter kicker="distance traveled">
+    <Chapter kicker="Distance traveled">
       <View style={styles.distRow}>
         <DriftDial degrees={data.driftDegrees} accent={accent} />
         <View style={styles.distText}>
@@ -213,23 +212,23 @@ function Distance({ data, accent }: { data: TerrainResponse; accent: string }) {
             {data.driftDegrees}°
           </Text>
           <Text variant="serif" color="secondary" style={styles.distBand}>
-            your center of gravity has turned — {data.driftBand}.
+            Your center of gravity has turned: {data.driftBand}.
           </Text>
         </View>
       </View>
       {data.towardField ? (
         <View style={[styles.vector, { borderTopColor: c.borderSubtle }]}>
           <ArrowUpRight size={16} color={accent} strokeWidth={2} />
-          <Text variant="serif" style={styles.vectorText}>
-            toward <Text variant="serif" style={{ color: accent }}>{data.towardField}</Text>
+          <Text variant="body">
+            Toward <Text variant="body" style={{ color: accent }}>{data.towardField}</Text>
           </Text>
         </View>
       ) : null}
       {data.awayField ? (
         <View style={styles.vectorTight}>
           <ArrowDownRight size={16} color={c.faint} strokeWidth={2} />
-          <Text variant="serif" color="secondary" style={styles.vectorText}>
-            away from {data.awayField}
+          <Text variant="body" color="secondary">
+            Away from {data.awayField}
           </Text>
         </View>
       ) : null}
@@ -255,13 +254,13 @@ function Range({ data, accent }: { data: TerrainResponse; accent: string }) {
         ? 'deepening'
         : 'steady');
   const headline =
-    verdict === 'widening' ? 'opening outward' : verdict === 'deepening' ? 'drilling deeper' : 'holding its range';
+    verdict === 'widening' ? 'Opening outward' : verdict === 'deepening' ? 'Going deeper' : 'Holding its range';
   const line =
     verdict === 'widening'
-      ? `you’re reaching across ${pct !== null && pct > 0 ? `${pct}% ` : ''}more ground than you started on — more open to the unfamiliar.`
+      ? `You are reaching across ${pct !== null && pct > 0 ? `${pct}% ` : ''}more ground than you started on, and more open to the unfamiliar.`
       : verdict === 'deepening'
-        ? `you’ve drawn in ${pct !== null && pct < 0 ? `${Math.abs(pct)}% ` : ''}tighter — settling deeper into fewer, nicher subjects.`
-        : 'you range about as widely now as when you began.';
+        ? `You have drawn in ${pct !== null && pct < 0 ? `${Math.abs(pct)}% ` : ''}tighter, settling deeper into fewer subjects.`
+        : 'You range about as widely now as when you began.';
 
   // Normalize the two spreads onto a shared 0–1 track with a little headroom.
   let thenX = 0.5;
@@ -277,7 +276,7 @@ function Range({ data, accent }: { data: TerrainResponse; accent: string }) {
   }
 
   return (
-    <Chapter kicker="range">
+    <Chapter kicker="Range">
       <Text variant="h3" style={styles.rangeHeadline}>
         {headline}
       </Text>
@@ -292,17 +291,17 @@ function Range({ data, accent }: { data: TerrainResponse; accent: string }) {
             <View style={[styles.rangeMarkerNow, { left: `${nowX * 100}%`, backgroundColor: accent }]} />
           </View>
           <View style={styles.rangeEnds}>
-            <Text variant="monoSmall" color="faint">deep</Text>
-            <Text variant="monoSmall" color="faint">wide</Text>
+            <Text variant="captionSmall" color="muted">Deep</Text>
+            <Text variant="captionSmall" color="muted">Wide</Text>
           </View>
         </View>
       ) : null}
 
       {hasCounts ? (
         <View style={[styles.rangeCounts, { borderTopColor: c.borderSubtle }]}>
-          <RangeCount value={data.earlyDistinctTopics} label="subjects then" color={c.faint} />
-          <Text variant="serif" color="faint" style={styles.rangeArrow}>→</Text>
-          <RangeCount value={data.recentDistinctTopics} label="subjects now" color={accent} />
+          <RangeCount value={data.earlyDistinctTopics} label="Subjects then" color={c.faint} />
+          <ArrowRight size={18} color={c.faint} />
+          <RangeCount value={data.recentDistinctTopics} label="Subjects now" color={accent} />
         </View>
       ) : null}
     </Chapter>
@@ -315,7 +314,7 @@ function RangeCount({ value, label, color }: { value: number; label: string; col
       <Text variant="h2" style={{ color }}>
         {value}
       </Text>
-      <Text variant="monoSmall" color="faint">
+      <Text variant="caption" color="muted">
         {label}
       </Text>
     </View>
@@ -326,13 +325,13 @@ function RangeCount({ value, label, color }: { value: number; label: string; col
 function Consumption({ data, accent }: { data: TerrainResponse; accent: string }) {
   if (data.topVoices.length === 0 && data.topSources.length === 0) return null;
   return (
-    <Chapter kicker="what you consume">
+    <Chapter kicker="What you consume">
       {data.topVoices.length > 0 ? (
-        <BarList title="the voices you keep" items={data.topVoices} accent={accent} />
+        <BarList title="Authors you keep returning to" items={data.topVoices} accent={accent} />
       ) : null}
       {data.topSources.length > 0 ? (
         <View style={data.topVoices.length > 0 ? styles.barGap : undefined}>
-          <BarList title="where it comes from" items={data.topSources} accent={accent} />
+          <BarList title="Where it comes from" items={data.topSources} accent={accent} />
         </View>
       ) : null}
     </Chapter>
@@ -344,13 +343,13 @@ function BarList({ title, items, accent }: { title: string; items: TerrainCount[
   const max = Math.max(1, ...items.map((it) => it.count));
   return (
     <View>
-      <Text variant="serif" style={styles.barTitle}>
+      <Text variant="bodySemiBold" style={styles.barTitle}>
         {title}
       </Text>
       {items.map((it, i) => (
         <View key={it.name} style={styles.barRow}>
           <View style={styles.barLabelWrap}>
-            <Text variant="serif" numberOfLines={1} style={styles.barLabel}>
+            <Text variant="subheadline" numberOfLines={1}>
               {it.name}
             </Text>
           </View>
@@ -362,7 +361,7 @@ function BarList({ title, items, accent }: { title: string; items: TerrainCount[
               ]}
             />
           </View>
-          <Text variant="monoSmall" color="faint" style={styles.barCount}>
+          <Text variant="tabular" color="muted" style={styles.barCount}>
             {it.count}
           </Text>
         </View>
@@ -375,23 +374,21 @@ function Bridges({ data, accent }: { data: TerrainResponse; accent: string }) {
   const c = useThemeColors();
   if (data.bridges.length === 0) return null;
   return (
-    <Chapter kicker="bridges formed">
+    <Chapter kicker="Bridges formed">
       <Text variant="h3" style={styles.rangeHeadline}>
-        {data.bridgeCount === 1 ? 'a new connection' : `${data.bridgeCount} new connections`}
+        {data.bridgeCount === 1 ? 'A new connection' : `${data.bridgeCount} new connections`}
       </Text>
       <Text variant="serif" color="secondary" style={styles.body}>
-        threads you’ve recently drawn between things that used to sit apart.
+        Threads you have recently drawn between things that used to sit apart.
       </Text>
       <View style={styles.bridgeList}>
         {data.bridges.map((b) => (
           <View key={`${b.a}-${b.b}`} style={[styles.bridgeRow, { borderTopColor: c.borderSubtle }]}>
-            <Text variant="serif" numberOfLines={1} style={styles.bridgeEnd}>
+            <Text variant="subheadline" numberOfLines={1} style={styles.bridgeEnd}>
               {b.a}
             </Text>
-            <Text variant="mono" style={{ color: accent }}>
-              ↔
-            </Text>
-            <Text variant="serif" numberOfLines={1} style={[styles.bridgeEnd, styles.bridgeRight]}>
+            <ArrowLeftRight size={16} color={accent} />
+            <Text variant="subheadline" numberOfLines={1} style={[styles.bridgeEnd, styles.bridgeRight]}>
               {b.b}
             </Text>
           </View>
@@ -406,14 +403,14 @@ function LeftBehind({ data }: { data: TerrainResponse }) {
   const c = useThemeColors();
   if (data.faded.length === 0) return null;
   return (
-    <Chapter kicker="left behind">
+    <Chapter kicker="Left behind">
       <Text variant="serif" color="secondary" style={styles.body}>
-        where you started but no longer wander.
+        Topics you started with but no longer visit.
       </Text>
       <View style={styles.chipWrap}>
         {data.faded.map((name) => (
           <View key={name} style={[styles.chip, { borderColor: c.borderSubtle }]}>
-            <Text variant="monoSmall" style={{ color: c.faint, fontSize: 12 }}>
+            <Text variant="captionSmall" color="muted">
               {name}
             </Text>
           </View>
@@ -427,18 +424,18 @@ function Convictions({ data, accent }: { data: TerrainResponse; accent: string }
   const c = useThemeColors();
   if (data.positionsStaked === 0) return null;
   return (
-    <Chapter kicker="convictions">
+    <Chapter kicker="Convictions">
       <View style={styles.convRow}>
-        <ConvStat value={data.positionsStaked} label="staked" color={c.text} />
+        <ConvStat value={data.positionsStaked} label="Staked" color={c.text} />
         <View style={[styles.convDivider, { backgroundColor: c.border }]} />
-        <ConvStat value={data.positionsChallenged} label="challenged" color={c.text} />
+        <ConvStat value={data.positionsChallenged} label="Challenged" color={c.text} />
         <View style={[styles.convDivider, { backgroundColor: c.border }]} />
-        <ConvStat value={data.positionsRevised} label="revised" color={accent} />
+        <ConvStat value={data.positionsRevised} label="Revised" color={accent} />
       </View>
       <Text variant="serif" color="secondary" style={[styles.body, { marginTop: Spacing[4] }]}>
         {data.positionsRevised > 0
-          ? 'you’ve let your own later thinking change your mind — the rarest kind of honesty.'
-          : 'positions you’ve staked in the ground and stood by.'}
+          ? 'You have let your own later thinking change your mind.'
+          : 'Positions you have staked and stood by.'}
       </Text>
     </Chapter>
   );
@@ -450,7 +447,7 @@ function ConvStat({ value, label, color }: { value: number; label: string; color
       <Text variant="h2" style={{ color }}>
         {value}
       </Text>
-      <Text variant="monoSmall" color="faint">
+      <Text variant="caption" color="muted">
         {label}
       </Text>
     </View>
@@ -496,9 +493,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
   },
   vectorTight: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2], marginTop: Spacing[3] },
-  vectorText: { fontSize: 16 },
 
-  rangeHeadline: { textTransform: 'lowercase', marginBottom: Spacing[2] },
+  rangeHeadline: { marginBottom: Spacing[2] },
   rangeTrackWrap: { marginTop: Spacing[5] },
   rangeTrack: {
     height: 8,
@@ -531,13 +527,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
   },
   rangeCount: { alignItems: 'center', gap: 2 },
-  rangeArrow: { fontSize: 20 },
 
-  barTitle: { fontSize: 15, marginBottom: Spacing[3] },
+  barTitle: { marginBottom: Spacing[3] },
   barGap: { marginTop: Spacing[5] },
   barRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3], marginBottom: Spacing[3] },
   barLabelWrap: { width: '34%' },
-  barLabel: { fontSize: 14 },
   barTrackWrap: { flex: 1 },
   barFill: { height: 8, borderRadius: Radius.full, minWidth: 4 },
   barCount: { width: 24, textAlign: 'right' },
@@ -550,7 +544,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing[3],
     borderTopWidth: 1,
   },
-  bridgeEnd: { flex: 1, fontSize: 15 },
+  bridgeEnd: { flex: 1 },
   bridgeRight: { textAlign: 'right' },
 
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[2], marginTop: Spacing[4] },
@@ -562,7 +556,6 @@ const styles = StyleSheet.create({
   },
 
   formingCountRow: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing[2] },
-  formingOf: { fontSize: 16 },
   formingTrack: { height: 8, borderRadius: Radius.full, marginVertical: Spacing[4], overflow: 'hidden' },
   formingFill: { height: 8, borderRadius: Radius.full },
 

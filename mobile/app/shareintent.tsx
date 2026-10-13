@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useShareIntentContext } from 'expo-share-intent';
 // SDK 54+ moved the classic readAsStringAsync/EncodingType API to /legacy;
@@ -13,7 +13,8 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { LimitNotice } from '@/components/ui/LimitNotice';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
-import { Radius, Spacing } from '@/constants/theme';
+import { Button } from '@/components/ui/Button';
+import { Spacing } from '@/constants/theme';
 
 type Status = 'working' | 'saved' | 'error';
 
@@ -124,63 +125,46 @@ export default function ShareIntentScreen() {
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
       {status === 'working' && (
-        <AsciiLoader
-          size={110}
-          // Staged to mirror the real pipeline and hold at the end; the last
-          // message explains the slow path (video transcription, bot-walled
-          // articles) instead of looping back to an earlier stage.
-          message={[
-            'reading the source…',
-            'placing it on your map…',
-            'writing your insight…',
-            'big source — this can take a moment…',
-          ]}
-          schedule={[6000, 5000, 6000]}
-        />
+        <AsciiLoader size={110} message="Reading the page" />
       )}
 
       {status === 'saved' && (
         <View style={styles.savedWrap}>
           <AsciiLoader idle variant="cat" size={72} />
-          <Text variant="serif" color="primary" style={styles.savedTitle}>
-            saved to your map ✓
+          <Text variant="h4" style={styles.savedTitle}>
+            Saved to your map
           </Text>
           {!!savedTitle && (
-            <Text variant="monoSmall" color="muted" numberOfLines={2} style={styles.savedName}>
+            <Text variant="subheadline" color="secondary" numberOfLines={2} style={styles.savedName}>
               {savedTitle}
             </Text>
           )}
           {!!savedLimit && <LimitNotice message={savedLimit} style={{ maxWidth: 300, marginTop: Spacing[3] }} />}
-          <Pressable
+          <Button
+            label="See the insight"
+            variant="primary"
+            style={styles.primaryBtn}
+            accessibilityLabel="Open the insight for this capture"
             onPress={() => {
               void clearSharedCapture();
               router.replace(`/insight/${savedId}?from=share` as never);
             }}
-            style={[styles.primaryBtn, { backgroundColor: c.text }]}
-            accessibilityRole="button"
-            accessibilityLabel="Open the insight for this capture"
-          >
-            <Text variant="monoSmall" style={{ color: c.background }}>see the insight →</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => router.replace('/(tabs)' as never)}
+          />
+          <Button
+            label="Done"
+            variant="tertiary"
             style={styles.secondaryBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Done"
-          >
-            <Text variant="monoSmall" color="muted">done</Text>
-          </Pressable>
+            onPress={() => router.replace('/(tabs)' as never)}
+          />
         </View>
       )}
 
       {status === 'error' && (
         <>
-          <Text variant="monoSmall" color="danger" style={styles.message}>
+          <Text variant="subheadline" color="danger" style={styles.message}>
             {message}
           </Text>
-          <Pressable onPress={() => router.replace('/(tabs)')} style={styles.back}>
-            <Text variant="monoSmall" style={{ color: c.text }}>← back to Mneme</Text>
-          </Pressable>
+          <Button label="Back to Mneme" variant="secondary" style={styles.back} onPress={() => router.replace('/(tabs)')} />
         </>
       )}
     </View>
@@ -194,11 +178,6 @@ const styles = StyleSheet.create({
   savedWrap: { alignItems: 'center' },
   savedTitle: { marginTop: Spacing[2] },
   savedName: { marginTop: Spacing[3], maxWidth: 280, textAlign: 'center' },
-  primaryBtn: {
-    marginTop: Spacing[8],
-    paddingVertical: Spacing[3],
-    paddingHorizontal: Spacing[6],
-    borderRadius: Radius.xs,
-  },
-  secondaryBtn: { marginTop: Spacing[5], padding: Spacing[2] },
+  primaryBtn: { marginTop: Spacing[8] },
+  secondaryBtn: { marginTop: Spacing[3] },
 });

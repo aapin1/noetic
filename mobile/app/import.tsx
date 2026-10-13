@@ -10,6 +10,7 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { SectionKicker } from '@/components/ui/SectionKicker';
 import { Button } from '@/components/ui/Button';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import type { ImportInspect, ImportJob, ImportPayload } from '@/types/api';
@@ -79,7 +80,7 @@ export default function ImportScreen() {
       if (res.canceled || !res.assets[0]) return;
       const asset = res.assets[0];
       if ((asset.size ?? 0) > MAX_BYTES) {
-        setError('that file is too big for the phone to hand over. unzip it and pick the file inside you want.');
+        setError('That file is too big for the phone to hand over. Unzip it and pick the file inside you want.');
         return;
       }
       setBusy(true);
@@ -87,7 +88,7 @@ export default function ImportScreen() {
       const payload: ImportPayload = { content, filename: asset.name, encoding: 'base64' };
       const inspect = await api.importer.inspect(payload);
       if (inspect.withWords + inspect.bare === 0) {
-        setError('nothing mneme could read in that. goodreads, letterboxd, kindle, storygraph, imdb, netflix, takeout, notes, bookmarks and most other exports work.');
+        setError('Nothing Mneme could read in that. Goodreads, Letterboxd, Kindle, StoryGraph, IMDb, Netflix, Takeout, notes, bookmarks and most other exports work.');
         return;
       }
       setPicked({ payload, inspect });
@@ -108,7 +109,7 @@ export default function ImportScreen() {
     if (j.unresolved > 0) parts.push(`${j.unresolved} couldn't be found anywhere`);
     if (j.invalid > 0) parts.push(`${j.invalid} weren't links`);
     if (j.overCap > 0) parts.push(`${j.overCap} over the 200-per-import cap`);
-    return parts.length ? parts.join(' · ') : null;
+    return parts.length ? parts.join(', ') : null;
   };
 
   return (
@@ -116,9 +117,9 @@ export default function ImportScreen() {
       <ScreenHeader title="Import" variant="title" />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <Text variant="monoSmall" color="muted" style={styles.intro}>
-          bring a file from anywhere — a goodreads or letterboxd export, kindle clippings, a storygraph or imdb
-          list, netflix history, a google takeout, a folder of notes, browser bookmarks. mneme works out what it
+        <Text variant="subheadline" color="secondary" style={styles.intro}>
+          Bring a file from anywhere: a Goodreads or Letterboxd export, Kindle clippings, a StoryGraph or IMDb
+          list, Netflix history, a Google Takeout, a folder of notes, browser bookmarks. Mneme works out what it
           is and files what you wrote on your map.
         </Text>
 
@@ -126,26 +127,26 @@ export default function ImportScreen() {
           <View style={[styles.jobCard, { borderColor: c.border, backgroundColor: c.surface }]}>
             {running ? (
               <>
-                <AsciiLoader size={64} message={`mapping ${job.formats[0] ?? 'your file'}… ${progress}/${job.total}`} />
-                <Text variant="monoSmall" color="faint" style={styles.jobNote}>
-                  safe to leave — this keeps going.
+                <AsciiLoader size={64} message={`Mapping ${job.formats[0] ?? 'your file'}, ${progress} of ${job.total}`} />
+                <Text variant="caption" color="faint" style={styles.jobNote}>
+                  Safe to leave. This keeps going.
                 </Text>
               </>
             ) : (
               <>
-                <Text variant="serif">{job.total === 0 ? 'nothing new to map.' : `mapped ${job.done} of ${job.total}.`}</Text>
+                <Text variant="serif">{job.total === 0 ? 'Nothing new to map.' : `Mapped ${job.done} of ${job.total}.`}</Text>
                 {job.formats.length > 0 && (
-                  <Text variant="monoSmall" color="faint" style={styles.jobNote}>
-                    {job.formats.join(' · ')}
+                  <Text variant="caption" color="faint" style={styles.jobNote}>
+                    {job.formats.join(', ')}
                   </Text>
                 )}
                 {skippedLine(job) && (
-                  <Text variant="monoSmall" color="faint" style={styles.jobNote}>
+                  <Text variant="caption" color="faint" style={styles.jobNote}>
                     {skippedLine(job)}
                   </Text>
                 )}
                 {job.done > 0 && (
-                  <Button label="view your atlas →" variant="secondary" size="sm" onPress={() => router.replace('/(tabs)' as never)} style={styles.jobAction} />
+                  <Button label="View your atlas" variant="secondary" size="sm" onPress={() => router.replace('/(tabs)' as never)} style={styles.jobAction} />
                 )}
               </>
             )}
@@ -154,15 +155,15 @@ export default function ImportScreen() {
 
         {!running && picked && (
           <View style={[styles.jobCard, { borderColor: c.border, backgroundColor: c.surface, alignItems: 'stretch' }]} testID="import-inspect">
-            <Text variant="serif">{picked.inspect.formats.join(' · ') || 'a file'}</Text>
-            <Text variant="monoSmall" color="muted" style={{ lineHeight: 18 }}>
+            <Text variant="serif">{picked.inspect.formats.join(', ') || 'A file'}</Text>
+            <Text variant="caption" color="muted">
               {[
                 `${picked.inspect.withWords} with your words`,
                 picked.inspect.bare > 0 ? `${picked.inspect.bare} without` : null,
                 picked.inspect.skippedFiles > 0 ? `${picked.inspect.skippedFiles} files skipped` : null,
               ]
                 .filter(Boolean)
-                .join(' · ')}
+                .join(', ')}
             </Text>
             {picked.inspect.bare > 0 && (
               <Pressable
@@ -171,47 +172,43 @@ export default function ImportScreen() {
                 accessibilityRole="switch"
                 accessibilityState={{ checked: includeBare }}
               >
-                <Text variant="monoSmall" color="primary" style={{ flex: 1, lineHeight: 18 }}>
-                  also bring the {picked.inspect.bare} you didn’t write about — mneme finds a page for each and reads it
+                <Text variant="caption" color="primary" style={{ flex: 1 }}>
+                  Also bring the {picked.inspect.bare} you didn't write about. Mneme finds a page for each and reads it.
                 </Text>
                 <View style={[styles.toggle, { borderColor: includeBare ? c.text : c.border }]}>
-                  <Text variant="monoSmall" color={includeBare ? 'primary' : 'muted'}>
-                    {includeBare ? 'on' : 'off'}
+                  <Text variant="caption" color={includeBare ? 'primary' : 'muted'}>
+                    {includeBare ? 'On' : 'Off'}
                   </Text>
                 </View>
               </Pressable>
             )}
             <View style={{ flexDirection: 'row', gap: Spacing[3], marginTop: Spacing[2] }}>
               <Button
-                label={busy ? 'starting…' : 'map it'}
+                label={busy ? 'Starting' : 'Map it'}
                 onPress={() => void start({ ...picked.payload, includeBare })}
                 loading={busy}
                 disabled={busy || picked.inspect.withWords + (includeBare ? picked.inspect.bare : 0) === 0}
                 style={{ flex: 1 }}
               />
-              <Button label="not this one" variant="tertiary" onPress={() => setPicked(null)} />
+              <Button label="Not this one" variant="tertiary" onPress={() => setPicked(null)} />
             </View>
           </View>
         )}
 
         {!running && !picked && (
           <>
-            <Text variant="label" color="muted" style={styles.sectionHeader}>
-              A file
-            </Text>
-            <Button label={busy ? 'reading…' : 'choose a file'} variant="secondary" onPress={() => void pickFile()} disabled={busy} loading={busy} fullWidth />
-            <Text variant="monoSmall" color="faint" style={styles.hint}>
-              csv, zip, txt, json, md, html, xml, enex — up to 200 rows map per import; anything already on your map is skipped.
+            <SectionKicker label="A file" style={styles.sectionHeader} />
+            <Button label={busy ? 'Reading' : 'Choose a file'} variant="secondary" onPress={() => void pickFile()} disabled={busy} loading={busy} fullWidth />
+            <Text variant="caption" color="faint" style={styles.hint}>
+              CSV, ZIP, TXT, JSON, MD, HTML, XML or ENEX. Up to 200 rows map per import; anything already on your map is skipped.
             </Text>
 
-            <Text variant="label" color="muted" style={styles.sectionHeader}>
-              Or paste links
-            </Text>
+            <SectionKicker label="Paste links" style={styles.sectionHeader} />
             <TextInput
               multiline
               value={text}
               onChangeText={setText}
-              placeholder={'https://…\nhttps://…'}
+              placeholder="One link per line"
               placeholderTextColor={c.faint}
               style={[styles.textarea, { borderColor: c.border, backgroundColor: c.surface, color: c.text }]}
               autoCapitalize="none"
@@ -219,13 +216,9 @@ export default function ImportScreen() {
               accessibilityLabel="Paste a list of links"
               testID="import-paste"
             />
-            <Button label={busy ? 'reading…' : 'map these links'} onPress={() => void start({ content: text })} disabled={busy || text.trim().length === 0} loading={busy} fullWidth style={styles.mapBtn} />
+            <Button label={busy ? 'Reading' : 'Map these links'} onPress={() => void start({ content: text })} disabled={busy || text.trim().length === 0} loading={busy} fullWidth style={styles.mapBtn} />
 
-            <Pressable onPress={() => router.push('/connections' as never)} hitSlop={8} accessibilityRole="link">
-              <Text variant="monoSmall" color="muted" style={styles.hint}>
-                {'have an account instead? connect it and it keeps flowing →'}
-              </Text>
-            </Pressable>
+            <Button label="Connect an account instead" variant="tertiary" onPress={() => router.push('/connections' as never)} fullWidth style={styles.hint} />
           </>
         )}
 
@@ -242,15 +235,15 @@ export default function ImportScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   content: { padding: Spacing[6], paddingBottom: Spacing[12], gap: Spacing[2] },
-  intro: { lineHeight: 20, marginBottom: Spacing[4] },
+  intro: { marginBottom: Spacing[4] },
   sectionHeader: { marginTop: Spacing[5], marginBottom: Spacing[2] },
-  textarea: { minHeight: 120, maxHeight: 220, borderWidth: 1, borderRadius: Radius.sm, padding: Spacing[4], fontSize: 14, textAlignVertical: 'top' },
+  textarea: { minHeight: 120, maxHeight: 220, borderWidth: StyleSheet.hairlineWidth, borderRadius: Radius.sm, padding: Spacing[4], fontSize: 17, textAlignVertical: 'top' },
   mapBtn: { marginTop: Spacing[3] },
-  hint: { marginTop: Spacing[3], lineHeight: 18 },
-  jobCard: { borderWidth: 1, borderRadius: Radius.lg, padding: Spacing[5], marginBottom: Spacing[2], alignItems: 'center', gap: Spacing[2] },
+  hint: { marginTop: Spacing[3] },
+  jobCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: Radius.lg, padding: Spacing[5], marginBottom: Spacing[2], alignItems: 'center', gap: Spacing[2] },
   jobNote: { textAlign: 'center' },
   jobAction: { marginTop: Spacing[2] },
-  toggleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3], paddingVertical: Spacing[3], borderTopWidth: 1, marginTop: Spacing[2] },
+  toggleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3], paddingVertical: Spacing[3], borderTopWidth: StyleSheet.hairlineWidth, marginTop: Spacing[2] },
   toggle: { borderWidth: 1, borderRadius: Radius.full, paddingVertical: 4, paddingHorizontal: Spacing[3], minWidth: 44, alignItems: 'center' },
   error: { marginTop: Spacing[4], textAlign: 'center' },
 });

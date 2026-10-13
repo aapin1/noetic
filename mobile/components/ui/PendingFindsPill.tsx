@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
+import { XIcon } from 'lucide-react-native';
 
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { GLASS_ACTIVE_BG, GLASS_BG, GLASS_BORDER, GLASS_BORDER_GLOW } from '@/constants/mapPalette';
@@ -22,13 +23,15 @@ type Props = {
   onClose: () => void;
 };
 
+const providerName = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
+
 function describe(finds: PendingFinds): string {
   const [g, ...rest] = finds.groups;
-  if (!g) return 'nothing waiting';
+  if (!g) return 'Nothing waiting';
   const noun = finds.total === 1 ? 'find' : 'finds';
-  if (rest.length === 0) return `${g.provider} found ${g.count} ${g.count === 1 ? 'thing' : 'things'} you wrote about`;
-  const names = finds.groups.map((x) => x.provider);
-  return `${finds.total} ${noun} from ${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
+  if (rest.length === 0) return `${providerName(g.provider)} found ${g.count} ${g.count === 1 ? 'thing' : 'things'} you wrote about`;
+  const names = finds.groups.map((x) => providerName(x.provider));
+  return `${finds.total} ${noun} from ${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
 /**
@@ -44,7 +47,7 @@ export function PendingFindsPill({ top, finds, phase, added, onAdd, onDecline, o
 
   const firstTitle = finds.groups[0]?.titles[0];
   const line =
-    phase === 'adding' ? 'reading & mapping…' : phase === 'done' ? `${added} on your map ✓` : describe(finds);
+    phase === 'adding' ? 'Reading and mapping' : phase === 'done' ? `${added} on your map` : describe(finds);
 
   return (
     <Animated.View
@@ -65,7 +68,7 @@ export function PendingFindsPill({ top, finds, phase, added, onAdd, onDecline, o
         <AsciiLoader inline variant={phase === 'adding' ? 'mail' : 'cat'} idle={phase !== 'adding'} size={30} color="rgba(240,232,214,0.77)" />
         <Text style={[styles.mono, { color: 'rgba(240,232,214,0.69)', flex: 1 }]}>{line}</Text>
         <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Dismiss">
-          <Text style={[styles.mono, { color: 'rgba(240,232,214,0.49)' }]}>✕</Text>
+          <XIcon size={14} color="rgba(240,232,214,0.55)" />
         </Pressable>
       </View>
       {phase === 'ask' && firstTitle ? (
@@ -82,7 +85,7 @@ export function PendingFindsPill({ top, finds, phase, added, onAdd, onDecline, o
             accessibilityRole="button"
             accessibilityLabel="Add these to your map"
           >
-            <Text style={[styles.action, { color: ACCENT }]}>add →</Text>
+            <Text style={[styles.action, { color: ACCENT }]}>Add</Text>
           </Pressable>
           <Pressable
             onPress={onDecline}
@@ -91,7 +94,7 @@ export function PendingFindsPill({ top, finds, phase, added, onAdd, onDecline, o
             accessibilityRole="button"
             accessibilityLabel="Leave these out"
           >
-            <Text style={[styles.action, { color: 'rgba(240,232,214,0.84)' }]}>not these</Text>
+            <Text style={[styles.action, { color: 'rgba(240,232,214,0.84)' }]}>Not these</Text>
           </Pressable>
         </View>
       )}
@@ -112,7 +115,7 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
   actions: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2] },
-  mono: { fontFamily: FontFamily.mono, fontSize: FontSize.xs, letterSpacing: 1 },
+  mono: { fontFamily: FontFamily.sans, fontSize: FontSize.sm },
   btn: { borderWidth: 1, borderRadius: Radius.full, paddingVertical: 6, paddingHorizontal: Spacing[3] },
-  action: { fontFamily: FontFamily.mono, fontSize: FontSize.xs, letterSpacing: 0.5 },
+  action: { fontFamily: FontFamily.sans, fontSize: FontSize.sm, fontWeight: '600' },
 });

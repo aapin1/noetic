@@ -49,18 +49,18 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
     return (
       <View style={[styles.root, { backgroundColor: c.bg }]}>
-        <Text style={[styles.title, { color: c.text }]}>Something broke.</Text>
+        <Text style={[styles.title, { color: c.text }]}>Something went wrong</Text>
         <Text style={[styles.body, { color: c.muted }]}>
           That screen hit an error it couldn&apos;t recover from. Your captures are
-          safe — they live on the server, not in the app.
+          safe. They live on the server, not in the app.
         </Text>
         <Pressable
           onPress={() => this.setState({ error: null })}
-          style={[styles.button, { borderColor: c.border }]}
+          style={[styles.button, { backgroundColor: c.text }]}
           accessibilityRole="button"
           accessibilityLabel="Try again"
         >
-          <Text style={[styles.buttonText, { color: c.text }]}>try again</Text>
+          <Text style={[styles.buttonText, { color: c.bg }]}>Try again</Text>
         </Pressable>
       </View>
     );
@@ -69,8 +69,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
 const styles = StyleSheet.create({
   root: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  title: { fontSize: 20, marginBottom: 12, textAlign: 'center' },
-  body: { fontSize: 14, lineHeight: 21, textAlign: 'center', marginBottom: 28 },
-  button: { borderWidth: StyleSheet.hairlineWidth, paddingVertical: 12, paddingHorizontal: 28 },
-  buttonText: { fontSize: 13, letterSpacing: 1 },
+  title: { fontSize: 20, fontWeight: '600', marginBottom: 12, textAlign: 'center' },
+  body: { fontSize: 15, lineHeight: 21, textAlign: 'center', marginBottom: 28 },
+  button: { borderRadius: 999, paddingVertical: 12, paddingHorizontal: 28 },
+  buttonText: { fontSize: 17, fontWeight: '600' },
 });

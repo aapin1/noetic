@@ -14,7 +14,7 @@ appId: app.mneme.mobile
       - openLink: "exp+mneme://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
       - extendedWaitUntil:
           visible:
-            text: "Continue|Get started|atlas"
+            text: "Continue|Get started|Atlas"
           timeout: 45000
 - runFlow:
     when:
@@ -29,7 +29,7 @@ appId: app.mneme.mobile
 
 - extendedWaitUntil:
     visible:
-      text: "atlas"
+      text: "Atlas"
     timeout: 45000
 # A cold relaunch can open the dev client's own menu over the app — close it
 # before touching anything (its sheet swallows every tap underneath).
@@ -66,11 +66,11 @@ appId: app.mneme.mobile
     id: "import-paste"
 - inputText: "https://example.com/e2e-one https://example.com/e2e-two"
 - pressKey: Enter
-- tapOn: "map these links"
+- tapOn: "Map these links"
 
 # Either the live progress card or a finished tally — both prove the job ran.
 - extendedWaitUntil:
     visible:
-      text: ".*mapping your library.*|.*mapped .*|.*couldn't be read.*|.*nothing new to map.*"
+      text: ".*Mapping .*|.*Mapped .*|.*couldn't be read.*|.*Nothing new to map.*"
     timeout: 45000
 - takeScreenshot: screenshots/06-import-result

@@ -30,7 +30,7 @@ const fontSizeMap: Record<Size, number> = {
 };
 
 function getInitials(displayName?: string | null): string {
-  if (!displayName) return '·';
+  if (!displayName) return '';
   const parts = displayName.trim().split(/\s+/);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
@@ -68,7 +68,8 @@ export function Avatar({ uri, displayName, size = 'md' }: Props) {
               fontSize: fontSizeMap[size],
               lineHeight: dimension,
               color: c.text,
-              fontFamily: FontFamily.mono,
+              fontFamily: FontFamily.sans,
+              fontWeight: '600',
               includeFontPadding: false,
             },
           ]}
@@ -88,7 +89,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     backgroundColor: 'transparent',
   },
-  initials: {
-    letterSpacing: 1.4,
-  },
+  initials: {},
 });

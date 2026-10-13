@@ -479,7 +479,7 @@ export function MusesIntro({ targetRef, onHandoff, onDone }: Props) {
               </Animated.View>
 
               <Animated.View style={[styles.meaning, stagger(MEANINGS_AT, i, NAME_DUR)]}>
-                <Text variant="monoSmall" color="muted">
+                <Text variant="caption" color="muted">
                   {MEANINGS[i]}
                 </Text>
               </Animated.View>

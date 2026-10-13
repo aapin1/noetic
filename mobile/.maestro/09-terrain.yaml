@@ -15,7 +15,7 @@ appId: app.mneme.mobile
       - openLink: "exp+mneme://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
       - extendedWaitUntil:
           visible:
-            text: "Continue|Get started|atlas"
+            text: "Continue|Get started|Atlas"
           timeout: 45000
 - runFlow:
     when:
@@ -30,7 +30,7 @@ appId: app.mneme.mobile
 
 - extendedWaitUntil:
     visible:
-      text: "atlas"
+      text: "Atlas"
     timeout: 45000
 # A cold relaunch can open the dev client's own menu over the app — close it
 # before touching anything (its sheet swallows every tap underneath).
@@ -40,10 +40,10 @@ appId: app.mneme.mobile
     commands:
       - tapOn: "Close"
 
-- tapOn: "you"
+- tapOn: "You"
 - extendedWaitUntil:
     visible:
-      text: "you"
+      text: "You"
     timeout: 20000
 
 # The forming teaser card sits deep in the wrapped stack. Its Pressable
@@ -56,23 +56,23 @@ appId: app.mneme.mobile
 - retry:
     maxRetries: 3
     commands:
-      - tapOn: "you"
+      - tapOn: "You"
       - scrollUntilVisible:
           element:
-            text: "Open terrain — forming.*"
+            text: "Open Terrain, forming.*"
           direction: DOWN
           timeout: 40000
       - waitForAnimationToEnd:
           timeout: 3000
       - takeScreenshot: screenshots/09-terrain-teaser
-      - tapOn: "Open terrain — forming.*"
+      - tapOn: "Open Terrain, forming.*"
       # The forming screen: lede, the countable horizon, and the honest naming
       # of what the remaining captures buy. (Chapter kickers render uppercase
       # via textTransform, so assertions anchor on body text instead.)
       - extendedWaitUntil:
           visible:
-            text: ".*the long view is forming.*"
+            text: ".*The long view is forming.*"
           timeout: 15000
 - assertVisible: "of 50"
-- assertVisible: ".*drift, eras and bridges.*"
+- assertVisible: ".*Drift, eras and bridges.*"
 - takeScreenshot: screenshots/09-terrain-forming

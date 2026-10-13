@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/lib/api';
-import { Radius, Spacing } from '@/constants/theme';
+import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 
@@ -58,14 +58,14 @@ export default function PositionCreateScreen() {
           <Pressable onPress={() => router.back()} style={styles.backBtn}>
             <Text variant="body" color="muted">Cancel</Text>
           </Pressable>
-          <Text variant="wordmark" style={{ fontSize: 16 }}>Take a position</Text>
+          <Text variant="headline">Take a position</Text>
           <Pressable
             onPress={handleSubmit}
             disabled={!canSubmit}
             style={styles.doneBtn}
           >
             <Text variant="bodyMedium" color={canSubmit ? 'primary' : 'muted'}>
-              {saving ? 'Saving…' : 'Done'}
+              {saving ? 'Saving' : 'Done'}
             </Text>
           </Pressable>
         </View>
@@ -74,7 +74,7 @@ export default function PositionCreateScreen() {
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
-          <Text variant="monoSmall" color="muted" style={styles.topicLabel}>
+          <Text variant="subheadline" color="secondary">
             {topicName ?? 'Topic'}
           </Text>
           <Text variant="body" color="secondary" style={styles.prompt}>
@@ -82,7 +82,7 @@ export default function PositionCreateScreen() {
           </Text>
           <TextInput
             style={[styles.input, { color: c.text, borderColor: c.border }]}
-            placeholder="State your position…"
+            placeholder="State your position"
             placeholderTextColor={c.faint}
             value={statement}
             onChangeText={setStatement}
@@ -90,11 +90,11 @@ export default function PositionCreateScreen() {
             autoFocus
             textAlignVertical="top"
           />
-          <Text variant="monoSmall" color="muted" style={styles.hint}>
+          <Text variant="caption" color="muted">
             This becomes a position on your map. New captures on this topic get tested against it.
           </Text>
           {error && (
-            <Text variant="monoSmall" style={[styles.errorText, { color: c.danger }]}>
+            <Text variant="caption" color="danger" style={styles.errorText}>
               {error}
             </Text>
           )}
@@ -117,16 +117,15 @@ const styles = StyleSheet.create({
   backBtn: { minWidth: 60 },
   doneBtn: { minWidth: 60, alignItems: 'flex-end' },
   content: { padding: Spacing[4], gap: Spacing[4] },
-  topicLabel: { textTransform: 'uppercase', letterSpacing: 1 },
   prompt: { lineHeight: 24 },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: Radius.md,
     padding: Spacing[3],
     minHeight: 120,
-    fontSize: 16,
+    fontFamily: FontFamily.sans,
+    fontSize: FontSize.md,
     lineHeight: 24,
   },
-  hint: { lineHeight: 18 },
   errorText: { marginTop: Spacing[2] },
 });

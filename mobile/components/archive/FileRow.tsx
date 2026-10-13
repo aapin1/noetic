@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { FileTextIcon } from 'lucide-react-native';
 import { Radius, Spacing, accentForKey } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
+import { shortDate } from '@/lib/dates';
 import { Text } from '@/components/ui/Text';
 import type { CaptureSummary } from '@/types/api';
 
@@ -11,8 +12,7 @@ const THUMB_SIZE = 44;
 
 export function FileRow({ item, onPress }: { item: CaptureSummary; onPress: () => void }) {
   const c = useThemeColors();
-  const date = new Date(item.capturedAt);
-  const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const dateStr = shortDate(item.capturedAt);
 
   const thumbUrl = item.kind === 'IMAGE' ? item.mediaUrl : item.contentItem?.imageUrl;
   const author = item.contentItem?.authorName ?? item.contentItem?.sourceName ?? null;
@@ -46,14 +46,14 @@ export function FileRow({ item, onPress }: { item: CaptureSummary; onPress: () =
         {(!!author || !!topic) && (
           <View style={styles.meta}>
             {!!accent && <View style={[styles.topicDot, { backgroundColor: accent }]} />}
-            <Text variant="monoSmall" color="faint" numberOfLines={1} style={styles.metaText}>
-              {author ?? topic!.name.toLowerCase()}
+            <Text variant="caption" color="faint" numberOfLines={1} style={styles.metaText}>
+              {author ?? topic!.name}
             </Text>
           </View>
         )}
       </View>
 
-      <Text variant="monoSmall" color="faint" style={styles.date}>
+      <Text variant="caption" color="faint" style={styles.date}>
         {dateStr}
       </Text>
     </Pressable>

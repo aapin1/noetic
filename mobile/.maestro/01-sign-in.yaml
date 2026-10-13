@@ -37,6 +37,6 @@ appId: app.mneme.mobile
 # The atlas tab bar is the proof we're through the auth gate.
 - extendedWaitUntil:
     visible:
-      text: "atlas"
+      text: "Atlas"
     timeout: 45000
 - takeScreenshot: screenshots/01-signed-in

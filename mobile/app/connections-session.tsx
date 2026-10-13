@@ -55,7 +55,7 @@ export default function ConnectionSessionScreen() {
       })
       .catch((e) => {
         setPhase('error');
-        setMessage(e instanceof Error ? e.message : 'something went wrong');
+        setMessage(e instanceof Error ? e.message : 'Something went wrong');
       });
   }, [key]);
 
@@ -77,11 +77,11 @@ export default function ConnectionSessionScreen() {
     if (msg.type === 'progress') setMessage(msg.message ?? '');
     if (msg.type === 'error') {
       setPhase('error');
-      setMessage(msg.message ?? 'something went wrong');
+      setMessage(msg.message ?? 'Something went wrong');
       ran.current = false;
     }
     if (msg.type === 'file' && msg.text) {
-      setMessage('handing it to mneme…');
+      setMessage('Handing it to Mneme');
       try {
         await api.importer.start({ content: msg.text, filename: msg.filename, includeBare: true });
         track('connection_linked', { provider: `session:${target?.key ?? key}` });
@@ -89,7 +89,7 @@ export default function ConnectionSessionScreen() {
         router.replace('/import' as never);
       } catch (e) {
         setPhase('error');
-        setMessage(e instanceof Error ? e.message : 'could not start the import');
+        setMessage(e instanceof Error ? e.message : 'Could not start the import');
       }
     }
   };
@@ -99,11 +99,11 @@ export default function ConnectionSessionScreen() {
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
         <ScreenHeader title="Sign in" variant="title" />
         <View style={styles.center}>
-          <Text variant="serif" style={{ textAlign: 'center' }}>
-            this needs a newer build of mneme
+          <Text variant="h4" style={{ textAlign: 'center' }}>
+            This needs a newer build of Mneme
           </Text>
-          <Text variant="monoSmall" color="faint" style={{ textAlign: 'center', marginTop: Spacing[3], lineHeight: 18 }}>
-            signing in inside the app arrived with the next update. until then, the file export works.
+          <Text variant="subheadline" color="secondary" style={{ textAlign: 'center', marginTop: Spacing[3] }}>
+            Signing in inside the app arrived with the next update. Until then, the file export works.
           </Text>
         </View>
       </SafeAreaView>
@@ -114,23 +114,23 @@ export default function ConnectionSessionScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
       <ScreenHeader title={target?.name ?? 'Sign in'} variant="title" />
       {phase === 'loading' || !target ? (
-        <AsciiLoader fill size={90} message={phase === 'error' ? message : 'loading…'} />
+        <AsciiLoader fill size={90} message={phase === 'error' ? message : 'Loading'} />
       ) : (
         <>
           <View style={[styles.banner, { borderColor: c.border, backgroundColor: c.surface }]}>
             {phase === 'working' || phase === 'done' ? (
               <AsciiLoader inline variant="mail" size={28} message={message} />
             ) : (
-              <Text variant="monoSmall" color="muted" style={{ lineHeight: 18, flex: 1 }}>
+              <Text variant="caption" color="secondary" style={{ flex: 1 }}>
                 {phase === 'error'
                   ? message
                   : phase === 'ready'
-                    ? `you're in. mneme will read ${target.what}`
-                    : `sign in as you normally would. your password never reaches mneme — only ${target.what}`}
+                    ? `You're in. Mneme will read ${target.what}`
+                    : `Sign in as you normally would. Your password never reaches Mneme, only ${target.what}`}
               </Text>
             )}
             {phase === 'ready' || phase === 'error' ? (
-              <Button label={phase === 'error' ? 'try again' : 'read it →'} size="sm" variant="secondary" onPress={runScript} style={{ marginLeft: Spacing[3] }} />
+              <Button label={phase === 'error' ? 'Try again' : 'Read it'} size="sm" variant="secondary" onPress={runScript} style={{ marginLeft: Spacing[3] }} />
             ) : null}
           </View>
           <WebViewComponent
@@ -147,8 +147,8 @@ export default function ConnectionSessionScreen() {
             style={styles.web}
           />
           <Pressable onPress={() => router.back()} style={styles.cancel} hitSlop={8} accessibilityRole="button">
-            <Text variant="monoSmall" color="faint">
-              cancel
+            <Text variant="subheadline" color="secondary">
+              Cancel
             </Text>
           </Pressable>
         </>

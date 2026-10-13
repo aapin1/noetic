@@ -32,15 +32,15 @@ const ASCII_CAT = ' /\\_/\\\n( o.o )\n > ^ <';
 
 /**
  * The single brand line a frame carries: wordmark + where to get it, once.
- * The handle rides along only where it's passed (the cover and the poster) —
- * a slideshow should not sign every slide.
+ * The handle rides along only where it's passed (the cover and the poster).
+ * A slideshow should not sign every slide.
  */
 function BrandFooter({ p, handle }: { p: TemplatePalette; handle?: string | null }) {
   return (
     <View style={styles.brandRow}>
       <Text variant="monoSmall" style={[styles.cta, { color: p.textSecondary }]} numberOfLines={1}>
         <Text style={[styles.wordmarkSm, { color: p.text }]}>mneme</Text>
-        {` · ${SHARE_CTA}`}
+        {`: ${SHARE_CTA}`}
       </Text>
       {handle ? (
         <Text variant="monoSmall" style={{ color: p.faint }} numberOfLines={1}>
@@ -70,14 +70,14 @@ export function RecapCoverCard({
         <View style={styles.coverCenter}>
           {p.ascii ? <Text style={[styles.ascii, { color: p.faint }]}>{ASCII_CAT}</Text> : null}
           <Text variant="label" style={{ color: p.accent, marginBottom: Spacing[3] }}>
-            a recap
+            A recap
           </Text>
           <Text style={[styles.coverTitle, { color: p.titleColor }]} numberOfLines={5}>
             {title}
           </Text>
           <Text variant="mono" style={{ color: p.faint, marginTop: Spacing[4] }}>
             {count} {count === 1 ? 'save' : 'saves'}
-            {dateRange ? ` · ${dateRange}` : ''}
+            {dateRange ? `, ${dateRange}` : ''}
           </Text>
         </View>
 
@@ -108,7 +108,7 @@ export function RecapNodeCard({
       <View style={styles.nodeBody}>
         <Text variant="label" style={{ color: p.accent }} numberOfLines={1}>
           {KIND_WORD[item.kind]}
-          {topic ? ` · ${topic}` : ''}
+          {topic ? `, ${topic}` : ''}
         </Text>
 
         {image ? (
@@ -189,7 +189,7 @@ export function RecapPoster({
         </Text>
         <Text variant="mono" style={{ color: p.faint, marginTop: Spacing[2] }}>
           {items.length} {items.length === 1 ? 'save' : 'saves'}
-          {dateRange ? ` · ${dateRange}` : ''}
+          {dateRange ? `, ${dateRange}` : ''}
         </Text>
 
         <View style={[styles.posterRule, { backgroundColor: p.border }]} />
@@ -212,8 +212,8 @@ export function RecapPoster({
                 </Text>
                 <Text variant="monoSmall" style={{ color: p.faint, marginTop: 2 }} numberOfLines={1}>
                   {KIND_WORD[item.kind]}
-                  {topic ? ` · ${topic}` : ''}
-                  {source ? ` · ${source}` : ''}
+                  {topic ? `, ${topic}` : ''}
+                  {source ? `, ${source}` : ''}
                 </Text>
               </View>
               {image ? (

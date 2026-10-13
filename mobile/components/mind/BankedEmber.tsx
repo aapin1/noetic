@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { Dimensions, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Dimensions, ScrollView, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Ellipse, Line } from 'react-native-svg';
 import Animated, {
   Easing,
@@ -13,6 +13,7 @@ import Animated, {
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { Button } from '@/components/ui/Button';
 import type { DormantThread } from '@/types/api';
 import { emberHeat } from './overviewSections';
 import { DETAIL_PAGE_BOTTOM, DetailShell, useStageInk } from './DetailShell';
@@ -120,7 +121,7 @@ export function BankedEmber({
   );
 
   return (
-    <DetailShell typeLabel="DORMANT" accent={color} background={background} onClose={onClose}>
+    <DetailShell typeLabel="Quiet topic" accent={color} background={background} onClose={onClose}>
       {/* One continuous page: the hearth scrolls away with the text */}
       <ScrollView
         style={styles.scroll}
@@ -163,11 +164,11 @@ export function BankedEmber({
           <View style={styles.chipWrap} pointerEvents="none">
             <View style={[styles.chip, { backgroundColor: c.surface }]}>
               <Text
-                variant="monoSmall"
+                variant="caption"
                 numberOfLines={2}
-                style={{ color, letterSpacing: 2, textAlign: 'center' }}
+                style={{ color, textAlign: 'center' }}
               >
-                {data.topicName.toUpperCase()}
+                {data.topicName}
               </Text>
             </View>
           </View>
@@ -175,42 +176,38 @@ export function BankedEmber({
 
         <View style={styles.below}>
           <View style={[styles.card, { borderColor: color, backgroundColor: c.surface }]}>
-            <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>QUIET FOR</Text>
+            <Text variant="h4" style={{ color: ink(0.94) }}>Quiet for</Text>
             <Text variant="h2" style={{ color: ink(0.94), marginTop: Spacing[2] }}>
               {data.daysSilent} {data.daysSilent === 1 ? 'day' : 'days'}
             </Text>
-            <Text variant="monoSmall" style={{ color: ink(0.45), marginTop: Spacing[2] }}>
-              {data.captureCount} {data.captureCount === 1 ? 'capture' : 'captures'} · last on {lastOn}
+            <Text variant="caption" style={{ color: ink(0.45), marginTop: Spacing[2] }}>
+              {data.captureCount} {data.captureCount === 1 ? 'capture' : 'captures'}, last on {lastOn}
             </Text>
           </View>
 
           <SilenceRail daysSilent={data.daysSilent} heat={heat} color={color} burn={burn} />
           <View style={styles.railLabels}>
-            <Text variant="monoSmall" style={{ color: ink(0.42) }}>last spark</Text>
-            <Text variant="monoSmall" style={{ color: ink(0.42) }}>today</Text>
+            <Text variant="caption" style={{ color: ink(0.42) }}>Last capture</Text>
+            <Text variant="caption" style={{ color: ink(0.42) }}>Today</Text>
           </View>
 
           <Text variant="body" style={{ color: ink(0.75), marginTop: Spacing[6] }}>
             {data.captureCount} {data.captureCount === 1 ? 'capture' : 'captures'} went into this
-            before it went quiet. Nothing has been lost — the folder is intact, and one new capture
+            before it went quiet. Nothing has been lost. The folder is intact, and one new capture
             is enough to put it back in play.
           </Text>
 
           <View style={[styles.nextRow, { borderLeftColor: color }]}>
-            <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>ONE WAY BACK IN</Text>
-            <Text variant="bodyMedium" style={{ color: ink(0.9), marginTop: 2 }}>
+            <Text variant="headline" style={{ color: ink(0.94) }}>One way back in</Text>
+            <Text variant="body" style={{ color: ink(0.9), marginTop: 2 }}>
               Ask the companion what you left unfinished here, or reopen the folder and reread the
               last thing you saved.
             </Text>
           </View>
 
           <View style={[styles.ctaRow, { borderTopColor: ink(0.18) }]}>
-            <Pressable onPress={onContinueCompanion} hitSlop={8}>
-              <Text variant="monoSmall" style={{ color: ink(0.6) }}>Continue in companion →</Text>
-            </Pressable>
-            <Pressable onPress={onOpenFolder} hitSlop={8}>
-              <Text variant="monoSmall" style={{ color: ink(0.6) }}>Open the folder →</Text>
-            </Pressable>
+            <Button label="Continue in companion" variant="secondary" size="sm" onPress={onContinueCompanion} />
+            <Button label="Open folder" variant="secondary" size="sm" onPress={onOpenFolder} />
           </View>
         </View>
       </ScrollView>
@@ -372,7 +369,8 @@ const styles = StyleSheet.create({
   },
   ctaRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: Spacing[3],
     marginTop: Spacing[8],
     paddingTop: Spacing[4],
     borderTopWidth: StyleSheet.hairlineWidth,

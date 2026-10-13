@@ -1,14 +1,15 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { Radius, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Avatar } from '@/components/ui/Avatar';
+import { Button } from '@/components/ui/Button';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import type { BlockedUser } from '@/types/api';
 
@@ -59,7 +60,7 @@ export default function BlockedAccountsScreen() {
       <ScreenHeader title="Blocked" variant="title" />
 
       {loading && !data ? (
-        <AsciiLoader fill size={90} message="loading…" />
+        <AsciiLoader fill size={90} message="Loading" />
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {error ? (
@@ -67,8 +68,8 @@ export default function BlockedAccountsScreen() {
               {error}
             </Text>
           ) : users.length === 0 ? (
-            <Text variant="monoSmall" color="muted" style={styles.empty}>
-              you haven't blocked anyone.
+            <Text variant="subheadline" color="secondary" style={styles.empty}>
+              You haven't blocked anyone.
             </Text>
           ) : (
             users.map((user) => (
@@ -78,21 +79,17 @@ export default function BlockedAccountsScreen() {
                   <Text variant="bodyMedium" numberOfLines={1}>
                     {user.displayName}
                   </Text>
-                  <Text variant="monoSmall" style={{ color: c.faint }} numberOfLines={1}>
+                  <Text variant="caption" color="muted" numberOfLines={1}>
                     @{user.handle}
                   </Text>
                 </View>
-                <Pressable
+                <Button
+                  label="Unblock"
+                  variant="secondary"
+                  size="sm"
                   onPress={() => unblock(user)}
-                  hitSlop={8}
-                  style={[styles.unblockBtn, { borderColor: c.text }]}
-                  accessibilityRole="button"
                   accessibilityLabel={`Unblock ${user.displayName}`}
-                >
-                  <Text variant="monoSmall" style={{ color: c.text }}>
-                    unblock
-                  </Text>
-                </Pressable>
+                />
               </View>
             ))
           )}
@@ -124,10 +121,4 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   meta: { flex: 1 },
-  unblockBtn: {
-    borderWidth: 1,
-    borderRadius: Radius.xs,
-    paddingVertical: Spacing[2],
-    paddingHorizontal: Spacing[3],
-  },
 });

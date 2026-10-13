@@ -15,7 +15,7 @@ appId: app.mneme.mobile
       - openLink: "exp+mneme://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
       - extendedWaitUntil:
           visible:
-            text: "Continue|Get started|atlas"
+            text: "Continue|Get started|Atlas"
           timeout: 45000
 - runFlow:
     when:
@@ -30,7 +30,7 @@ appId: app.mneme.mobile
 
 - extendedWaitUntil:
     visible:
-      text: "atlas"
+      text: "Atlas"
     timeout: 45000
 
 # A cold relaunch can open the dev client's own menu over the app — close it
@@ -50,25 +50,25 @@ appId: app.mneme.mobile
       - tapOn: ".*day streak.*"
 - runFlow:
     when:
-      notVisible: "your position, challenged"
+      notVisible: "Your position, challenged"
     commands:
       - openLink: "mneme://today"
 
 # The seeded unacknowledged challenge leads the surface.
 - extendedWaitUntil:
     visible:
-      text: "your position, challenged"
+      text: "Your position, challenged"
     timeout: 30000
 - assertVisible: ".*Every act should be examined.*"
-- assertVisible: "revise position →"
+- assertVisible: "Revise position"
 - takeScreenshot: screenshots/04-today-challenge
 
 # Hold the position in place: the challenge clears, and the fresh strong
 # CONTRADICTS edge takes over the slot instead.
-- tapOn: "hold position"
+- tapOn: "Hold position"
 - extendedWaitUntil:
     visible:
-      text: "two saves disagree"
+      text: "Two saves disagree"
     timeout: 30000
 - takeScreenshot: screenshots/04-today-collision
 
@@ -80,7 +80,7 @@ appId: app.mneme.mobile
 - assertVisible: "Memory Is Reconstructive"
 - scrollUntilVisible:
     element:
-      text: "these two touch"
+      text: "Two saves connect"
     direction: DOWN
 - assertVisible: "The Extended Mind"
 - scrollUntilVisible:
@@ -91,9 +91,9 @@ appId: app.mneme.mobile
 
 - scrollUntilVisible:
     element:
-      text: "open insight →"
+      text: "Open insight"
     direction: UP
-- tapOn: "open insight →"
+- tapOn: "Open insight"
 - extendedWaitUntil:
     visible:
       text: "Dismiss|.*rebuilds.*"

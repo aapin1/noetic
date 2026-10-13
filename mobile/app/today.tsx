@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
@@ -11,7 +11,17 @@ import { Text } from '@/components/ui/Text';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { SectionKicker } from '@/components/ui/SectionKicker';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
-import type { StreakSummary } from '@/types/api';
+import { Button } from '@/components/ui/Button';
+import { ScreenIntro } from '@/components/ui/ScreenIntro';
+import type { MemoryEdgeType, StreakSummary } from '@/types/api';
+
+const EDGE_LABELS: Record<MemoryEdgeType, string> = {
+  RECURS: 'Recurs',
+  REINFORCES: 'Reinforces',
+  CONTRADICTS: 'Pulls against',
+  EVOLVES_FROM: 'Evolves from',
+  RELATED: 'Related',
+};
 
 /**
  * The daily ritual: one old capture handed back, its strongest thread, and a
@@ -38,14 +48,8 @@ function Section({
   );
 }
 
-function ActionRow({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} hitSlop={8} accessibilityRole="button" accessibilityLabel={label}>
-      <Text variant="monoSmall" color="muted" style={styles.action}>
-        {label}
-      </Text>
-    </Pressable>
-  );
+function ActionRow({ label, onPress, loading }: { label: string; onPress: () => void; loading?: boolean }) {
+  return <Button label={label} variant="secondary" size="sm" onPress={onPress} loading={loading} />;
 }
 
 export default function TodayScreen() {
@@ -106,41 +110,36 @@ export default function TodayScreen() {
     if (!streak) return null;
     if (credited) {
       return streak.current >= 2
-        ? `◆ ${streak.current} days running — opening this counted.`
-        : 'opening this counted toward today.';
+        ? `${streak.current} days running. Opening this counted.`
+        : 'Opening this counted toward today.';
     }
-    return streak.current >= 2 ? `◆ ${streak.current} days running.` : null;
+    return streak.current >= 2 ? `${streak.current} days running.` : null;
   })();
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
-      <ScreenHeader title="today" variant="title" />
+      <ScreenHeader title="Today" variant="title" />
 
       {loading && !data ? (
-        <AsciiLoader fill size={72} message={['leafing back…', 'finding the thread…']} />
+        <AsciiLoader fill size={72} message="Loading" />
       ) : !capture && !challenge && !collision ? (
-        <View style={styles.empty}>
-          <Text variant="serif" color="muted" style={styles.emptyTitle}>
-            not yet
-          </Text>
-          <Text variant="monoSmall" color="faint" style={styles.emptyBody}>
-            today opens once your map has a little history — a week of saves is enough. keep
-            charting.
-          </Text>
-        </View>
+        <ScreenIntro
+          title="Nothing to revisit yet"
+          body="Today opens once your map has a little history. A week of saves is enough."
+        />
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {challenge ? (
-            <Section kicker="your position, challenged" accent={Accents.clay}>
-              <Text variant="monoSmall" color="faint" style={styles.whyNow}>
-                you staked this on {challenge.topicName.toLowerCase()}:
+            <Section kicker="Your position, challenged" accent={Accents.clay}>
+              <Text variant="caption" color="muted" style={styles.whyNow}>
+                You staked this on {challenge.topicName}
               </Text>
               <Text variant="h3" style={styles.title}>
                 “{challenge.statement}”
               </Text>
               {challenge.capture ? (
-                <Text variant="monoSmall" color="faint" style={styles.reaction}>
-                  now colliding with: {challenge.capture.title}
+                <Text variant="caption" color="muted" style={styles.reaction}>
+                  Now colliding with {challenge.capture.title}
                 </Text>
               ) : null}
               <Text variant="body" color="muted" style={styles.idea}>
@@ -148,11 +147,12 @@ export default function TodayScreen() {
               </Text>
               <View style={styles.actions}>
                 <ActionRow
-                  label="revise position →"
+                  label="Revise position"
                   onPress={() => router.push(`/position/${challenge.topicId}` as never)}
                 />
                 <ActionRow
-                  label={holding ? 'holding…' : 'hold position'}
+                  label="Hold position"
+                  loading={holding}
                   onPress={() => void holdPosition(challenge.challengeId)}
                 />
               </View>
@@ -160,19 +160,19 @@ export default function TodayScreen() {
           ) : null}
 
           {collision ? (
-            <Section kicker="two saves disagree" accent={Accents.clay}>
+            <Section kicker="Two saves disagree" accent={Accents.clay}>
               <Text variant="bodyMedium" numberOfLines={3}>
                 {collision.itemA.title}
               </Text>
-              <Text variant="monoSmall" color="faint" style={styles.edgeType}>
-                — pulls against —
+              <Text variant="caption" color="muted" style={styles.edgeType}>
+                Pulls against
               </Text>
               <Text variant="bodyMedium" numberOfLines={3}>
                 {collision.itemB.title}
               </Text>
               <View style={styles.actions}>
                 <ActionRow
-                  label="see where they split →"
+                  label="See where they split"
                   onPress={() => router.push(`/insight/${collision.itemA.id}?from=today` as never)}
                 />
               </View>
@@ -180,8 +180,8 @@ export default function TodayScreen() {
           ) : null}
 
           {capture ? (
-          <Section kicker="resurfaced" accent={Accents.amber}>
-            <Text variant="monoSmall" color="faint" style={styles.whyNow}>
+          <Section kicker="Resurfaced" accent={Accents.amber}>
+            <Text variant="caption" color="muted" style={styles.whyNow}>
               {capture.whyNow}
             </Text>
             <Text variant="h3" style={styles.title}>
@@ -193,41 +193,41 @@ export default function TodayScreen() {
               </Text>
             ) : null}
             {capture.reaction ? (
-              <Text variant="monoSmall" color="faint" style={styles.reaction}>
-                you said: {capture.reaction}
+              <Text variant="caption" color="muted" style={styles.reaction}>
+                You said: {capture.reaction}
               </Text>
             ) : null}
             <View style={styles.actions}>
               <ActionRow
-                label="open insight →"
+                label="Open insight"
                 onPress={() => router.push(`/insight/${capture.id}?from=today` as never)}
               />
               <ActionRow
-                label="view in atlas →"
+                label="View in Atlas"
                 onPress={() =>
                   router.navigate({ pathname: '/(tabs)', params: { selectIds: capture.id } } as never)
                 }
               />
-              <ActionRow label="continue in companion →" onPress={openCompanion} />
+              <ActionRow label="Continue in companion" onPress={openCompanion} />
             </View>
           </Section>
           ) : null}
 
           {capture && connection ? (
-            <Section kicker="these two touch" accent={Accents.moss}>
+            <Section kicker="Two saves connect" accent={Accents.moss}>
               <Text variant="bodyMedium" numberOfLines={3}>
                 {capture.title}
               </Text>
-              <Text variant="monoSmall" color="faint" style={styles.edgeType}>
-                — {connection.type.toLowerCase()} —
+              <Text variant="caption" color="muted" style={styles.edgeType}>
+                {EDGE_LABELS[connection.type] ?? 'Related'}
               </Text>
               <Text variant="bodyMedium" numberOfLines={3}>
                 {connection.title}
               </Text>
               <View style={styles.actions}>
-                <ActionRow label="pull the thread →" onPress={openCompanion} />
+                <ActionRow label="Pull the thread" onPress={openCompanion} />
                 <ActionRow
-                  label="see the other side →"
+                  label="See the other side"
                   onPress={() => router.push(`/insight/${connection.itemId}?from=today` as never)}
                 />
               </View>
@@ -235,7 +235,7 @@ export default function TodayScreen() {
           ) : null}
 
           {streakLine ? (
-            <Text variant="monoSmall" color="faint" style={styles.streakLine}>
+            <Text variant="caption" color="muted" style={styles.streakLine}>
               {streakLine}
             </Text>
           ) : null}
@@ -260,11 +260,7 @@ const styles = StyleSheet.create({
   title: { marginBottom: Spacing[2] },
   idea: { marginBottom: Spacing[2], lineHeight: 22 },
   reaction: { marginBottom: Spacing[1] },
-  actions: { marginTop: Spacing[3], gap: Spacing[3] },
-  action: { letterSpacing: 0.5 },
+  actions: { marginTop: Spacing[3], flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[2] },
   edgeType: { marginVertical: Spacing[2] },
   streakLine: { textAlign: 'center', marginTop: Spacing[2], paddingHorizontal: Spacing[6] },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing[8] },
-  emptyTitle: { marginBottom: Spacing[3] },
-  emptyBody: { textAlign: 'center', lineHeight: 20 },
 });

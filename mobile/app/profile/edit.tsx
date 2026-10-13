@@ -74,7 +74,7 @@ export default function EditProfileScreen() {
         <Pressable onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="Cancel">
           <ChevronLeftIcon size={22} color={c.text} />
         </Pressable>
-        <Text variant="h4">Edit profile</Text>
+        <Text variant="headline">Edit profile</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -140,7 +140,7 @@ export default function EditProfileScreen() {
           />
 
           <Button
-            label={saving ? 'Saving…' : 'Save changes'}
+            label={saving ? 'Saving' : 'Save changes'}
             onPress={handleSave}
             variant="primary"
             size="lg"

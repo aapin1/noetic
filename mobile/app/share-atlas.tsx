@@ -4,12 +4,13 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { CheckIcon, XIcon } from 'lucide-react-native';
+import { XIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { useAuth } from '@/contexts/AuthContext';
@@ -38,8 +39,8 @@ import { atlasStatLine } from '@/lib/atlasShare';
  */
 
 const VARIANTS: { id: RecapTemplateId; name: string; blurb: string; swatch: string[] }[] = [
-  { id: 'ink', name: 'Ink', blurb: 'dark, quiet', swatch: ['#0E0E0E', '#6E9AD1', '#DFA26B'] },
-  { id: 'mono', name: 'Mono', blurb: 'light, ascii', swatch: ['#FFFFFF', '#121212', '#6E9AD1'] },
+  { id: 'ink', name: 'Ink', blurb: 'Dark', swatch: ['#0E0E0E', '#6E9AD1', '#DFA26B'] },
+  { id: 'mono', name: 'Mono', blurb: 'Light', swatch: ['#FFFFFF', '#121212', '#6E9AD1'] },
 ];
 
 /** Render up to this many recent points — matches the server's focus-map cap. */
@@ -80,6 +81,7 @@ export default function ShareAtlasScreen() {
     }
     // totalCount is every point on the map, even past the render cap — the
     // stat line should say the true size of the mind, not the fetch limit.
+    // The card prints no middle dots, so the lib's separator becomes a comma.
     return atlasStatLine(graph?.totalCount ?? nodes.length, fieldIds.size);
   }, [graph, nodes]);
 
@@ -125,25 +127,25 @@ export default function ShareAtlasScreen() {
         <Pressable onPress={() => router.back()} accessibilityLabel="Close" hitSlop={8}>
           <XIcon size={22} color={c.text} />
         </Pressable>
-        <Text variant="monoSmall" color="muted" style={styles.headerTitle} numberOfLines={1}>
+        <Text variant="headline" style={styles.headerTitle} numberOfLines={1}>
           Share your atlas
         </Text>
         <View style={{ width: 22 }} />
       </View>
 
       {loading && !graph ? (
-        <AsciiLoader fill variant="cat" size={80} message="charting your constellation…" />
+        <AsciiLoader fill variant="cat" size={80} message="Loading" />
       ) : nodes.length === 0 ? (
         <View style={styles.emptyWrap}>
-          <Text variant="monoSmall" color="muted" style={{ textAlign: 'center', letterSpacing: 1.2 }}>
-            save something first — your atlas appears as you capture.
+          <Text variant="subheadline" color="secondary" style={{ textAlign: 'center' }}>
+            Save something first. Your atlas appears as you capture.
           </Text>
         </View>
       ) : (
         <>
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-            <Text variant="label" color="muted" style={styles.pickerLabel}>
-              look
+            <Text variant="headline" style={styles.pickerLabel}>
+              Look
             </Text>
             <View style={styles.variantRow}>
               {VARIANTS.map((v) => (
@@ -163,10 +165,10 @@ export default function ShareAtlasScreen() {
                       <View key={i} style={{ flex: 1, backgroundColor: color }} />
                     ))}
                   </View>
-                  <Text variant="serif" style={{ color: c.text, marginTop: Spacing[2] }}>
+                  <Text variant="bodyMedium" style={{ marginTop: Spacing[2] }}>
                     {v.name}
                   </Text>
-                  <Text variant="monoSmall" style={{ color: c.faint }} numberOfLines={1}>
+                  <Text variant="caption" color="muted" numberOfLines={1}>
                     {v.blurb}
                   </Text>
                 </Pressable>
@@ -175,29 +177,19 @@ export default function ShareAtlasScreen() {
 
             {/* Field names can be turned off for anyone who'd rather reveal
                 only the shape of their mind, not what it's about. */}
-            <Pressable
-              onPress={() => setShowLabels((v) => !v)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: showLabels }}
-              style={styles.toggleRow}
-            >
-              <View
-                style={[
-                  styles.check,
-                  showLabels
-                    ? { backgroundColor: c.text, borderColor: c.text }
-                    : { borderColor: c.border },
-                ]}
-              >
-                {showLabels ? <CheckIcon size={14} color={c.inverseText} strokeWidth={3} /> : null}
-              </View>
+            <View style={styles.toggleRow}>
               <View style={{ flex: 1 }}>
-                <Text variant="serif">show field names</Text>
-                <Text variant="monoSmall" color="faint" style={{ marginTop: 2 }}>
-                  off = just the shape of your mind
+                <Text variant="body">Show field names</Text>
+                <Text variant="caption" color="muted" style={{ marginTop: 2 }}>
+                  Off shares just the shape of your map
                 </Text>
               </View>
-            </Pressable>
+              <Switch
+                value={showLabels}
+                onValueChange={setShowLabels}
+                accessibilityLabel="Show field names"
+              />
+            </View>
 
             <View style={styles.preview}>
               <View
@@ -226,16 +218,19 @@ export default function ShareAtlasScreen() {
             <Whisper
               id="identity-claim"
               when={isAnonymousHandle(profile?.handle)}
-              text={`you're @${profile?.handle ?? ''} — make it yours?`}
+              text={`You are @${profile?.handle ?? ''}. Choose your own handle`}
               onPress={() => router.push('/profile/edit' as never)}
               style={{ alignSelf: 'center', marginBottom: Spacing[2] }}
             />
             <Button label="Share image" fullWidth loading={busy} onPress={() => void handleShare()} />
-            <Pressable onPress={() => void handleSave()} disabled={busy} style={styles.subAction}>
-              <Text variant="monoSmall" color="muted">
-                or save to Photos →
-              </Text>
-            </Pressable>
+            <Button
+              label="Save to Photos"
+              variant="tertiary"
+              fullWidth
+              disabled={busy}
+              onPress={() => void handleSave()}
+              style={styles.subAction}
+            />
           </View>
         </>
       )}
@@ -256,8 +251,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     flex: 1,
     textAlign: 'center',
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
   },
   content: { paddingTop: Spacing[5], paddingBottom: Spacing[8] },
   pickerLabel: { paddingHorizontal: Spacing[6], marginBottom: Spacing[1] },
@@ -288,14 +281,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing[3],
     gap: Spacing[4],
   },
-  check: {
-    width: 24,
-    height: 24,
-    borderRadius: Radius.full,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   preview: { alignItems: 'center', paddingVertical: Spacing[4] },
   // Matte around the captured card so the exported PNG is a filled rectangle,
   // exactly like the recap composer's frameMatte.
@@ -307,5 +292,5 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing[6],
     borderTopWidth: 1,
   },
-  subAction: { alignSelf: 'center', paddingVertical: Spacing[3] },
+  subAction: { marginTop: Spacing[2] },
 });

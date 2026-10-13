@@ -11,6 +11,9 @@ module.exports = {
   rootDir: '.',
   testMatch: ['<rootDir>/__tests__/**/*.test.tsx'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  // Reanimated's mock pulls in react-native-worklets, whose native entry
+  // throws under jest. See jest.resolver.js.
+  resolver: '<rootDir>/jest.resolver.js',
   // No moduleNameMapper here: the jest-expo preset already maps "@/" and
   // react-native, and defining the key at all would replace its map wholesale.
   transformIgnorePatterns: [

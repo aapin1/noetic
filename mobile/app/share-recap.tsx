@@ -97,7 +97,7 @@ export default function ShareRecapScreen() {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
         <Header onClose={() => router.back()} />
-        <AsciiLoader fill variant="cat" size={80} message="gathering your saves…" />
+        <AsciiLoader fill variant="cat" size={80} message="Loading" />
       </SafeAreaView>
     );
   }
@@ -118,11 +118,16 @@ export default function ShareRecapScreen() {
           />
           <View style={[styles.bar, { borderTopColor: c.border, backgroundColor: c.background }]}>
             <Button
-              label={selected.length === 0 ? 'Pick some nodes' : `Next · ${selected.length} selected`}
+              label={selected.length === 0 ? 'Pick some saves' : 'Next'}
               fullWidth
               disabled={selected.length === 0}
               onPress={() => setStep('compose')}
             />
+            {selected.length > 0 ? (
+              <Text variant="caption" color="muted" style={styles.barCaption}>
+                {selected.length} selected
+              </Text>
+            ) : null}
           </View>
         </>
       ) : (
@@ -151,7 +156,7 @@ function Header({ onClose, title }: { onClose: () => void; title?: string }) {
       <Pressable onPress={onClose} accessibilityLabel="Close" hitSlop={8}>
         <XIcon size={22} color={c.text} />
       </Pressable>
-      <Text variant="monoSmall" color="muted" style={styles.headerTitle} numberOfLines={1}>
+      <Text variant="headline" style={styles.headerTitle} numberOfLines={1}>
         {title ?? ''}
       </Text>
       <View style={{ width: 22 }} />
@@ -181,7 +186,7 @@ function Chip({
         { borderColor: active ? c.text : c.border, backgroundColor: active ? c.text : 'transparent' },
       ]}
     >
-      <Text variant="monoSmall" style={{ color: active ? c.inverseText : c.muted }} numberOfLines={1}>
+      <Text variant="caption" style={{ color: active ? c.inverseText : c.muted }} numberOfLines={1}>
         {label}
       </Text>
     </Pressable>
@@ -262,15 +267,15 @@ function SelectStep({
       ) : null}
 
       <View style={styles.selectHint}>
-        <Text variant="monoSmall" color="faint">
-          {selectedIds.length} of {RECAP_MAX} · tap to add
+        <Text variant="caption" color="muted">
+          {selectedIds.length} of {RECAP_MAX} selected. Tap a save to add it.
         </Text>
       </View>
 
       {items.length === 0 ? (
         <View style={styles.emptyWrap}>
-          <Text variant="monoSmall" color="muted" style={{ textAlign: 'center', letterSpacing: 1.2 }}>
-            {hasAny ? 'nothing matches those filters.' : 'save something first, then come back.'}
+          <Text variant="subheadline" color="secondary" style={{ textAlign: 'center' }}>
+            {hasAny ? 'Nothing matches those filters.' : 'Save something first, then come back.'}
           </Text>
         </View>
       ) : (
@@ -327,11 +332,11 @@ function SelectableRow({
       )}
 
       <View style={styles.rowInfo}>
-        <Text variant="serif" numberOfLines={2}>
+        <Text variant="body" numberOfLines={2}>
           {item.title}
         </Text>
         {author ? (
-          <Text variant="monoSmall" color="faint" numberOfLines={1} style={{ marginTop: 2 }}>
+          <Text variant="caption" color="muted" numberOfLines={1} style={{ marginTop: 2 }}>
             {author}
           </Text>
         ) : null}
@@ -477,7 +482,7 @@ function ComposeStep({
         <Pressable onPress={onBack} accessibilityLabel="Back" hitSlop={8}>
           <ChevronLeftIcon size={22} color={c.text} />
         </Pressable>
-        <Text variant="monoSmall" color="muted" style={styles.headerTitle}>
+        <Text variant="headline" style={styles.headerTitle}>
           Compose
         </Text>
         <View style={{ width: 22 }} />
@@ -497,8 +502,8 @@ function ComposeStep({
           containerStyle={{ marginBottom: Spacing[2], paddingHorizontal: Spacing[6] }}
         />
 
-        <Text variant="label" color="muted" style={styles.pickerLabel}>
-          template
+        <Text variant="headline" style={styles.pickerLabel}>
+          Template
         </Text>
         <ScrollView
           horizontal
@@ -565,32 +570,38 @@ function ComposeStep({
         {format === 'slideshow' ? (
           <>
             <Button
-              label={ready ? `Save ${items.length + 1} to Photos` : 'Preparing…'}
+              label={ready ? `Save ${items.length + 1} to Photos` : 'Preparing'}
               fullWidth
               loading={busy}
               disabled={!ready}
               onPress={() => void handleShareSlideshow()}
             />
-            <Pressable onPress={() => void handleShareCover()} disabled={busy || !ready} style={styles.subAction}>
-              <Text variant="monoSmall" color="muted">
-                or share the cover →
-              </Text>
-            </Pressable>
+            <Button
+              label="Share the cover"
+              variant="tertiary"
+              fullWidth
+              disabled={busy || !ready}
+              onPress={() => void handleShareCover()}
+              style={styles.subAction}
+            />
           </>
         ) : (
           <>
             <Button
-              label={ready ? 'Share image' : 'Preparing…'}
+              label={ready ? 'Share image' : 'Preparing'}
               fullWidth
               loading={busy}
               disabled={!ready}
               onPress={() => void handleShareSingle()}
             />
-            <Pressable onPress={() => void handleSaveSingle()} disabled={busy || !ready} style={styles.subAction}>
-              <Text variant="monoSmall" color="muted">
-                or save to Photos →
-              </Text>
-            </Pressable>
+            <Button
+              label="Save to Photos"
+              variant="tertiary"
+              fullWidth
+              disabled={busy || !ready}
+              onPress={() => void handleSaveSingle()}
+              style={styles.subAction}
+            />
           </>
         )}
       </View>
@@ -618,7 +629,7 @@ function FormatTab({
       style={[styles.segment, active && { backgroundColor: c.text }]}
     >
       {icon}
-      <Text variant="monoSmall" style={{ color: active ? c.inverseText : c.muted, marginLeft: 6 }}>
+      <Text variant="caption" style={{ color: active ? c.inverseText : c.muted, marginLeft: 6 }}>
         {label}
       </Text>
     </Pressable>
@@ -717,10 +728,10 @@ function TemplateSwatch({
           <View key={i} style={{ flex: 1, backgroundColor: color }} />
         ))}
       </View>
-      <Text variant="serif" style={{ color: c.text, marginTop: Spacing[2] }}>
+      <Text variant="bodyMedium" style={{ marginTop: Spacing[2] }}>
         {name}
       </Text>
-      <Text variant="monoSmall" style={{ color: c.faint }} numberOfLines={1}>
+      <Text variant="caption" color="muted" numberOfLines={1}>
         {blurb}
       </Text>
     </Pressable>
@@ -740,8 +751,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     flex: 1,
     textAlign: 'center',
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
   },
 
   bar: {
@@ -750,7 +759,8 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing[6],
     borderTopWidth: 1,
   },
-  subAction: { alignSelf: 'center', paddingVertical: Spacing[3] },
+  subAction: { marginTop: Spacing[2] },
+  barCaption: { textAlign: 'center', marginTop: Spacing[2] },
 
   selectContent: { paddingBottom: Spacing[8] },
   search: { paddingHorizontal: Spacing[6], marginBottom: Spacing[2], marginTop: Spacing[4] },

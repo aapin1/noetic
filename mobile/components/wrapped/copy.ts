@@ -1,10 +1,10 @@
 /**
- * Deterministic copy variation for the You page.
+ * Copy for the You page.
  *
- * Every line is picked from a list by a seed derived from the numbers the line
- * is describing. Same stats render the same words; save or delete something and
- * the page finds different words for the new total. No model calls, no
- * randomness that reshuffles on every render.
+ * Headings and labels are fixed: a heading names its content. The one-line
+ * observations under a stat are picked from a short list by a seed derived
+ * from the numbers the line is describing, so the same stats always render
+ * the same words. No model calls, no randomness that reshuffles on render.
  */
 
 function hashSeed(...parts: (string | number)[]): number {
@@ -30,90 +30,74 @@ export function formatHourCompact(h: number): string {
 
 /* ---------------------------------------------------------------- hero ---- */
 
-/** Milestone bands. Each band gets its own voice, so 3 saves never reads like 300. */
+/** Milestone bands. Each band states where the total stands. */
 const MILESTONES: { min: number; lines: readonly string[] }[] = [
   {
     min: 500,
     lines: [
-      'Five hundred. Somebody get this person a card catalogue.',
-      'You have saved enough to be studied.',
-      'This is a personal library now. Behave accordingly.',
+      'You have passed five hundred saves.',
+      'Five hundred saves, and counting.',
     ],
   },
   {
     min: 250,
     lines: [
-      'Two hundred and fifty. Librarians have started with less.',
-      'You archive faster than you forget, which is rare.',
-      'This stopped being a habit. It is a temperament.',
+      'You have passed two hundred and fifty saves.',
+      'More than two hundred and fifty saves so far.',
     ],
   },
   {
     min: 100,
     lines: [
-      'Triple digits. There is no going back from here.',
-      'One hundred. Your future self owes you a drink.',
-      'Some of these you will never open again, and that is completely fine.',
+      'You have passed one hundred saves.',
+      'More than one hundred saves so far.',
     ],
   },
   {
     min: 50,
     lines: [
-      'Fifty small acts of refusing to forget.',
-      'You have a body of work and you did not even mean to.',
-      'This stopped being casual somewhere around save thirty.',
+      'You have passed fifty saves.',
+      'More than fifty saves so far.',
     ],
   },
   {
     min: 25,
     lines: [
-      'Twenty five deep. A habit in a trench coat.',
-      'You save more than you reread. Classic.',
-      'A quarter of a hundred, and nobody made you do any of it.',
+      'You have passed twenty five saves.',
+      'More than twenty five saves so far.',
     ],
   },
   {
     min: 10,
     lines: [
-      'Double digits. The shelf has a shape now.',
-      'Somewhere in this pile is a theme you have not named yet.',
-      "You have out-saved most people's good intentions.",
+      'You have passed ten saves.',
+      'More than ten saves so far.',
     ],
   },
   {
     min: 5,
     lines: [
-      'Enough to spot a pattern, not enough to explain it.',
-      'Single digits, plural obsessions.',
-      'You are officially the kind of person who saves things.',
+      'Enough saves to start seeing a pattern.',
+      'Your first few saves are in.',
     ],
   },
   {
     min: 2,
     lines: [
-      'Early days. You can still remember every single one.',
-      'A small pile. Piles grow.',
-      'Barely a collection. Give it a week.',
+      'Your first saves are in.',
+      'A small collection so far.',
     ],
   },
   {
     min: 1,
     lines: [
-      'One. Apparently the hardest one.',
-      'Your first save. We are not emotional, you are emotional.',
-      'It begins. Somewhere a browser tab breathes easier.',
+      'Your first save is in.',
+      'One save so far.',
     ],
   },
 ];
 
-const HERO_NOUNS = [
-  'things worth keeping',
-  'things you refused to lose',
-  'saves, all yours',
-  'kept on purpose',
-  'small rescues',
-  'still here because of you',
-];
+const HERO_NOUN = 'saves';
 
 export function milestoneLine(total: number): string {
   const band = MILESTONES.find((m) => total >= m.min);
@@ -121,67 +105,36 @@ export function milestoneLine(total: number): string {
   return pick(band.lines, 'milestone', band.min, total);
 }
 
-export function heroNoun(total: number): string {
-  return pick(HERO_NOUNS, 'noun', total);
+export function heroNoun(_total: number): string {
+  return HERO_NOUN;
 }
 
 /** The stamp on the hero: the last milestone you actually cleared. */
 export function milestoneBadge(total: number): string | null {
   if (total < 1) return null;
-  if (total === 1) return 'first';
+  if (total === 1) return 'First';
   const band = MILESTONES.find((m) => total >= m.min && m.min >= 5);
   return band ? `${band.min}+` : null;
 }
 
 /* ------------------------------------------------------------- sections ---- */
 
-const FIELD_TITLES = [
-  'The fields you live in',
-  'Where your head goes',
-  'Your home territory',
-  'The neighbourhoods you keep walking back to',
-  'Your centre of gravity',
-];
+export function fieldsTitle(_seed: number): string {
+  return 'Where you spend your attention';
+}
 
-// Neutral kickers: the bubbles already name the topics, so the label must not.
-const TOPIC_KICKERS = [
-  'On your mind',
-  'What you keep circling',
-  'Where your attention goes',
-  'The usual suspects',
-  'Recurring obsessions',
-];
+export function topicsKicker(_seed: number): string {
+  return 'Top topics';
+}
 
 // No calendar language: the list is a rolling window of recent discoveries,
 // not a month, so "New this month" would be wrong most of the time.
-const NEW_TOPIC_TITLES = [
-  'Fresh rabbit holes',
-  'Newly broken into',
-  'Doors you opened recently',
-  'First time here',
-];
-
-const TIMELINE_TITLES = [
-  'Your shape over time',
-  'The rhythm, in little bars',
-  'How the pile grew',
-  'You, plotted',
-];
-
-export function fieldsTitle(seed: number): string {
-  return pick(FIELD_TITLES, 'fields', seed);
+export function newTopicsTitle(_seed: number): string {
+  return 'New topics';
 }
 
-export function topicsKicker(seed: number): string {
-  return pick(TOPIC_KICKERS, 'topics', seed);
-}
-
-export function newTopicsTitle(seed: number): string {
-  return pick(NEW_TOPIC_TITLES, 'new-topics', seed);
-}
-
-export function timelineTitle(seed: number): string {
-  return pick(TIMELINE_TITLES, 'timeline', seed);
+export function timelineTitle(_seed: number): string {
+  return 'Saves over time';
 }
 
 /* --------------------------------------------------------------- rhythm ---- */
@@ -189,30 +142,27 @@ export function timelineTitle(seed: number): string {
 const HOUR_BANDS: { max: number; lines: readonly string[] }[] = [
   {
     max: 4,
-    lines: [
-      'You do your best thinking when you should be asleep.',
-      'The small hours belong to you.',
-    ],
+    lines: ['You save most in the small hours.', 'Most of your saves land after midnight.'],
   },
   {
     max: 8,
-    lines: ['Awake before the world is. Suspicious.', 'You catch thoughts before breakfast.'],
+    lines: ['You save most early in the morning.', 'Most of your saves land before breakfast.'],
   },
   {
     max: 11,
-    lines: ['Morning brain, fully operational.', 'You front-load your curiosity.'],
+    lines: ['You save most in the morning.', 'Most of your saves land before noon.'],
   },
   {
     max: 16,
-    lines: ['Afternoon is when it lands.', 'You peak after lunch, like a reasonable person.'],
+    lines: ['You save most in the afternoon.', 'Most of your saves land after lunch.'],
   },
   {
     max: 20,
-    lines: ['Evenings are where the good ones show up.', 'You save things while dinner gets cold.'],
+    lines: ['You save most in the evening.', 'Most of your saves land around dinner.'],
   },
   {
     max: 23,
-    lines: ['Late and wide awake.', 'Almost nothing gets saved before 9pm around here.'],
+    lines: ['You save most late at night.', 'Most of your saves land after 9pm.'],
   },
 ];
 
@@ -223,36 +173,33 @@ export function rhythmLine(hour: number, weekday: string): string {
 
 /* --------------------------------------------------------------- streak ---- */
 
-// Every line is a function of the actual count. Spelling the number into the
-// copy ("Seven days. The rare kind of consistent.") made the band MINIMUM the
-// thing the card said out loud, so a 10-day record was captioned "seven days"
-// right underneath a big 10.
+// Every line is a function of the actual count, so the card never captions a
+// 10-day record with the band minimum.
 const STREAK_BANDS: { min: number; lines: readonly ((n: number) => string)[] }[] = [
   {
     min: 30,
-    lines: [(n) => `${n} days without missing. Genuinely absurd.`, (n) => `${n} days. Who hurt you.`],
+    lines: [(n) => `Your longest streak was ${n} days.`, (n) => `${n} days in a row, your longest run.`],
   },
   {
     min: 14,
-    lines: [(n) => `${n} days straight. That streak has a personality.`, (n) => `${n} days of showing up.`],
+    lines: [(n) => `Your longest streak was ${n} days.`, (n) => `${n} days in a row, your longest run.`],
   },
   {
     min: 7,
-    lines: [(n) => `${n} days, unbroken.`, (n) => `${n} days. The rare kind of consistent.`],
+    lines: [(n) => `Your longest streak was ${n} days.`, (n) => `${n} days in a row, your longest run.`],
   },
   {
     min: 4,
-    lines: [(n) => `Most habits die before day four. Yours made ${n}.`, (n) => `${n} days is where it gets real.`],
+    lines: [(n) => `Your longest streak was ${n} days.`, (n) => `${n} days in a row, your longest run.`],
   },
   {
     min: 2,
-    lines: [(n) => `${n} days in a row counts, and we are counting it.`, (n) => `A ${n}-day streak is still a streak.`],
+    lines: [(n) => `Your longest streak was ${n} days.`, (n) => `${n} days in a row, your longest run.`],
   },
 ];
 
 const CURRENT_STREAK_LINES: readonly ((n: number) => string)[] = [
-  (n) => `${n} days deep right now. Do not look down.`,
-  (n) => `${n} in a row, as of today.`,
+  (n) => `${n} days in a row, as of today.`,
   (n) => `${n} days and counting.`,
 ];
 
@@ -266,12 +213,12 @@ export function currentStreakLine(current: number): string {
   return pick(CURRENT_STREAK_LINES, 'current-streak', current)(current);
 }
 
-/** Where the user stands today when no run is live — stated plainly, so the
+/** Where the user stands today when no run is live, stated plainly, so the
  * record above it can never be mistaken for something still going. */
 export function dormantStreakLine(current: number): string {
   return current === 1
     ? 'Today is day one of the next one.'
-    : 'Nothing running right now. One save starts the next.';
+    : 'No streak running right now. One save starts the next.';
 }
 
 /* ------------------------------------------------------------ archetype ---- */
@@ -280,28 +227,16 @@ export type ArchetypeFormat = 'link' | 'text' | 'image';
 
 const ARCHETYPES: Record<ArchetypeFormat, { name: string; lines: readonly string[] }> = {
   link: {
-    name: 'The Link Hoarder',
-    lines: [
-      'Every tab open, forever, just in case.',
-      'You collect doors more than you walk through them.',
-      'The internet is your notebook.',
-    ],
+    name: 'Link saver',
+    lines: ['Most of what you save is a link.', 'Links make up most of your saves.'],
   },
   text: {
-    name: 'The Note-Taker',
-    lines: [
-      'You type the thought before it can run off.',
-      'If it is not written down, it did not happen.',
-      'You trust the page more than your memory, correctly.',
-    ],
+    name: 'Note taker',
+    lines: ['Most of what you save is written down.', 'Notes make up most of your saves.'],
   },
   image: {
-    name: 'The Screenshotter',
-    lines: [
-      'Why write it down when you can just screenshot it.',
-      'Your camera roll is a second brain with poor filing.',
-      'Proof first, context later.',
-    ],
+    name: 'Screenshotter',
+    lines: ['Most of what you save is an image.', 'Images make up most of your saves.'],
   },
 };
 
@@ -320,17 +255,10 @@ export function archetypeFor(
 
 /* --------------------------------------------------------------- social ---- */
 
-const NO_FOLLOW_LINES = [
-  'Nobody yet. Pulse is full of people worth watching.',
-  'Your orbit is empty. Go find someone.',
-];
-
-const QUIET_WEEK_LINES = ['Quiet week in your orbit.', 'Everyone you follow is being mysterious.'];
-
-export function noFollowLine(seed: number): string {
-  return pick(NO_FOLLOW_LINES, 'no-follow', seed);
+export function noFollowLine(_seed: number): string {
+  return 'You are not following anyone yet. Find people on Pulse.';
 }
 
-export function quietWeekLine(seed: number): string {
-  return pick(QUIET_WEEK_LINES, 'quiet', seed);
+export function quietWeekLine(_seed: number): string {
+  return 'Nobody you follow has saved anything this week.';
 }

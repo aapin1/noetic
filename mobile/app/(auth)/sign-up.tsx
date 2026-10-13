@@ -88,10 +88,10 @@ export default function SignUpScreen() {
               mneme
             </Text>
             <Text variant="h1" style={styles.title}>
-              Create an account.
+              Create an account
             </Text>
-            <Text variant="monoSmall" color="muted" style={styles.subtitle}>
-              two minutes, then it starts remembering.
+            <Text variant="subheadline" color="secondary" style={styles.subtitle}>
+              Two minutes, then it starts remembering.
             </Text>
           </View>
 
@@ -170,7 +170,7 @@ export default function SignUpScreen() {
             {/* Account creation is the moment the terms actually bind, so the
                 links belong here rather than only in settings. */}
             <View style={styles.legal}>
-              <Text variant="monoSmall" color="faint" style={styles.legalText}>
+              <Text variant="caption" color="muted">
                 By continuing you agree to the{' '}
               </Text>
               <Pressable
@@ -179,11 +179,11 @@ export default function SignUpScreen() {
                 accessibilityRole="link"
                 accessibilityLabel="Read the Terms of Use"
               >
-                <Text variant="monoSmall" color="muted" style={styles.legalLink}>
-                  terms
+                <Text variant="caption" color="secondary" style={styles.legalLink}>
+                  Terms of Use
                 </Text>
               </Pressable>
-              <Text variant="monoSmall" color="faint" style={styles.legalText}>
+              <Text variant="caption" color="muted">
                 {' '}and{' '}
               </Text>
               <Pressable
@@ -192,11 +192,11 @@ export default function SignUpScreen() {
                 accessibilityRole="link"
                 accessibilityLabel="Read the Privacy Policy"
               >
-                <Text variant="monoSmall" color="muted" style={styles.legalLink}>
-                  privacy policy
+                <Text variant="caption" color="secondary" style={styles.legalLink}>
+                  Privacy Policy
                 </Text>
               </Pressable>
-              <Text variant="monoSmall" color="faint" style={styles.legalText}>
+              <Text variant="caption" color="muted">
                 .
               </Text>
             </View>
@@ -214,7 +214,7 @@ export default function SignUpScreen() {
               accessibilityLabel="Sign in"
             >
               <Text variant="bodyMedium" color="accent">
-                Sign in →
+                Sign in
               </Text>
             </Pressable>
           </View>
@@ -222,11 +222,7 @@ export default function SignUpScreen() {
       </KeyboardAvoidingView>
       {loading && (
         <View style={[StyleSheet.absoluteFill, styles.loadingOverlay, { backgroundColor: c.background }]}>
-          <AsciiLoader
-            fill
-            size={110}
-            message={['growing a brain…', 'carving out your corner…', 'almost there…']}
-          />
+          <AsciiLoader fill size={110} message="Creating your account" />
         </View>
       )}
     </SafeAreaView>
@@ -271,8 +267,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: Spacing[4],
   },
-  legalText: { fontSize: 10, lineHeight: 15 },
-  legalLink: { fontSize: 10, lineHeight: 15, textDecorationLine: 'underline' },
+  legalLink: { textDecorationLine: 'underline' },
   loadingOverlay: { zIndex: 10 },
   footer: {
     flexDirection: 'row',

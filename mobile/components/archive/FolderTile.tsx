@@ -16,7 +16,7 @@ export function FolderTile({ folder, onPress }: { folder: ArchiveFolderSummary; 
           <Badge label={String(folder.count)} variant="count" accent={accent} selected small />
         </View>
       </View>
-      <Text variant="label" color="secondary" numberOfLines={1} style={styles.name}>
+      <Text variant="caption" color="primary" numberOfLines={1} style={styles.name}>
         {folder.name}
       </Text>
     </Pressable>

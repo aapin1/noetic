@@ -57,7 +57,7 @@ function reportFlow(targetUserId: string, displayName: string) {
       .then(() => {
         Alert.alert(
           'Report sent',
-          'Thanks — we review every report. You can also block this account so you stop seeing it.',
+          'Thanks. We review every report. You can also block this account so you stop seeing it.',
         );
       })
       .catch((e: unknown) => {

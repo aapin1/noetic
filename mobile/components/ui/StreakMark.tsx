@@ -40,7 +40,7 @@ export function StreakMark() {
       style={styles.wrap}
       pointerEvents="auto"
       accessibilityRole="button"
-      accessibilityLabel={`${current} day streak — open today`}
+      accessibilityLabel={`${current} day streak, opens Today`}
     >
       {/* Filled while the run is unbroken; hollow once a freeze is holding
           part of it — a quiet, after-the-fact acknowledgement, not a flag. */}

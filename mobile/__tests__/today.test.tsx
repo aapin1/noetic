@@ -52,7 +52,7 @@ describe('today screen', () => {
 
     await renderScreen(<TodayScreen />);
 
-    expect(await screen.findByText('not yet')).toBeOnTheScreen();
+    expect(await screen.findByText('Nothing to revisit yet')).toBeOnTheScreen();
     expect(screen.getByText(/a week of saves is enough/i)).toBeOnTheScreen();
   });
 
@@ -73,7 +73,7 @@ describe('today screen', () => {
 
     await renderScreen(<TodayScreen />);
 
-    expect(await screen.findByText('◆ 4 days running — opening this counted.')).toBeOnTheScreen();
+    expect(await screen.findByText('4 days running. Opening this counted.')).toBeOnTheScreen();
     expect(todayVisit).toHaveBeenCalledTimes(1);
   });
 
@@ -83,7 +83,7 @@ describe('today screen', () => {
 
     await renderScreen(<TodayScreen />);
 
-    expect(await screen.findByText('◆ 4 days running.')).toBeOnTheScreen();
+    expect(await screen.findByText('4 days running.')).toBeOnTheScreen();
     expect(screen.queryByText(/counted/)).not.toBeOnTheScreen();
   });
 
@@ -103,7 +103,7 @@ describe('today screen', () => {
     const user = userEvent.setup();
 
     await renderScreen(<TodayScreen />);
-    await user.press(await screen.findByLabelText('open insight →'));
+    await user.press(await screen.findByLabelText('Open insight'));
 
     expect(global.__routerMock.push).toHaveBeenCalledWith('/insight/cap_1?from=today');
   });

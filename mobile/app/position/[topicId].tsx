@@ -7,14 +7,17 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { ChevronRightIcon } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { Radius, Spacing } from '@/constants/theme';
+import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { SectionKicker } from '@/components/ui/SectionKicker';
+import { Button } from '@/components/ui/Button';
 import type { PositionChallengeItem } from '@/types/api';
 
 function ChallengeCard({
@@ -36,8 +39,8 @@ function ChallengeCard({
   if (challenge.acknowledged) {
     return (
       <View style={[styles.challengeCard, { borderColor: c.borderSubtle, opacity: 0.5 }]}>
-        <Text variant="monoSmall" color="muted">{captureTitle}</Text>
-        <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[2] }}>
+        <Text variant="subheadline" color="secondary">{captureTitle}</Text>
+        <Text variant="caption" color="muted" style={{ marginTop: Spacing[2] }}>
           {challenge.revised ? 'Position revised' : 'Noted'}
         </Text>
       </View>
@@ -46,7 +49,7 @@ function ChallengeCard({
 
   return (
     <View style={[styles.challengeCard, { borderColor: c.border }]}>
-      <Text variant="monoSmall" color="muted" style={styles.challengeSource}>
+      <Text variant="caption" color="muted">
         {captureTitle}
       </Text>
       <Text variant="body" color="secondary" style={styles.tensionText}>
@@ -56,7 +59,7 @@ function ChallengeCard({
         <View style={styles.revisionBlock}>
           <TextInput
             style={[styles.revisionInput, { color: c.text, borderColor: c.borderSubtle }]}
-            placeholder="Revise your position…"
+            placeholder="Revise your position"
             placeholderTextColor={c.faint}
             value={revisionText}
             onChangeText={setRevisionText}
@@ -65,33 +68,20 @@ function ChallengeCard({
             autoFocus
           />
           <View style={styles.revisionActions}>
-            <Pressable onPress={() => setRevising(false)}>
-              <Text variant="monoSmall" color="muted">Cancel</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => onAcknowledge(challenge.id, revisionText)}
+            <Button label="Cancel" variant="tertiary" size="sm" onPress={() => setRevising(false)} />
+            <Button
+              label="Save revision"
+              variant="primary"
+              size="sm"
               disabled={revisionText.trim().length < 10}
-            >
-              <Text variant="monoSmall" color={revisionText.trim().length >= 10 ? 'accent' : 'muted'}>
-                Save revision
-              </Text>
-            </Pressable>
+              onPress={() => onAcknowledge(challenge.id, revisionText)}
+            />
           </View>
         </View>
       ) : (
         <View style={styles.challengeActions}>
-          <Pressable
-            style={[styles.actionBtn, { borderColor: c.borderSubtle }]}
-            onPress={() => onAcknowledge(challenge.id)}
-          >
-            <Text variant="monoSmall">Sit with it</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.actionBtn, { borderColor: c.borderSubtle }]}
-            onPress={() => setRevising(true)}
-          >
-            <Text variant="monoSmall">Revise position</Text>
-          </Pressable>
+          <Button label="Hold position" variant="secondary" size="sm" style={styles.actionBtn} onPress={() => onAcknowledge(challenge.id)} />
+          <Button label="Revise position" variant="secondary" size="sm" style={styles.actionBtn} onPress={() => setRevising(true)} />
         </View>
       )}
     </View>
@@ -128,7 +118,7 @@ export default function PositionDetailScreen() {
   if (!position) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
-        <ScreenHeader title="position" />
+        <ScreenHeader title="Position" />
         <Text variant="body" color="muted" style={{ padding: Spacing[4] }}>Position not found.</Text>
       </SafeAreaView>
     );
@@ -143,25 +133,26 @@ export default function PositionDetailScreen() {
 
       <ScrollView contentContainerStyle={styles.content}>
         <View style={[styles.statementCard, { borderColor: c.border }]}>
-          <Text variant="monoSmall" color="muted" style={styles.sectionLabel}>My position</Text>
+          <SectionKicker label="My position" />
           <Text variant="body" style={styles.statementText}>{position.statement}</Text>
           {position.status === 'REVISED' && (
-            <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[2] }}>Revised</Text>
+            <Text variant="caption" color="muted" style={{ marginTop: Spacing[2] }}>Revised</Text>
           )}
         </View>
 
         <Pressable
           style={[styles.dialogueBtn, { borderColor: c.border }]}
           onPress={() => router.push({ pathname: '/socratic/[topicId]' as never, params: { topicId: topicId! } })}
+          accessibilityRole="button"
+          accessibilityLabel="Open Socratic dialogue"
         >
-          <Text variant="bodyMedium">Open Socratic dialogue →</Text>
+          <Text variant="bodyMedium" style={{ flex: 1 }}>Open Socratic dialogue</Text>
+          <ChevronRightIcon size={18} color={c.muted} />
         </Pressable>
 
         {pending.length > 0 && (
           <View>
-            <Text variant="monoSmall" color="muted" style={styles.sectionLabel}>
-              Challenges ({pending.length})
-            </Text>
+            <SectionKicker label={`Challenges (${pending.length})`} style={styles.sectionLabel} />
             {pending.map((ch) => (
               <ChallengeCard key={ch.id} challenge={ch} onAcknowledge={handleAcknowledge} />
             ))}
@@ -170,9 +161,7 @@ export default function PositionDetailScreen() {
 
         {acknowledged.length > 0 && (
           <View>
-            <Text variant="monoSmall" color="muted" style={styles.sectionLabel}>
-              Acknowledged ({acknowledged.length})
-            </Text>
+            <SectionKicker label={`Acknowledged (${acknowledged.length})`} style={styles.sectionLabel} />
             {acknowledged.map((ch) => (
               <ChallengeCard key={ch.id} challenge={ch} onAcknowledge={handleAcknowledge} />
             ))}
@@ -185,16 +174,8 @@ export default function PositionDetailScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing[4],
-    paddingVertical: Spacing[3],
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
   content: { padding: Spacing[4], gap: Spacing[4] },
-  sectionLabel: { textTransform: 'uppercase', letterSpacing: 1, marginBottom: Spacing[2] },
+  sectionLabel: { marginBottom: Spacing[2] },
   statementCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: Radius.md,
@@ -205,7 +186,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: Radius.md,
     padding: Spacing[4],
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: Spacing[2],
   },
   challengeCard: {
     borderWidth: StyleSheet.hairlineWidth,
@@ -213,31 +196,26 @@ const styles = StyleSheet.create({
     padding: Spacing[4],
     marginBottom: Spacing[3],
   },
-  challengeSource: { textTransform: 'uppercase', letterSpacing: 0.5 },
   tensionText: { marginTop: Spacing[2], lineHeight: 22 },
   challengeActions: {
     flexDirection: 'row',
     gap: Spacing[3],
     marginTop: Spacing[4],
   },
-  actionBtn: {
-    flex: 1,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: Radius.sm,
-    paddingVertical: Spacing[2],
-    alignItems: 'center',
-  },
+  actionBtn: { flex: 1 },
   revisionBlock: { marginTop: Spacing[3], gap: Spacing[3] },
   revisionInput: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: Radius.sm,
     padding: Spacing[3],
     minHeight: 80,
-    fontSize: 14,
-    lineHeight: 20,
+    fontFamily: FontFamily.sans,
+    fontSize: FontSize.md,
+    lineHeight: 22,
   },
   revisionActions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
+    gap: Spacing[2],
   },
 });

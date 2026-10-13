@@ -53,12 +53,12 @@ export function AppleSignInButton({
     } catch (e) {
       // Dismissing the sheet is not an error the user needs to read about.
       if ((e as { code?: string })?.code === 'ERR_REQUEST_CANCELED') return;
-      onError("apple sign-in didn't complete. try again.");
+      onError("Apple sign-in didn't complete. Try again.");
       return;
     }
 
     if (!credential.identityToken) {
-      onError("apple sign-in didn't complete. try again.");
+      onError("Apple sign-in didn't complete. Try again.");
       return;
     }
 
@@ -80,7 +80,7 @@ export function AppleSignInButton({
       // in AuthContext.loadProfile.
       router.replace('/(tabs)');
     } catch (e) {
-      onError(e instanceof Error ? e.message : "that didn't work. try again.");
+      onError(e instanceof Error ? e.message : "That didn't work. Try again.");
     } finally {
       onLoadingChange(false);
     }
@@ -90,7 +90,7 @@ export function AppleSignInButton({
     <View style={styles.wrap}>
       <View style={styles.dividerRow}>
         <View style={[styles.dividerLine, { backgroundColor: c.border }]} />
-        <Text variant="monoSmall" color="faint" style={styles.dividerText}>
+        <Text variant="caption" color="muted" style={styles.dividerText}>
           or
         </Text>
         <View style={[styles.dividerLine, { backgroundColor: c.border }]} />

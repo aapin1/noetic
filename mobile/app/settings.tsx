@@ -38,11 +38,11 @@ function SettingRow({ label, description, onPress, rightElement, destructive }: 
       accessibilityLabel={label}
     >
       <View style={styles.rowText}>
-        <Text variant="serif" style={destructive ? { color: c.danger } : undefined}>
+        <Text variant="body" style={destructive ? { color: c.danger } : undefined}>
           {label}
         </Text>
         {description ? (
-          <Text variant="monoSmall" color="faint" numberOfLines={1} style={styles.rowDescription}>
+          <Text variant="caption" color="muted" numberOfLines={1} style={styles.rowDescription}>
             {description}
           </Text>
         ) : null}
@@ -54,7 +54,7 @@ function SettingRow({ label, description, onPress, rightElement, destructive }: 
 
 function SectionHeader({ title }: { title: string }) {
   return (
-    <Text variant="label" color="muted" style={styles.sectionHeader}>
+    <Text variant="caption" color="muted" style={styles.sectionHeader}>
       {title}
     </Text>
   );
@@ -85,7 +85,7 @@ function ThemePicker() {
             accessibilityState={{ selected: on }}
             accessibilityLabel={`${option.label} theme`}
           >
-            <Text variant="monoSmall" color={on ? 'primary' : 'muted'}>
+            <Text variant="caption" color={on ? 'primary' : 'muted'}>
               {option.label}
             </Text>
           </Pressable>
@@ -239,8 +239,8 @@ export default function SettingsScreen() {
         <View style={[styles.profileCard, { borderBottomColor: c.border }]}>
           <Avatar uri={profile?.avatarUrl} displayName={profile?.displayName} size="md" />
           <View style={styles.profileInfo}>
-            <Text variant="serif">{profile?.displayName}</Text>
-            <Text variant="monoSmall" color="muted">
+            <Text variant="bodyMedium">{profile?.displayName}</Text>
+            <Text variant="caption" color="muted">
               @{profile?.handle}
             </Text>
           </View>
@@ -250,7 +250,7 @@ export default function SettingsScreen() {
             accessibilityLabel="Edit profile"
             accessibilityRole="button"
           >
-            <Text variant="monoSmall" color="accent">
+            <Text variant="subheadline" color="accent">
               Edit
             </Text>
           </Pressable>
@@ -285,7 +285,7 @@ export default function SettingsScreen() {
           />
           <SettingRow
             label="Connections"
-            description="Letterboxd, Goodreads, Readwise — what you write there lands here."
+            description="Letterboxd, Goodreads, Readwise. What you write there lands here."
             onPress={() => router.push('/connections' as never)}
           />
           <SettingRow
@@ -305,7 +305,7 @@ export default function SettingsScreen() {
         <View style={[styles.section, { borderColor: c.border }]}>
           <View style={[styles.row, { borderBottomColor: c.borderSubtle, backgroundColor: c.surface }]}>
             <View style={styles.rowText}>
-              <Text variant="serif">Theme</Text>
+              <Text variant="body">Theme</Text>
             </View>
             <ThemePicker />
           </View>
@@ -317,8 +317,8 @@ export default function SettingsScreen() {
             label="Push notifications"
             description={
               pushGranted
-                ? 'On — resurfacing, streaks, and replies.'
-                : 'Off — turn them on for resurfacing, streaks, and replies.'
+                ? 'On. Resurfacing, streaks, and replies.'
+                : 'Off. Turn them on for resurfacing, streaks, and replies.'
             }
             onPress={() => void handleNotifications()}
             rightElement={
@@ -339,7 +339,7 @@ export default function SettingsScreen() {
               who follows you. Say what actually happens. */}
           <SettingRow
             label="Who can see your captures"
-            description="Only you — except that people who follow you see your titles in Pulse."
+            description="Only you, except that people who follow you see your titles in Pulse."
           />
           <SettingRow
             label="Blocked accounts"
@@ -369,7 +369,7 @@ export default function SettingsScreen() {
           />
           <SettingRow
             label="Version"
-            rightElement={<Text variant="monoSmall" color="muted">{appVersion}</Text>}
+            rightElement={<Text variant="caption" color="muted">{appVersion}</Text>}
           />
         </View>
 
@@ -407,12 +407,12 @@ export default function SettingsScreen() {
       </ScrollView>
       {deleting && (
         <View style={[StyleSheet.absoluteFill, styles.deletingOverlay, { backgroundColor: c.background }]}>
-          <AsciiLoader fill size={100} message="deleting your account…" />
+          <AsciiLoader fill size={100} message="Deleting your account" />
         </View>
       )}
       {exporting && (
         <View style={[StyleSheet.absoluteFill, styles.deletingOverlay, { backgroundColor: c.background }]}>
-          <AsciiLoader fill size={100} message="packing up your map…" />
+          <AsciiLoader fill size={100} message="Preparing your export" />
         </View>
       )}
     </SafeAreaView>

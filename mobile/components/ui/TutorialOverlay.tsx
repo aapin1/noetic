@@ -3,6 +3,7 @@ import { Animated, Dimensions, Easing, Platform, Pressable, StyleSheet, View } f
 import Svg, { Defs, Mask, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSegments } from 'expo-router';
+import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react-native';
 import { Spacing, Radius } from '@/constants/theme';
 import type { AppThemeColors } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
@@ -49,23 +50,23 @@ function ShareVisual({ c }: { c: AppThemeColors }) {
   return (
     <View style={[sv.box, { borderColor: c.borderSubtle, backgroundColor: c.elevated }]}>
       <View style={[sv.urlPill, { borderColor: c.borderSubtle }]}>
-        <Text variant="monoSmall" numberOfLines={1} style={{ color: c.muted, flex: 1 }}>
+        <Text variant="captionSmall" numberOfLines={1} style={{ color: c.muted, flex: 1 }}>
           an-article-you-loved.com
         </Text>
-        <Text variant="monoSmall" style={{ color: c.faint }}>share ↑</Text>
+        <Text variant="captionSmall" style={{ color: c.faint }}>Share</Text>
       </View>
       <View style={sv.appRow}>
-        {['msgs', 'mail', 'notes'].map((name) => (
+        {['Messages', 'Mail', 'Notes'].map((name) => (
           <View key={name} style={sv.app}>
             <View style={[sv.appCircle, { backgroundColor: c.border }]} />
-            <Text variant="monoSmall" style={[sv.appLabel, { color: c.faint }]}>{name}</Text>
+            <Text variant="captionSmall" style={[sv.appLabel, { color: c.faint }]}>{name}</Text>
           </View>
         ))}
         <View style={sv.app}>
           <View style={[sv.appCircle, sv.appCircleAccent]}>
-            <Text variant="monoSmall" style={{ color: ACCENT }}>m</Text>
+            <Text variant="captionSmall" style={{ color: ACCENT }}>M</Text>
           </View>
-          <Text variant="monoSmall" style={[sv.appLabel, { color: ACCENT }]}>mneme</Text>
+          <Text variant="captionSmall" style={[sv.appLabel, { color: ACCENT }]}>Mneme</Text>
         </View>
       </View>
     </View>
@@ -219,16 +220,16 @@ export function TutorialOverlay() {
     (isCard && !step.autoAdvance) || !!step.dismissible || (step.target.kind === 'registered' && !hole);
 
   const isLast = stepIndex === totalSteps - 1;
-  const cardButtonLabel = isLast ? 'done' : stepIndex === 0 ? 'begin' : 'got it';
+  const cardButtonLabel = isLast ? 'Done' : stepIndex === 0 ? 'Begin' : 'Got it';
 
   // What the stray-tap nudge tells the finger: always the one real way
   // forward for THIS step — the card's button, the lit control, or (on the
   // auto-advancing card) simply waiting.
   const nudgeLine = step.autoAdvance
-    ? 'one moment — or tap exit'
+    ? 'One moment, or tap Exit'
     : showCardButton
-      ? 'continue from the card — or exit'
-      : `${step.hint ?? 'tap the highlighted spot'} — or exit`;
+      ? 'Continue from the card, or tap Exit'
+      : `${step.hint ?? 'Tap the highlighted spot'}, or tap Exit`;
 
   // Place the card adjacent to the spotlight, in whichever gap actually fits
   // it — so it can never sit on top of the control it's pointing at. Cards
@@ -331,7 +332,7 @@ export function TutorialOverlay() {
               accessibilityLabel="Reopen walkthrough card"
               style={[styles.collapsedTab, { backgroundColor: c.surface, borderColor: c.border }]}
             >
-              <Text variant="monoSmall" style={{ color: c.muted }}>{'‹'}</Text>
+              <ChevronLeftIcon size={18} color={c.muted} />
             </Pressable>
           ) : (
             <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
@@ -341,11 +342,11 @@ export function TutorialOverlay() {
               </View>
 
               <View style={styles.cardHead}>
-                <Text variant="monoSmall" style={{ color: ACCENT, letterSpacing: 1 }}>
-                  {String(stepIndex + 1).padStart(2, '0')}
+                <Text variant="caption" style={{ color: ACCENT }}>
+                  {stepIndex + 1}
                 </Text>
-                <Text variant="monoSmall" style={[styles.cardTitle, { color: c.faint }]} numberOfLines={1}>
-                  {step.title.toUpperCase()}
+                <Text variant="headline" style={styles.cardTitle} numberOfLines={1}>
+                  {step.title}
                 </Text>
                 <Pressable
                   onPress={() => setCollapsed(true)}
@@ -353,7 +354,7 @@ export function TutorialOverlay() {
                   accessibilityRole="button"
                   accessibilityLabel="Collapse walkthrough card"
                 >
-                  <Text variant="monoSmall" style={{ color: c.faint }}>{'›'}</Text>
+                  <ChevronRightIcon size={18} color={c.faint} />
                 </Pressable>
               </View>
 
@@ -365,15 +366,15 @@ export function TutorialOverlay() {
 
               <View style={styles.footer}>
                 <Pressable onPress={stop} hitSlop={12} accessibilityRole="button" accessibilityLabel="Exit walkthrough">
-                  <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 1 }}>
-                    exit
+                  <Text variant="caption" style={{ color: c.faint }}>
+                    Exit
                   </Text>
                 </Pressable>
                 {showCardButton ? (
                   <Button label={cardButtonLabel} variant="primary" size="sm" onPress={isLast ? stop : next} />
                 ) : step.autoAdvance ? null : (
-                  <Text variant="monoSmall" style={{ color: ACCENT, letterSpacing: 0.5 }}>
-                    {step.hint ?? 'tap the highlighted spot'}
+                  <Text variant="caption" style={{ color: ACCENT }}>
+                    {step.hint ?? 'Tap the highlighted spot'}
                   </Text>
                 )}
               </View>
@@ -399,7 +400,7 @@ export function TutorialOverlay() {
             },
           ]}
         >
-          <Text variant="monoSmall" style={{ color: c.muted, textAlign: 'center' }}>
+          <Text variant="caption" style={{ color: c.muted, textAlign: 'center' }}>
             {nudgeLine}
           </Text>
         </Animated.View>
@@ -469,7 +470,6 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     flex: 1,
-    letterSpacing: 2,
     marginLeft: Spacing[3],
   },
   body: {

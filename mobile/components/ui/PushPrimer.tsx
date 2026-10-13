@@ -1,8 +1,9 @@
 import React from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Modal, StyleSheet, View } from 'react-native';
 import { Spacing, Radius } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from './Text';
+import { Button } from './Button';
 
 interface Props {
   visible: boolean;
@@ -30,35 +31,23 @@ export function PushPrimer({ visible, onDecline, onAccept }: Props) {
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onDecline}>
       <View style={styles.overlay}>
         <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
-          <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 2, marginBottom: Spacing[3] }}>
-            NOTIFICATIONS
+          <Text variant="headline" style={{ marginBottom: Spacing[3] }}>
+            Turn on notifications
           </Text>
 
-          <Text variant="serif" color="secondary" style={{ lineHeight: 26 }}>
-            turn on notifications and mneme will keep you on track with what
-            you're learning: a reminder when your streak needs one capture, and a
-            heads-up when two things you saved disagree or a thread picks up.
+          <Text variant="body" color="secondary">
+            Mneme will keep you on track with what you&apos;re learning: a reminder
+            when your streak needs one capture, and a heads-up when two things you
+            saved disagree or a thread picks up.
           </Text>
 
-          <Text variant="serif" style={{ lineHeight: 26, marginTop: Spacing[4], color: c.text }}>
-            turn on notifications?
-          </Text>
-
-          <Text variant="monoSmall" style={{ color: c.faint, marginTop: Spacing[5], letterSpacing: 1 }}>
-            a few a day at most. no badges.
+          <Text variant="caption" color="muted" style={{ marginTop: Spacing[4] }}>
+            A few a day at most. No badges.
           </Text>
 
           <View style={styles.actions}>
-            <Pressable onPress={onDecline} hitSlop={8} style={styles.action}>
-              <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 1 }}>
-                not now
-              </Text>
-            </Pressable>
-            <Pressable onPress={onAccept} hitSlop={8} style={styles.action}>
-              <Text variant="monoSmall" style={{ color: c.text, letterSpacing: 1 }}>
-                turn on →
-              </Text>
-            </Pressable>
+            <Button label="Not now" variant="tertiary" size="sm" onPress={onDecline} />
+            <Button label="Turn on" variant="primary" size="sm" onPress={onAccept} />
           </View>
         </View>
       </View>
@@ -82,10 +71,8 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: Spacing[6],
+    alignItems: 'center',
+    gap: Spacing[3],
     marginTop: Spacing[6],
-  },
-  action: {
-    paddingVertical: Spacing[2],
   },
 });

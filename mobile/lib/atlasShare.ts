@@ -85,7 +85,7 @@ export function atlasNodeRadius(count: number): number {
 export function atlasStatLine(pointCount: number, fieldCount: number): string {
   const points = `${pointCount} ${pointCount === 1 ? 'point' : 'points'}`;
   if (fieldCount <= 0) return points;
-  return `${points} · ${fieldCount} ${fieldCount === 1 ? 'field' : 'fields'}`;
+  return `${points}, ${fieldCount} ${fieldCount === 1 ? 'field' : 'fields'}`;
 }
 
 /** "AUG 2026" — the chart's date stamp. */

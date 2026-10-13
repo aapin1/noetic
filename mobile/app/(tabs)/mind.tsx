@@ -1,23 +1,16 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { ChevronLeftIcon } from 'lucide-react-native';
-import Animated, {
-  Easing,
-  FadeIn,
-  FadeOut,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
+import { ChevronLeftIcon, ChevronRightIcon, InfoIcon, XIcon } from 'lucide-react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Spacing } from '@/constants/theme';
 import { useTheme, useThemeColors } from '@/contexts/ThemeContext';
 import { darkenHex } from '@/lib/atlasShare';
 import { Text } from '@/components/ui/Text';
+import { Button } from '@/components/ui/Button';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { ScreenIntro } from '@/components/ui/ScreenIntro';
 import { SponsoredCard } from '@/components/ui/SponsoredCard';
@@ -44,10 +37,10 @@ import type {
 // ─────────────────────────────────────────────────────────────────────────
 // Mind is NOT a second Atlas. Atlas maps where your knowledge lives; Mind
 // reports the forces moving through it. Opening the tab lands on a calm
-// threshold — a slow-breathing mark and the list of instruments with
-// something to say. Choosing one opens THAT instrument alone on its own
-// screen (a proper ← returns); "see everything" browses the full dossier.
-// Every surface sits on the app theme background, like the list tabs — only
+// threshold: the list of instruments with something to say. Choosing one
+// opens THAT instrument alone on its own screen (a proper back chevron
+// returns); "See all" browses the full dossier.
+// Every surface sits on the app theme background, like the list tabs; only
 // the Atlas keeps the always-dark map surface.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -79,11 +72,11 @@ function useMindAccents(): Record<SectionKey, string> {
 
 type ViewState = 'threshold' | 'all' | SectionKey;
 
-const SECTION_META: { key: SectionKey; name: string; whisper: string }[] = [
-  { key: 'threads', name: 'threads', whisper: 'where your thinking is heading' },
-  { key: 'contradictions', name: 'contradictions', whisper: 'where it disagrees with itself' },
-  { key: 'convergence', name: 'convergence', whisper: 'different roads, one arrival' },
-  { key: 'dormant', name: 'dormant', whisper: 'gone quiet — worth reawakening?' },
+const SECTION_META: { key: SectionKey; name: string; subtitle: string }[] = [
+  { key: 'threads', name: 'Threads', subtitle: 'Where your thinking is heading' },
+  { key: 'contradictions', name: 'Contradictions', subtitle: 'Where your saves disagree' },
+  { key: 'convergence', name: 'Convergence', subtitle: 'Different sources reaching one idea' },
+  { key: 'dormant', name: 'Quiet topics', subtitle: "Topics you haven't added to in a while" },
 ];
 
 type Selection =
@@ -92,6 +85,13 @@ type Selection =
   | { type: 'convergence'; d: ConvergenceSignal }
   | { type: 'dormant'; d: DormantThread }
   | null;
+
+const SHEET_LABEL: Record<NonNullable<Selection>['type'], string> = {
+  thread: 'Thread',
+  contradiction: 'Contradiction',
+  convergence: 'Convergence',
+  dormant: 'Quiet topic',
+};
 
 const EMPTY_INTEL: PersonalIntelligenceResponse = {
   contradictionCards: [], threadSyntheses: [], convergenceSignals: [], dormantThreads: [],
@@ -233,22 +233,26 @@ export default function MindScreen() {
     }
   };
 
-  const wordmark = <Text variant="wordmark" style={{ color: c.deepInk }}>mind</Text>;
+  const wordmark = <Text variant="headline" style={{ color: c.deepInk }}>Mind</Text>;
 
   // ── Loading / error / empty ──────────────────────────────────────────────
   if (loading && !data) {
-    // No loader animation on an unpopulated screen — the page simply arrives.
+    // No loader animation on an unpopulated screen; the page simply arrives.
     return <MindStage header={wordmark}>{null}</MindStage>;
   }
   if (error && !data) {
     return (
       <MindStage header={wordmark}>
         <View style={styles.stateBlock}>
-          <Text variant="serif" style={{ color: ink(0.92), textAlign: 'center' }}>Mind unavailable</Text>
-          <Text variant="monoSmall" style={[styles.stateBody, { color: ink(0.57) }]}>{error}</Text>
-          <Pressable onPress={() => void refetch()} style={{ marginTop: Spacing[5], alignSelf: 'center' }}>
-            <Text variant="monoSmall" style={{ color: ink(0.85) }}>retry</Text>
-          </Pressable>
+          <Text variant="headline" style={{ color: ink(0.92), textAlign: 'center' }}>Mind unavailable</Text>
+          <Text variant="caption" style={[styles.stateBody, { color: ink(0.57) }]}>{error}</Text>
+          <Button
+            label="Try again"
+            variant="secondary"
+            size="sm"
+            onPress={() => void refetch()}
+            style={{ marginTop: Spacing[5], alignSelf: 'center' }}
+          />
         </View>
       </MindStage>
     );
@@ -261,7 +265,7 @@ export default function MindScreen() {
           title="Patterns from your saves"
           body="Mind reads everything you save and reports what it finds: threads you keep pulling, ideas that clash, topics going quiet. Save 2 or 3 related things and the first patterns appear here."
           actions={[
-            { label: 'start on atlas →', onPress: () => router.push('/(tabs)' as never) },
+            { label: 'Open Atlas', onPress: () => router.push('/(tabs)' as never) },
           ]}
         />
       </MindStage>
@@ -273,8 +277,8 @@ export default function MindScreen() {
     : null;
 
   const infoButton = (
-    <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About mind">
-      <Text style={{ color: c.deepInkFaint, fontSize: 16 }}>ⓘ</Text>
+    <Pressable onPress={() => setInfoVisible(true)} hitSlop={12} accessibilityLabel="About Mind">
+      <InfoIcon size={20} color={c.deepInkMuted} />
     </Pressable>
   );
   const header = view === 'threshold' ? (
@@ -292,8 +296,8 @@ export default function MindScreen() {
       >
         <ChevronLeftIcon size={22} color={c.deepInk} />
       </Pressable>
-      <Text variant="monoSmall" style={{ color: c.deepInkMuted, letterSpacing: 2 }}>
-        {view === 'all' ? 'everything' : currentMeta?.name}
+      <Text variant="headline" style={{ color: c.deepInk }}>
+        {view === 'all' ? 'Everything' : currentMeta?.name}
       </Text>
       {infoButton}
     </>
@@ -365,7 +369,7 @@ export default function MindScreen() {
               onContinueCompanion={() => continueInCompanion(
                 [],
                 selection.d.topicName,
-                `I went deep on ${selection.d.topicName} once — ${selection.d.captureCount} captures — ` +
+                `I went deep on ${selection.d.topicName} once, ${selection.d.captureCount} captures, ` +
                   `and then it went quiet for ${selection.d.daysSilent} days.\n\n` +
                   `What did I leave unfinished there?`,
               )}
@@ -383,12 +387,12 @@ export default function MindScreen() {
               <View style={styles.sheetHead}>
                 <View style={styles.sheetHeadLeft}>
                   <View style={[styles.sheetDot, { backgroundColor: ACCENT[selection.type === 'convergence' ? 'convergence' : 'threads'] }]} />
-                  <Text variant="monoSmall" style={{ letterSpacing: 2 }} color="muted">
-                    {selection.type.toUpperCase()}
+                  <Text variant="caption" color="muted">
+                    {SHEET_LABEL[selection.type]}
                   </Text>
                 </View>
-                <Pressable onPress={() => setSelection(null)} hitSlop={12}>
-                  <Text variant="monoSmall" color="faint">close</Text>
+                <Pressable onPress={() => setSelection(null)} hitSlop={12} accessibilityLabel="Close">
+                  <XIcon size={20} color={c.muted} />
                 </Pressable>
               </View>
               {selection.type === 'thread' ? (
@@ -406,8 +410,8 @@ export default function MindScreen() {
           <InfoModal
             visible={infoVisible}
             onClose={() => setInfoVisible(false)}
-            title="mind"
-            body="A report of the forces in your thinking, not a map. Strands show where threads are heading; the fault wall shows where your saved ideas collide; streams show different sources arriving at one idea; embers show what's gone quiet. Tap any instrument to go inside it."
+            title="About Mind"
+            body="Mind reads what you save and reports the patterns in it. Threads show where your thinking is heading. Contradictions show where your saves disagree. Convergence shows different sources reaching one idea. Quiet topics are the ones you haven't added to in a while. Tap any section to open it."
           />
         </>
       }
@@ -419,34 +423,42 @@ export default function MindScreen() {
           exiting={FadeOut.duration(200)}
           style={styles.threshold}
         >
-          <BreathingMark color={ink(0.55)} />
-          <Text variant="serif" style={[styles.thresholdTitle, { color: ink(0.94) }]}>
-            A read of what your mind has been up to
+          <Text variant="h3" style={{ color: ink(0.94) }}>
+            What your saves are doing
           </Text>
-          {/* No summary line here. It restated "3 threads · 2 dormant"
+          {/* No summary line here. It restated "3 threads, 2 quiet"
               immediately above a list that names each instrument and prints
-              its own count on the right — the same numbers twice. */}
+              its own count on the right: the same numbers twice. */}
           <View style={styles.thresholdList}>
-            {activeSections.map((s) => (
+            {activeSections.map((s, i) => (
               <Pressable
                 key={s.key}
                 onPress={() => setView(s.key)}
-                style={styles.thresholdRow}
+                style={[
+                  styles.thresholdRow,
+                  i < activeSections.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.borderSubtle },
+                ]}
                 accessibilityLabel={`Open ${s.name}`}
               >
                 <View style={[styles.thresholdTick, { backgroundColor: ACCENT[s.key] }]} />
                 <View style={{ flex: 1 }}>
-                  <Text variant="bodyMedium" style={{ color: ink(0.9) }}>{s.name}</Text>
-                  <Text variant="monoSmall" style={{ color: ink(0.4), marginTop: 1 }}>{s.whisper}</Text>
+                  <Text variant="headline" style={{ color: ink(0.9) }}>{s.name}</Text>
+                  <Text variant="subheadline" color="secondary" style={{ marginTop: 1 }}>{s.subtitle}</Text>
                 </View>
-                <Text variant="monoSmall" style={{ color: ACCENT[s.key] }}>{counts[s.key]}</Text>
+                <Text variant="caption" color="muted">{counts[s.key]}</Text>
+                <ChevronRightIcon size={16} color={c.muted} />
               </Pressable>
             ))}
           </View>
 
-          <Pressable onPress={() => setView('all')} style={styles.seeAll} accessibilityLabel="See everything">
-            <Text variant="monoSmall" style={{ color: ink(0.5), letterSpacing: 1 }}>see everything ↓</Text>
-          </Pressable>
+          <Button
+            label="See all"
+            variant="secondary"
+            size="sm"
+            onPress={() => setView('all')}
+            style={styles.seeAll}
+            accessibilityLabel="See all"
+          />
         </Animated.View>
       ) : (
         <Animated.View key={view} entering={FadeIn.duration(280)} style={styles.safe}>
@@ -454,15 +466,15 @@ export default function MindScreen() {
             {view === 'all' ? (
               activeSections.map((s) => (
                 <View key={s.key}>
-                  <SectionHeader title={s.name.toUpperCase()} whisper={s.whisper} color={ACCENT[s.key]} />
+                  <SectionHeader title={s.name} subtitle={s.subtitle} />
                   {renderSection(s.key)}
                 </View>
               ))
             ) : (
               <>
                 {view === 'dormant' ? (
-                  <Text variant="monoSmall" style={[styles.sectionWhisper, { color: ink(0.53) }]}>
-                    {currentMeta?.whisper}
+                  <Text variant="subheadline" color="secondary" style={styles.sectionSubtitle}>
+                    {currentMeta?.subtitle}
                   </Text>
                 ) : null}
                 {renderSection(view)}
@@ -478,37 +490,6 @@ export default function MindScreen() {
     </MindStage>
   );
 }
-
-/** A slow-breathing mark — the calm center of the threshold. */
-function BreathingMark({ color }: { color: string }) {
-  const breath = useSharedValue(0);
-  useEffect(() => {
-    breath.value = withRepeat(
-      withTiming(1, { duration: 3200, easing: Easing.inOut(Easing.quad) }),
-      -1,
-      true,
-    );
-  }, [breath]);
-  const outer = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + breath.value * 0.14 }],
-    opacity: 0.35 + breath.value * 0.25,
-  }));
-  const inner = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + breath.value * 0.06 }],
-  }));
-  return (
-    <View style={bm.wrap}>
-      <Animated.View style={[bm.outer, { borderColor: color }, outer]} />
-      <Animated.View style={[bm.inner, { backgroundColor: color }, inner]} />
-    </View>
-  );
-}
-
-const bm = StyleSheet.create({
-  wrap: { width: 64, height: 64, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
-  outer: { position: 'absolute', width: 56, height: 56, borderRadius: 28, borderWidth: 1 },
-  inner: { width: 10, height: 10, borderRadius: 5 },
-});
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
@@ -529,19 +510,18 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  threshold: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing[8], paddingBottom: Spacing[12] },
-  thresholdTitle: { textAlign: 'center', marginTop: Spacing[5] },
-  thresholdList: { marginTop: Spacing[10], gap: Spacing[2] },
+  threshold: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing[6], paddingBottom: Spacing[12] },
+  thresholdList: { marginTop: Spacing[6] },
   thresholdRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: Spacing[3],
-    gap: Spacing[4],
+    gap: Spacing[3],
   },
   thresholdTick: { width: 8, height: 22, borderRadius: 2 },
-  seeAll: { alignSelf: 'center', marginTop: Spacing[10], padding: Spacing[2] },
+  seeAll: { alignSelf: 'flex-start', marginTop: Spacing[6] },
 
-  sectionWhisper: {
+  sectionSubtitle: {
     paddingHorizontal: Spacing[6],
     marginTop: Spacing[2],
     marginBottom: Spacing[5],

@@ -5,10 +5,12 @@ import { useLocalSearchParams } from 'expo-router';
 
 import { api } from '@/lib/api';
 import { track } from '@/lib/analytics';
+import { ArrowUpIcon } from 'lucide-react-native';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { LimitNotice } from '@/components/ui/LimitNotice';
+import { LoadingDots } from '@/components/ui/LoadingDots';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import type { CompanionMessage, CompanionThread } from '@/types/api';
 
@@ -39,10 +41,7 @@ function MessageBlock({ message }: { message: CompanionMessage }) {
     return (
       <View style={styles.userRow}>
         <View style={[styles.userBubble, { backgroundColor: c.elevated, borderColor: c.border }]}>
-          <Text
-            variant="monoSmall"
-            style={{ color: c.text, lineHeight: 20 }}
-          >
+          <Text variant="body">
             {message.content}
           </Text>
         </View>
@@ -52,8 +51,8 @@ function MessageBlock({ message }: { message: CompanionMessage }) {
 
   return (
     <View style={[styles.companionRow, { borderLeftColor: c.border }]}>
-      <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[2], letterSpacing: 2 }}>
-        MNEME
+      <Text variant="caption" color="muted" style={{ marginBottom: Spacing[2] }}>
+        Mneme
       </Text>
       <Text variant="serif" color="secondary" style={{ lineHeight: 26 }}>
         {message.content}
@@ -195,7 +194,7 @@ export default function CompanionScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
-      <ScreenHeader title="companion" />
+      <ScreenHeader title="Companion" />
 
       {loading && (
         <View style={styles.centered}>
@@ -205,7 +204,7 @@ export default function CompanionScreen() {
 
       {!loading && error && (
         <View style={styles.centered}>
-          <Text variant="monoSmall" color="danger">{error}</Text>
+          <Text variant="subheadline" color="danger">{error}</Text>
         </View>
       )}
 
@@ -239,12 +238,10 @@ export default function CompanionScreen() {
             )}
             {sending && (
               <View style={[styles.companionRow, { borderLeftColor: c.border }]}>
-                <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[2], letterSpacing: 2 }}>
-                  MNEME
+                <Text variant="caption" color="muted" style={{ marginBottom: Spacing[2] }}>
+                  Mneme
                 </Text>
-                <Text variant="monoSmall" color="muted" style={{ letterSpacing: 3 }}>
-                  · · ·
-                </Text>
+                <LoadingDots />
               </View>
             )}
           </ScrollView>
@@ -253,21 +250,21 @@ export default function CompanionScreen() {
             <View style={styles.contextBlock}>
               {connectionList.length > 0 ? (
                 <Text
-                  variant="monoSmall"
+                  variant="caption"
                   color="muted"
                   style={styles.contextLabel}
                   numberOfLines={2}
                 >
-                  connection: {connectionList.map(([a, b]) => `${a} ↔ ${b}`).join(', ')}
+                  Connection: {connectionList.map(([a, b]) => `${a} and ${b}`).join(', ')}
                 </Text>
               ) : contextLabelList.length > 0 && (
                 <Text
-                  variant="monoSmall"
+                  variant="caption"
                   color="muted"
                   style={styles.contextLabel}
                   numberOfLines={1}
                 >
-                  regarding: {contextLabelList.join(', ')}
+                  Regarding: {contextLabelList.join(', ')}
                 </Text>
               )}
               <View style={styles.suggestionRow}>
@@ -279,7 +276,7 @@ export default function CompanionScreen() {
                   )}
                   style={[styles.suggestionChip, { borderColor: c.border }]}
                 >
-                  <Text variant="monoSmall" style={{ color: c.text, textAlign: 'center' }}>
+                  <Text variant="subheadline" style={{ textAlign: 'center' }}>
                     {connectionList.length > 0 ? 'Explore this connection' : 'Find the connection'}
                   </Text>
                 </Pressable>
@@ -287,7 +284,7 @@ export default function CompanionScreen() {
                   onPress={() => handleSend(buildContextPrompt("What's the tension between", contextLabelList))}
                   style={[styles.suggestionChip, { borderColor: c.border }]}
                 >
-                  <Text variant="monoSmall" style={{ color: c.text, textAlign: 'center' }}>What&apos;s the tension?</Text>
+                  <Text variant="subheadline" style={{ textAlign: 'center' }}>What&apos;s the tension?</Text>
                 </Pressable>
               </View>
             </View>
@@ -295,7 +292,7 @@ export default function CompanionScreen() {
 
           {sendError && (
             <View style={[styles.sendError, { backgroundColor: c.background }]}>
-              {sendLimit ? <LimitNotice message={sendError} /> : <Text variant="monoSmall" color="danger">{sendError}</Text>}
+              {sendLimit ? <LimitNotice message={sendError} /> : <Text variant="caption" color="danger">{sendError}</Text>}
             </View>
           )}
 
@@ -310,10 +307,10 @@ export default function CompanionScreen() {
             ]}
           >
             <TextInput
-              style={[styles.textInput, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.sm }]}
+              style={[styles.textInput, { color: c.text, fontFamily: FontFamily.sans, fontSize: FontSize.md }]}
               value={reply}
               onChangeText={setReply}
-              placeholder="ask anything..."
+              placeholder="Ask anything"
               placeholderTextColor={c.faint}
               multiline
               maxLength={4000}
@@ -324,16 +321,11 @@ export default function CompanionScreen() {
             <Pressable
               onPress={() => handleSend()}
               disabled={!reply.trim() || sending}
-              style={styles.sendButton}
+              style={[styles.sendButton, { backgroundColor: reply.trim() && !sending ? c.inverse : c.borderSubtle }]}
               accessibilityLabel="Send"
               accessibilityRole="button"
             >
-              <Text
-                variant="monoSmall"
-                style={{ color: reply.trim() && !sending ? c.text : c.faint, fontSize: FontSize.base }}
-              >
-                →
-              </Text>
+              <ArrowUpIcon size={18} color={reply.trim() && !sending ? c.inverseText : c.faint} strokeWidth={2.5} />
             </Pressable>
           </View>
         </KeyboardAvoidingView>
@@ -357,7 +349,6 @@ const styles = StyleSheet.create({
   },
   contextLabel: {
     marginBottom: Spacing[3],
-    letterSpacing: 0.5,
   },
   suggestionRow: {
     flexDirection: 'row',
@@ -371,16 +362,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[3],
     alignItems: 'center',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing[4],
-    paddingVertical: Spacing[3],
-    borderBottomWidth: 1,
-  },
-  backButton: { padding: Spacing[1] },
-  headerTitle: { flex: 1, textAlign: 'center', letterSpacing: 0.5 },
   centered: {
     flex: 1,
     alignItems: 'center',
@@ -428,11 +409,14 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: Spacing[2],
     maxHeight: 120,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   sendButton: {
-    paddingVertical: Spacing[2],
-    paddingHorizontal: Spacing[2],
-    marginBottom: 2,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
   },
 });

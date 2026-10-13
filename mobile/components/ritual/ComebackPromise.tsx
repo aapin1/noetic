@@ -1,8 +1,9 @@
 import React from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Modal, StyleSheet, View } from 'react-native';
 import { Spacing, Radius } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { Button } from '@/components/ui/Button';
 
 interface Props {
   visible: boolean;
@@ -36,35 +37,27 @@ export function ComebackPromise({ visible, fragmentCount, onDecline, onAccept }:
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onDecline}>
       <View style={styles.overlay}>
         <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
-          <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 2, marginBottom: Spacing[3] }}>
-            ON YOUR MAP
+          <Text variant="h4" style={{ marginBottom: Spacing[3] }}>
+            On your map
           </Text>
 
-          <Text variant="serif" color="secondary" style={{ lineHeight: 26 }}>
+          <Text variant="body" color="secondary">
             {fragmentCount === 1
-              ? 'that thought is on your map now. as more land, mneme starts to notice things: two that disagree, a thread picking up, a streak worth keeping.'
-              : 'those thoughts are on your map now. as more land, mneme starts to notice things: two that disagree, a thread picking up, a streak worth keeping.'}
+              ? 'That thought is on your map now. As more land, Mneme starts to notice things: two that disagree, a thread picking up, a streak worth keeping.'
+              : 'Those thoughts are on your map now. As more land, Mneme starts to notice things: two that disagree, a thread picking up, a streak worth keeping.'}
           </Text>
 
-          <Text variant="serif" style={{ lineHeight: 26, marginTop: Spacing[4], color: c.text }}>
-            turn on notifications to stay on track with what you're learning?
+          <Text variant="body" style={{ marginTop: Spacing[4] }}>
+            Turn on notifications to stay on track with what you're learning?
           </Text>
 
-          <Text variant="monoSmall" style={{ color: c.faint, marginTop: Spacing[5], letterSpacing: 1 }}>
-            a few a day at most. no badges.
+          <Text variant="caption" color="muted" style={{ marginTop: Spacing[5] }}>
+            A few a day at most. No badges.
           </Text>
 
           <View style={styles.actions}>
-            <Pressable onPress={onDecline} hitSlop={8} style={styles.action}>
-              <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 1 }}>
-                not now
-              </Text>
-            </Pressable>
-            <Pressable onPress={onAccept} hitSlop={8} style={styles.action}>
-              <Text variant="monoSmall" style={{ color: c.text, letterSpacing: 1 }}>
-                turn on →
-              </Text>
-            </Pressable>
+            <Button label="Not now" variant="tertiary" size="sm" onPress={onDecline} />
+            <Button label="Turn on" variant="primary" size="sm" onPress={onAccept} />
           </View>
         </View>
       </View>
@@ -88,10 +81,7 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: Spacing[6],
+    gap: Spacing[2],
     marginTop: Spacing[6],
-  },
-  action: {
-    paddingVertical: Spacing[2],
   },
 });

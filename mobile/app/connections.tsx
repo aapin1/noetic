@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { RefreshCwIcon, XIcon } from 'lucide-react-native';
 
 import { api } from '@/lib/api';
 import { failureReason, track } from '@/lib/analytics';
@@ -32,18 +33,18 @@ type Sheet =
   | { kind: 'plus' };
 
 function ago(iso: string | null): string {
-  if (!iso) return 'not yet checked';
+  if (!iso) return 'Not checked yet';
   const ms = Date.now() - new Date(iso).getTime();
   const m = Math.floor(ms / 60_000);
-  if (m < 2) return 'checked just now';
-  if (m < 60) return `checked ${m}m ago`;
+  if (m < 2) return 'Checked just now';
+  if (m < 60) return `Checked ${m}m ago`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `checked ${h}h ago`;
-  return `checked ${Math.floor(h / 24)}d ago`;
+  if (h < 24) return `Checked ${h}h ago`;
+  return `Checked ${Math.floor(h / 24)}d ago`;
 }
 
 function statusLine(conn: Connection): string {
-  if (conn.syncing) return 'reading your account…';
+  if (conn.syncing) return 'Reading your account';
   if (conn.status === 'error' && conn.lastError) return conn.lastError;
   const parts = [ago(conn.lastSyncedAt)];
   if (conn.mapped > 0) parts.push(`${conn.mapped} on your map`);
@@ -51,7 +52,7 @@ function statusLine(conn: Connection): string {
   else if (conn.lastSync && conn.lastSync.seen > 0 && conn.lastSync.withWords === 0) {
     parts.push(`${conn.lastSync.seen} logged, none with your words yet`);
   } else if (conn.lastSync) parts.push('nothing to bring over yet');
-  return parts.join(' · ');
+  return parts.join(', ');
 }
 
 export default function ConnectionsScreen() {
@@ -198,7 +199,7 @@ export default function ConnectionsScreen() {
       track('connection_linked', { provider });
       if (res.connection.deviceFeed) void deviceSync(res.connection);
     } catch (e) {
-      setErrors((errs) => ({ ...errs, [provider]: e instanceof Error ? e.message : 'something went wrong — try again' }));
+      setErrors((errs) => ({ ...errs, [provider]: e instanceof Error ? e.message : 'Something went wrong. Try again.' }));
       track('connection_link_failed', { provider, reason: failureReason(e) });
     } finally {
       setBusy(null);
@@ -217,7 +218,7 @@ export default function ConnectionsScreen() {
   };
 
   const disconnect = (conn: Connection) => {
-    Alert.alert(`Disconnect ${conn.provider}?`, 'Nothing leaves your map. Mneme just stops checking this account.', [
+    Alert.alert(`Disconnect ${linkableMeta(conn.provider)?.name ?? conn.provider}?`, 'Nothing leaves your map. Mneme just stops checking this account.', [
       { text: 'Keep', style: 'cancel' },
       {
         text: 'Disconnect',
@@ -240,11 +241,11 @@ export default function ConnectionsScreen() {
       <ScreenHeader title="Connections" variant="title" />
 
       {connections === null ? (
-        <AsciiLoader fill size={90} message="loading…" />
+        <AsciiLoader fill size={90} message="Loading" />
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          <Text variant="monoSmall" color="muted" style={styles.intro}>
-            what you write elsewhere, landing on your map on its own.
+          <Text variant="subheadline" color="secondary" style={styles.intro}>
+            What you write elsewhere, landing on your map on its own.
           </Text>
 
           {linked.map(({ meta, conn }) => (
@@ -255,40 +256,40 @@ export default function ConnectionsScreen() {
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
                   <View style={styles.rowHead}>
-                    <Text variant="serif">{meta.name}</Text>
+                    <Text variant="bodyMedium">{meta.name}</Text>
                     {!meta.secret && conn.handle ? (
-                      <Text variant="monoSmall" color="faint" numberOfLines={1} style={{ flexShrink: 1 }}>
+                      <Text variant="caption" color="muted" numberOfLines={1} style={{ flexShrink: 1 }}>
                         {conn.handle}
                       </Text>
                     ) : null}
                   </View>
-                  <Text variant="monoSmall" color={conn.status === 'error' && !conn.syncing ? 'danger' : 'faint'} numberOfLines={2}>
+                  <Text variant="caption" color={conn.status === 'error' && !conn.syncing ? 'danger' : 'muted'} numberOfLines={2}>
                     {statusLine(conn)}
                   </Text>
                 </View>
                 {!conn.syncing && (
                   <Pressable onPress={() => void checkNow(conn.provider)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Check ${meta.name} now`}>
-                    <Text variant="monoSmall" color="muted" style={styles.rowGlyph}>↻</Text>
+                    <RefreshCwIcon size={16} color={c.muted} />
                   </Pressable>
                 )}
                 <Pressable onPress={() => disconnect(conn)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Disconnect ${meta.name}`}>
-                  <Text variant="monoSmall" color="faint" style={styles.rowGlyph}>✕</Text>
+                  <XIcon size={16} color={c.faint} />
                 </Pressable>
               </View>
               {conn.pending > 0 && !conn.syncing && (
                 <View style={[styles.pendingRow, { borderColor: c.border }]}>
-                  <Text variant="monoSmall" color="primary" style={{ flex: 1 }}>
-                    {`${conn.pending} waiting for a yes`}
+                  <Text variant="caption" color="primary" style={{ flex: 1 }}>
+                    {`${conn.pending} waiting for your approval`}
                   </Text>
                   <Pressable
                     onPress={() => { setAddingFor(conn.provider); void answerPending(conn.provider, 'add').finally(() => setAddingFor(null)); }}
                     hitSlop={8}
                     accessibilityRole="button"
                   >
-                    <Text variant="monoSmall" color="primary">{addingFor === conn.provider ? 'adding…' : 'add them'}</Text>
+                    <Text variant="caption" color="primary">{addingFor === conn.provider ? 'Adding' : 'Add them'}</Text>
                   </Pressable>
                   <Pressable onPress={() => void answerPending(conn.provider, 'decline')} hitSlop={8} accessibilityRole="button">
-                    <Text variant="monoSmall" color="faint">not these</Text>
+                    <Text variant="caption" color="muted">Skip</Text>
                   </Pressable>
                 </View>
               )}
@@ -299,8 +300,8 @@ export default function ConnectionsScreen() {
               yes. Shown once anything is connected. */}
           {connected.size > 0 && mode !== null && (
             <View style={[styles.modeRow, { borderColor: c.border }]}>
-              <Text variant="monoSmall" color="muted" style={{ flex: 1 }}>
-                new finds
+              <Text variant="subheadline" color="secondary" style={{ flex: 1 }}>
+                New finds
               </Text>
               {(['ASK', 'AUTO'] as Mode[]).map((m) => (
                 <Pressable
@@ -311,8 +312,8 @@ export default function ConnectionsScreen() {
                   accessibilityState={{ selected: mode === m }}
                   style={[styles.modePill, { borderColor: mode === m ? c.text : c.border, backgroundColor: mode === m ? c.elevated : 'transparent' }]}
                 >
-                  <Text variant="monoSmall" color={mode === m ? 'primary' : 'muted'}>
-                    {m === 'ASK' ? 'ask me first' : 'add on their own'}
+                  <Text variant="caption" color={mode === m ? 'primary' : 'muted'}>
+                    {m === 'ASK' ? 'Ask me first' : 'Add automatically'}
                   </Text>
                 </Pressable>
               ))}
@@ -320,20 +321,28 @@ export default function ConnectionsScreen() {
           )}
 
           {atFreeLimit && (
-            <Pressable onPress={() => router.push('/plus?from=connections' as never)} hitSlop={6} accessibilityRole="button">
-              <Text variant="monoSmall" color="faint" style={{ textAlign: 'center' }}>
-                {`${connected.size} of ${FREE_LIMIT} in sync on free · plus keeps them all →`}
+            <View style={styles.limitRow}>
+              <Text variant="caption" color="muted" style={{ flex: 1 }}>
+                {`${connected.size} of ${FREE_LIMIT} accounts in sync on Free. Plus keeps them all.`}
               </Text>
-            </Pressable>
+              <Button
+                label="Get Mneme Plus"
+                variant="secondary"
+                size="sm"
+                onPress={() => router.push('/plus?from=connections' as never)}
+              />
+            </View>
           )}
 
           <ProviderGrid sections={sections} onPick={pick} />
 
-          <Pressable onPress={() => router.push('/import' as never)} hitSlop={8} accessibilityRole="link" style={{ marginTop: Spacing[4] }}>
-            <Text variant="monoSmall" color="muted" style={{ textAlign: 'center' }}>
-              {'have an export file instead? bring it over →'}
-            </Text>
-          </Pressable>
+          <Button
+            label="Bring an export file"
+            variant="tertiary"
+            size="sm"
+            onPress={() => router.push('/import' as never)}
+            style={{ alignSelf: 'center', marginTop: Spacing[4] }}
+          />
         </ScrollView>
       )}
 
@@ -350,8 +359,8 @@ export default function ConnectionsScreen() {
                       <Mark mark={sheet.meta.key} color={sheet.meta.accent} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text variant="serif">{sheet.meta.name}</Text>
-                      <Text variant="monoSmall" color="faint">{sheet.meta.what}</Text>
+                      <Text variant="bodyMedium">{sheet.meta.name}</Text>
+                      <Text variant="caption" color="muted">{sheet.meta.what}</Text>
                     </View>
                   </View>
                   <Input
@@ -369,7 +378,7 @@ export default function ConnectionsScreen() {
                     testID={`connect-${sheet.meta.key}`}
                   />
                   <Button
-                    label={busy === sheet.meta.key ? 'checking…' : 'connect'}
+                    label={busy === sheet.meta.key ? 'Checking' : 'Connect'}
                     variant="secondary"
                     size="sm"
                     accent={sheet.meta.accent}
@@ -378,7 +387,7 @@ export default function ConnectionsScreen() {
                     loading={busy === sheet.meta.key}
                     style={sheetStyles.cta}
                   />
-                  <Text variant="monoSmall" color="faint" style={sheetStyles.hint}>
+                  <Text variant="caption" color="muted" style={sheetStyles.hint}>
                     {sheet.meta.hint}
                   </Text>
                 </>
@@ -391,12 +400,12 @@ export default function ConnectionsScreen() {
                       <Mark mark={sheet.target.key} color={SESSION_TILES[sheet.target.key]?.accent ?? c.text} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text variant="serif">{sheet.target.name}</Text>
-                      <Text variant="monoSmall" color="faint">{sheet.target.what}</Text>
+                      <Text variant="bodyMedium">{sheet.target.name}</Text>
+                      <Text variant="caption" color="muted">{sheet.target.what}</Text>
                     </View>
                   </View>
                   <Button
-                    label="sign in →"
+                    label="Sign in"
                     variant="secondary"
                     size="sm"
                     accent={SESSION_TILES[sheet.target.key]?.accent}
@@ -407,22 +416,20 @@ export default function ConnectionsScreen() {
                     }}
                     style={sheetStyles.cta}
                   />
-                  <Text variant="monoSmall" color="faint" style={sheetStyles.hint}>
-                    you sign in as usual, on your phone — mneme reads it once.
+                  <Text variant="caption" color="muted" style={sheetStyles.hint}>
+                    You sign in as usual, on your phone. Mneme reads it once.
                   </Text>
                 </>
               )}
 
               {sheet?.kind === 'plus' && (
                 <>
-                  <Text variant="monoSmall" style={{ color: c.faint, letterSpacing: 2 }}>
-                    MNEME PLUS
-                  </Text>
-                  <Text variant="serif" color="secondary" style={{ lineHeight: 26 }}>
-                    free keeps two accounts in sync. plus keeps them all.
+                  <Text variant="headline">Mneme Plus</Text>
+                  <Text variant="subheadline" color="secondary">
+                    Free keeps two accounts in sync. Plus keeps them all.
                   </Text>
                   <Button
-                    label="get mneme plus →"
+                    label="Get Mneme Plus"
                     variant="secondary"
                     size="sm"
                     onPress={() => {
@@ -444,14 +451,14 @@ export default function ConnectionsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   content: { padding: Spacing[6], paddingBottom: Spacing[12], gap: Spacing[3] },
-  intro: { lineHeight: 20, marginBottom: Spacing[2] },
+  intro: { marginBottom: Spacing[2] },
   row: { borderWidth: 1, borderRadius: Radius.lg, padding: Spacing[4], gap: Spacing[2] },
   rowMain: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
   rowHead: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing[2] },
   rowTile: { width: 44, height: 44, borderRadius: Radius.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  rowGlyph: { fontSize: 15, padding: Spacing[1] },
   modeRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2], paddingVertical: Spacing[3], borderTopWidth: 1, borderBottomWidth: 1 },
   modePill: { borderWidth: 1, borderRadius: Radius.full, paddingVertical: 5, paddingHorizontal: Spacing[3] },
+  limitRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
   pendingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[4], paddingTop: Spacing[2], borderTopWidth: 1 },
 });
 
@@ -471,5 +478,5 @@ const sheetStyles = StyleSheet.create({
   },
   head: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
   cta: { alignSelf: 'flex-start' },
-  hint: { lineHeight: 18 },
+  hint: {},
 });

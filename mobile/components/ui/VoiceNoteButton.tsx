@@ -69,7 +69,7 @@ export function VoiceNoteButton({ onText, onError }: Props) {
       onText(text);
     } catch (e) {
       onError?.(
-        e instanceof Error ? e.message : 'Could not transcribe that — try typing instead.',
+        e instanceof Error ? e.message : 'Could not transcribe that. Try typing instead.',
         (e as { code?: string })?.code,
       );
     } finally {

@@ -93,7 +93,7 @@ export function dateRangeLabel(items: CaptureSummary[]): string {
   const fmt = (t: number) => new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   const first = fmt(times[0]);
   const last = fmt(times[times.length - 1]);
-  return first === last ? last : `${first} – ${last}`;
+  return first === last ? last : `${first} to ${last}`;
 }
 
 /** The primary topic to stamp on a node card — prefer a specific label over a field. */

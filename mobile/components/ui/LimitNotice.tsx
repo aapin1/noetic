@@ -18,7 +18,7 @@ export function LimitNotice({ message, style }: { message: string; style?: Style
   const router = useRouter();
   return (
     <View style={[styles.root, style]}>
-      <Text variant="monoSmall" color="danger">{message}</Text>
+      <Text variant="caption" color="danger">{message}</Text>
       <Pressable
         onPress={() => {
           track('paywall_view', { source: 'limit' });
@@ -29,7 +29,7 @@ export function LimitNotice({ message, style }: { message: string; style?: Style
         hitSlop={8}
         style={styles.cta}
       >
-        <Text variant="monoSmall" style={{ color: c.text }}>get Mneme Plus →</Text>
+        <Text variant="caption" style={{ color: c.text, fontWeight: '600' }}>Get Mneme Plus</Text>
       </Pressable>
     </View>
   );

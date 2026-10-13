@@ -69,8 +69,8 @@ export default function ForgotPasswordScreen() {
             <Text variant="h1" style={styles.title}>
               Forgot your password?
             </Text>
-            <Text variant="monoSmall" color="muted" style={styles.subtitle}>
-              we'll email you a six-digit code.
+            <Text variant="subheadline" color="secondary" style={styles.subtitle}>
+              We'll email you a six-digit code.
             </Text>
           </View>
 
@@ -117,8 +117,8 @@ export default function ForgotPasswordScreen() {
               accessibilityRole="link"
               accessibilityLabel="I already have a code"
             >
-              <Text variant="monoSmall" color="muted">
-                already have a code?
+              <Text variant="subheadline" color="secondary">
+                Already have a code?
               </Text>
             </Pressable>
           </View>

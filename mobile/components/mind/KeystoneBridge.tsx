@@ -16,6 +16,7 @@ import Animated, {
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { Button } from '@/components/ui/Button';
 import type { ConvergenceSignal, IntelNode } from '@/types/api';
 import { DETAIL_PAGE_BOTTOM, DetailShell, useStageInk } from './DetailShell';
 
@@ -105,7 +106,7 @@ export function KeystoneBridge({
   const labelStyle = useAnimatedStyle(() => ({ opacity: snap.value }));
 
   return (
-    <DetailShell typeLabel="CONVERGENCE" accent={color} background={background} onClose={onClose}>
+    <DetailShell typeLabel="Convergence" accent={color} background={background} onClose={onClose}>
       {/* One continuous page: the bridge scrolls away with the text */}
       <ScrollView
         style={styles.scroll}
@@ -142,8 +143,8 @@ export function KeystoneBridge({
             collides with the web; the arrival idea headlines the footer. */}
         <Animated.View style={[styles.keyLabel, labelStyle]} pointerEvents="none">
           <View style={[styles.keyChip, { backgroundColor: c.surface }]}>
-            <Text variant="monoSmall" style={{ color, letterSpacing: 2, textAlign: 'center' }}>
-              {data.topicName.toUpperCase()}
+            <Text variant="caption" style={{ color, textAlign: 'center' }}>
+              {data.topicName}
             </Text>
           </View>
         </Animated.View>
@@ -164,11 +165,11 @@ export function KeystoneBridge({
       </View>
 
       <View style={styles.footer}>
-        <Text variant="monoSmall" style={{ color: ink(0.42) }}>
-          {data.sourceCount} sources · {data.captureCount} captures · one destination
+        <Text variant="subheadline" color="secondary">
+          {data.sourceCount} sources, {data.captureCount} captures
         </Text>
         {data.arrival ? (
-          <Text variant="h3" style={{ color: ink(0.94), marginTop: Spacing[3] }}>
+          <Text variant="serifLg" style={{ color: ink(0.94), marginTop: Spacing[3] }}>
             {data.arrival}
           </Text>
         ) : null}
@@ -179,19 +180,15 @@ export function KeystoneBridge({
         </View>
         {data.act ? (
           <View style={[styles.signal, { borderLeftColor: color, marginTop: Spacing[4] }]}>
-            <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>WHERE THIS POINTS</Text>
-            <Text variant="bodyMedium" style={{ color: ink(0.9), marginTop: 2 }}>
+            <Text variant="headline" style={{ color: ink(0.94) }}>Where this points</Text>
+            <Text variant="body" style={{ color: ink(0.9), marginTop: 2 }}>
               {data.act}
             </Text>
           </View>
         ) : null}
         <View style={[styles.ctaRow, { borderTopColor: ink(0.18) }]}>
-          <Pressable onPress={onContinueCompanion} hitSlop={8}>
-            <Text variant="monoSmall" style={{ color: ink(0.6) }}>Continue in companion →</Text>
-          </Pressable>
-          <Pressable onPress={onViewAtlas} hitSlop={8}>
-            <Text variant="monoSmall" style={{ color: ink(0.6) }}>View in Atlas →</Text>
-          </Pressable>
+          <Button label="Continue in companion" variant="secondary" size="sm" onPress={onContinueCompanion} />
+          <Button label="Open in Atlas" variant="secondary" size="sm" onPress={onViewAtlas} />
         </View>
       </View>
       </ScrollView>
@@ -309,15 +306,15 @@ function ClusterOverlay({
         pointerEvents="none"
       >
         <Text
-          variant="monoSmall"
+          variant="caption"
           numberOfLines={2}
           style={{ color: ink(0.6), textAlign: align === 'left' ? 'left' : 'right' }}
         >
           {cluster.items[0]?.label}
         </Text>
         {cluster.items.length > 1 ? (
-          <Text variant="monoSmall" style={{ color: ink(0.32) }}>
-            +{cluster.items.length - 1} more
+          <Text variant="caption" style={{ color: ink(0.32) }}>
+            {cluster.items.length - 1} more
           </Text>
         ) : null}
       </View>
@@ -352,7 +349,8 @@ const styles = StyleSheet.create({
   },
   ctaRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: Spacing[3],
     marginTop: Spacing[8],
     paddingTop: Spacing[4],
     borderTopWidth: StyleSheet.hairlineWidth,

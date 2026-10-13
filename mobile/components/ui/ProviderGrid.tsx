@@ -89,9 +89,9 @@ type Props = {
 
 /**
  * Every service on screen at once: a wrapped grid, five to a row, grouped by
- * what the content IS (films, books, saves…) under whisper-quiet labels.
+ * what the content is (films, books, saves) under small captions.
  * Tap a mark and its connect sheet rises — no drifting strip, nothing to
- * chase.
+ * chase
  */
 export function ProviderGrid({ sections, onPick }: Props) {
   const c = useThemeColors();
@@ -101,7 +101,7 @@ export function ProviderGrid({ sections, onPick }: Props) {
         .filter((s) => s.marks.length > 0)
         .map((s) => (
           <View key={s.title}>
-            <Text variant="label" color="faint" style={styles.section}>
+            <Text variant="caption" color="muted" style={styles.section}>
               {s.title}
             </Text>
             <View style={styles.grid} accessibilityRole="list">
@@ -121,7 +121,7 @@ export function ProviderGrid({ sections, onPick }: Props) {
                   <View style={[styles.tile, { borderColor: c.border, backgroundColor: c.surface }]}>
                     <Mark mark={m.mark} color={m.accent} />
                   </View>
-                  <Text style={[styles.name, { color: c.faint }]} numberOfLines={1}>
+                  <Text variant="captionSmall" color="faint" style={styles.name} numberOfLines={1}>
                     {m.name}
                   </Text>
                 </Pressable>
@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  name: { marginTop: Spacing[1], fontFamily: FontFamily.mono, fontSize: 9, letterSpacing: 0.3 },
+  name: { marginTop: Spacing[1] },
   glyph: { fontSize: 24, lineHeight: 28 },
   dots: { flexDirection: 'row' },
   dot: { width: 15, height: 15, borderRadius: 8, marginHorizontal: -2.5 },

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text as RNText, View, useWindowDimensions, type ViewStyle } from 'react-native';
+import { XIcon } from 'lucide-react-native';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { GLASS_ACTIVE_BG, GLASS_BG, GLASS_BORDER, GLASS_BORDER_GLOW } from '@/constants/mapPalette';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
@@ -126,7 +127,7 @@ export function GuidePill({ frame, enter = 'right', text, cta, art = 'cat', onCt
           accessibilityRole="button"
           accessibilityLabel="Not now"
         >
-          <RNText style={styles.close}>✕</RNText>
+          <XIcon size={14} color="rgba(240,232,214,0.55)" />
         </Pressable>
       </View>
       {cta ? (
@@ -168,26 +169,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   text: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    lineHeight: FontSize.xs + 6,
-    letterSpacing: 0.5,
-    color: 'rgba(240,232,214,0.8)',
+    fontFamily: FontFamily.sans,
+    fontSize: FontSize.sm,
+    lineHeight: FontSize.sm + 5,
+    color: 'rgba(240,232,214,0.85)',
   },
   ghost: {
     opacity: 0,
   },
   spark: {
-    fontFamily: FontFamily.mono,
     fontSize: 15,
     color: 'rgba(240,232,214,0.6)',
     paddingHorizontal: 4,
-  },
-  close: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    color: 'rgba(240,232,214,0.49)',
-    paddingHorizontal: 2,
   },
   actions: {
     flexDirection: 'row',
@@ -204,9 +197,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[3],
   },
   cta: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    letterSpacing: 0.5,
-    color: 'rgba(240,232,214,0.84)',
+    fontFamily: FontFamily.sans,
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: 'rgba(240,232,214,0.88)',
   },
 });

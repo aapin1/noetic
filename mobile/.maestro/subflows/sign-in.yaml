@@ -24,7 +24,7 @@ appId: app.mneme.mobile
 # prompt or the app's atlas header appears next.
 - extendedWaitUntil:
     visible:
-      text: "Not Now|atlas"
+      text: "Not Now|Atlas"
     timeout: 45000
 - runFlow:
     when:

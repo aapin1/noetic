@@ -6,15 +6,15 @@ import { Text } from '@/components/ui/Text';
 import type { InsightCard, InsightType } from '@/types/api';
 
 const TYPE_LABEL: Record<InsightType, string> = {
-  PATTERN: 'pattern',
-  TRAJECTORY: 'trajectory',
-  CONNECTION: 'connection',
-  REINFORCES: 'reinforces',
-  CONTRADICTS: 'contradicts',
-  NOVELTY: 'novelty',
-  RECUR: 'recur',
-  READING: 'reading',
-  MIRROR: 'a read on you',
+  PATTERN: 'Pattern',
+  TRAJECTORY: 'Trajectory',
+  CONNECTION: 'Connection',
+  REINFORCES: 'Reinforces',
+  CONTRADICTS: 'Contradicts',
+  NOVELTY: 'Novelty',
+  RECUR: 'Recurs',
+  READING: 'Reading',
+  MIRROR: 'A read on you',
 };
 
 interface Props {
@@ -43,7 +43,7 @@ export function InsightLine({ insight, compact = false }: Props) {
   return (
     <View style={[styles.container, compact && styles.compact, barStyles.border]}>
       <View style={styles.meta}>
-        <Text variant="label" color="muted">
+        <Text variant="caption" color="muted">
           {TYPE_LABEL[insight.type]}
         </Text>
         <View style={styles.strength}>
@@ -58,13 +58,12 @@ export function InsightLine({ insight, compact = false }: Props) {
       <Text variant={compact ? 'serif' : 'serifLg'} color="primary" style={styles.headline}>
         {insight.headline}
       </Text>
-      {/* A READING is a line and then a move made on it — the catch, where it
-          comes from, the test, the cost — and it names its own move in
-          evidence.kicker. That name labels the note, so the two read as a
-          pair rather than as a headline with a sentence under it, and the
-          label is whatever this reading chose, not one fixed heading. */}
+      {/* A READING is a line and then a move made on it (the catch, where it
+          comes from, the test, the cost) and it names its own move in
+          evidence.kicker. That name titles the note, so the two read as a
+          pair rather than as a headline with a sentence under it. */}
       {!compact && insight.body && noteKicker ? (
-        <Text variant="label" color="muted" style={styles.noteLabel}>
+        <Text variant="headline" style={styles.noteLabel}>
           {noteKicker}
         </Text>
       ) : null}

@@ -5,10 +5,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 
 import { api } from '@/lib/api';
+import { ArrowUpIcon } from 'lucide-react-native';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { LimitNotice } from '@/components/ui/LimitNotice';
+import { LoadingDots } from '@/components/ui/LoadingDots';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import type { SocraticMessage, SocraticThread } from '@/types/api';
 
@@ -20,10 +22,7 @@ function MessageBlock({ message }: { message: SocraticMessage }) {
     return (
       <View style={styles.userRow}>
         <View style={[styles.userBubble, { backgroundColor: c.elevated, borderColor: c.border }]}>
-          <Text
-            variant="monoSmall"
-            style={{ color: c.text, lineHeight: 20 }}
-          >
+          <Text variant="body">
             {message.content}
           </Text>
         </View>
@@ -33,8 +32,8 @@ function MessageBlock({ message }: { message: SocraticMessage }) {
 
   return (
     <View style={[styles.companionRow, { borderLeftColor: c.border }]}>
-      <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[2], letterSpacing: 2 }}>
-        MNEME
+      <Text variant="caption" color="muted" style={{ marginBottom: Spacing[2] }}>
+        Mneme
       </Text>
       <Text variant="serif" color="secondary" style={{ lineHeight: 26 }}>
         {message.content}
@@ -119,7 +118,7 @@ export default function SocraticScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
-      <ScreenHeader title={`dialogue${topicName ? ` · ${topicName.toLowerCase()}` : ''}`} />
+      <ScreenHeader title={topicName ? `Dialogue: ${topicName}` : 'Dialogue'} />
 
       {loading && (
         <View style={styles.centered}>
@@ -129,7 +128,7 @@ export default function SocraticScreen() {
 
       {!loading && error && (
         <View style={styles.centered}>
-          {errorLimit ? <LimitNotice message={error} /> : <Text variant="monoSmall" color="danger">{error}</Text>}
+          {errorLimit ? <LimitNotice message={error} /> : <Text variant="subheadline" color="danger">{error}</Text>}
         </View>
       )}
 
@@ -162,12 +161,10 @@ export default function SocraticScreen() {
             )}
             {sending && (
               <View style={[styles.companionRow, { borderLeftColor: c.border }]}>
-                <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[2], letterSpacing: 2 }}>
-                  MNEME
+                <Text variant="caption" color="muted" style={{ marginBottom: Spacing[2] }}>
+                  Mneme
                 </Text>
-                <Text variant="monoSmall" color="muted" style={{ letterSpacing: 3 }}>
-                  · · ·
-                </Text>
+                <LoadingDots />
               </View>
             )}
           </ScrollView>
@@ -183,10 +180,10 @@ export default function SocraticScreen() {
             ]}
           >
             <TextInput
-              style={[styles.textInput, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.sm }]}
+              style={[styles.textInput, { color: c.text, fontFamily: FontFamily.sans, fontSize: FontSize.md }]}
               value={reply}
               onChangeText={setReply}
-              placeholder="reply..."
+              placeholder="Reply"
               placeholderTextColor={c.faint}
               multiline
               maxLength={4000}
@@ -197,16 +194,11 @@ export default function SocraticScreen() {
             <Pressable
               onPress={handleSend}
               disabled={!reply.trim() || sending}
-              style={styles.sendButton}
+              style={[styles.sendButton, { backgroundColor: reply.trim() && !sending ? c.inverse : c.borderSubtle }]}
               accessibilityLabel="Send"
               accessibilityRole="button"
             >
-              <Text
-                variant="monoSmall"
-                style={{ color: reply.trim() && !sending ? c.text : c.faint, fontSize: FontSize.base }}
-              >
-                →
-              </Text>
+              <ArrowUpIcon size={18} color={reply.trim() && !sending ? c.inverseText : c.faint} strokeWidth={2.5} />
             </Pressable>
           </View>
         </KeyboardAvoidingView>
@@ -218,16 +210,6 @@ export default function SocraticScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   flex: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing[4],
-    paddingVertical: Spacing[3],
-    borderBottomWidth: 1,
-  },
-  backButton: { padding: Spacing[1] },
-  headerTitle: { flex: 1, textAlign: 'center', letterSpacing: 0.5 },
   centered: {
     flex: 1,
     alignItems: 'center',
@@ -268,11 +250,14 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: Spacing[2],
     maxHeight: 120,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   sendButton: {
-    paddingVertical: Spacing[2],
-    paddingHorizontal: Spacing[2],
-    marginBottom: 2,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
   },
 });

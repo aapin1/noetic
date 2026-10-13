@@ -31,6 +31,7 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Text } from '@/components/ui/Text';
+import { Button } from '@/components/ui/Button';
 import { SectionKicker } from '@/components/ui/SectionKicker';
 import { Avatar } from '@/components/ui/Avatar';
 import { Confetti } from '@/components/ui/Confetti';
@@ -316,7 +317,7 @@ function MilestoneStamp({
         hitSlop={8}
         style={[styles.stamp, { borderColor: accent }]}
       >
-        <Text variant="monoSmall" style={{ color: accent, fontSize: 10 }}>
+        <Text variant="captionSmall" style={{ color: accent }}>
           {label}
         </Text>
       </Pressable>
@@ -342,7 +343,7 @@ function StatPage({
       <Text variant="hero" style={styles.heroNumber}>
         {count}
       </Text>
-      <Text variant="mono" color="muted">
+      <Text variant="subheadline" color="muted">
         {stat.label}
       </Text>
       {children}
@@ -366,13 +367,13 @@ function Hero({
       { id: 'captures', value: w.totalCaptures, label: heroNoun(w.totalCaptures) },
     ];
     if (w.distinctTopics > 0) {
-      all.push({ id: 'topics', value: w.distinctTopics, label: 'topics in orbit' });
+      all.push({ id: 'topics', value: w.distinctTopics, label: 'topics' });
     }
     if (w.daysSinceFirst > 0) {
-      all.push({ id: 'days', value: w.daysSinceFirst, label: 'days since day one' });
+      all.push({ id: 'days', value: w.daysSinceFirst, label: 'days since your first save' });
     }
     if (w.longestStreak >= 2) {
-      all.push({ id: 'streak', value: w.longestStreak, label: 'day best streak' });
+      all.push({ id: 'streak', value: w.longestStreak, label: 'days, your longest streak' });
     }
     return all;
   }, [w.totalCaptures, w.distinctTopics, w.daysSinceFirst, w.longestStreak]);
@@ -483,10 +484,10 @@ function Spectrum({ items }: { items: { name: string; count: number }[] }) {
         {items.map((it, i) => (
           <View key={it.name} style={styles.legendRow}>
             <View style={[styles.swatch, { backgroundColor: AccentList[i % AccentList.length] }]} />
-            <Text variant="serif" style={styles.legendName} numberOfLines={1}>
+            <Text variant="subheadline" style={styles.legendName} numberOfLines={1}>
               {it.name}
             </Text>
-            <Text variant="monoSmall" color="faint">
+            <Text variant="caption" color="faint">
               {Math.round((it.count / total) * 100)}%
             </Text>
           </View>
@@ -1010,7 +1011,7 @@ function DiscoveryTimeline({ items, accent }: { items: string[]; accent: string 
                   style={[styles.tlLine, { backgroundColor: accent, opacity: newest ? 0 : 0.3 }]}
                 />
               </View>
-              <Text variant="serif" numberOfLines={2} style={styles.tlLabel}>
+              <Text variant="caption" numberOfLines={2} style={styles.tlLabel}>
                 {name}
               </Text>
             </View>
@@ -1085,16 +1086,16 @@ function ClockFace({
         })}
       </Svg>
 
-      <Text variant="monoSmall" color="faint" style={[styles.dialTick, styles.tickTop]}>
+      <Text variant="captionSmall" color="faint" style={[styles.dialTick, styles.tickTop]}>
         12a
       </Text>
-      <Text variant="monoSmall" color="faint" style={[styles.dialTick, styles.tickRight]}>
+      <Text variant="captionSmall" color="faint" style={[styles.dialTick, styles.tickRight]}>
         6a
       </Text>
-      <Text variant="monoSmall" color="faint" style={[styles.dialTick, styles.tickBottom]}>
+      <Text variant="captionSmall" color="faint" style={[styles.dialTick, styles.tickBottom]}>
         12p
       </Text>
-      <Text variant="monoSmall" color="faint" style={[styles.dialTick, styles.tickLeft]}>
+      <Text variant="captionSmall" color="faint" style={[styles.dialTick, styles.tickLeft]}>
         6p
       </Text>
     </View>
@@ -1121,7 +1122,7 @@ function WeekdayBars({ weekdays, accent }: { weekdays: number[]; accent: string 
               },
             ]}
           />
-          <Text variant="monoSmall" style={{ color: i === peakDay ? accent : c.faint, fontSize: 9 }}>
+          <Text variant="captionSmall" style={{ color: i === peakDay ? accent : c.faint }}>
             {WEEKDAY_INITIALS[i]}
           </Text>
         </View>
@@ -1255,7 +1256,7 @@ function Timeline({
 
   return (
     <>
-      <Text variant="serif" style={styles.cardTitle}>
+      <Text variant="h4" style={styles.cardTitle}>
         {timelineTitle(seed)}
       </Text>
       <View style={[styles.segmented, { borderColor: c.border }]}>
@@ -1271,7 +1272,7 @@ function Timeline({
               // 4.5:1 either way. The selected pill stays monochrome.
               style={[styles.segment, on && { backgroundColor: c.text }]}
             >
-              <Text variant="monoSmall" style={{ color: on ? c.inverseText : c.muted, fontSize: 11 }}>
+              <Text variant="caption" style={{ color: on ? c.inverseText : c.muted }}>
                 {r.label}
               </Text>
             </Pressable>
@@ -1280,8 +1281,8 @@ function Timeline({
       </View>
 
       {total === 0 ? (
-        <Text variant="mono" color="faint" style={styles.timelineEmpty}>
-          Nothing in this window.
+        <Text variant="caption" color="faint" style={styles.timelineEmpty}>
+          Nothing saved in this window.
         </Text>
       ) : (
         <>
@@ -1299,10 +1300,10 @@ function Timeline({
             ))}
           </View>
           <View style={styles.axisRow}>
-            <Text variant="monoSmall" color="faint" style={styles.axisLabel}>
+            <Text variant="captionSmall" color="faint" style={styles.axisLabel}>
               {buckets[0].label}
             </Text>
-            <Text variant="monoSmall" color="faint" style={styles.axisLabel}>
+            <Text variant="captionSmall" color="faint" style={styles.axisLabel}>
               {buckets[buckets.length - 1].label}
             </Text>
           </View>
@@ -1311,7 +1312,7 @@ function Timeline({
 
       {weekdays && weekdays.length === 7 && weekdays.some((n) => n > 0) ? (
         <View style={[styles.weekBlock, { borderTopColor: c.borderSubtle }]}>
-          <Text variant="serif" style={[styles.cardTitle, styles.weekLabel]}>
+          <Text variant="headline" style={[styles.cardTitle, styles.weekLabel]}>
             By weekday
           </Text>
           <WeekdayBars weekdays={weekdays} accent={accent} />
@@ -1327,7 +1328,7 @@ function StatPair({ value, label }: { value: number; label: string }) {
   return (
     <View style={styles.statPair}>
       <Text variant="h2">{value}</Text>
-      <Text variant="monoSmall" color="faint">
+      <Text variant="caption" color="faint">
         {label}
       </Text>
     </View>
@@ -1340,7 +1341,7 @@ function Social({ w, seed, accent }: { w: WrappedStats; seed: number; accent: st
 
   if (w.followingCount === 0 && w.followerCount === 0) {
     return (
-      <Text variant="serif" color="secondary" style={styles.cardTitle}>
+      <Text variant="subheadline" color="secondary">
         {noFollowLine(seed)}
       </Text>
     );
@@ -1349,57 +1350,58 @@ function Social({ w, seed, accent }: { w: WrappedStats; seed: number; accent: st
   return (
     <>
       <View style={styles.statRow}>
-        <StatPair value={w.followingCount} label="following" />
+        <StatPair value={w.followingCount} label="Following" />
         <View style={[styles.statDivider, { backgroundColor: c.border }]} />
-        <StatPair value={w.followerCount} label="followers" />
+        <StatPair value={w.followerCount} label="Followers" />
       </View>
 
       {w.followingCount > 0 ? (
         <View style={[styles.friendBlock, { borderTopColor: c.borderSubtle }]}>
           {w.friendActivity.length === 0 ? (
-            <Text variant="monoSmall" color="faint">
+            <Text variant="subheadline" color="secondary">
               {quietWeekLine(seed)}
             </Text>
           ) : (
             <>
-              <Text variant="label" color="muted" style={styles.friendHeading}>
-                busy this week
+              <Text variant="headline" style={styles.friendHeading}>
+                Active this week
               </Text>
               {w.friendActivity.map((f) => {
                 // What they were on beats who they are: the handle is already
                 // implied by the face and the name, whereas "8 captures" alone
                 // never said 8 captures OF WHAT.
-                const subject = (f.topics ?? []).length > 0 ? f.topics.join(' · ') : `@${f.handle}`;
+                const subject = (f.topics ?? []).length > 0 ? f.topics.join(', ') : `@${f.handle}`;
                 return (
                   <Pressable
                     key={f.handle}
                     onPress={() => router.push('/(tabs)/pulse' as never)}
                     style={({ pressed }) => [styles.friendRow, pressed && { opacity: 0.6 }]}
                     accessibilityRole="button"
-                    accessibilityLabel={`${f.displayName} saved ${f.count} ${f.count === 1 ? 'thing' : 'things'} this week${(f.topics ?? []).length > 0 ? `, on ${f.topics.join(' and ')}` : ''}. Open pulse.`}
+                    accessibilityLabel={`${f.displayName} saved ${f.count} ${f.count === 1 ? 'thing' : 'things'} this week${(f.topics ?? []).length > 0 ? `, on ${f.topics.join(' and ')}` : ''}. Open Pulse.`}
                   >
                     <Avatar uri={f.avatarUrl} displayName={f.displayName} size="sm" />
                     <View style={styles.friendText}>
-                      <Text variant="serif" numberOfLines={1}>
+                      <Text variant="bodyMedium" numberOfLines={1}>
                         {f.displayName}
                       </Text>
-                      <Text variant="monoSmall" color="faint" numberOfLines={1}>
+                      <Text variant="caption" color="muted" numberOfLines={1}>
                         {subject}
                       </Text>
                     </View>
-                    <Text variant="monoSmall" style={{ color: accent }}>
+                    <Text variant="caption" style={{ color: accent }}>
                       {f.count} {f.count === 1 ? 'save' : 'saves'}
                     </Text>
                   </Pressable>
                 );
               })}
-              <Pressable
-                onPress={() => router.push('/(tabs)/pulse' as never)}
-                style={({ pressed }) => [styles.friendCta, pressed && { opacity: 0.6 }]}
-                accessibilityRole="button"
-              >
-                <Text variant="monoSmall" color="muted">see them on pulse →</Text>
-              </Pressable>
+              <View style={styles.friendCta}>
+                <Button
+                  label="See on Pulse"
+                  variant="secondary"
+                  size="sm"
+                  onPress={() => router.push('/(tabs)/pulse' as never)}
+                />
+              </View>
             </>
           )}
         </View>
@@ -1413,12 +1415,12 @@ function Social({ w, seed, accent }: { w: WrappedStats; seed: number; accent: st
 /** A short hook — the drift as meaning — kept to one line for the intro card. */
 function terrainHook(data: TerrainResponse): string {
   if (data.driftBand && data.driftBand !== 'settled' && data.towardField) {
-    return `a mind moving toward ${data.towardField}`;
+    return `Your thinking is moving toward ${data.towardField}`;
   }
-  if (data.spreadVerdict === 'widening') return 'a mind opening outward';
-  if (data.spreadVerdict === 'deepening') return 'a mind drilling deeper';
-  if (data.driftBand === 'settled') return 'a mind holding its ground';
-  return 'where your thinking has traveled';
+  if (data.spreadVerdict === 'widening') return 'Your thinking is widening';
+  if (data.spreadVerdict === 'deepening') return 'Your thinking is deepening';
+  if (data.driftBand === 'settled') return 'Your thinking has settled';
+  return 'Where your thinking has traveled';
 }
 
 /**
@@ -1484,8 +1486,8 @@ function TerrainGlyph({ data, accent }: { data: TerrainResponse; accent: string 
           <Circle cx={geom.x1} cy={geom.midY} r={14} fill={accent} opacity={0.14} />
         </Svg>
       ) : null}
-      <Text variant="monoSmall" color="faint" style={[styles.terrainGlyphTick, styles.terrainTickL]}>then</Text>
-      <Text variant="monoSmall" style={[styles.terrainGlyphTick, styles.terrainTickR, { color: accent }]}>now</Text>
+      <Text variant="captionSmall" color="faint" style={[styles.terrainGlyphTick, styles.terrainTickL]}>Then</Text>
+      <Text variant="captionSmall" style={[styles.terrainGlyphTick, styles.terrainTickR, { color: accent }]}>Now</Text>
     </View>
   );
 }
@@ -1501,19 +1503,19 @@ function TerrainCardBody({ data, accent }: { data: TerrainResponse; accent: stri
         router.push('/terrain' as never);
       }}
       accessibilityRole="button"
-      accessibilityLabel="Open terrain — how your mind has moved over time"
+      accessibilityLabel="Open Terrain, how your thinking has moved over time"
       style={({ pressed }) => (pressed ? { opacity: 0.75 } : undefined)}
     >
-      <Text variant="serif" style={styles.cardTitle}>
+      <Text variant="h4" style={styles.cardTitle}>
         Terrain
       </Text>
       <TerrainGlyph data={data} accent={accent} />
-      <Text variant="serif" color="secondary" numberOfLines={1} style={styles.terrainHook}>
+      <Text variant="subheadline" color="secondary" numberOfLines={1} style={styles.terrainHook}>
         {terrainHook(data)}
       </Text>
       <View style={styles.terrainOpen}>
-        <Text variant="monoSmall" style={{ color: accent }}>
-          the long view
+        <Text variant="caption" style={{ color: accent }}>
+          Open Terrain
         </Text>
         <ChevronRight size={13} color={accent} strokeWidth={2.5} />
       </View>
@@ -1535,21 +1537,21 @@ function TerrainFormingCardBody({ data, accent }: { data: TerrainResponse; accen
         router.push('/terrain' as never);
       }}
       accessibilityRole="button"
-      accessibilityLabel={`Open terrain — forming, ${data.captureCount} of ${target} captures`}
+      accessibilityLabel={`Open Terrain, forming, ${data.captureCount} of ${target} captures`}
       style={({ pressed }) => (pressed ? { opacity: 0.75 } : undefined)}
     >
-      <Text variant="serif" style={styles.cardTitle}>
+      <Text variant="h4" style={styles.cardTitle}>
         Terrain
       </Text>
-      <Text variant="serif" color="secondary" style={styles.terrainHook}>
-        forming — {data.captureCount} of {target}
+      <Text variant="subheadline" color="secondary" style={styles.terrainHook}>
+        Forming, {data.captureCount} of {target} saves
       </Text>
       <View style={[styles.terrainFormingTrack, { backgroundColor: c.elevated }]}>
         <View style={[styles.terrainFormingFill, { width: `${pct * 100}%`, backgroundColor: accent }]} />
       </View>
       <View style={styles.terrainOpen}>
-        <Text variant="monoSmall" style={{ color: accent }}>
-          an early sketch
+        <Text variant="caption" style={{ color: accent }}>
+          See the early sketch
         </Text>
         <ChevronRight size={13} color={accent} strokeWidth={2.5} />
       </View>
@@ -1667,7 +1669,7 @@ export function WrappedSection({
       key: 'fields',
       node: (
         <RevealCard {...cardProps} accent={cardAccentAt(1)}>
-          <Text variant="serif" style={styles.cardTitle}>
+          <Text variant="h4" style={styles.cardTitle}>
             {fieldsTitle(seed)}
           </Text>
           <Spectrum items={w.topFields} />
@@ -1681,7 +1683,7 @@ export function WrappedSection({
       key: 'topics',
       node: (
         <RevealCard {...cardProps} onReveal={() => setTopicsActive(true)} accent={cardAccentAt(2)}>
-          <Text variant="serif" style={[styles.cardTitle, styles.overline]}>
+          <Text variant="h4" style={[styles.cardTitle, styles.overline]}>
             {topicsKicker(seed)}
           </Text>
           <TopicBubbles items={w.topTopics} accent={accent} seed={seed} active={topicsActive} />
@@ -1695,7 +1697,7 @@ export function WrappedSection({
       key: 'newTopics',
       node: (
         <RevealCard {...cardProps} accent={cardAccentAt(3)}>
-          <Text variant="serif" style={styles.cardTitle}>
+          <Text variant="h4" style={styles.cardTitle}>
             {newTopicsTitle(seed)}
           </Text>
           <DiscoveryTimeline items={recentNewTopics} accent={accent} />
@@ -1713,7 +1715,7 @@ export function WrappedSection({
             <Text variant="h3" style={{ color: hourAccent(w.busiestHour!) }}>
               {formatHourCompact(w.busiestHour!)}
             </Text>
-            <Text variant="serif" color="secondary" style={styles.rhythmHeadLine}>
+            <Text variant="subheadline" color="secondary" style={styles.rhythmHeadLine}>
               {rhythmLine(w.busiestHour!, w.busiestDayOfWeek!)}
             </Text>
           </View>
@@ -1736,10 +1738,10 @@ export function WrappedSection({
               {/* The number is meaningless without saying which streak it IS.
                   Leading with the all-time record and describing it in the
                   present tense claimed a run that had already lapsed. */}
-              <Text variant="monoSmall" color="faint" style={styles.streakCaption}>
-                {streakLive ? 'days in a row, right now' : 'days — your longest run'}
+              <Text variant="caption" color="faint" style={styles.streakCaption}>
+                {streakLive ? 'days in a row right now' : 'days, your longest streak'}
               </Text>
-              <Text variant="serif" color="secondary" style={styles.streakLine}>
+              <Text variant="subheadline" color="secondary" style={styles.streakLine}>
                 {streakLive ? currentStreakLine(w.currentStreak) : longestStreakLine(w.longestStreak)}
               </Text>
             </View>
@@ -1752,11 +1754,11 @@ export function WrappedSection({
               active={streakActive}
             />
           ) : null}
-          <Text variant="monoSmall" color="faint" style={styles.currentStreak}>
+          <Text variant="caption" color="faint" style={styles.currentStreak}>
             {streakLive
               ? w.longestStreak > w.currentStreak
-                ? `Your longest run is ${w.longestStreak} days.`
-                : 'That is your best run yet.'
+                ? `Your longest streak is ${w.longestStreak} days.`
+                : 'This is your longest streak so far.'
               : dormantStreakLine(w.currentStreak)}
           </Text>
         </RevealCard>
@@ -1769,8 +1771,8 @@ export function WrappedSection({
       key: 'archetype',
       node: (
         <RevealCard {...cardProps} accent={cardAccentAt(6)}>
-          <Text variant="serif" style={styles.cardTitle}>
-            Your type
+          <Text variant="h4" style={styles.cardTitle}>
+            How you save
           </Text>
           <View style={styles.archetypeRow}>
             <View style={[styles.glyph, { borderColor: accent }]}>
@@ -1782,7 +1784,7 @@ export function WrappedSection({
             </View>
             <View style={styles.archetypeText}>
               <Text variant="h3">{archetype.name}</Text>
-              <Text variant="serif" color="secondary" style={styles.archetypeLine}>
+              <Text variant="subheadline" color="secondary" style={styles.archetypeLine}>
                 {archetype.line}
               </Text>
             </View>
@@ -1845,7 +1847,7 @@ export function WrappedSection({
       }}
       style={styles.section}
     >
-      <SectionKicker label="your mneme, wrapped" accent={accent} style={styles.kicker} />
+      <SectionKicker label="Your stats" style={styles.kicker} />
 
       {spiced(cards).map((card, i) => (
         <React.Fragment key={card.key}>
@@ -1896,9 +1898,7 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
   },
-  cardTitle: {
-    lineHeight: 26,
-  },
+  cardTitle: {},
   overline: {
     marginBottom: Spacing[4],
   },
@@ -1978,7 +1978,7 @@ const styles = StyleSheet.create({
   tlLineRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
   tlLine: { flex: 1, height: 1.5 },
   tlDot: { width: 9, height: 9, borderRadius: Radius.full },
-  tlLabel: { marginTop: Spacing[3], textAlign: 'center', fontSize: 13, lineHeight: 17 },
+  tlLabel: { marginTop: Spacing[3], textAlign: 'center' },
   tlHint: {
     position: 'absolute',
     right: -4,
@@ -2007,7 +2007,7 @@ const styles = StyleSheet.create({
   },
   // Pinned to the outer edge of the padded wrap — entirely outside the SVG's
   // bounding box — so a label can never overlap a spoke no matter how long it is.
-  dialTick: { position: 'absolute', fontSize: 11 },
+  dialTick: { position: 'absolute' },
   tickTop: { top: 0, left: 0, right: 0, textAlign: 'center' },
   tickBottom: { bottom: 0, left: 0, right: 0, textAlign: 'center' },
   tickLeft: { left: 0, top: (DIAL + DIAL_TICK_PAD * 2) / 2 - 6 },
@@ -2074,7 +2074,7 @@ const styles = StyleSheet.create({
   bar: { width: '62%', minWidth: 3, borderRadius: 2 },
   peakDot: { width: 3, height: 3, borderRadius: Radius.full, marginBottom: 4 },
   axisRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing[2] },
-  axisLabel: { fontSize: 9 },
+  axisLabel: {},
 
   statRow: { flexDirection: 'row', alignItems: 'center' },
   statPair: { flex: 1, alignItems: 'center', gap: 2 },
@@ -2096,10 +2096,10 @@ const styles = StyleSheet.create({
 
   adSlot: { marginHorizontal: -Spacing[6] },
   terrainGlyphBox: { height: 120, marginTop: Spacing[3], justifyContent: 'center' },
-  terrainGlyphTick: { position: 'absolute', bottom: 6, fontSize: 10 },
+  terrainGlyphTick: { position: 'absolute', bottom: 6 },
   terrainTickL: { left: 14 },
   terrainTickR: { right: 14 },
-  terrainHook: { textAlign: 'center', marginTop: Spacing[2], fontSize: 16 },
+  terrainHook: { textAlign: 'center', marginTop: Spacing[2] },
   terrainOpen: {
     flexDirection: 'row',
     alignItems: 'center',

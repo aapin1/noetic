@@ -28,7 +28,7 @@ describe('InsightLine', () => {
   it('renders a READING as a line and a note labelled with the move the reading chose', async () => {
     await renderScreen(<InsightLine insight={card('READING', { kicker: 'the test' })} />);
 
-    expect(screen.getByText('reading')).toBeTruthy();
+    expect(screen.getByText('Reading')).toBeTruthy();
     expect(screen.getByText(LINE)).toBeTruthy();
     expect(screen.getByText('the test')).toBeTruthy();
     expect(screen.getByText(NOTE)).toBeTruthy();
@@ -52,21 +52,21 @@ describe('InsightLine', () => {
   it('labels the MIRROR as a read on the person and ignores any kicker on it', async () => {
     await renderScreen(<InsightLine insight={card('MIRROR', { kicker: 'the test' })} />);
 
-    expect(screen.getByText('a read on you')).toBeTruthy();
+    expect(screen.getByText('A read on you')).toBeTruthy();
     expect(screen.queryByText('the test')).toBeNull();
   });
 
   it('shows no note label on graph-derived kinds', async () => {
     await renderScreen(<InsightLine insight={card('NOVELTY', { kicker: 'the test' })} />);
 
-    expect(screen.getByText('novelty')).toBeTruthy();
+    expect(screen.getByText('Novelty')).toBeTruthy();
     expect(screen.queryByText('the test')).toBeNull();
   });
 
   it('drops the note label with the body in compact mode', async () => {
     await renderScreen(<InsightLine insight={card('READING', { kicker: 'the test' })} compact />);
 
-    expect(screen.getByText('reading')).toBeTruthy();
+    expect(screen.getByText('Reading')).toBeTruthy();
     expect(screen.queryByText('the test')).toBeNull();
     expect(screen.queryByText(NOTE)).toBeNull();
   });

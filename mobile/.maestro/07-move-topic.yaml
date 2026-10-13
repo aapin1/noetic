@@ -13,7 +13,7 @@ appId: app.mneme.mobile
       - openLink: "exp+mneme://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
       - extendedWaitUntil:
           visible:
-            text: "Continue|Get started|atlas"
+            text: "Continue|Get started|Atlas"
           timeout: 45000
 - runFlow:
     when:
@@ -28,7 +28,7 @@ appId: app.mneme.mobile
 
 - extendedWaitUntil:
     visible:
-      text: "archive"
+      text: "Archive"
     timeout: 45000
 # A cold relaunch can open the dev client's own menu over the app — close it
 # before touching anything (its sheet swallows every tap underneath).
@@ -37,7 +37,7 @@ appId: app.mneme.mobile
       visible: "Fast refresh"
     commands:
       - tapOn: "Close"
-- tapOn: "archive"
+- tapOn: "Archive"
 - extendedWaitUntil:
     visible:
       text: ".*Dichotomy of Control.*"
@@ -73,7 +73,7 @@ appId: app.mneme.mobile
 # on iOS, so no text/label inside it can be asserted or tapped by name, and
 # the row list renders from a cached archive read that silently revalidates,
 # so row positions are not stable between runs. The one fixed element is the
-# "somewhere new…" input at the sheet's bottom (the sheet is bottom-anchored):
+# "New topic" input at the sheet's bottom (the sheet is bottom-anchored):
 # tap it, type the destination, and submit from the keyboard — moving by name
 # upserts, so "science" lands on the existing topic.
 - waitForAnimationToEnd:

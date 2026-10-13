@@ -238,11 +238,11 @@ describe("atlasMonthStamp", () => {
 
 describe("atlasStatLine", () => {
   it("formats the plural stat line", () => {
-    expect(atlasStatLine(214, 37)).toBe("214 points · 37 fields");
+    expect(atlasStatLine(214, 37)).toBe("214 points, 37 fields");
   });
 
   it("uses singulars", () => {
-    expect(atlasStatLine(1, 1)).toBe("1 point · 1 field");
+    expect(atlasStatLine(1, 1)).toBe("1 point, 1 field");
   });
 
   it("drops the field clause when there are no fields yet", () => {

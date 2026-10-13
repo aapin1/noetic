@@ -1,46 +1,52 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Spacing, accentForKey } from '@/constants/theme';
+import { shortDate } from '@/lib/dates';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Avatar } from '@/components/ui/Avatar';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingDots } from '@/components/ui/LoadingDots';
-import type { PersonCapture } from '@/types/api';
+import { Button } from '@/components/ui/Button';
+import type { CaptureKind, PersonCapture } from '@/types/api';
 
-function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
-  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
-  return d.toLocaleDateString('en-US', opts);
+const KIND_LABELS: Record<CaptureKind, string> = {
+  LINK: 'Link',
+  TEXT: 'Note',
+  QUOTE: 'Quote',
+  IMAGE: 'Image',
+};
+
+function kindLabel(kind: CaptureKind): string {
+  return KIND_LABELS[kind] ?? 'Note';
 }
 
 /**
  * One capture in the person's history. Deliberately just the bibliography —
- * kind and date, the title, then author · source. What the person *thought*
+ * kind and date, the title, then author, source. What the person *thought*
  * about it (their key idea, their reaction) is theirs and never rendered here.
  */
 function CaptureRow({ item }: { item: PersonCapture }) {
   const c = useThemeColors();
-  const detail = [item.author, item.source].filter(Boolean).join(' · ');
+  const detail = [item.author, item.source].filter(Boolean).join(', ');
 
   return (
     <View style={[styles.row, { borderTopColor: c.borderSubtle }]}>
       <View style={styles.rowMeta}>
-        <Text variant="monoSmall" style={{ color: c.muted }}>{item.kind.toLowerCase()}</Text>
-        <Text variant="monoSmall" style={{ color: c.faint }}>{fmtDate(item.capturedAt)}</Text>
+        <Text variant="caption" color="muted">{kindLabel(item.kind)}</Text>
+        <Text variant="caption" color="faint">{shortDate(item.capturedAt)}</Text>
       </View>
       <Text variant="serif" color="primary" numberOfLines={2} style={styles.rowTitle}>
         {item.title}
       </Text>
       {!!detail && (
-        <Text variant="monoSmall" color="muted" numberOfLines={1} style={styles.rowDetail}>
+        <Text variant="caption" color="muted" numberOfLines={1} style={styles.rowDetail}>
           {detail}
         </Text>
       )}
@@ -114,13 +120,13 @@ export default function PersonScreen() {
   const stats = [
     `${captureCount} ${captureCount === 1 ? 'point' : 'points'}`,
     params.regions || null,
-  ].filter(Boolean).join(' · ');
+  ].filter(Boolean).join(', ');
 
   // Unfollowing or a block turns this page into a 404 — treat it as gone, not broken.
   if (error && !data) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
-        <ScreenHeader title={handle ? `@${handle}` : 'person'} />
+        <ScreenHeader title={handle ? `@${handle}` : 'Person'} />
         <EmptyState title="Person not found" ctaLabel="Back" onCta={() => router.back()} />
       </SafeAreaView>
     );
@@ -144,7 +150,7 @@ export default function PersonScreen() {
             <View style={styles.mastMeta}>
               <Text variant="h3" numberOfLines={1}>{displayName}</Text>
               {!!stats && (
-                <Text variant="monoSmall" color="muted" numberOfLines={1}>{stats}</Text>
+                <Text variant="subheadline" color="secondary" numberOfLines={1}>{stats}</Text>
               )}
             </View>
           </View>
@@ -156,7 +162,7 @@ export default function PersonScreen() {
         </View>
 
         <View style={styles.list}>
-          <Text variant="monoSmall" style={[styles.listLabel, { color: c.faint }]}>captures</Text>
+          <Text variant="h4" style={styles.listLabel}>Captures</Text>
           {captures.map((item) => (
             <CaptureRow key={item.id} item={item} />
           ))}
@@ -164,18 +170,14 @@ export default function PersonScreen() {
             <View style={styles.centered}><LoadingDots /></View>
           )}
           {!loading && captures.length === 0 && (
-            <Text variant="monoSmall" style={{ color: c.faint, paddingTop: Spacing[4] }}>
-              nothing captured yet
+            <Text variant="caption" color="faint" style={{ paddingTop: Spacing[4] }}>
+              Nothing captured yet
             </Text>
           )}
           {nextCursor && (
-            <Pressable onPress={() => void loadMore()} style={styles.moreBtn} disabled={loadingMore}>
-              {loadingMore ? (
-                <LoadingDots />
-              ) : (
-                <Text variant="monoSmall" style={{ color: c.text }}>more ↓</Text>
-              )}
-            </Pressable>
+            <View style={styles.moreBtn}>
+              <Button label="Load more" variant="secondary" size="sm" loading={loadingMore} onPress={() => void loadMore()} />
+            </View>
           )}
         </View>
       </ScrollView>
@@ -197,7 +199,7 @@ const styles = StyleSheet.create({
   mastMeta: { flex: 1, gap: 2 },
   identity: { marginTop: Spacing[4] },
   list: { paddingHorizontal: Spacing[6], paddingTop: Spacing[5] },
-  listLabel: { textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: Spacing[1] },
+  listLabel: { marginBottom: Spacing[1] },
   row: { paddingTop: Spacing[3], marginTop: Spacing[1], borderTopWidth: StyleSheet.hairlineWidth },
   rowMeta: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing[1] },
   rowTitle: { marginBottom: Spacing[1] },

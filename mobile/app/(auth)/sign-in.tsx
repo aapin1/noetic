@@ -70,10 +70,10 @@ export default function SignInScreen() {
               mneme
             </Text>
             <Text variant="h1" style={styles.title}>
-              Welcome back.
+              Welcome back
             </Text>
-            <Text variant="monoSmall" color="muted" style={styles.subtitle}>
-              your brain missed you.
+            <Text variant="subheadline" color="secondary" style={styles.subtitle}>
+              Sign in to pick up where you left off.
             </Text>
           </View>
 
@@ -134,8 +134,8 @@ export default function SignInScreen() {
               accessibilityRole="link"
               accessibilityLabel="Reset your password"
             >
-              <Text variant="monoSmall" color="muted">
-                forgot password?
+              <Text variant="subheadline" color="secondary">
+                Forgot your password?
               </Text>
             </Pressable>
 
@@ -152,7 +152,7 @@ export default function SignInScreen() {
               accessibilityLabel="Create an account"
             >
               <Text variant="bodyMedium" color="accent">
-                Create →
+                Create an account
               </Text>
             </Pressable>
           </View>
@@ -160,7 +160,7 @@ export default function SignInScreen() {
       </KeyboardAvoidingView>
       {loading && (
         <View style={[StyleSheet.absoluteFill, styles.loadingOverlay, { backgroundColor: c.background }]}>
-          <AsciiLoader fill size={110} message={['waking your brain…', 'finding your map…']} />
+          <AsciiLoader fill size={110} message="Signing you in" />
         </View>
       )}
     </SafeAreaView>

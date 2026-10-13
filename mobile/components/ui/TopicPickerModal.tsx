@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { Radius, Spacing } from '@/constants/theme';
+import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from './Text';
+import { Button } from './Button';
 import type { CaptureDetail } from '@/types/api';
 
 /**
@@ -57,8 +58,8 @@ export function TopicPickerModal({
           style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}
           onPress={() => {}}
         >
-          <Text variant="label" color="muted" style={styles.title}>
-            move to…
+          <Text variant="headline" style={styles.title}>
+            Move to
           </Text>
 
           <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
@@ -74,17 +75,17 @@ export function TopicPickerModal({
                   accessibilityLabel={`Move to ${folder.name}`}
                 >
                   <Text variant="bodyMedium" numberOfLines={1} style={styles.rowName}>
-                    {folder.name.toLowerCase()}
+                    {folder.name}
                   </Text>
-                  <Text variant="monoSmall" color="faint">
-                    {here ? 'here now' : folder.count}
+                  <Text variant="caption" color="faint">
+                    {here ? 'Here now' : folder.count}
                   </Text>
                 </Pressable>
               );
             })}
             {folders.length === 0 && (
-              <Text variant="monoSmall" color="faint" style={styles.emptyLine}>
-                no topics yet — name one below.
+              <Text variant="caption" color="faint" style={styles.emptyLine}>
+                No topics yet. Name one below.
               </Text>
             )}
           </ScrollView>
@@ -93,7 +94,7 @@ export function TopicPickerModal({
             <TextInput
               value={newName}
               onChangeText={setNewName}
-              placeholder="somewhere new…"
+              placeholder="New topic"
               placeholderTextColor={c.faint}
               style={[styles.input, { borderColor: c.border, color: c.text }]}
               autoCapitalize="none"
@@ -106,17 +107,13 @@ export function TopicPickerModal({
               }}
               accessibilityLabel="Name a new topic"
             />
-            <Pressable
+            <Button
+              label={busy ? 'Moving' : 'Move'}
+              size="sm"
               onPress={() => void apply({ topicName: newName })}
               disabled={busy || newName.trim().length === 0}
-              hitSlop={8}
-              accessibilityRole="button"
               accessibilityLabel="Move to the new topic"
-            >
-              <Text variant="monoSmall" color={newName.trim() ? 'primary' : 'faint'}>
-                {busy ? 'moving…' : 'move →'}
-              </Text>
-            </Pressable>
+            />
           </View>
         </Pressable>
       </Pressable>
@@ -163,6 +160,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.xs,
     paddingHorizontal: Spacing[3],
     paddingVertical: Spacing[2],
-    fontSize: 14,
+    fontFamily: FontFamily.sans,
+    fontSize: FontSize.base,
   },
 });

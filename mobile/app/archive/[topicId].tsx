@@ -46,8 +46,8 @@ export default function ArchiveFolderScreen() {
   if (loading && !data) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
-        <ScreenHeader title="folder" />
-        <AsciiLoader fill variant="cat" size={80} message="pulling the folder…" />
+        <ScreenHeader title="Folder" />
+        <AsciiLoader fill variant="cat" size={80} message="Loading folder" />
       </SafeAreaView>
     );
   }
@@ -81,8 +81,8 @@ export default function ArchiveFolderScreen() {
       >
         {isEmpty && (
           <View style={styles.emptyWrap}>
-            <Text variant="monoSmall" style={{ color: c.muted, textAlign: 'center', letterSpacing: 1.5 }}>
-              nothing filed here yet.
+            <Text variant="caption" color="muted" style={{ textAlign: 'center' }}>
+              Nothing filed here yet
             </Text>
           </View>
         )}
@@ -105,21 +105,6 @@ export default function ArchiveFolderScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  nav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing[6],
-    paddingVertical: Spacing[4],
-    borderBottomWidth: 1,
-  },
-  back: {},
-  navTitle: {
-    flex: 1,
-    textAlign: 'center',
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
-  },
   content: { paddingBottom: Spacing[16] },
   gridWrap: { paddingHorizontal: Spacing[4] },
   emptyWrap: {

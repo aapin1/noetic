@@ -30,18 +30,18 @@ function formatReset(meter: UsageMeter): string {
 }
 
 const METER_LABELS: Record<UsageMeter['kind'], string> = {
-  social_video_transcript: 'TikTok & Instagram captures',
-  image_describe: 'image understanding',
-  companion_message: 'companion messages',
-  voice_transcription: 'voice notes',
+  social_video_transcript: 'TikTok and Instagram captures',
+  image_describe: 'Image understanding',
+  companion_message: 'Companion messages',
+  voice_transcription: 'Voice notes',
 };
 
 const PERKS = [
-  'no ads, anywhere',
-  'unlimited TikTok & Instagram captures',
-  'unlimited image understanding',
-  'unlimited companion conversations',
-  'unlimited voice notes',
+  'No ads, anywhere',
+  'Unlimited TikTok and Instagram captures',
+  'Unlimited image understanding',
+  'Unlimited companion conversations',
+  'Unlimited voice notes',
 ];
 
 const PACKAGE_LABELS: Record<string, string> = {
@@ -51,9 +51,9 @@ const PACKAGE_LABELS: Record<string, string> = {
 };
 
 const PACKAGE_SUBLABELS: Record<string, string> = {
-  MONTHLY: 'billed monthly',
-  ANNUAL: 'billed once a year',
-  LIFETIME: 'pay once, keep forever',
+  MONTHLY: 'Billed monthly',
+  ANNUAL: 'Billed once a year',
+  LIFETIME: 'Pay once, keep forever',
 };
 
 /**
@@ -119,7 +119,7 @@ export default function PlusScreen() {
       'Welcome to Mneme Plus',
       settled
         ? 'Thank you for keeping the lights on.'
-        : "Your purchase went through — thank you. It's taking a moment to unlock everywhere; reopen the app in a minute if anything still looks limited.",
+        : "Your purchase went through, thank you. It's taking a moment to unlock everywhere. Reopen the app in a minute if anything still looks limited.",
     );
     router.back();
   }, [refetch, router]);
@@ -195,7 +195,7 @@ export default function PlusScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: c.border }]}>
-        <Text variant="wordmark">mneme plus</Text>
+        <Text variant="headline">Mneme Plus</Text>
         <Pressable onPress={() => router.back()} accessibilityLabel="Close" hitSlop={10}>
           <XIcon size={22} color={c.text} />
         </Pressable>
@@ -207,7 +207,7 @@ export default function PlusScreen() {
             Everything, unlimited.
           </Text>
           <Text variant="serif" color="secondary" style={styles.lede}>
-            Mneme is built by one person. Plus keeps it running — and lifts every limit.
+            Mneme is built by one person. Plus keeps it running and lifts every limit.
           </Text>
         </View>
 
@@ -262,13 +262,13 @@ export default function PlusScreen() {
                       <Text variant="bodyMedium">{PACKAGE_LABELS[pkg.packageType] ?? pkg.packageType}</Text>
                       {isAnnual && savings ? (
                         <View style={[styles.savePill, { backgroundColor: ACCENT }]}>
-                          <Text variant="monoSmall" style={styles.savePillText}>
-                            save {savings}%
+                          <Text variant="captionSmall" style={styles.savePillText}>
+                            Save {savings}%
                           </Text>
                         </View>
                       ) : null}
                     </View>
-                    <Text variant="monoSmall" color="faint">
+                    <Text variant="caption" color="muted">
                       {PACKAGE_SUBLABELS[pkg.packageType] ?? ''}
                     </Text>
                   </View>
@@ -280,7 +280,7 @@ export default function PlusScreen() {
             })}
 
             <Button
-              label={busy ? 'One moment…' : selected ? `Go Plus · ${selected.product.priceString}` : 'Go Plus'}
+              label={busy ? 'One moment' : selected ? `Get Mneme Plus for ${selected.product.priceString}` : 'Get Mneme Plus'}
               variant="primary"
               size="lg"
               fullWidth
@@ -288,19 +288,19 @@ export default function PlusScreen() {
               onPress={() => selected && void purchase(selected)}
             />
 
-            <Pressable onPress={() => void restore()} hitSlop={10}>
-              <Text variant="mono" color="muted" style={styles.restore}>
-                restore purchases
-              </Text>
-            </Pressable>
+            <Button
+              label="Restore purchases"
+              variant="tertiary"
+              size="sm"
+              onPress={() => void restore()}
+              style={styles.restore}
+            />
           </View>
         )}
 
         {usage.length > 0 && plan === 'FREE' ? (
           <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
-            <Text variant="mono" color="muted" style={styles.metersTitle}>
-              your usage this cycle
-            </Text>
+            <Text variant="headline">Your usage this cycle</Text>
             {usage.map((meter) => {
               const frac = meter.limit > 0 ? Math.min(1, meter.used / meter.limit) : 0;
               const maxed = meter.used >= meter.limit;
@@ -310,9 +310,9 @@ export default function PlusScreen() {
                     <Text variant="caption" color="secondary">
                       {METER_LABELS[meter.kind]}
                     </Text>
-                    <Text variant="monoSmall" color={maxed ? 'primary' : 'faint'}>
-                      {meter.used}/{meter.limit}
-                      {meter.resetsAt ? ` · resets ${formatReset(meter)}` : ''}
+                    <Text variant="caption" color={maxed ? 'primary' : 'muted'}>
+                      {meter.used} of {meter.limit}
+                      {meter.resetsAt ? `, resets ${formatReset(meter)}` : ''}
                     </Text>
                   </View>
                   <View style={[styles.meterTrack, { backgroundColor: c.elevated }]}>
@@ -334,7 +334,7 @@ export default function PlusScreen() {
             the privacy policy. Rendered unconditionally — a reviewer who lands
             here already subscribed still has to be able to reach both. */}
         <View style={styles.legal}>
-          <Text variant="monoSmall" color="faint" style={styles.legalText}>
+          <Text variant="captionSmall" color="muted" style={styles.legalText}>
             Monthly and yearly plans renew automatically unless cancelled at least 24
             hours before the period ends. Payment is charged to your Apple ID, and you
             can manage or cancel in your Apple ID settings. Lifetime is a one-time
@@ -347,21 +347,18 @@ export default function PlusScreen() {
               accessibilityRole="link"
               accessibilityLabel="Read the Terms of Use"
             >
-              <Text variant="monoSmall" color="muted" style={styles.legalLink}>
-                terms of use
+              <Text variant="caption" color="muted" style={styles.legalLink}>
+                Terms of use
               </Text>
             </Pressable>
-            <Text variant="monoSmall" color="faint">
-              ·
-            </Text>
             <Pressable
               onPress={() => void Linking.openURL(PRIVACY_URL)}
               hitSlop={10}
               accessibilityRole="link"
               accessibilityLabel="Read the Privacy Policy"
             >
-              <Text variant="monoSmall" color="muted" style={styles.legalLink}>
-                privacy policy
+              <Text variant="caption" color="muted" style={styles.legalLink}>
+                Privacy policy
               </Text>
             </Pressable>
           </View>
@@ -430,22 +427,21 @@ const styles = StyleSheet.create({
   planText: { flex: 1, gap: 2 },
   planTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2] },
   savePill: { borderRadius: Radius.full, paddingHorizontal: Spacing[2], paddingVertical: 2 },
-  savePillText: { color: INK_ON_ACCENT, fontSize: 10 },
+  savePillText: { color: INK_ON_ACCENT },
   planPrice: {},
 
-  restore: { fontSize: 11, textAlign: 'center', marginTop: Spacing[2] },
+  restore: { alignSelf: 'center', marginTop: Spacing[2] },
 
   legal: { gap: Spacing[3], marginTop: Spacing[2] },
-  legalText: { fontSize: 10, lineHeight: 15, textAlign: 'center' },
+  legalText: { textAlign: 'center' },
   legalLinks: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: Spacing[2],
+    gap: Spacing[5],
   },
-  legalLink: { fontSize: 11, textDecorationLine: 'underline' },
+  legalLink: { textDecorationLine: 'underline' },
 
-  metersTitle: { fontSize: 11 },
   meter: { gap: Spacing[2] },
   meterRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   meterTrack: { height: 6, borderRadius: Radius.full, overflow: 'hidden' },

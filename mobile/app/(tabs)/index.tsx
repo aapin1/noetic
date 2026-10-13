@@ -37,7 +37,7 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
-import { Crosshair, MessageCircleIcon, Moon, Search, Sun, Trash2Icon, type LucideIcon } from 'lucide-react-native';
+import { CircleHelpIcon, Crosshair, InfoIcon, MessageCircleIcon, Moon, Search, Sun, Trash2Icon, XIcon, type LucideIcon } from 'lucide-react-native';
 import { api } from '@/lib/api';
 import { takeRecentSharedCapture } from '@/lib/lastShared';
 import { prefetchQuery, useApiQuery } from '@/hooks/useApiQuery';
@@ -64,6 +64,9 @@ import { ARCHIVE_REVEAL_COUNT, EVENT_FLAGS } from '@/lib/disclosure';
 import { Whisper } from '@/components/ui/Whisper';
 import { useSocratic } from '@/contexts/SocraticContext';
 import { Text } from '@/components/ui/Text';
+import { Button } from '@/components/ui/Button';
+import { SearchField } from '@/components/ui/SearchField';
+import { shortDate } from '@/lib/dates';
 import { LimitNotice } from '@/components/ui/LimitNotice';
 import { InfoModal } from '@/components/ui/InfoModal';
 import { PushPrimer } from '@/components/ui/PushPrimer';
@@ -1080,13 +1083,23 @@ type CaptureMode = 'link' | 'text' | 'image' | 'work';
 
 /** The named-work kinds the server's keyless resolver speaks. */
 const WORK_KINDS: { key: RecognizeKind; label: string }[] = [
-  { key: 'book', label: 'book' },
-  { key: 'film', label: 'film' },
-  { key: 'tv', label: 'show' },
-  { key: 'anime', label: 'anime' },
-  { key: 'game', label: 'game' },
-  { key: 'album', label: 'album' },
+  { key: 'book', label: 'Book' },
+  { key: 'film', label: 'Film' },
+  { key: 'tv', label: 'Show' },
+  { key: 'anime', label: 'Anime' },
+  { key: 'game', label: 'Game' },
+  { key: 'album', label: 'Album' },
 ];
+
+const MODE_LABELS: Record<CaptureMode, string> = { link: 'Link', text: 'Note', image: 'Image', work: 'Work' };
+
+/** The node panel's kind line: "Link", "Note", "Image". */
+function kindLabel(kind: string): string {
+  if (kind === 'LINK') return 'Link';
+  if (kind === 'TEXT' || kind === 'QUOTE') return 'Note';
+  if (kind === 'IMAGE') return 'Image';
+  return kind.charAt(0) + kind.slice(1).toLowerCase();
+}
 
 /** Broadly-known works: recognition without typing, shown on an empty map only. */
 const CLASSICS: { title: string; kind: RecognizeKind }[] = [
@@ -1137,8 +1150,8 @@ function StepOne({
       <Text variant="serifLg" color="primary" style={sh.heading}>
         What are you saving?
       </Text>
-      <Text variant="monoSmall" color="muted" style={sh.sub}>
-        A link, thought, image, or something you finished.
+      <Text variant="caption" color="muted" style={sh.sub}>
+        A link, a note, an image, or something you finished.
       </Text>
       <Divider c={c} />
       <View style={sh.modeRow}>
@@ -1150,8 +1163,8 @@ function StepOne({
               onPress={() => setMode(m)}
               style={[sh.modeChip, { borderColor: active ? c.text : c.borderSubtle, backgroundColor: active ? c.elevated : 'transparent' }]}
             >
-              <Text variant="monoSmall" style={{ color: active ? c.text : c.muted }}>
-                {m.toUpperCase()}
+              <Text variant="caption" style={{ color: active ? c.text : c.muted, fontWeight: active ? '600' : '400' }}>
+                {MODE_LABELS[m]}
               </Text>
             </Pressable>
           );
@@ -1168,7 +1181,7 @@ function StepOne({
               onPress={() => setWorkKind(k.key)}
               style={[sh.modeChip, { borderColor: active ? c.text : c.borderSubtle, backgroundColor: active ? c.elevated : 'transparent' }]}
             >
-              <Text variant="monoSmall" style={{ color: active ? c.text : c.muted }}>
+              <Text variant="caption" style={{ color: active ? c.text : c.muted, fontWeight: active ? '600' : '400' }}>
                 {k.label}
               </Text>
             </Pressable>
@@ -1183,36 +1196,32 @@ function StepOne({
       <View ref={nextTarget.ref} onLayout={nextTarget.onLayout} collapsable={false}>
         {mode === 'image' ? (
           <View style={[sh.inputBox, { borderColor: c.border }]}>
-            <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>IMAGE</Text>
+            <Text variant="caption" style={[sh.inputLabel, { color: c.muted }]}>Image</Text>
             {imageUri ? (
               <Image source={{ uri: imageUri }} style={sh.thumb} contentFit="cover" />
             ) : (
-              <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3], fontSize: FontSize.base }}>
-                a screenshot, book page, or photo.
+              <Text variant="subheadline" style={{ color: c.faint, marginBottom: Spacing[3] }}>
+                A screenshot, a book page, or a photo.
               </Text>
             )}
             <View style={{ flexDirection: 'row', gap: Spacing[3], marginTop: Spacing[3] }}>
-              <Pressable onPress={() => onPickImage('camera')} style={[sh.modeChip, { borderColor: c.borderSubtle }]}>
-                <Text variant="monoSmall" style={{ color: c.text }}>take photo</Text>
-              </Pressable>
-              <Pressable onPress={() => onPickImage('library')} style={[sh.modeChip, { borderColor: c.borderSubtle }]}>
-                <Text variant="monoSmall" style={{ color: c.text }}>{imageUri ? 'replace ↑' : 'choose ↑'}</Text>
-              </Pressable>
+              <Button label="Take photo" variant="secondary" size="sm" onPress={() => onPickImage('camera')} />
+              <Button label={imageUri ? 'Replace' : 'Choose from library'} variant="secondary" size="sm" onPress={() => onPickImage('library')} />
             </View>
             {uploading && (
-              <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>reading image…</Text>
+              <Text variant="caption" style={{ color: c.muted, marginTop: Spacing[3] }}>Reading image</Text>
             )}
           </View>
         ) : (
           <View style={[sh.inputBox, { borderColor: c.border }]}>
-            <Text variant="monoSmall" style={[sh.inputLabel, { color: c.muted }]}>
-              {mode === 'link' ? 'URL' : mode === 'work' ? 'TITLE' : 'THOUGHT'}
+            <Text variant="caption" style={[sh.inputLabel, { color: c.muted }]}>
+              {mode === 'link' ? 'Link' : mode === 'work' ? 'Title' : 'Note'}
             </Text>
             <TextInput
-              style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
+              style={[sh.inputField, { color: c.text, fontFamily: FontFamily.sans, fontSize: FontSize.md }]}
               value={payload}
               onChangeText={setPayload}
-              placeholder={mode === 'link' ? 'https://...' : mode === 'work' ? 'the title is enough.' : 'a thought, a quote, a fragment.'}
+              placeholder={mode === 'link' ? 'https://' : mode === 'work' ? 'The title is enough' : 'A thought, a quote, a fragment'}
               placeholderTextColor={c.faint}
               multiline={mode === 'text'}
               autoCapitalize={mode === 'link' ? 'none' : mode === 'work' ? 'words' : 'sentences'}
@@ -1223,10 +1232,10 @@ function StepOne({
               <Pressable onPress={onPaste} accessibilityLabel="Paste from clipboard">
                 {promotePaste ? (
                   <View style={[sh.clipChip, { borderColor: c.border, backgroundColor: c.elevated }]}>
-                    <Text variant="monoSmall" style={{ color: c.text }}>↳ use copied link</Text>
+                    <Text variant="caption" style={{ color: c.text, fontWeight: '600' }}>Use copied link</Text>
                   </View>
                 ) : (
-                  <Text variant="monoSmall" style={{ color: c.muted, marginTop: Spacing[3] }}>paste from clipboard ↑</Text>
+                  <Text variant="caption" style={{ color: c.muted, marginTop: Spacing[3] }}>Paste from clipboard</Text>
                 )}
               </Pressable>
             )}
@@ -1234,8 +1243,8 @@ function StepOne({
         )}
         {showClassics && mode === 'work' && (
           <View style={{ marginTop: Spacing[4] }}>
-            <Text variant="monoSmall" style={{ color: c.muted, marginBottom: Spacing[2] }}>
-              or tap a classic:
+            <Text variant="caption" style={{ color: c.muted, marginBottom: Spacing[2] }}>
+              Or tap a classic
             </Text>
             <View style={[sh.modeRow, { marginBottom: 0 }]}>
               {CLASSICS.map((classic) => (
@@ -1244,63 +1253,47 @@ function StepOne({
                   onPress={() => onFindClassic(classic)}
                   style={[sh.modeChip, { borderColor: c.borderSubtle }]}
                 >
-                  <Text variant="monoSmall" style={{ color: c.muted }}>{classic.title}</Text>
+                  <Text variant="caption" style={{ color: c.muted }}>{classic.title}</Text>
                 </Pressable>
               ))}
             </View>
           </View>
         )}
         {!!error && (
-          <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
+          <Text variant="caption" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
         )}
         <Divider c={c} />
         <View style={sh.actions}>
           {/* Locked while this step is guided: closing here would leave the
               walkthrough pointing at a form that no longer exists. The card's
               own exit remains the way out. */}
-          <Pressable onPress={onClose} disabled={nextTarget.isActive} style={[sh.secondaryBtn, { opacity: nextTarget.isActive ? 0.35 : 1 }]}>
-            <Text variant="monoSmall" style={{ color: c.muted }}>close ✕</Text>
-          </Pressable>
+          <Button label="Close" variant="tertiary" size="sm" onPress={onClose} disabled={nextTarget.isActive} />
           {nextTarget.isActive ? (
             /* Guided flow: the walkthrough teaches the full two-step capture,
                so its step one keeps the original single "next" action. */
-            <Pressable
+            <Button
+              label="Next"
+              size="sm"
               // Advance the walkthrough only when the form actually advanced —
               // a validation error must keep the tutorial on this step too.
               onPress={() => { if (onNext()) nextTarget.press(); }}
-              style={[sh.primaryBtn, { backgroundColor: c.text }]}
-            >
-              <Text variant="monoSmall" style={{ color: c.background }}>next →</Text>
-            </Pressable>
+            />
           ) : mode === 'work' ? (
             /* A named work is looked up first: find shows the match to
                confirm, and the save happens on that screen. */
-            <Pressable
+            <Button
+              label={finding ? 'Finding' : 'Find'}
+              size="sm"
               onPress={onFind}
               disabled={finding || !payload.trim() || !workKind}
-              style={[sh.primaryBtn, { backgroundColor: c.text, opacity: finding || !payload.trim() || !workKind ? 0.55 : 1 }]}
-            >
-              <Text variant="monoSmall" style={{ color: c.background }}>
-                {finding ? 'finding...' : 'find →'}
-              </Text>
-            </Pressable>
+            />
           ) : (
             /* Real captures are one step: save commits right here. The
                reaction remains available as an optional detour, matching how
                the share-sheet path treats the insight — an offer, not a toll. */
             <View style={sh.actionsRight}>
-              <Pressable onPress={() => { onNext(); }} disabled={busy} style={sh.secondaryBtn}>
-                <Text variant="monoSmall" style={{ color: c.muted }}>+ reaction</Text>
-              </Pressable>
-              <Pressable
-                onPress={onQuickSave}
-                disabled={busy}
-                style={[sh.primaryBtn, { backgroundColor: c.text, opacity: busy ? 0.55 : 1 }]}
-              >
-                <Text variant="monoSmall" style={{ color: c.background }}>
-                  {busy ? 'saving...' : 'save →'}
-                </Text>
-              </Pressable>
+              <Button label="Add reaction" variant="tertiary" size="sm" onPress={() => { onNext(); }} disabled={busy} />
+              <Button label={busy ? 'Saving' : 'Save'} size="sm" onPress={onQuickSave} disabled={busy} />
             </View>
           )}
         </View>
@@ -1321,16 +1314,16 @@ function PreflightStatus({ loading, preflight, c }: {
     return (
       <View style={sh.preflightRow}>
         <LoadingDots size={4} />
-        <Text variant="monoSmall" style={{ color: c.muted }}>reading the source…</Text>
+        <Text variant="caption" style={{ color: c.muted }}>Reading the source</Text>
       </View>
     );
   }
   if (!preflight) return null;
   if (preflight.confidence === 'rich') {
-    const label = preflight.bodySource === 'transcript' ? 'got the full transcript ✓' : 'read the full content ✓';
+    const label = preflight.bodySource === 'transcript' ? 'Got the full transcript' : 'Read the full content';
     return (
       <View style={sh.preflightRow}>
-        <Text variant="monoSmall" style={{ color: c.muted }}>{label}</Text>
+        <Text variant="caption" style={{ color: c.muted }}>{label}</Text>
       </View>
     );
   }
@@ -1370,7 +1363,7 @@ function StepTwo({
   return (
     <View>
       <Text variant="serifLg" color="primary" style={sh.heading}>Your reaction.</Text>
-      <Text variant="monoSmall" color="muted" style={sh.sub}>Optional — just for you.</Text>
+      <Text variant="caption" color="muted" style={sh.sub}>Optional. Just for you.</Text>
       {isLink && <PreflightStatus loading={preflightLoading} preflight={preflight} c={c} />}
       <Divider c={c} />
       {/* Wrapped as one region so the tutorial's spotlight (and its tap
@@ -1381,10 +1374,10 @@ function StepTwo({
       <View ref={commitTarget.ref} onLayout={commitTarget.onLayout} collapsable={false}>
         <View style={[sh.inputBox, { borderColor: c.border }]}>
           <TextInput
-            style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
+            style={[sh.inputField, { color: c.text, fontFamily: FontFamily.sans, fontSize: FontSize.md }]}
             value={reaction}
             onChangeText={setReaction}
-            placeholder="one line, or nothing."
+            placeholder="One line, or nothing"
             placeholderTextColor={c.faint}
             multiline
             autoFocus={!needsContext && !commitTarget.isActive}
@@ -1393,8 +1386,8 @@ function StepTwo({
         {needsContext && (
           <View style={[sh.inputBox, { borderColor: c.border }]}>
             <View style={sh.contextHeader}>
-              <Text variant="mono" style={[sh.contextPrompt, { color: c.muted }]}>
-                We couldn't read this source too well — tell mneme what it's about.
+              <Text variant="subheadline" style={[sh.contextPrompt, { color: c.muted }]}>
+                We couldn't read this source well. Tell Mneme what it's about.
               </Text>
               <VoiceNoteButton
                 onText={(t) => setUserContext(userContext ? `${userContext.trim()} ${t}` : t)}
@@ -1402,10 +1395,10 @@ function StepTwo({
               />
             </View>
             <TextInput
-              style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
+              style={[sh.inputField, { color: c.text, fontFamily: FontFamily.sans, fontSize: FontSize.md }]}
               value={userContext}
               onChangeText={setUserContext}
-              placeholder="use voice or type."
+              placeholder="Use voice or type"
               placeholderTextColor={c.faint}
               multiline
             />
@@ -1413,26 +1406,21 @@ function StepTwo({
         )}
         {!!error && (errorIsLimit
           ? <LimitNotice message={error} style={{ marginTop: Spacing[3] }} />
-          : <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
+          : <Text variant="caption" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
         )}
         <Divider c={c} />
         <View style={sh.actions}>
           {/* Locked while guided, same as StepOne's close — the walkthrough
               expects commit next, not a return to the form. */}
-          <Pressable onPress={onBack} disabled={commitTarget.isActive} style={[sh.secondaryBtn, { opacity: commitTarget.isActive ? 0.35 : 1 }]}>
-            <Text variant="monoSmall" style={{ color: c.muted }}>← back</Text>
-          </Pressable>
-          <Pressable
+          <Button label="Back" variant="tertiary" size="sm" onPress={onBack} disabled={commitTarget.isActive} />
+          <Button
+            label={busy ? 'Saving' : 'Save'}
+            size="sm"
             // The walkthrough advances from the parent's commit flow AFTER the
             // demo node actually lands, not on the press itself.
             onPress={() => { onCommit(); }}
             disabled={commitDisabled}
-            style={[sh.primaryBtn, { backgroundColor: c.text, opacity: commitDisabled ? 0.55 : 1 }]}
-          >
-            <Text variant="monoSmall" style={{ color: c.background }}>
-              {busy ? 'saving...' : 'commit →'}
-            </Text>
-          </Pressable>
+          />
         </View>
       </View>
     </View>
@@ -1465,14 +1453,14 @@ function StepVerify({
       <Text variant="serifLg" color="primary" style={sh.heading}>
         {hit ? 'This one?' : 'New to mneme.'}
       </Text>
-      <Text variant="monoSmall" color="muted" style={sh.sub}>
+      <Text variant="caption" color="muted" style={sh.sub}>
         {hit ? 'Confirm and save.' : `It doesn't know "${title}" yet.`}
       </Text>
       <Divider c={c} />
       {finding ? (
         <View style={sh.preflightRow}>
           <LoadingDots size={4} />
-          <Text variant="monoSmall" style={{ color: c.muted }}>finding it…</Text>
+          <Text variant="caption" style={{ color: c.muted }}>Finding it</Text>
         </View>
       ) : hit ? (
         <View style={[sh.workCard, { borderColor: c.border }]}>
@@ -1482,7 +1470,7 @@ function StepVerify({
           <View style={sh.workCardBody}>
             <Text variant="bodyMedium" color="primary">{preview?.title ?? title}</Text>
             {preview?.author ? (
-              <Text variant="monoSmall" style={{ color: c.muted, marginTop: 2 }}>{preview.author}</Text>
+              <Text variant="caption" style={{ color: c.muted, marginTop: 2 }}>{preview.author}</Text>
             ) : null}
             {preview?.description ? (
               <Text variant="caption" style={{ color: c.muted, marginTop: Spacing[2] }} numberOfLines={5}>
@@ -1494,8 +1482,8 @@ function StepVerify({
       ) : (
         <View style={[sh.inputBox, { borderColor: c.border }]}>
           <View style={sh.contextHeader}>
-            <Text variant="mono" style={[sh.contextPrompt, { color: c.muted }]}>
-              Tell mneme what it is, so the map can understand it.
+            <Text variant="subheadline" style={[sh.contextPrompt, { color: c.muted }]}>
+              Tell Mneme what it is, so the map can understand it.
             </Text>
             <VoiceNoteButton
               onText={(t) => setUserContext(userContext ? `${userContext.trim()} ${t}` : t)}
@@ -1503,10 +1491,10 @@ function StepVerify({
             />
           </View>
           <TextInput
-            style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
+            style={[sh.inputField, { color: c.text, fontFamily: FontFamily.sans, fontSize: FontSize.md }]}
             value={userContext}
             onChangeText={setUserContext}
-            placeholder="a line or two."
+            placeholder="A line or two"
             placeholderTextColor={c.faint}
             multiline
           />
@@ -1514,8 +1502,8 @@ function StepVerify({
       )}
       {!finding && (preview?.alternatives?.length ?? 0) > 0 && (
         <View style={{ marginTop: Spacing[4] }}>
-          <Text variant="monoSmall" style={{ color: c.muted, marginBottom: Spacing[2] }}>
-            {hit ? 'not this one? maybe you meant:' : 'maybe you meant:'}
+          <Text variant="caption" style={{ color: c.muted, marginBottom: Spacing[2] }}>
+            Other matches
           </Text>
           <View style={[sh.modeRow, { marginBottom: 0 }]}>
             {preview?.alternatives?.map((alt) => (
@@ -1524,9 +1512,9 @@ function StepVerify({
                 onPress={() => onPickAlternative(alt)}
                 style={[sh.modeChip, { borderColor: c.borderSubtle }]}
               >
-                <Text variant="monoSmall" style={{ color: c.muted }}>
+                <Text variant="caption" style={{ color: c.muted }}>
                   {alt.title}
-                  {alt.hint ? ` · ${alt.hint}` : alt.year ? ` · ${alt.year}` : ''}
+                  {alt.hint ? `, ${alt.hint}` : alt.year ? `, ${alt.year}` : ''}
                 </Text>
               </Pressable>
             ))}
@@ -1535,31 +1523,21 @@ function StepVerify({
       )}
       <View style={[sh.inputBox, { borderColor: c.border }]}>
         <TextInput
-          style={[sh.inputField, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
+          style={[sh.inputField, { color: c.text, fontFamily: FontFamily.sans, fontSize: FontSize.md }]}
           value={reaction}
           onChangeText={setReaction}
-          placeholder="why did it stick? optional."
+          placeholder="Why it stuck. Optional"
           placeholderTextColor={c.faint}
           multiline
         />
       </View>
       {!!error && (
-        <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
+        <Text variant="caption" color="danger" style={{ marginTop: Spacing[3] }}>{error}</Text>
       )}
       <Divider c={c} />
       <View style={sh.actions}>
-        <Pressable onPress={onBack} style={sh.secondaryBtn}>
-          <Text variant="monoSmall" style={{ color: c.muted }}>← back</Text>
-        </Pressable>
-        <Pressable
-          onPress={onCommit}
-          disabled={busy || finding}
-          style={[sh.primaryBtn, { backgroundColor: c.text, opacity: busy || finding ? 0.55 : 1 }]}
-        >
-          <Text variant="monoSmall" style={{ color: c.background }}>
-            {busy ? 'saving...' : 'save →'}
-          </Text>
-        </Pressable>
+        <Button label="Back" variant="tertiary" size="sm" onPress={onBack} />
+        <Button label={busy ? 'Saving' : 'Save'} size="sm" onPress={onCommit} disabled={busy || finding} />
       </View>
     </View>
   );
@@ -1585,8 +1563,6 @@ const sh = StyleSheet.create({
   inputField: { minHeight: 72, paddingVertical: Spacing[1] },
   actions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   actionsRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
-  secondaryBtn: { paddingVertical: Spacing[3], paddingHorizontal: Spacing[2] },
-  primaryBtn: { paddingVertical: Spacing[3], paddingHorizontal: Spacing[5], borderRadius: Radius.xs },
   clipChip: {
     alignSelf: 'flex-start',
     borderWidth: 1,
@@ -1825,7 +1801,7 @@ function InfoStrip({
 
   if (connectionCount > 0) {
     items.push(
-      <Text key="connections" variant="monoSmall" style={infoStripStyles.item}>
+      <Text key="connections" variant="caption" style={infoStripStyles.item}>
         {`${connectionCount} ${connectionCount === 1 ? 'connection' : 'connections'}`}
       </Text>,
     );
@@ -1833,15 +1809,15 @@ function InfoStrip({
   // Never pretend the visible window is everything: past the fetch limit the
   // map shows the most recent captures, and this says so.
   items.push(
-    <Text key="points" variant="monoSmall" style={infoStripStyles.item}>
+    <Text key="points" variant="caption" style={infoStripStyles.item}>
       {totalPointCount > pointCount
-        ? `latest ${pointCount} of ${totalPointCount} points`
+        ? `Latest ${pointCount} of ${totalPointCount} points`
         : `${pointCount} ${pointCount === 1 ? 'point' : 'points'}`}
     </Text>,
   );
   if (fieldCount > 0) {
     items.push(
-      <Text key="fields" variant="monoSmall" style={infoStripStyles.item}>
+      <Text key="fields" variant="caption" style={infoStripStyles.item}>
         {`${fieldCount} ${fieldCount === 1 ? 'field' : 'fields'}`}
       </Text>,
     );
@@ -1871,7 +1847,7 @@ function InfoStrip({
       <RNAnimated.View style={[infoStripStyles.row, { opacity: tickerFade }]} pointerEvents="box-none">
         {hint ? (
           <Pressable onPress={hint.onPress} hitSlop={8} accessibilityRole="button" pointerEvents="auto">
-            <Text variant="monoSmall" style={infoStripStyles.hint}>
+            <Text variant="caption" style={infoStripStyles.hint}>
               {hint.text}
             </Text>
           </Pressable>
@@ -2041,7 +2017,7 @@ function TimelineScrubber({ startMs, endMs, pct, onChange, top, railH }: Timelin
 
   return (
     <View style={[tls.wrap, { top, height: railH + 40 }]} pointerEvents="box-none">
-      <Text style={[tls.label, { color: 'rgba(240,232,214,0.49)' }]}>date</Text>
+      <Text style={[tls.label, { color: 'rgba(240,232,214,0.49)' }]}>Date</Text>
       <View style={[tls.trackWrap, { height: railH }]} {...pan.panHandlers}>
         {/* Track */}
         <View style={[tls.track, { backgroundColor: GLASS_SEP }]} />
@@ -2094,10 +2070,8 @@ const tls = StyleSheet.create({
     alignItems: 'center',
   },
   label: {
-    fontFamily: FontFamily.mono,
-    fontSize: 8,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
+    fontFamily: FontFamily.sans,
+    fontSize: 10,
     marginBottom: Spacing[2],
   },
   trackWrap: {
@@ -2125,18 +2099,16 @@ const tls = StyleSheet.create({
   tickLabel: {
     position: 'absolute',
     right: RAIL_TRACK_W - 4,
-    fontFamily: FontFamily.mono,
-    fontSize: 8,
-    letterSpacing: 0.3,
+    fontFamily: FontFamily.sans,
+    fontSize: 9,
     width: 60,
     textAlign: 'right',
   },
   endLabel: {
     position: 'absolute',
     right: RAIL_TRACK_W - 4,
-    fontFamily: FontFamily.mono,
-    fontSize: 8.5,
-    letterSpacing: 0.3,
+    fontFamily: FontFamily.sans,
+    fontSize: 9,
     width: 60,
     textAlign: 'right',
     color: 'rgba(240,232,214,0.61)',
@@ -2156,9 +2128,8 @@ const tls = StyleSheet.create({
     borderRadius: 4,
   },
   dateLabelText: {
-    fontFamily: FontFamily.mono,
-    fontSize: 9,
-    letterSpacing: 0.5,
+    fontFamily: FontFamily.sans,
+    fontSize: 10,
     color: 'rgba(240,232,214,0.81)',
   },
 });
@@ -3688,7 +3659,7 @@ export default function MapScreen() {
   // Shared by "next" (reaction step) and the one-tap quick save.
   const validatePayload = useCallback((): boolean => {
     if (mode === 'image') {
-      if (uploading) { setCaptureError('Still reading the image…'); return false; }
+      if (uploading) { setCaptureError('Still reading the image.'); return false; }
       if (!mediaUrl) { setCaptureError('Add an image first.'); return false; }
     } else if (!payload.trim()) {
       setCaptureError('Enter a URL or thought first.'); return false;
@@ -3846,11 +3817,11 @@ export default function MapScreen() {
         if (importing) activitySaw.current.add('import');
         if (!activityMuted.current) {
           const line = importing
-            ? 'reading your file…'
-            : `reading your ${syncing.map((conn) => conn.provider).slice(0, 2).join(' & ')}…`;
+            ? 'Reading your file'
+            : `Reading your ${syncing.map((conn) => conn.provider).slice(0, 2).join(' and ')}`;
           const sub = importing
             ? `${importing.done} of ${importing.total} on your map`
-            : 'finds land as points while it reads';
+            : 'Finds land as points while it reads';
           setActivity({ phase: 'busy', line, sub });
         }
         return true;
@@ -3869,7 +3840,7 @@ export default function MapScreen() {
         const mapped =
           (watched.has('import') && imp ? imp.done : 0) +
           conns.filter((conn) => watched.has(conn.provider)).reduce((n, conn) => n + (conn.lastSync?.mapped ?? 0), 0);
-        setActivity({ phase: 'done', line: mapped > 0 ? `${mapped} landed on your map ✓` : 'all caught up ✓' });
+        setActivity({ phase: 'done', line: mapped > 0 ? `${mapped} landed on your map` : 'All caught up' });
         setTimeout(() => setActivity((a) => (a?.phase === 'done' ? null : a)), 6000);
       }
       return false;
@@ -4092,33 +4063,33 @@ export default function MapScreen() {
     };
     if (nodes.length >= 4 && fresh('discover')) {
       out.push({
-        key: 'discover', priority: 10, text: 'pick two points and see what links them →',
+        key: 'discover', priority: 10, text: 'Pick two points and see what links them',
         onPress: () => { disclosure.markSeen('hint:discover'); setToolMode('discover'); },
       });
     }
     if (edges.length > 0 && !disclosure.hasSeen(visitedTabFlag('mind')) && fresh('mind')) {
-      out.push({ key: 'mind', priority: 20, text: 'mneme has been reading between your points →', onPress: go('mind', '/(tabs)/mind') });
+      out.push({ key: 'mind', priority: 20, text: 'See what Mneme noticed between your points', onPress: go('mind', '/(tabs)/mind') });
     }
     // Three providers exist; anyone short of all three has something to link.
     if ((linkedAccountCount ?? 0) < 3 && totalCaptureCount >= 1 && fresh('connections')) {
-      out.push({ key: 'connections', priority: 30, text: 'letterboxd, goodreads & more can feed this map →', onPress: go('connections', '/connections') });
+      out.push({ key: 'connections', priority: 30, text: 'Letterboxd, Goodreads and more can feed this map', onPress: go('connections', '/connections') });
     }
     if (totalCaptureCount >= 1 && fresh('import')) {
-      out.push({ key: 'import', priority: 40, text: 'a pile of bookmarks? bring them all at once →', onPress: go('import', '/import') });
+      out.push({ key: 'import', priority: 40, text: 'Bring a pile of bookmarks over at once', onPress: go('import', '/import') });
     }
     // Only once the install's single system prompt is spent (primer or
     // promise) and the answer was no — before that, those flows own the ask.
     if (pushAsked && !pushGranted && fresh('notifications')) {
-      out.push({ key: 'notifications', priority: 50, text: 'turn on notifications to stay on track →', onPress: go('notifications', '/notification-settings') });
+      out.push({ key: 'notifications', priority: 50, text: 'Turn on notifications to stay on track', onPress: go('notifications', '/notification-settings') });
     }
     if (totalCaptureCount >= 5 && fresh('today')) {
-      out.push({ key: 'today', priority: 60, text: 'one old capture, handed back each day →', onPress: go('today', '/today') });
+      out.push({ key: 'today', priority: 60, text: 'Revisit one old capture each day', onPress: go('today', '/today') });
     }
     if (totalCaptureCount >= 10 && !disclosure.hasSeen(EVENT_FLAGS.sharedAtlas) && fresh('share-atlas')) {
-      out.push({ key: 'share-atlas', priority: 70, text: 'your atlas is becoming worth sharing →', onPress: go('share-atlas', '/share-atlas') });
+      out.push({ key: 'share-atlas', priority: 70, text: 'Share your atlas', onPress: go('share-atlas', '/share-atlas') });
     }
     if (disclosure.hasSeen(EVENT_FLAGS.sharedAtlas) && !disclosure.hasSeen(visitedTabFlag('pulse')) && fresh('pulse')) {
-      out.push({ key: 'pulse', priority: 80, text: 'minds you know are charting too →', onPress: go('pulse', '/(tabs)/pulse') });
+      out.push({ key: 'pulse', priority: 80, text: 'See what people you know are charting', onPress: go('pulse', '/(tabs)/pulse') });
     }
     return out.sort((a, b) => a.priority - b.priority);
   }, [nodes.length, edges.length, linkedAccountCount, totalCaptureCount, pushAsked, pushGranted, hintShows, disclosure, router]);
@@ -5059,24 +5030,26 @@ export default function MapScreen() {
           <View style={styles.headerLeft} pointerEvents="box-none">
             <View pointerEvents="box-none">
               <View style={styles.headerTitleRow} pointerEvents="box-none">
-                <Text variant="wordmark" style={{ color: 'rgba(246,242,233,0.96)' }}>atlas</Text>
+                <Text variant="headline" style={{ color: 'rgba(246,242,233,0.96)' }}>Atlas</Text>
                 <Pressable
                   onPress={() => setInfoVisible(true)}
                   hitSlop={12}
-                  accessibilityLabel="About atlas"
+                  accessibilityLabel="About Atlas"
+                  accessibilityRole="button"
                   style={{ marginLeft: Spacing[3] }}
                   pointerEvents="auto"
                 >
-                  <Text style={{ color: 'rgba(240,232,214,0.49)', fontSize: 16 }}>ⓘ</Text>
+                  <InfoIcon size={17} color="rgba(240,232,214,0.6)" strokeWidth={1.75} />
                 </Pressable>
                 <Pressable
                   onPress={() => startTutorial()}
                   hitSlop={12}
                   accessibilityLabel="Start tutorial"
+                  accessibilityRole="button"
                   style={{ marginLeft: Spacing[3] }}
                   pointerEvents="auto"
                 >
-                  <Text style={{ color: 'rgba(240,232,214,0.49)', fontSize: 16 }}>ⓣ</Text>
+                  <CircleHelpIcon size={17} color="rgba(240,232,214,0.6)" strokeWidth={1.75} />
                 </Pressable>
                 {/* Last in the row, so the marks people already reach for keep
                     their positions. Renders nothing below a 2-day run. */}
@@ -5091,26 +5064,26 @@ export default function MapScreen() {
                 style={styles.lensRow}
                 pointerEvents="box-none"
               >
-                {(['semantic', 'temporal'] as LensMode[]).map((l, i) => {
-                  const label = l === 'temporal' ? 'time' : l;
+                {(['semantic', 'temporal'] as LensMode[]).map((l) => {
+                  const label = l === 'temporal' ? 'Time' : 'Meaning';
                   const active = lensMode === l;
                   return (
-                    <React.Fragment key={l}>
-                      {i > 0 && (
-                        <Text style={styles.lensDot}>·</Text>
-                      )}
-                      <Pressable
-                        onPress={() => handleLensChange(l)}
-                        hitSlop={10}
-                        pointerEvents="auto"
-                        accessibilityLabel={`${label} lens`}
-                        accessibilityRole="button"
+                    <Pressable
+                      key={l}
+                      onPress={() => handleLensChange(l)}
+                      hitSlop={10}
+                      pointerEvents="auto"
+                      accessibilityLabel={`${label} lens`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                    >
+                      <Text
+                        variant="caption"
+                        style={{ color: active ? 'rgba(240,232,214,0.92)' : 'rgba(240,232,214,0.5)', fontWeight: active ? '600' : '400' }}
                       >
-                        <Text style={[styles.lensLabel, { color: active ? 'rgba(240,232,214,0.73)' : 'rgba(240,232,214,0.39)' }]}>
-                          {label.toUpperCase()}
-                        </Text>
-                      </Pressable>
-                    </React.Fragment>
+                        {label}
+                      </Text>
+                    </Pressable>
                   );
                 })}
               </View>
@@ -5151,12 +5124,12 @@ export default function MapScreen() {
         <InfoModal
           visible={infoVisible}
           onClose={() => setInfoVisible(false)}
-          title="atlas"
+          title="Atlas"
           body="Your knowledge map. Every node is something you saved. Lines appear when ideas share a topic, contradict each other, or grow out of one another. Switch lenses to sort the map by meaning or time."
           // Hidden until there are real captures — the ghost demo map is
           // scenery, not an atlas to share.
           action={totalCaptureCount > 0 ? {
-            label: 'share your atlas →',
+            label: 'Share your atlas',
             onPress: () => {
               setInfoVisible(false);
               router.push('/share-atlas' as never);
@@ -5167,8 +5140,8 @@ export default function MapScreen() {
         <InfoModal
           visible={unreadableInfoVisible}
           onClose={() => setUnreadableInfoVisible(false)}
-          title="couldn't read that source"
-          body="mneme tried to read the page but was blocked — some sites shut out automated readers. when that happens, just give it a few words about the piece, typed or spoken with the mic, and mneme builds the node and its connections from your summary instead."
+          title="Couldn't read that source"
+          body="Mneme tried to read the page but was blocked. Some sites shut out automated readers. When that happens, give it a few words about the piece, typed or spoken with the mic, and Mneme builds the node and its connections from your summary instead."
         />
 
         {/* Summary strip — baseline counts along the bottom, above the tab bar */}
@@ -5188,46 +5161,33 @@ export default function MapScreen() {
         {/* Focus mode indicator */}
         {focusedTopicId && !showCapture && (
           <View style={[styles.focusBadge, { top: insets.top + 80, backgroundColor: GLASS_BG, borderColor: GLASS_BORDER }]} pointerEvents="auto">
-            <Text style={[styles.focusBadgeText, { color: 'rgba(240,232,214,0.61)' }]}>
+            <Text variant="caption" style={{ color: 'rgba(240,232,214,0.7)' }}>
               {clusters.find((cl) => cl.topicId === focusedTopicId)?.name ?? ''}
               {activeFocusGraph
-                ? ` · ${activeFocusGraph.totalCount > activeFocusGraph.nodes.length
+                ? `, ${activeFocusGraph.totalCount > activeFocusGraph.nodes.length
                   ? `${activeFocusGraph.nodes.length} of ${activeFocusGraph.totalCount}`
                   : activeFocusGraph.totalCount}`
-                : ' · opening…'}
+                : ', Opening'}
             </Text>
-            <Pressable onPress={() => setFocusedTopicId(null)} hitSlop={8} style={{ marginLeft: Spacing[2] }}>
-              <Text style={[styles.focusBadgeText, { color: 'rgba(240,232,214,0.49)' }]}>×</Text>
+            <Pressable onPress={() => setFocusedTopicId(null)} hitSlop={8} style={{ marginLeft: Spacing[2] }} accessibilityLabel="Leave this topic" accessibilityRole="button">
+              <XIcon size={14} color="rgba(240,232,214,0.55)" />
             </Pressable>
           </View>
         )}
 
         {/* Search bar */}
         {toolMode === 'search' && (
-          <View
-            style={[styles.searchBar, { top: insets.top + 80, backgroundColor: GLASS_BG, borderColor: GLASS_BORDER }]}
-            pointerEvents="auto"
-          >
-            <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: 'rgba(240,232,214,0.49)', marginRight: Spacing[2], letterSpacing: 1.5 }}>
-              FIND_
-            </Text>
-            <TextInput
+          <View style={[styles.searchBar, { top: insets.top + 80 }]} pointerEvents="auto">
+            <SearchField
               ref={searchInputRef}
-              style={{ flex: 1, fontFamily: FontFamily.mono, fontSize: FontSize.sm, color: MAP_NODE, paddingVertical: 0 }}
               value={searchQuery}
               onChangeText={setSearchQuery}
-              placeholder="topic or keyword..."
-              placeholderTextColor="rgba(240,232,214,0.38)"
-              autoCapitalize="none"
-              returnKeyType="search"
+              placeholder="Search your map"
+              tone={{ background: GLASS_BG, border: GLASS_BORDER, text: MAP_NODE, icon: 'rgba(240,232,214,0.6)' }}
+              style={{ flex: 1 }}
             />
             {hasSearch && (
-              <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-                <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: 'rgba(240,232,214,0.53)' }}>✕</Text>
-              </Pressable>
-            )}
-            {hasSearch && (
-              <Text style={{ fontFamily: FontFamily.mono, fontSize: FontSize.xs, color: 'rgba(240,232,214,0.45)', marginLeft: Spacing[3] }}>
+              <Text variant="caption" style={{ color: 'rgba(240,232,214,0.6)' }}>
                 {highlightedIds.size}
               </Text>
             )}
@@ -5242,7 +5202,7 @@ export default function MapScreen() {
                 {[
                   discoveryNodeIds.length > 0 && `${discoveryNodeIds.length} ${discoveryNodeIds.length === 1 ? 'point' : 'points'}`,
                   discoveryEdgeKeys.length > 0 && `${discoveryEdgeKeys.length} ${discoveryEdgeKeys.length === 1 ? 'link' : 'links'}`,
-                ].filter(Boolean).join(' · ')}
+                ].filter(Boolean).join(', ')}
               </Text>
               {discoveryContextIds.size >= 2 && (
                 <Pressable
@@ -5252,12 +5212,12 @@ export default function MapScreen() {
                   accessibilityRole="button"
                 >
                   <Text style={[styles.discoveryAction, { color: DISCOVERY_ACCENT }]}>
-                    open in companion →
+                    Open in companion
                   </Text>
                 </Pressable>
               )}
-              <Pressable onPress={() => { clearDiscovery(); setToolMode('default'); }} hitSlop={10} style={styles.discoveryClose}>
-                <Text style={[styles.discoveryCount, { color: 'rgba(240,232,214,0.49)' }]}>✕</Text>
+              <Pressable onPress={() => { clearDiscovery(); setToolMode('default'); }} hitSlop={10} style={styles.discoveryClose} accessibilityLabel="Clear selection" accessibilityRole="button">
+                <XIcon size={14} color="rgba(240,232,214,0.55)" />
               </Pressable>
             </View>
           </View>
@@ -5295,11 +5255,11 @@ export default function MapScreen() {
                 color="rgba(240,232,214,0.77)"
               />
               <Text style={[styles.discoveryCount, { color: 'rgba(240,232,214,0.69)', flex: 1 }]}>
-                {savedPill.phase === 'logging' ? 'reading & mapping…'
-                  : totalCaptureCount <= 1 ? 'your map has begun ✓' : 'saved ✓'}
+                {savedPill.phase === 'logging' ? 'Reading and mapping'
+                  : totalCaptureCount <= 1 ? 'Your map has begun' : 'Saved'}
               </Text>
-              <Pressable onPress={() => setSavedPill(null)} hitSlop={10}>
-                <Text style={[styles.discoveryCount, { color: 'rgba(240,232,214,0.49)' }]}>✕</Text>
+              <Pressable onPress={() => setSavedPill(null)} hitSlop={10} accessibilityLabel="Dismiss" accessibilityRole="button">
+                <XIcon size={14} color="rgba(240,232,214,0.55)" />
               </Pressable>
             </View>
             {savedPill.phase === 'saved' && (
@@ -5311,7 +5271,7 @@ export default function MapScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Open the insight for this capture"
                 >
-                  <Text style={[styles.discoveryAction, { color: DISCOVERY_ACCENT }]}>insight →</Text>
+                  <Text style={[styles.discoveryAction, { color: DISCOVERY_ACCENT }]}>Insight</Text>
                 </Pressable>
                 <Pressable
                   onPress={() => {
@@ -5326,7 +5286,7 @@ export default function MapScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Show this capture on the atlas map"
                 >
-                  <Text style={[styles.discoveryAction, { color: 'rgba(240,232,214,0.84)' }]}>atlas →</Text>
+                  <Text style={[styles.discoveryAction, { color: 'rgba(240,232,214,0.84)' }]}>Show on map</Text>
                 </Pressable>
               </View>
             )}
@@ -5372,7 +5332,7 @@ export default function MapScreen() {
             enter="right"
             art="cat"
             text={WELCOME_INTRO_LINE}
-            cta="ok"
+            cta="OK"
             onCta={() => { if (welcomeUid) disclosure.markSeen(welcomeIntroFlag(welcomeUid)); }}
             onSkip={() => { if (welcomeUid) disclosure.markSeen(welcomeIntroFlag(welcomeUid)); }}
           />
@@ -5383,7 +5343,7 @@ export default function MapScreen() {
             enter="right"
             art="cat"
             text={WELCOME_OFFER_LINE}
-            cta="name one"
+            cta="Name one"
             // Deliberately does NOT retire the ghost or mark the offer seen:
             // closing the composer without capturing brings this pill back,
             // and a capture landing retires the whole welcome by itself.
@@ -5403,7 +5363,7 @@ export default function MapScreen() {
             enter="right"
             art="cat"
             text={TOUR_OFFER_LINE}
-            cta="sure"
+            cta="Sure"
             onCta={() => answerTourOffer(true)}
             onSkip={() => answerTourOffer(false)}
           />
@@ -5421,7 +5381,7 @@ export default function MapScreen() {
             <Whisper
               id="clipboard-link"
               when={clipboardDoor && (graphData?.totalCount ?? 0) < ARCHIVE_REVEAL_COUNT}
-              text="↳ you've got a link copied — put it on the map?"
+              text="Put the link you copied on the map"
               onPress={() => {
                 openCapture();
                 void pasteFromClipboard();
@@ -5432,24 +5392,24 @@ export default function MapScreen() {
                 <Whisper
                   id="mind-first-edge"
                   when={disclosure.glows.mind}
-                  text="mneme noticed something →"
+                  text="Mneme noticed something"
                   onPress={() => router.push('/(tabs)/mind' as never)}
                 />
                 <Whisper
                   id="share-extension"
                   when={disclosure.hasSeen(EVENT_FLAGS.linkCaptured)}
-                  text="next time, save from anywhere — share → mneme"
+                  text="Next time, save from anywhere with the share sheet"
                 />
                 <Whisper
                   id="pulse-intro"
                   when={disclosure.hasSeen(EVENT_FLAGS.sharedAtlas)}
-                  text="pulse — minds you know →"
+                  text="See people you know on Pulse"
                   onPress={() => router.push('/(tabs)/pulse' as never)}
                 />
                 <Whisper
                   id="connections-intro"
                   when={nodes.length >= 5}
-                  text="write elsewhere? it can land here →"
+                  text="Bring over what you write elsewhere"
                   onPress={() => router.push('/connections' as never)}
                 />
               </>
@@ -5463,7 +5423,7 @@ export default function MapScreen() {
             <AsciiLoader
               size={110}
               color="rgba(240,232,214,0.65)"
-              message={['drawing your map…', 'plotting your ideas…', 'charting the territory…']}
+              message="Drawing your map"
             />
           </View>
         )}
@@ -5475,11 +5435,11 @@ export default function MapScreen() {
         {isEmpty && !tutorialActive && (
           <View style={styles.emptyHint} pointerEvents="box-none">
             <AsciiLoader idle size={100} color="rgba(240,232,214,0.57)" />
-            <Text variant="serif" color="muted" style={{ textAlign: 'center', marginBottom: Spacing[3], color: 'rgba(240,232,214,0.53)' }}>
-              your map is waiting
+            <Text variant="headline" style={{ textAlign: 'center', marginBottom: Spacing[2], color: 'rgba(240,232,214,0.8)' }}>
+              Your map is waiting
             </Text>
-            <Text variant="monoSmall" style={{ color: 'rgba(240,232,214,0.42)', textAlign: 'center', lineHeight: 20 }}>
-              {'tap + to chart your first thought.'}
+            <Text variant="subheadline" style={{ color: 'rgba(240,232,214,0.5)', textAlign: 'center' }}>
+              Tap + to add your first thought
             </Text>
             {/* The services themselves, drawn small — the option is shown,
                 not explained. One line of words underneath; import and the
@@ -5509,8 +5469,8 @@ export default function MapScreen() {
                   <Text style={{ fontSize: 13 }}>🦋</Text>
                 </View>
               </View>
-              <Text variant="monoSmall" style={{ color: 'rgba(240,232,214,0.5)' }}>
-                {'or bring your words over →'}
+              <Text variant="caption" style={{ color: 'rgba(240,232,214,0.6)' }}>
+                Or bring over what you write elsewhere
               </Text>
             </Pressable>
           </View>
@@ -5536,8 +5496,8 @@ export default function MapScreen() {
                 showsVerticalScrollIndicator={false}
               >
                 {/* Close row */}
-                <Pressable onPress={closeDrawer} style={styles.drawerClose}>
-                  <Text variant="monoSmall" style={{ color: c.muted }}>✕</Text>
+                <Pressable onPress={closeDrawer} style={styles.drawerClose} accessibilityLabel="Close" accessibilityRole="button">
+                  <XIcon size={18} color={c.muted} />
                 </Pressable>
 
                 {/* Cluster detail */}
@@ -5555,12 +5515,12 @@ export default function MapScreen() {
                         }]}
                         hitSlop={8}
                       >
-                        <Text variant="monoSmall" style={{ color: focusedTopicId === drawerCluster.topicId ? c.text : c.faint }}>
-                          {focusedTopicId === drawerCluster.topicId ? 'exit map' : 'open map'}
+                        <Text variant="caption" style={{ color: focusedTopicId === drawerCluster.topicId ? c.text : c.faint }}>
+                          {focusedTopicId === drawerCluster.topicId ? 'Exit map' : 'Open map'}
                         </Text>
                       </Pressable>
                     </View>
-                    <Text variant="monoSmall" color="muted" style={{ marginBottom: Spacing[6] }}>
+                    <Text variant="caption" color="muted" style={{ marginBottom: Spacing[6] }}>
                       {drawerCluster.count} {drawerCluster.count === 1 ? 'capture' : 'captures'}
                     </Text>
                     <View style={[styles.drawerHairline, { backgroundColor: c.border }]} />
@@ -5575,13 +5535,13 @@ export default function MapScreen() {
                       } as never)}
                       style={{ marginTop: Spacing[5] }}
                     >
-                      <Text variant="monoSmall" color="muted">take a position →</Text>
+                      <Text variant="subheadline" color="primary">Take a position</Text>
                     </Pressable>
                     <Pressable
                       onPress={() => router.push(`/socratic/${drawerCluster.topicId}` as never)}
                       style={{ marginTop: Spacing[4] }}
                     >
-                      <Text variant="monoSmall" color="muted">open dialogue →</Text>
+                      <Text variant="subheadline" color="primary">Open dialogue</Text>
                     </Pressable>
                   </View>
                 )}
@@ -5599,9 +5559,9 @@ export default function MapScreen() {
                       onLayout={panelTarget.isActive ? panelTarget.onLayout : undefined}
                       collapsable={false}
                     >
-                      <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[3] }}>
-                        {selectedNode.kind.toLowerCase()} · {new Date(selectedNode.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        {isRecentNode(selectedNode) && ' · new'}
+                      <Text variant="caption" style={{ color: c.faint, marginBottom: Spacing[3] }}>
+                        {kindLabel(selectedNode.kind)}, {shortDate(selectedNode.capturedAt)}
+                        {isRecentNode(selectedNode) && ', New'}
                       </Text>
                       <Text variant="h3" style={{ marginBottom: Spacing[4] }} numberOfLines={4}>
                         {selectedNode.label}
@@ -5609,19 +5569,19 @@ export default function MapScreen() {
                       {!!selectedNode.keyIdea && (
                         <>
                           <View style={[styles.drawerHairline, { backgroundColor: c.border }]} />
-                          <Text variant="monoSmall" style={{ color: c.muted, fontStyle: 'italic', marginTop: Spacing[3], marginBottom: Spacing[3] }} numberOfLines={3}>
+                          <Text variant="subheadline" color="secondary" style={{ fontStyle: 'italic', marginTop: Spacing[3], marginBottom: Spacing[3] }} numberOfLines={3}>
                             {selectedNode.keyIdea}
                           </Text>
                         </>
                       )}
                       {!!selectedNode.reaction && (
-                        <Text variant="monoSmall" style={{ color: c.muted, marginBottom: Spacing[4] }} numberOfLines={2}>
+                        <Text variant="subheadline" color="secondary" style={{ marginBottom: Spacing[4] }} numberOfLines={2}>
                           "{selectedNode.reaction}"
                         </Text>
                       )}
                       {selectedNode.topics.length > 0 && (
-                        <Text variant="monoSmall" style={{ color: c.faint, marginBottom: Spacing[5] }}>
-                          {selectedNode.topics.slice(0, 4).map((t) => t.name).join(' · ')}
+                        <Text variant="caption" style={{ color: c.faint, marginBottom: Spacing[5] }}>
+                          {selectedNode.topics.slice(0, 4).map((t) => t.name).join(', ')}
                         </Text>
                       )}
                       {/* Present for the practice node too — the insight screen
@@ -5631,7 +5591,7 @@ export default function MapScreen() {
                         onPress={() => { closeDrawer(); router.push(`/insight/${selectedNode.id}?from=map` as never); }}
                         style={{ marginTop: Spacing[2] }}
                       >
-                        <Text variant="monoSmall" color="muted">view insight →</Text>
+                        <Text variant="subheadline" color="primary">View insight</Text>
                       </Pressable>
                     </View>
                     {selectedNode.id !== TUTORIAL_DEMO_NODE.id && (
@@ -5640,7 +5600,7 @@ export default function MapScreen() {
                         style={{ marginTop: Spacing[4] }}
                         accessibilityLabel="Move this capture to another topic"
                       >
-                        <Text variant="monoSmall" color="muted">move to… →</Text>
+                        <Text variant="subheadline" color="primary">Move to another topic</Text>
                       </Pressable>
                     )}
                     <Pressable
@@ -5652,8 +5612,8 @@ export default function MapScreen() {
                       accessibilityLabel="Delete this memory"
                     >
                       <Trash2Icon size={13} color={c.danger} />
-                      <Text variant="monoSmall" color="danger">
-                        {deletingNode ? 'deleting…' : 'delete'}
+                      <Text variant="subheadline" color="danger">
+                        {deletingNode ? 'Deleting' : 'Delete'}
                       </Text>
                     </Pressable>
                   </View>
@@ -5718,8 +5678,8 @@ export default function MapScreen() {
                     </React.Fragment>
                   ))}
                 </View>
-                <Text variant="monoSmall" style={[styles.stepLabel, { color: c.muted }]}>
-                  {step === 1 ? '01 / CAPTURE' : mode === 'work' ? '02 / CONFIRM' : '02 / REACT'}
+                <Text variant="caption" style={[styles.stepLabel, { color: c.muted }]}>
+                  {step === 1 ? 'Step 1 of 2: Capture' : mode === 'work' ? 'Step 2 of 2: Confirm' : 'Step 2 of 2: Reaction'}
                 </Text>
                 <View style={styles.modalBody}>
                   {step === 1 && (
@@ -5768,15 +5728,15 @@ export default function MapScreen() {
                       message={
                         mode === 'link'
                           ? [
-                              'reading the source…',
-                              'placing it on your map…',
-                              'writing your insight…',
-                              'big source — this can take a moment…',
+                              'Reading the source',
+                              'Placing it on your map',
+                              'Writing your insight',
+                              'Big source. This can take a moment',
                             ]
                           : [
-                              'placing it on your map…',
-                              'writing your insight…',
-                              'still working…',
+                              'Placing it on your map',
+                              'Writing your insight',
+                              'Still working',
                             ]
                       }
                       schedule={mode === 'link' ? [6000, 5000, 6000] : [6000, 7000]}
@@ -5888,18 +5848,8 @@ const styles = StyleSheet.create({
   lensRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
-  },
-  lensLabel: {
-    fontFamily: FontFamily.mono,
-    fontSize: 8,
-    letterSpacing: 1.5,
-  },
-  lensDot: {
-    fontFamily: FontFamily.mono,
-    fontSize: 8,
-    color: 'rgba(240,232,214,0.34)',
-    marginHorizontal: 5,
+    gap: Spacing[4],
+    marginTop: 2,
   },
   focusBadge: {
     position: 'absolute',
@@ -5911,21 +5861,13 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: Spacing[3],
   },
-  focusBadgeText: {
-    fontFamily: FontFamily.mono,
-    fontSize: 9,
-    letterSpacing: 1.2,
-  },
   searchBar: {
     position: 'absolute',
     left: Spacing[5],
     right: Spacing[5],
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: Radius.full,
-    paddingHorizontal: Spacing[4],
-    paddingVertical: 9,
+    gap: Spacing[3],
   },
   discoveryBar: {
     position: 'absolute',
@@ -5971,9 +5913,8 @@ const styles = StyleSheet.create({
     gap: Spacing[2],
   },
   discoveryCount: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    letterSpacing: 1,
+    fontFamily: FontFamily.sans,
+    fontSize: FontSize.sm,
   },
   discoveryActionBtn: {
     borderWidth: 1,
@@ -5982,9 +5923,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[3],
   },
   discoveryAction: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    letterSpacing: 0.5,
+    fontFamily: FontFamily.sans,
+    fontSize: FontSize.sm,
+    fontWeight: '600',
   },
   discoveryClose: { paddingHorizontal: Spacing[2] },
   whisperHost: {
@@ -6090,6 +6031,6 @@ const styles = StyleSheet.create({
   stepRow: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing[2] },
   stepDot: { width: 7, height: 7, borderRadius: 4, borderWidth: 1 },
   stepLine: { flex: 1, height: 1, marginHorizontal: Spacing[2] },
-  stepLabel: { letterSpacing: 2.2, marginBottom: Spacing[1] },
+  stepLabel: { marginBottom: Spacing[1] },
   modalBody: {},
 });

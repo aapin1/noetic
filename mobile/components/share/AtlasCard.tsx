@@ -20,7 +20,7 @@ import type { MemoryGraphResponse } from '@/types/api';
  * artefact, the stat line says how big it is, the caption says what a dot and
  * a line are, and the footer says where to get one. The chart itself is the
  * Atlas at a glance — soft colour wash per field, one ink for the points,
- * edges faded by weight, and each field named by a colour dot + mono caption
+ * edges faded by weight, and each field named by a colour dot and caption
  * parked beside its points, never across them. Node titles never render;
  * field names only when the user opts in. Layout is computed in
  * lib/atlasShare.ts (buildAtlasScene); this file only draws it.
@@ -76,7 +76,7 @@ export function AtlasShareCard({ p, width, handle, nodes, edges, clusters, showL
             </Text>
           </View>
           <Text variant="monoSmall" style={[styles.statLine, { color: p.textSecondary }]} numberOfLines={1}>
-            {statLine.toUpperCase()}
+            {statLine}
           </Text>
         </View>
 
@@ -163,12 +163,12 @@ export function AtlasShareCard({ p, width, handle, nodes, edges, clusters, showL
             adjustsFontSizeToFit
             minimumFontScale={0.8}
           >
-            dots = things i saved · lines = related ideas
+            dots are things I saved, lines are related ideas
           </Text>
           <View style={styles.ctaRow}>
             <Text variant="monoSmall" style={{ color: p.textSecondary }} numberOfLines={1}>
               <Text style={[styles.wordmark, { color: p.text }]}>mneme</Text>
-              {` · ${SHARE_CTA}`}
+              {`: ${SHARE_CTA}`}
             </Text>
             {handle ? (
               <Text variant="monoSmall" style={{ color: p.faint }} numberOfLines={1}>

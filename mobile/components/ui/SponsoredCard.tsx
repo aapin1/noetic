@@ -172,8 +172,8 @@ export function SponsoredCard({ tone = 'auto' }: { tone?: 'auto' | 'dark' } = {}
       <NativeAdView nativeAd={nativeAd}>
         <View style={[styles.card, { backgroundColor: surface, borderColor: border }]}>
           <View style={styles.topRow}>
-            <Text variant="mono" color="muted" style={[styles.sponsored, inkMuted]}>
-              sponsored
+            <Text variant="captionSmall" color="muted" style={inkMuted}>
+              Sponsored
             </Text>
           </View>
           <View style={styles.body}>
@@ -197,7 +197,7 @@ export function SponsoredCard({ tone = 'auto' }: { tone?: 'auto' | 'dark' } = {}
             {nativeAd.callToAction ? (
               <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
                 <View style={[styles.cta, { borderColor: border }]}>
-                  <Text variant="mono" style={[styles.ctaText, ink]}>
+                  <Text variant="caption" style={[styles.ctaText, ink]}>
                     {nativeAd.callToAction}
                   </Text>
                 </View>
@@ -216,8 +216,8 @@ export function SponsoredCard({ tone = 'auto' }: { tone?: 'auto' | 'dark' } = {}
         accessibilityLabel="Remove ads with Mneme Plus"
         hitSlop={10}
       >
-        <Text variant="mono" color="muted" style={[styles.removeLink, inkMuted]}>
-          remove ads with mneme plus →
+        <Text variant="caption" color="muted" style={[styles.removeLink, inkMuted]}>
+          Remove ads with Mneme Plus
         </Text>
       </Pressable>
     </View>
@@ -234,7 +234,6 @@ const styles = StyleSheet.create({
     padding: Spacing[4],
   },
   topRow: { marginBottom: Spacing[2] },
-  sponsored: { fontSize: 11, textTransform: 'lowercase' },
   body: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
   media: {
     width: '100%',
@@ -251,6 +250,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[3],
     paddingVertical: Spacing[1],
   },
-  ctaText: { fontSize: 12 },
-  removeLink: { fontSize: 11, textAlign: 'center', marginTop: Spacing[3] },
+  ctaText: { fontWeight: '600' },
+  removeLink: { textAlign: 'center', marginTop: Spacing[3] },
 });

@@ -14,7 +14,7 @@ appId: app.mneme.mobile
       # welcome screen, or the tab bar.
       - extendedWaitUntil:
           visible:
-            text: "Continue|Get started|atlas"
+            text: "Continue|Get started|Atlas"
           timeout: 45000
 # "Continue" finishes the dev-menu onboarding but leaves the dev menu open,
 # so close it too.
@@ -31,34 +31,34 @@ appId: app.mneme.mobile
 
 - extendedWaitUntil:
     visible:
-      text: "atlas"
+      text: "Atlas"
     timeout: 45000
 - takeScreenshot: screenshots/02-atlas
 
-- tapOn: "mind"
+- tapOn: "Mind"
 - extendedWaitUntil:
     visible:
-      text: "mind"
+      text: "Mind"
     timeout: 20000
 - takeScreenshot: screenshots/02-mind
 
-- tapOn: "archive"
+- tapOn: "Archive"
 - extendedWaitUntil:
     visible:
-      text: "archive"
+      text: "Archive"
     timeout: 20000
 - takeScreenshot: screenshots/02-archive
 
-- tapOn: "pulse"
+- tapOn: "Pulse"
 - extendedWaitUntil:
     visible:
-      text: "pulse"
+      text: "Pulse"
     timeout: 20000
 - takeScreenshot: screenshots/02-pulse
 
-- tapOn: "you"
+- tapOn: "You"
 - extendedWaitUntil:
     visible:
-      text: "you"
+      text: "You"
     timeout: 20000
 - takeScreenshot: screenshots/02-you

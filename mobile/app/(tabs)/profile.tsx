@@ -7,11 +7,11 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
-import { SettingsIcon } from 'lucide-react-native';
+import { ChevronRightIcon, SettingsIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { Accents, Radius, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -108,7 +108,7 @@ export default function YouScreen() {
           The safe-area strip above takes the same colour, so the notch region
           reads as part of the header rather than as a pale sliver over it. */}
       <View style={[styles.header, { borderBottomColor: c.deepBorder, backgroundColor: c.deep }]}>
-        <Text variant="wordmark" style={{ color: c.deepInk }}>you</Text>
+        <Text variant="headline" style={{ color: c.deepInk }}>You</Text>
         <Pressable onPress={() => router.push('/settings')} accessibilityLabel="Settings">
           <SettingsIcon size={22} color={c.deepInkMuted} />
         </Pressable>
@@ -125,13 +125,11 @@ export default function YouScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Card stock, like every other panel on the page. It reads as the
-            first card in the stack rather than as a slab dropped on top of
-            it — the accent dot is the same mark the wrapped cards carry. */}
+            first card in the stack rather than as a slab dropped on top of it. */}
         <View style={[styles.hero, { backgroundColor: c.surface, borderColor: c.border }]}>
-          <View style={[styles.heroDot, { backgroundColor: Accents.slate }]} />
           <EditableAvatar profile={p} onChanged={handleAvatarChanged} />
           <Text variant="h3" style={{ marginTop: Spacing[4] }}>
-            {p?.displayName ?? '—'}
+            {p?.displayName ?? ''}
           </Text>
           {/* Tap-to-copy: the handle is the thing you hand a friend so they
               can find you on pulse. */}
@@ -141,8 +139,8 @@ export default function YouScreen() {
             accessibilityRole="button"
             accessibilityLabel="Copy your handle"
           >
-            <Text variant="mono" color="muted">
-              {handleCopied ? 'copied ✓' : `@${p?.handle ?? '—'}`}
+            <Text variant="subheadline" color="muted">
+              {handleCopied ? 'Copied' : `@${p?.handle ?? ''}`}
             </Text>
           </Pressable>
           {p?.bio ? (
@@ -160,9 +158,12 @@ export default function YouScreen() {
           onPress={() => router.push('/connections' as never)}
           style={[styles.connShelf, { backgroundColor: c.surface, borderColor: c.border }]}
           accessibilityRole="button"
-          accessibilityLabel="Your connections — link accounts that feed your map"
+          accessibilityLabel="Connections, link accounts that feed your map"
         >
-          <Text variant="label" color="faint">connections</Text>
+          <View style={styles.connHead}>
+            <Text variant="headline">Connections</Text>
+            <ChevronRightIcon size={18} color={c.muted} />
+          </View>
           <View style={styles.connRow}>
             {(linkedAccounts ?? []).map((conn) => {
               const meta = linkableMeta(conn.provider);
@@ -193,7 +194,7 @@ export default function YouScreen() {
             title="Your numbers, once there are some"
             body="You tracks what you save: totals, your daily streak, top topics, and a recap you can share. It starts counting from your first capture on the atlas."
             actions={[
-              { label: 'save your first thing →', onPress: () => router.push('/(tabs)' as never) },
+              { label: 'Save your first thing', onPress: () => router.push('/(tabs)' as never) },
             ]}
           />
         ) : (
@@ -245,14 +246,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
   },
-  heroDot: {
-    position: 'absolute',
-    top: Spacing[4],
-    right: Spacing[4],
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
   bio: { marginTop: Spacing[3], textAlign: 'center', maxWidth: 320 },
   connShelf: {
     marginHorizontal: Spacing[4],
@@ -262,6 +255,7 @@ const styles = StyleSheet.create({
     padding: Spacing[4],
     gap: Spacing[3],
   },
+  connHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   connRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: Spacing[2] },
   connTile: { width: 44, height: 44, borderRadius: Radius.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   connEmpty: { borderStyle: 'dashed' },

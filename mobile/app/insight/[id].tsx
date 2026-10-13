@@ -6,11 +6,12 @@ import { ChevronLeftIcon, ChevronRightIcon, ExternalLinkIcon, PencilIcon } from 
 import { Image } from 'expo-image';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { Accents, FontFamily, FontSize, Radius, Spacing, accentForKey } from '@/constants/theme';
+import { FontFamily, FontSize, Radius, Spacing, accentForKey } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { SectionKicker } from '@/components/ui/SectionKicker';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { InsightLine } from '@/components/InsightLine';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
@@ -21,39 +22,41 @@ import { TopicPickerModal } from '@/components/ui/TopicPickerModal';
 import { SponsoredCard } from '@/components/ui/SponsoredCard';
 import { asInsightSource, track } from '@/lib/analytics';
 import { TUTORIAL_DEMO_CAPTURE, TUTORIAL_DEMO_NODE } from '@/constants/tutorialSteps';
-import type { CaptureDetail } from '@/types/api';
+import type { CaptureDetail, CaptureKind, MemoryEdgeType } from '@/types/api';
 
 /** How long after a capture the screen keeps a place open for its READING. */
 const READING_WAIT_MS = 30_000;
 
+const KIND_LABELS: Record<CaptureKind, string> = {
+  LINK: 'Link',
+  TEXT: 'Note',
+  QUOTE: 'Quote',
+  IMAGE: 'Image',
+};
+
+const EDGE_LABELS: Record<MemoryEdgeType, string> = {
+  RECURS: 'Recurs',
+  REINFORCES: 'Reinforces',
+  CONTRADICTS: 'Contradicts',
+  EVOLVES_FROM: 'Evolves from',
+  RELATED: 'Related',
+};
+
 /**
- * One block of the read: a kicker, a heading, and its body, on card stock.
- *
- * The page used to be four `h3`s and their paragraphs stacked on a bare
- * background with nothing but vertical space between them, which gave the eye
- * no way to tell where one part ended and the next began — it read as one
- * undifferentiated column. The kicker is the app's mono `label` in the
- * section's own accent, matched by a short tick beside it: the same
- * colour-plus-mark grammar the Atlas uses for a region and the archive for a
- * topic, so nothing new has to be learned to read it.
+ * One block of the read: a section title and its body, on card stock, so the
+ * eye can tell where one part ends and the next begins.
  */
 function Section({
-  kicker, title, accent, right, children,
+  title, right, children,
 }: {
-  kicker: string;
   title: string;
-  accent: string;
   right?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const c = useThemeColors();
   return (
     <View style={[styles.section, { backgroundColor: c.surface, borderColor: c.border }]}>
-      <View style={styles.sectionHead}>
-        <SectionKicker label={kicker} accent={accent} />
-        {right}
-      </View>
-      <Text variant="h3" style={styles.sectionTitle}>{title}</Text>
+      <SectionKicker label={title} action={right} />
       {children}
     </View>
   );
@@ -207,7 +210,7 @@ export default function InsightDetailScreen() {
         </View>
         {/* The loader gets the page tone, not the band's. */}
         <View style={{ flex: 1, backgroundColor: c.background }}>
-          <AsciiLoader fill size={96} message={['pulling it from memory…', 'unfolding the insight…']} />
+          <AsciiLoader fill size={96} message="Loading" />
         </View>
       </SafeAreaView>
     );
@@ -278,8 +281,8 @@ export default function InsightDetailScreen() {
         <Pressable onPress={() => router.back()} accessibilityLabel="Back">
           <ChevronLeftIcon size={22} color={c.deepInk} />
         </Pressable>
-        <Text variant="monoSmall" numberOfLines={1} style={{ flex: 1, textAlign: 'center', color: c.deepInkMuted }}>
-          insight
+        <Text variant="headline" numberOfLines={1} style={{ flex: 1, textAlign: 'center', color: c.deepInk }}>
+          Insight
         </Text>
         <View style={{ width: 28 }} />
       </View>
@@ -302,7 +305,7 @@ export default function InsightDetailScreen() {
 
         <View style={styles.block}>
           <View style={styles.badges}>
-            <Badge label={data.kind} variant="edge" />
+            <Badge label={KIND_LABELS[data.kind] ?? 'Note'} variant="edge" />
             {[...data.topics]
               // General fields first (filled), then specific topics (outline).
               .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'general' ? -1 : 1))
@@ -316,16 +319,13 @@ export default function InsightDetailScreen() {
                   selected={t.kind === 'general'}
                 />
               ))}
-            <Pressable
+            <Button
+              label="Move to another topic"
+              variant="tertiary"
+              size="sm"
               onPress={() => setMovePickerVisible(true)}
-              hitSlop={8}
-              accessibilityRole="button"
               accessibilityLabel="Move to another topic"
-            >
-              <Text variant="monoSmall" color="muted">
-                move to… →
-              </Text>
-            </Pressable>
+            />
           </View>
           {editingTitle ? (
             <View>
@@ -339,18 +339,8 @@ export default function InsightDetailScreen() {
                 onSubmitEditing={() => void saveTitle()}
               />
               <View style={styles.titleActions}>
-                <Pressable onPress={() => setEditingTitle(false)} disabled={savingTitle}>
-                  <Text variant="monoSmall" color="muted">cancel</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => void saveTitle()}
-                  disabled={savingTitle}
-                  style={[styles.saveBtn, { backgroundColor: c.text, opacity: savingTitle ? 0.5 : 1 }]}
-                >
-                  <Text variant="monoSmall" style={{ color: c.background }}>
-                    {savingTitle ? 'saving…' : 'save →'}
-                  </Text>
-                </Pressable>
+                <Button label="Cancel" variant="tertiary" size="sm" disabled={savingTitle} onPress={() => setEditingTitle(false)} />
+                <Button label="Save" variant="primary" size="sm" loading={savingTitle} onPress={() => void saveTitle()} />
               </View>
             </View>
           ) : (
@@ -367,7 +357,7 @@ export default function InsightDetailScreen() {
             </View>
           )}
           {author ? (
-            <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[2] }}>
+            <Text variant="subheadline" color="secondary" style={{ marginTop: Spacing[2] }}>
               {author}
             </Text>
           ) : null}
@@ -378,11 +368,11 @@ export default function InsightDetailScreen() {
               accessibilityRole="link"
             >
               <ExternalLinkIcon size={14} color={c.text} />
-              <Text variant="monoSmall" color="primary" style={{ marginLeft: 6 }}>
+              <Text variant="subheadline" color="primary" style={{ marginLeft: 6 }}>
                 Source
               </Text>
               {data.origin && data.origin !== 'import' ? (
-                <Text variant="monoSmall" color="faint" style={{ marginLeft: 8 }}>
+                <Text variant="caption" color="faint" style={{ marginLeft: 8 }}>
                   {`via ${data.origin}`}
                 </Text>
               ) : null}
@@ -397,9 +387,7 @@ export default function InsightDetailScreen() {
 
         {showAbout ? (
           <Section
-            kicker="context"
             title="About this capture"
-            accent={Accents.slate}
             right={!editing && !saving ? (
               <Pressable
                 onPress={() => startEdit(data.userContext ?? aboutText ?? '')}
@@ -413,50 +401,46 @@ export default function InsightDetailScreen() {
             {saving ? (
               <View style={styles.savingRow}>
                 <LoadingDots size={4} />
-                <Text variant="monoSmall" color="muted">re-mapping connections…</Text>
+                <Text variant="caption" color="muted">Updating connections</Text>
               </View>
             ) : editing ? (
               <View style={[styles.editBox, { borderColor: c.border }]}>
                 {!aboutText && (
-                  <Text variant="mono" color="muted" style={styles.editPrompt}>
-                    We couldn't read this source too well — please explain what it's about.
+                  <Text variant="subheadline" color="secondary" style={styles.editPrompt}>
+                    We couldn't read this source well. Say what it's about.
                   </Text>
                 )}
                 <TextInput
-                  style={[styles.editInput, { color: c.text, fontFamily: FontFamily.mono, fontSize: FontSize.base }]}
+                  style={[styles.editInput, { color: c.text, fontFamily: FontFamily.sans, fontSize: FontSize.md }]}
                   value={contextDraft}
                   onChangeText={setContextDraft}
-                  placeholder="use voice or type."
+                  placeholder="Use voice or type"
                   placeholderTextColor={c.muted}
                   multiline
                   autoFocus={focusEdit}
                 />
                 {!!editError && (
-                  <Text variant="monoSmall" color="danger" style={{ marginTop: Spacing[2] }}>{editError}</Text>
+                  <Text variant="caption" color="danger" style={{ marginTop: Spacing[2] }}>{editError}</Text>
                 )}
                 <View style={styles.editActions}>
                   <VoiceNoteButton
                     onText={(t) => setContextDraft((prev) => (prev.trim() ? `${prev.trim()} ${t}` : t))}
                     onError={setEditError}
                   />
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing[4] }}>
-                    <Pressable onPress={() => { setEditing(false); setEditError(''); }}>
-                      <Text variant="monoSmall" color="muted">cancel</Text>
-                    </Pressable>
-                    <Pressable onPress={() => void saveContext()} style={[styles.saveBtn, { backgroundColor: c.text }]}>
-                      <Text variant="monoSmall" style={{ color: c.background }}>save →</Text>
-                    </Pressable>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing[2] }}>
+                    <Button label="Cancel" variant="tertiary" size="sm" onPress={() => { setEditing(false); setEditError(''); }} />
+                    <Button label="Save" variant="primary" size="sm" onPress={() => void saveContext()} />
                   </View>
                 </View>
               </View>
             ) : (
               <>
                 <Text variant="body" color="secondary" style={{ marginTop: Spacing[4] }}>
-                  {aboutText ?? "We couldn't read this source too well — please explain what it's about."}
+                  {aboutText ?? "We couldn't read this source well. Say what it's about."}
                 </Text>
                 {data.userContext ? (
-                  <Text variant="monoSmall" color="muted" style={{ marginTop: Spacing[2] }}>
-                    in your words
+                  <Text variant="caption" color="muted" style={{ marginTop: Spacing[2] }}>
+                    In your words
                   </Text>
                 ) : null}
               </>
@@ -465,18 +449,18 @@ export default function InsightDetailScreen() {
         ) : null}
 
         {showReaction ? (
-          <Section kicker="you said" title="Your reaction" accent={Accents.clay}>
+          <Section title="Your reaction">
             <Text variant="body" color="secondary" style={{ marginTop: Spacing[4] }}>
               {data.reaction}
             </Text>
           </Section>
         ) : null}
 
-        <Section kicker="what it means" title="Insight" accent={Accents.amber}>
+        <Section title="Insight">
           {awaitingReading ? (
             <View style={styles.savingRow}>
               <LoadingDots size={4} />
-              <Text variant="monoSmall" color="muted">reading it closely…</Text>
+              <Text variant="caption" color="muted">Reading</Text>
             </View>
           ) : null}
           {data.insights.map((ins) => (
@@ -491,7 +475,7 @@ export default function InsightDetailScreen() {
             very bottom it sat below the last tappable row and was never seen. */}
         <SponsoredCard />
 
-        <Section kicker="nearby" title="Connected memory" accent={Accents.moss}>
+        <Section title="Connected memory">
           {data.related.length === 0 ? (
             <Text variant="body" color="muted" style={{ marginTop: Spacing[4] }}>
               Nothing connected yet. Links appear as you save more.
@@ -513,10 +497,10 @@ export default function InsightDetailScreen() {
                     <Text variant="bodyMedium" numberOfLines={3}>{r.title}</Text>
                     <View style={styles.relMeta}>
                       {!!relAccent && <View style={[styles.relDot, { backgroundColor: relAccent }]} />}
-                      <Text variant="monoSmall" color="faint" numberOfLines={1} style={{ flex: 1 }}>
-                        {relTopic ? relTopic.name.toLowerCase() : 'linked'}
+                      <Text variant="caption" color="faint" numberOfLines={1} style={{ flex: 1 }}>
+                        {relTopic ? relTopic.name : 'Linked'}
                       </Text>
-                      {r.edgeType ? <Badge label={r.edgeType} variant="edge" small /> : null}
+                      {r.edgeType ? <Badge label={EDGE_LABELS[r.edgeType] ?? 'Related'} variant="edge" small /> : null}
                     </View>
                   </View>
                   <ChevronRightIcon size={16} color={c.faint} />
@@ -555,9 +539,6 @@ const styles = StyleSheet.create({
   content: { paddingBottom: Spacing[16] },
   cover: { width: '100%', height: 200, backgroundColor: 'transparent' },
   block: { paddingHorizontal: Spacing[6], paddingTop: Spacing[6] },
-  // alignItems matters: the row mixes padded chips with the bare "move to…"
-  // text, and the default `stretch` pinned that text to the top of the line
-  // while the chips centred their own labels — so it sat a few px high.
   badges: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -573,19 +554,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: Radius.lg,
   },
-  sectionHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 20,
-  },
-  sectionTitle: { marginTop: Spacing[2] },
   aboutHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   editBtn: { padding: Spacing[2] },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing[2] },
   titleInput: {
-    fontFamily: FontFamily.serif,
+    fontFamily: FontFamily.sans,
     fontSize: FontSize['2xl'],
+    fontWeight: '700',
     borderWidth: 1,
     borderRadius: Radius.sm,
     padding: Spacing[3],
@@ -594,7 +569,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: Spacing[4],
+    gap: Spacing[2],
     marginTop: Spacing[3],
   },
   savingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2], marginTop: Spacing[4] },
@@ -604,7 +579,6 @@ const styles = StyleSheet.create({
   // what made this box read as two unrelated pieces.
   editPrompt: { fontSize: FontSize.base, lineHeight: FontSize.base * 1.5, marginBottom: Spacing[3] },
   editActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing[3] },
-  saveBtn: { paddingVertical: Spacing[2], paddingHorizontal: Spacing[4], borderRadius: Radius.xs },
   rel: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -17,14 +17,14 @@ export default function NotFoundScreen() {
             404
           </Text>
           <Text variant="h3" style={styles.title}>
-            Nothing here.
+            Nothing here
           </Text>
           <Text variant="body" color="secondary" style={styles.body}>
             That route is gone or never existed.
           </Text>
           <Link href="/(tabs)" style={styles.link}>
             <Text variant="bodyMedium" color="accent">
-              Back to capture →
+              Back to capture
             </Text>
           </Link>
         </View>

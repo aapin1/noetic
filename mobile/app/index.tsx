@@ -4,7 +4,6 @@ import {
   Animated,
   Dimensions,
   Easing,
-  Pressable,
   StyleSheet,
   View,
 } from 'react-native';
@@ -12,7 +11,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { Redirect } from 'expo-router';
-import { FontFamily, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -23,63 +22,15 @@ import { MusesIntro } from '@/components/landing/MusesIntro';
 const { width: SCREEN_W } = Dimensions.get('window');
 const BRAIN_SIZE = Math.min(SCREEN_W * 0.8, 340);
 
-const TAGLINE = '> save. connect. remember.';
-const RETURNING = '> welcome back';
-const TYPE_MS = 55;
+const TAGLINE = 'Save. Connect. Remember.';
+const RETURNING = 'Welcome back';
 
 /** Once the intro has handed off, the haze drops back so it never competes with the CTA. */
 const HAZE_SETTLED = 0.6;
 
-/** A fast profile fetch used to cut the welcome line off mid-word. Hold the
- * redirect until it has finished typing, plus a beat to read it. */
-const WELCOME_MS = RETURNING.length * TYPE_MS + 420;
-
-/** Types a line out one character at a time, then blinks a cursor. */
-function TypedTagline({
-  color,
-  start,
-  text = TAGLINE,
-}: {
-  color: string;
-  start: boolean;
-  text?: string;
-}) {
-  const [chars, setChars] = useState(0);
-  const cursor = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    if (!start) return;
-    const t = setInterval(() => {
-      setChars((n) => {
-        if (n >= text.length) { clearInterval(t); return n; }
-        return n + 1;
-      });
-    }, TYPE_MS);
-    return () => clearInterval(t);
-  }, [start, text]);
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(cursor, { toValue: 0, duration: 90, delay: 420, useNativeDriver: true }),
-        Animated.timing(cursor, { toValue: 1, duration: 90, delay: 420, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [cursor]);
-
-  return (
-    <View style={styles.taglineRow}>
-      <Text variant="monoSmall" style={{ color, letterSpacing: 1 }}>
-        {text.slice(0, chars)}
-      </Text>
-      <Animated.Text style={{ fontFamily: FontFamily.mono, fontSize: 12, color, opacity: cursor }}>
-        _
-      </Animated.Text>
-    </View>
-  );
-}
+/** A fast profile fetch used to cut the welcome line off. Hold the redirect
+ * long enough for it to be read. */
+const WELCOME_MS = 1200;
 
 export default function LandingScreen() {
   const c = useThemeColors();
@@ -112,7 +63,7 @@ export default function LandingScreen() {
   // seconds before being redirected.
   //
   // It then stays true PAST the profile arriving, until the welcome line has
-  // finished writing itself — otherwise a fast fetch cut it off at "> welcome b".
+  // been on screen long enough to read.
   const returning = isAuthenticated && (isLoading || !welcomeDone);
   const signedOut = !isAuthenticated && !isLoading;
 
@@ -198,11 +149,9 @@ export default function LandingScreen() {
             <Animated.View style={{ transform: [{ scale: breathScale }, { rotate: swayRotate }] }}>
               <Brain size={BRAIN_SIZE} density={72} intensity={0.85} />
             </Animated.View>
-            <TypedTagline
-              color={c.muted}
-              start={contentIn}
-              text={returning ? RETURNING : TAGLINE}
-            />
+            <Text variant="subheadline" color="secondary" style={styles.tagline}>
+              {returning ? RETURNING : TAGLINE}
+            </Text>
           </Animated.View>
 
           {!returning && (
@@ -227,11 +176,13 @@ export default function LandingScreen() {
                   onPress={() => router.push('/(auth)/sign-up')}
                   style={styles.cta}
                 />
-                <Pressable onPress={() => router.push('/(auth)/sign-in')} style={styles.secondary}>
-                  <Text variant="monoSmall" color="muted">
-                    Sign in
-                  </Text>
-                </Pressable>
+                <Button
+                  label="Sign in"
+                  variant="tertiary"
+                  size="md"
+                  onPress={() => router.push('/(auth)/sign-in')}
+                  style={styles.secondary}
+                />
               </Animated.View>
 
               {signedOut && !introDone && (
@@ -263,12 +214,8 @@ const styles = StyleSheet.create({
     left: Spacing[6],
   },
   brain: { alignItems: 'center', marginBottom: Spacing[8] },
-  taglineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: Spacing[4],
-  },
+  tagline: { marginTop: Spacing[4] },
   line: { textAlign: 'center' },
   cta: { marginTop: Spacing[10] },
-  secondary: { marginTop: Spacing[6], alignSelf: 'center', padding: Spacing[2] },
+  secondary: { marginTop: Spacing[4], alignSelf: 'center' },
 });

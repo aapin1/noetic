@@ -13,6 +13,7 @@ import Animated, {
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { Button } from '@/components/ui/Button';
 import type { ThreadSynthesis } from '@/types/api';
 import { DETAIL_PAGE_BOTTOM, DetailShell, useStageInk } from './DetailShell';
 
@@ -39,7 +40,7 @@ const DRIFT_FAR_EDGE = SW * 0.52;
 const BOW_MAX = SW * 0.17;
 
 // A drift box's height grows with its text so the note never gets clipped.
-const DRIFT_LABEL_H = 34; // "DRIFT" label + margin
+const DRIFT_LABEL_H = 34; // "Drift" heading + margin
 const DRIFT_LINE_H = 20;
 const DRIFT_CHARS_PER_LINE = 30; // approx chars that fit the drift column width
 const DRIFT_PAD_V = Spacing[2] * 2;
@@ -213,15 +214,15 @@ export function TemporalSpine({
     new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
   return (
-    <DetailShell typeLabel="THREAD" accent={color} background={background} onClose={onClose}>
+    <DetailShell typeLabel="Thread" accent={color} background={background} onClose={onClose}>
       <Animated.ScrollView onScroll={onScroll} scrollEventThrottle={16} showsVerticalScrollIndicator={false}>
         {/* Thread header */}
         <View style={styles.head}>
           <Text variant="h2" style={{ color: ink(0.94) }}>{data.topicName}</Text>
-          <Text variant="monoSmall" style={{ color: ink(0.42), marginTop: Spacing[1] }}>
-            {data.captureCount} captures · oldest first
+          <Text variant="subheadline" color="secondary" style={{ marginTop: Spacing[1] }}>
+            {data.captureCount} captures, oldest first
           </Text>
-          <Text variant="monoSmall" style={{ color, marginTop: Spacing[1], opacity: 0.85 }}>
+          <Text variant="caption" style={{ color, marginTop: Spacing[1], opacity: 0.85 }}>
             Tap a point to see the capture
           </Text>
         </View>
@@ -248,7 +249,7 @@ export function TemporalSpine({
               return (
                 <FadeInBlock key={`d-${i}`} top={row.y} height={row.height} side={row.side} scrollY={scrollY}>
                   <View style={[styles.drift, { borderLeftColor: color }]}>
-                    <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>DRIFT</Text>
+                    <Text variant="headline" style={{ color }}>Drift</Text>
                     <Text variant="body" style={{ color: ink(0.82), marginTop: Spacing[1] }}>
                       {row.text}
                     </Text>
@@ -259,9 +260,9 @@ export function TemporalSpine({
             const onLeft = row.x < SW / 2;
             return (
               <React.Fragment key={`n-${row.id}`}>
-                {/* date whispers under the point */}
+                {/* date under the point */}
                 <Text
-                  variant="monoSmall"
+                  variant="caption"
                   style={[styles.date, { color: ink(0.49), left: row.x - 40, top: row.y + NODE_H / 2 + 16 }]}
                 >
                   {fmtDate(row.capturedAt)}
@@ -282,15 +283,19 @@ export function TemporalSpine({
                         : { right: SW - row.x + 30, left: Spacing[4] },
                     ]}
                   >
-                    <Text variant="monoSmall" style={{ color: ink(0.4) }}>
+                    <Text variant="caption" style={{ color: ink(0.4) }}>
                       {fmtDate(row.capturedAt)}
                     </Text>
                     <Text variant="bodyMedium" numberOfLines={3} style={{ color: ink(0.92), marginTop: 2 }}>
                       {row.label}
                     </Text>
-                    <Pressable onPress={() => onOpenItem(row.id)} hitSlop={8} style={{ marginTop: Spacing[2] }}>
-                      <Text variant="monoSmall" style={{ color }}>Open capture →</Text>
-                    </Pressable>
+                    <Button
+                      label="Open capture"
+                      variant="secondary"
+                      size="sm"
+                      onPress={() => onOpenItem(row.id)}
+                      style={{ marginTop: Spacing[2], alignSelf: 'flex-start' }}
+                    />
                   </Animated.View>
                 )}
               </React.Fragment>
@@ -302,23 +307,19 @@ export function TemporalSpine({
         <FadeInSection scrollY={scrollY}>
           <View style={styles.end}>
             <View style={[styles.endMarker, { backgroundColor: color }]} />
-            <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>WHERE YOU'VE LANDED</Text>
-            <Text variant="h3" style={{ color: ink(0.94), marginTop: Spacing[3] }}>
+            <Text variant="h4" style={{ color: ink(0.94) }}>Where you've landed</Text>
+            <Text variant="serifLg" style={{ color: ink(0.94), marginTop: Spacing[3] }}>
               {data.position}
             </Text>
-            <Text variant="monoSmall" style={{ color, letterSpacing: 2, marginTop: Spacing[6] }}>
-              OPEN QUESTION
+            <Text variant="h4" style={{ color: ink(0.94), marginTop: Spacing[6] }}>
+              Open question
             </Text>
             <Text variant="body" style={{ color: ink(0.78), marginTop: Spacing[2] }}>
               {data.openQuestion}
             </Text>
             <View style={[styles.ctaRow, { borderTopColor: ink(0.18) }]}>
-              <Pressable onPress={onContinueCompanion} hitSlop={8}>
-                <Text variant="monoSmall" style={{ color: ink(0.6) }}>Continue in companion →</Text>
-              </Pressable>
-              <Pressable onPress={onViewAtlas} hitSlop={8}>
-                <Text variant="monoSmall" style={{ color: ink(0.6) }}>View in Atlas →</Text>
-              </Pressable>
+              <Button label="Continue in companion" variant="secondary" size="sm" onPress={onContinueCompanion} />
+              <Button label="Open in Atlas" variant="secondary" size="sm" onPress={onViewAtlas} />
             </View>
           </View>
         </FadeInSection>
@@ -397,7 +398,8 @@ const styles = StyleSheet.create({
   endMarker: { width: 24, height: 2, borderRadius: 1, marginBottom: Spacing[4], opacity: 0.8 },
   ctaRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: Spacing[3],
     marginTop: Spacing[8],
     paddingTop: Spacing[4],
     borderTopWidth: StyleSheet.hairlineWidth,

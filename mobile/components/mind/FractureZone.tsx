@@ -15,6 +15,7 @@ import Animated, {
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { Button } from '@/components/ui/Button';
 import type { ContradictionCard, IntelNode } from '@/types/api';
 import { DETAIL_PAGE_BOTTOM, DetailShell, useStageInk } from './DetailShell';
 
@@ -167,8 +168,8 @@ export function FractureZone({
           {mass.pole.label}
         </Text>
         {mass.satellites.length > 0 ? (
-          <Text variant="monoSmall" style={{ color: ink(0.38), marginTop: 2 }}>
-            +{mass.satellites.length} reinforcing
+          <Text variant="caption" style={{ color: ink(0.38), marginTop: 2 }}>
+            {mass.satellites.length} more on this side
           </Text>
         ) : null}
       </View>
@@ -178,8 +179,8 @@ export function FractureZone({
         accessibilityLabel={`Open capture: ${mass.pole.label}`}
       >
         <Text
-          variant="monoSmall"
-          style={{ color: background, fontWeight: '700', textAlign: 'center', includeFontPadding: false }}
+          variant="headline"
+          style={{ color: background, textAlign: 'center', includeFontPadding: false }}
         >
           {side}
         </Text>
@@ -199,7 +200,7 @@ export function FractureZone({
   );
 
   return (
-    <DetailShell typeLabel="TENSION" accent={color} background={background} onClose={onClose}>
+    <DetailShell typeLabel="Contradiction" accent={color} background={background} onClose={onClose}>
       {/* One continuous page: the rift scrolls away with the text */}
       <ScrollView
         style={styles.scroll}
@@ -237,9 +238,9 @@ export function FractureZone({
       {/* The crux sits at the base of the rift */}
       <View style={styles.below}>
         <View style={[styles.crux, { borderColor: color, backgroundColor: c.surface }]}>
-          <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>THE CRUX</Text>
+          <Text variant="h4" style={{ color: ink(0.94) }}>The crux</Text>
           <Text
-            variant={data.crux ? 'h3' : 'body'}
+            variant={data.crux ? 'serifLg' : 'body'}
             style={{ color: ink(0.94), marginTop: Spacing[2] }}
           >
             {data.crux ?? data.tension}
@@ -252,19 +253,15 @@ export function FractureZone({
         ) : null}
         {data.test ? (
           <View style={[styles.testRow, { borderLeftColor: color }]}>
-            <Text variant="monoSmall" style={{ color, letterSpacing: 2 }}>ONE WAY TO SETTLE IT</Text>
-            <Text variant="bodyMedium" style={{ color: ink(0.9), marginTop: 2 }}>
+            <Text variant="headline" style={{ color: ink(0.94) }}>One way to settle it</Text>
+            <Text variant="body" style={{ color: ink(0.9), marginTop: 2 }}>
               {data.test}
             </Text>
           </View>
         ) : null}
         <View style={[styles.ctaRow, { borderTopColor: ink(0.18) }]}>
-          <Pressable onPress={onContinueCompanion} hitSlop={8}>
-            <Text variant="monoSmall" style={{ color: ink(0.6) }}>Continue in companion →</Text>
-          </Pressable>
-          <Pressable onPress={onViewAtlas} hitSlop={8}>
-            <Text variant="monoSmall" style={{ color: ink(0.6) }}>View in Atlas →</Text>
-          </Pressable>
+          <Button label="Continue in companion" variant="secondary" size="sm" onPress={onContinueCompanion} />
+          <Button label="Open in Atlas" variant="secondary" size="sm" onPress={onViewAtlas} />
         </View>
       </View>
       </ScrollView>
@@ -343,7 +340,8 @@ const styles = StyleSheet.create({
   },
   ctaRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: Spacing[3],
     marginTop: Spacing[8],
     paddingTop: Spacing[4],
     borderTopWidth: StyleSheet.hairlineWidth,

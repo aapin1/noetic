@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react-native';
 
@@ -33,21 +33,7 @@ function OnOff({
   onChange: (next: boolean) => void;
   label: string;
 }) {
-  const c = useThemeColors();
-  return (
-    <Pressable
-      onPress={() => onChange(!value)}
-      hitSlop={8}
-      style={[styles.toggle, { borderColor: value ? c.text : c.border }]}
-      accessibilityRole="switch"
-      accessibilityState={{ checked: value }}
-      accessibilityLabel={label}
-    >
-      <Text variant="monoSmall" color={value ? 'primary' : 'muted'}>
-        {value ? 'on' : 'off'}
-      </Text>
-    </Pressable>
-  );
+  return <Switch value={value} onValueChange={onChange} accessibilityLabel={label} />;
 }
 
 function HourStepper({
@@ -70,7 +56,7 @@ function HourStepper({
       >
         <ChevronLeftIcon size={14} color={c.muted} />
       </Pressable>
-      <Text variant="monoSmall">{hh(value)}</Text>
+      <Text variant="tabular">{hh(value)}</Text>
       <Pressable
         hitSlop={8}
         onPress={() => onChange((value + 1) % 24)}
@@ -96,8 +82,8 @@ function PrefRow({
   return (
     <View style={[styles.row, { borderBottomColor: c.borderSubtle, backgroundColor: c.surface }]}>
       <View style={styles.rowText}>
-        <Text variant="serif">{label}</Text>
-        <Text variant="monoSmall" color="faint" numberOfLines={2} style={styles.rowDescription}>
+        <Text variant="body">{label}</Text>
+        <Text variant="caption" color="muted" numberOfLines={2} style={styles.rowDescription}>
           {description}
         </Text>
       </View>
@@ -150,7 +136,7 @@ export default function NotificationSettingsScreen() {
       <ScreenHeader title="Notifications" variant="title" />
 
       {loading && !data ? (
-        <AsciiLoader fill size={90} message="loading…" />
+        <AsciiLoader fill size={90} message="Loading" />
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {!pushGranted && (
@@ -160,14 +146,15 @@ export default function NotificationSettingsScreen() {
               accessibilityRole="button"
               accessibilityLabel="Open iOS notification settings"
             >
-              <Text variant="monoSmall" color="muted">
-                notifications are off in iOS Settings. turn them on there to get streak reminders
-                and updates from mneme. →
+              <Text variant="caption" color="secondary" style={{ flex: 1 }}>
+                Notifications are off in iOS Settings. Turn them on there to get streak reminders
+                and updates from Mneme.
               </Text>
+              <ChevronRightIcon size={16} color={c.muted} />
             </Pressable>
           )}
 
-          <Text variant="label" color="muted" style={styles.sectionHeader}>
+          <Text variant="caption" color="muted" style={styles.sectionHeader}>
             What arrives
           </Text>
           <View style={[styles.section, { borderColor: c.border }]}>
@@ -206,7 +193,7 @@ export default function NotificationSettingsScreen() {
             />
           </View>
 
-          <Text variant="label" color="muted" style={styles.sectionHeader}>
+          <Text variant="caption" color="muted" style={styles.sectionHeader}>
             Quiet hours
           </Text>
           <View style={[styles.section, { borderColor: c.border }]}>
@@ -233,10 +220,10 @@ export default function NotificationSettingsScreen() {
               }
             />
           </View>
-          <Text variant="monoSmall" color="faint" style={styles.footnote}>
+          <Text variant="caption" color="muted" style={styles.footnote}>
             {quietOff
-              ? 'same start and end — quiet hours are off.'
-              : `pushes hold from ${hh(view.quietHoursStartHour)} to ${hh(view.quietHoursEndHour)}, your local time. nothing is dropped — it waits.`}
+              ? 'Quiet hours are off while the start and end match.'
+              : `Pushes wait from ${hh(view.quietHoursStartHour)} to ${hh(view.quietHoursEndHour)}, your local time. Nothing is dropped.`}
           </Text>
         </ScrollView>
       )}
@@ -248,6 +235,9 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   content: { paddingBottom: Spacing[12] },
   notice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[3],
     marginHorizontal: Spacing[4],
     marginTop: Spacing[4],
     borderWidth: 1,
@@ -273,14 +263,6 @@ const styles = StyleSheet.create({
   },
   rowText: { flex: 1 },
   rowDescription: { marginTop: 2 },
-  toggle: {
-    borderWidth: 1,
-    borderRadius: Radius.xs,
-    paddingVertical: Spacing[2],
-    paddingHorizontal: Spacing[3],
-    minWidth: 44,
-    alignItems: 'center',
-  },
   stepper: {
     flexDirection: 'row',
     alignItems: 'center',
