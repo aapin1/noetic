@@ -599,6 +599,10 @@ export type PolishContext = {
   contentGrounding?: "rich" | "partial" | "thin";
   /** The user's own account of what the content was about — authoritative. */
   userContext?: string;
+  /** The capture is the person's typed words (TEXT/QUOTE), complete as
+   * given. Brevity is then not thinness: a one-line thought or a quotation is
+   * the whole content, and the reading must not be declined for its length. */
+  authored?: boolean;
   topicNames?: string[];
   /**
    * The captures this one sits near, with their substance. A gist (the
@@ -790,7 +794,12 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
           "- pick: the index of the option that would be most news to someone who just finished this content and that does not repeat a move in recent_readings.",
           "- recent_readings lists this user's last few readings, newest first: the move each made and how its note opened. The pick must not repeat a move on that list, and none of your options may open the way any of them opened. A reader who gets the same move or the same sentence shape twice stops reading.",
           "- Write like a sharp editor's margin note, not a form. Never open a note with 'It assumes', 'Many people', 'This claim', 'This overlooks', 'While', 'Research shows'. Banned: 'oversimplifies', 'doesn't address', 'individual differences', 'complexities', 'nuances', any opinion poll ('many believe', 'some would say'), and any unnamed authority ('research shows', 'studies suggest', 'scientists say', 'experts') — name the study, the person, or the number, or make a different move.",
-          "- The line must be grounded in content_text or user_account_of_content. The note may bring in what you know of the world, but must never invent what the content said and must never restate a limitation the content already admits. If the material is too thin to know what it claims (a title, hashtags, a caption, a fragment), set reading to null. A null is better than a guess.",
+          "- The line must be grounded in content_text or user_account_of_content. The note may bring in what you know of the world, but must never invent what the content said and must never restate a limitation the content already admits." +
+            // The null escape exists for scraped debris. Typed text is never
+            // debris, and leaving the clause in alongside the own-text
+            // directive below had the mini model declining "Fundamental
+            // Theorem Of Calculus" as a fragment.
+            (args.authored ? "" : " If the material is too thin to know what it claims (a title, hashtags, a caption, a fragment), set reading to null. A null is better than a guess."),
           "",
         ].join("\n")
       : "",
@@ -818,6 +827,20 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
     // about-a-work rules above govern instead (a known film is not "a short
     // excerpt" — the model knows the whole thing).
     args.mediaContext ? "" : groundingDirective(args.contentGrounding),
+    // Typed text has no source that could have failed, so the "too thin to
+    // know what it claims → null" rule above must not fire on a line that is
+    // short because it is finished. A line has no argument to extract; what
+    // is news about it is where it comes from and what it says taken at its
+    // word.
+    args.authored
+      ? [
+          "THE USER'S OWN TEXT: content_text is what the user typed, complete as given. Nothing was fetched and nothing failed to load, so brevity is not thinness — a one-line thought, an aphorism, a quotation, a line of verse or the name of a theorem is the whole content. Write the reading; never return null because the text is short.",
+          "- First decide whether it is a known quotation, a line from a work, or the name of an idea. If it is, say so in the note: who said it, in what work, in what era or language, the older version it answers or descends from, the tradition it belongs to — only what you reliably know; never guess an attribution.",
+          "- A line has no argument to extract. Read it at its word: say what it actually claims when taken literally, and what that commits the person to.",
+          "- If it names an idea or a result (a theorem, a principle, a school), say what it actually states and the one thing it rests on.",
+          "- If it is a longer note, read what THEY are asserting, not what a source might have argued.",
+        ].join("\n")
+      : "",
     args.userContext
       ? "user_account_of_content is the user's own description of what the content was about — treat it as the authoritative account of the content."
       : "",

@@ -1002,6 +1002,9 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     captureSummary = deriveCaptureSummary(contentDescription, contentBodyText);
   }
 
+  // A typed capture is the person's words in full — there is no source that
+  // could have failed — so its grounding does not depend on its length.
+  const authored = payload.kind === CaptureKind.TEXT || payload.kind === CaptureKind.QUOTE;
   const { contentThin, contentGrounding } = scoreGrounding({
     description: contentDescription,
     bodyText: contentBodyText,
@@ -1009,6 +1012,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
     caption: payload.caption,
     reaction: payload.reaction,
     userContext: payload.userContext,
+    authored,
   });
 
   const classifyDoneAt = Date.now();
@@ -1263,6 +1267,7 @@ export async function captureItem(payload: CapturePayload): Promise<CapturedItem
         itemTitle,
         contentText: combinedText,
         contentGrounding,
+        authored,
         userContext: payload.userContext,
         mediaContext,
         recentReadings,
@@ -1306,6 +1311,7 @@ export async function updateCaptureContext(args: {
     select: {
       id: true,
       userId: true,
+      kind: true,
       rawText: true,
       caption: true,
       reaction: true,
@@ -1349,6 +1355,7 @@ export async function updateCaptureContext(args: {
     .filter(Boolean)
     .join("\n\n");
 
+  const authored = item.kind === CaptureKind.TEXT || item.kind === CaptureKind.QUOTE;
   const { contentGrounding } = scoreGrounding({
     description: contentDescription,
     bodyText: contentBodyText,
@@ -1356,6 +1363,7 @@ export async function updateCaptureContext(args: {
     caption,
     reaction,
     userContext,
+    authored,
   });
 
   const [classified, insightStyle, embedding] = await Promise.all([
@@ -1507,6 +1515,7 @@ export async function updateCaptureContext(args: {
       itemTitle,
       contentText: combinedText,
       contentGrounding,
+      authored,
       userContext,
       mediaContext: mediaContextFor({ origin: item.origin, kind: item.contentItem?.contentType?.name, title: item.contentItem?.title, siteName: item.contentItem?.siteName ?? undefined }),
       recentReadings: recentReadingContext(recentReadings),
