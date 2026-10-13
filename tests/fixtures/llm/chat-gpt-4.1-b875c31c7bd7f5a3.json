@@ -1,0 +1,47 @@
+{
+  "request": {
+    "url": "https://api.openai.com/v1/chat/completions",
+    "endpoint": "chat",
+    "model": "gpt-4.1",
+    "summary": "{\"title\":\"The measurement problem in quantum mechanics asks why a superposition collapses \",\"content_text\":\"The measurement problem in quantum mechanics asks wh"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "chatcmpl-EYdGfao0g5kgXCpPuyFk0sGi0vZQy",
+      "object": "chat.completion",
+      "created": 1791922805,
+      "model": "gpt-4.1-2025-04-14",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"reading\": {\"line\": \"Quantum mechanics predicts many possible outcomes, but only one is ever observed—why remains unsettled.\", \"options\": [{\"move\": \"the counterexample\", \"note\": \"Wigner’s friend scenario shows that even when decoherence occurs, different observers can disagree on when or whether collapse happens.\"}, {\"move\": \"where it comes from\", \"note\": \"John von Neumann first formalized the measurement problem in 1932, distinguishing between quantum evolution and measurement-induced collapse.\"}, {\"move\": \"the sharper version\", \"note\": \"No known physical law specifies what triggers the selection of a single outcome, leaving open whether collapse is a real physical process or just an update of knowledge.\"}], \"pick\": 0}, \"insights\": [{\"index\":0,\"move\":\"first of its kind\",\"headline\":\"No other save under science raises the unresolved question of how quantum possibilities become a single observed fact.\"}]}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 2278,
+        "completion_tokens": 192,
+        "total_tokens": 2470,
+        "prompt_tokens_details": {
+          "cached_tokens": 2048,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "service_tier": "default",
+      "system_fingerprint": "fp_3d141faf3c"
+    }
+  }
+}
