@@ -56,11 +56,19 @@ describe('InsightLine', () => {
     expect(screen.queryByText('the test')).toBeNull();
   });
 
-  it('shows no note label on graph-derived kinds', async () => {
-    await renderScreen(<InsightLine insight={card('NOVELTY', { kicker: 'the test' })} />);
+  it('labels a graph-derived kind with the move its polish named', async () => {
+    await renderScreen(<InsightLine insight={card('CONNECTION', { kicker: 'what it adds' })} />);
+
+    expect(screen.getByText('connection')).toBeTruthy();
+    expect(screen.getByText('what it adds')).toBeTruthy();
+    expect(screen.getByText(NOTE)).toBeTruthy();
+  });
+
+  it('shows a graph-derived kind unlabelled when its polish never landed', async () => {
+    await renderScreen(<InsightLine insight={card('NOVELTY', { dominantTopic: 'psychology' })} />);
 
     expect(screen.getByText('novelty')).toBeTruthy();
-    expect(screen.queryByText('the test')).toBeNull();
+    expect(screen.getByText(NOTE)).toBeTruthy();
   });
 
   it('drops the note label with the body in compact mode', async () => {

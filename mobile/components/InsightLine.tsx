@@ -25,7 +25,11 @@ interface Props {
 export function InsightLine({ insight, compact = false }: Props) {
   const c = useThemeColors();
   const strengthBars = Math.max(1, Math.min(4, Math.round(insight.strength * 4)));
-  const rawKicker = insight.type === 'READING'
+  // Every polished insight names the move it made in evidence.kicker — the
+  // READING's note ("the catch", "where it comes from") and, since the
+  // connection rewrite, the graph-derived kinds too ("what it adds", "where
+  // they split"). The MIRROR carries none: its label is the type itself.
+  const rawKicker = insight.type !== 'MIRROR'
     ? (insight.evidence as { kicker?: unknown } | null)?.kicker
     : undefined;
   const noteKicker = typeof rawKicker === 'string' && rawKicker.trim() ? rawKicker.trim() : null;
@@ -58,11 +62,11 @@ export function InsightLine({ insight, compact = false }: Props) {
       <Text variant={compact ? 'serif' : 'serifLg'} color="primary" style={styles.headline}>
         {insight.headline}
       </Text>
-      {/* A READING is a line and then a move made on it — the catch, where it
-          comes from, the test, the cost — and it names its own move in
-          evidence.kicker. That name labels the note, so the two read as a
-          pair rather than as a headline with a sentence under it, and the
-          label is whatever this reading chose, not one fixed heading. */}
+      {/* An insight is a line and then a move made on it — the catch, where it
+          comes from, what it adds, where they split — and it names its own
+          move in evidence.kicker. That name labels the note, so the two read
+          as a pair rather than as a headline with a sentence under it, and
+          the label is whatever this insight chose, not one fixed heading. */}
       {!compact && insight.body && noteKicker ? (
         <Text variant="label" color="muted" style={styles.noteLabel}>
           {noteKicker}

@@ -573,6 +573,23 @@ function styleDirective(style: InsightStyle): string {
   return "Tone: sharp, declarative, editorial. No hedging, no cheerfulness, no exclamation points.";
 }
 
+/** A related capture as the polish sees it. */
+export type NeighborSubstance = {
+  capturedItemId: string;
+  title: string;
+  edgeType: string;
+  similarity?: number;
+  /** The user's own account, the AI summary, or the note's text; null when only a title is known. */
+  gist: string | null;
+};
+
+/** The user's saves under one topic, as the polish sees them. */
+export type TopicRecord = {
+  topic: string;
+  count: number;
+  items: { title: string; gist: string | null }[];
+};
+
 export type PolishContext = {
   style: InsightStyle;
   itemTitle: string;
@@ -583,7 +600,28 @@ export type PolishContext = {
   /** The user's own account of what the content was about — authoritative. */
   userContext?: string;
   topicNames?: string[];
-  neighborContext?: { title: string; edgeType: string }[];
+  /**
+   * The captures this one sits near, with their substance. A gist (the
+   * user's own account, the AI summary, or the note's text) is what lets the
+   * polish say what two items say to each other; from a title alone it could
+   * only ever restyle the graph statistic. Loaded in the background, after
+   * the response, so it costs the capture no latency.
+   */
+  neighborContext?: NeighborSubstance[];
+  /**
+   * The person's record under this capture's dominant topic — what a PATTERN
+   * or TRAJECTORY draft is actually about. Without it the model can only
+   * count; with it, it can say what the saves have in common that the
+   * topic's name doesn't.
+   */
+  topicContext?: TopicRecord | null;
+  /**
+   * The user's last few graph-derived insights: the move each made and how
+   * it opened, as recentReadings for the READING. The polish must not repeat
+   * either — the same move or the same opening on consecutive captures is
+   * what reads as a template.
+   */
+  recentInsights?: { move?: string; opened_with: string }[];
   /** Set when the capture is the person's own words ABOUT a work (a film
    * review from Letterboxd, book notes from Goodreads). The polish should try
    * to read their words in relation to that work — and say nothing about a
@@ -616,15 +654,31 @@ function groundingDirective(grounding: "rich" | "partial" | "thin" | undefined):
 }
 
 /**
- * The model for the two calls that carry a point of view — the READING's
- * catch and the MIRROR. Both run in the background (latency is free) and the
- * mirror runs once per account, so a stronger model here costs almost nothing
- * per user. Recorded fixtures show the mini model writing "many people
- * believe…" catches — an opinion poll, not a catch — even when told not to;
- * this is the knob to turn if that shows up in production.
+ * The model for the calls that carry a point of view — the polish (the
+ * READING's catch and the connection insights) and the MIRROR. All run in
+ * the background (latency is free) and the mirror runs once per account.
+ *
+ * Defaults to gpt-4.1 rather than the mini model the rest of the pipeline
+ * uses. On the same prompts (2026-10-13, scripts in that session's
+ * scratchpad): gpt-4o-mini wrote "Both X and Y explore…" lists, named the
+ * relation as its move, used banned words, and skipped drafts; gpt-4.1-mini
+ * did the same; gpt-4o followed about half the contract; gpt-4.1 wrote the
+ * connection ("Deep Work reframes Kahneman's System 2 from a description to
+ * a skill you can train") and read the person without accusing them. About
+ * a cent of input per capture at 4.1's list price, all of it off the capture
+ * path. OPENAI_INSIGHT_MODEL overrides.
  */
-const INSIGHT_MODEL = () =>
-  process.env.OPENAI_INSIGHT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+const INSIGHT_MODEL = () => process.env.OPENAI_INSIGHT_MODEL ?? "gpt-4.1";
+
+/**
+ * Em and en dashes out of model prose, deterministically. Every contract
+ * bans them and every model keeps writing them ("not just a distraction—it's
+ * a direct obstacle"); a comma reads the same and the ban stops depending on
+ * compliance.
+ */
+export function plainDashes(text: string): string {
+  return text.replace(/\s*[—–]\s*/g, ", ").replace(/([,:;])\s*,\s*/g, "$1 ").trim();
+}
 
 /** A move name as stored: lowercase, no trailing punctuation, short. */
 function normalizeMove(raw: unknown): string {
@@ -740,21 +794,17 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
           "",
         ].join("\n")
       : "",
-    "HEADLINE:",
-    "- One plain sentence: a specific point about this capture or its link to the user's other saved items.",
-    "- No jargon, name-dropping, or rhetorical flourish for effect. Say the actual point.",
-    "- When related_items exist, name the concrete connection to them (reference the item by title) rather than the category.",
-    "",
-    "BODY:",
-    "- One sentence. Add a second only if it makes a genuinely distinct point — never to pad.",
-    "- Say it directly. No filler ('it may be worth noting', 'this is significant because'), no throat-clearing, no restating the headline.",
-    "- Never use 'interesting', 'important', 'fascinating', 'delve', or em-dash-strung clauses that add length without meaning.",
-    "- Contradiction neighbors: name WHAT is in tension. Reinforcement: say what belief gets strengthened, and whether it's real convergence or just an echo.",
-    "",
-    "OPEN_QUESTION (optional):",
-    "- Include ONLY if a genuinely generative, specific question exists. One short line. Omit it otherwise — never force one.",
-    "",
-    "NOVELTY drafts: one short line, phrased freshly in this capture's own terms, saying that nothing saved yet sits near it — not a formula. Never promise what saving more will do (no 'save more', 'as you add more', 'patterns will emerge'), never call one capture an 'interest'. It is a footnote, not the point.",
+    "INSIGHTS — each draft is a fact about where this capture sits in the person's record (its relation, and the evidence behind it). You write what the fact means. One entry per index; a skipped index shows the reader the bare draft.",
+    "- The subject, by relation:",
+    "    · REINFORCES, RECUR, CONNECTION, CONTRADICTS: this capture and the related item(s) in the evidence. Everything you claim about a related item comes from its gist; with an empty gist, only what its title supports.",
+    "    · PATTERN, TRAJECTORY: the person's saves under the topic (topic_record), read from their gists.",
+    "    · NOVELTY drafts: one short line, phrased freshly in this capture's own terms, saying that nothing saved yet sits near it — not a formula, no hinge, no other item named (there is none), no 'shift' from anything. Never promise what saving more will do (no 'save more', 'as you add more', 'patterns will emerge'), never call one capture an 'interest'. It is a footnote, not the point; its move is 'first of its kind'.",
+    "- The headline is the sentence that exists only because these items share one record. It takes one item's claim as a premise and says what it does to the other: what follows from it, what it breaks, what it explains, what it costs, where it stops holding. So it has a hinge in it — because, so, then, unless, except, which means, only if, the same X but, the reverse of — with the related item named by title on one side of the hinge. A sentence that describes each item in turn has no hinge and is a list, not an insight: never 'X argues A, while Y shows B', never 'both explore / both address / both highlight', never open with 'Both', 'While', 'Your', or this capture's title.",
+    "- RECUR: say what is new here against the closest earlier item, or that nothing is, bluntly. CONTRADICTS: name the point in tension; if the gists do not actually disagree, say what the apparent disagreement really is (scale, era, audience) — never manufacture one.",
+    "- PATTERN, TRAJECTORY: not 'a growing focus on X' or 'a shift toward X' — the reader knows what they saved. Name at least two saves from topic_record by title and say the specific thing they share that the topic's name does not, or the specific thing this one does that they did not, read from their gists.",
+    "- move: what the sentence does, in one to three lowercase words — 'what follows', 'where it breaks', 'what it costs', 'the reverse', 'what it explains', 'what changed', 'the position you take', or your own; never the relation's own name. It is shown as the insight's label. recent_insights lists the last few moves and openings this person was given; use neither again, and treat a hinge as an opening: 'If X is right, then' twice in a row is the same sentence twice, whatever X is. Within this one reply, no two entries share a hinge word or a move.",
+    "- body: one more sentence only if it says something distinct — the detail from the gist that makes the hinge true. No questions back to the reader.",
+    "- Banned: 'The tension lies', 'This contrasts with the belief', 'is significant', 'This captures', 'aligns with', 'reinforcing themes', 'raises questions', 'worth examining', 'worth noting', 'worth asking', 'interesting', 'important', 'fascinating', 'delve', 'explore', 'highlight', 'complement', 'previous readings', 'your interest in', 'your focus on', 'echo', 'pivot', 'journey'. No filler, no throat-clearing, no restating the headline, and no em dashes anywhere: break the sentence instead.",
     "",
     "Do not start with 'This capture', 'This article', or the title verbatim. Do not overstate thin evidence.",
     args.mediaContext
@@ -775,9 +825,34 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
     "",
     "Return strictly valid JSON (no markdown):",
     wantReading
-      ? '{"reading": {"line": "...", "options": [{"move": "...", "note": "..."}, {"move": "...", "note": "..."}, {"move": "...", "note": "..."}], "pick": 0} | null, "insights": [{"index": N, "headline": "...", "body": "...", "open_question": "..."}]}'
-      : '{"insights": [{"index": N, "headline": "...", "body": "...", "open_question": "..."}]}',
+      ? '{"reading": {"line": "...", "options": [{"move": "...", "note": "..."}, {"move": "...", "note": "..."}, {"move": "...", "note": "..."}], "pick": 0} | null, "insights": [{"index": N, "move": "...", "headline": "...", "body": "..."}]}'
+      : '{"insights": [{"index": N, "move": "...", "headline": "...", "body": "..."}]}',
   ].filter(Boolean).join("\n");
+
+  const neighborById = new Map((args.neighborContext ?? []).map((n) => [n.capturedItemId, n]));
+  const describeNeighbor = (n: NeighborSubstance) => ({
+    title: n.title,
+    relationship: n.edgeType,
+    ...(typeof n.similarity === "number" ? { similarity: Number(n.similarity.toFixed(2)) } : {}),
+    gist: n.gist?.slice(0, 400) ?? "",
+  });
+  // What each draft is allowed to claim about: the related items it was
+  // drafted from (by id, so the gist travels with the right title) or the
+  // topic record. A draft whose evidence names nothing the context resolves
+  // falls back to the full related list.
+  const draftEvidence = (draft: InsightDraft) => {
+    const ev = draft.evidence as { capturedItemId?: unknown; neighbors?: { capturedItemId?: unknown }[]; topic?: unknown } | null;
+    const ids = [
+      ...(typeof ev?.capturedItemId === "string" ? [ev.capturedItemId] : []),
+      ...(Array.isArray(ev?.neighbors) ? ev.neighbors.map((n) => n?.capturedItemId).filter((id): id is string => typeof id === "string") : []),
+    ];
+    const related = ids.map((id) => neighborById.get(id)).filter((n): n is NeighborSubstance => Boolean(n));
+    if (draft.type === InsightType.PATTERN || draft.type === InsightType.TRAJECTORY) {
+      return { topic_record: args.topicContext ?? undefined };
+    }
+    if (draft.type === InsightType.NOVELTY) return {};
+    return { related: (related.length > 0 ? related : (args.neighborContext ?? []).slice(0, 3)).map(describeNeighbor) };
+  };
 
   const userMessage = {
     title: args.itemTitle,
@@ -791,15 +866,13 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
     topics: args.topicNames ?? [],
     about_work: args.mediaContext ?? undefined,
     recent_readings: wantReading ? (args.recentReadings ?? []) : undefined,
-    related_items: (args.neighborContext ?? []).map((n) => ({
-      title: n.title,
-      relationship: n.edgeType,
-    })),
+    recent_insights: args.recentInsights ?? [],
+    related_items: (args.neighborContext ?? []).map(describeNeighbor),
     drafts: args.drafts.map((d, i) => ({
       index: i,
-      type: d.type,
-      current_headline: d.headline,
-      current_body: d.body,
+      relation: d.type,
+      fact: d.body,
+      evidence: draftEvidence(d),
     })),
   };
 
@@ -816,8 +889,11 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
         temperature: 0.4,
         // Room for the reading's line and three candidate notes on top of
         // the rewritten drafts. Only one note is kept; the other two are the
-        // price of a real choice, ~150 output tokens on the mini model.
-        max_tokens: 900,
+        // price of a real choice, ~150 output tokens on the mini model. The
+        // drafts themselves now carry substance (a related item's gist, a
+        // topic record) and a move name, so they run longer than restyled
+        // statistics did.
+        max_tokens: 1400,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -835,21 +911,32 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
     if (!content) return { insights: args.drafts, reading: null };
 
     const parsed = JSON.parse(content) as {
-      insights?: { index: number; headline: string; body: string; open_question?: string }[];
+      insights?: { index: number; move?: unknown; headline: string; body: string }[];
       reading?: { line?: unknown; options?: unknown; pick?: unknown } | null;
     };
+    if (process.env.POLISH_DEBUG) {
+      console.log("[polish:debug] request", JSON.stringify(userMessage).slice(0, 6000));
+      console.log("[polish:debug] response", content.slice(0, 4000));
+    }
 
+    // The move travels in evidence.kicker, exactly as the READING's does: the
+    // screen shows it as the insight's label, and the next capture's polish
+    // is told not to make it again.
     const insights = parsed.insights
       ? args.drafts.map((draft, index) => {
         const replacement = parsed.insights?.find((e) => e.index === index);
         if (!replacement?.headline) return draft;
+        const move = normalizeMove(replacement.move);
         return {
           ...draft,
-          headline: replacement.headline.trim(),
-          body: replacement.body?.trim() || draft.body,
+          headline: plainDashes(replacement.headline),
+          // A polished headline with no body stands alone. The draft's body
+          // is the bare graph fact ("Closest to X"), and under a written
+          // sentence it reads as a non-sequitur, not as support.
+          body: plainDashes(replacement.body ?? ""),
           evidence: {
             ...draft.evidence,
-            ...(replacement.open_question ? { open_question: replacement.open_question.trim() } : {}),
+            ...(move ? { kicker: move } : {}),
           },
         };
       })
@@ -869,8 +956,8 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
       line.length > 0 && chosen
         ? {
           type: InsightType.READING,
-          headline: line,
-          body: chosen.note,
+          headline: plainDashes(line),
+          body: plainDashes(chosen.note),
           evidence: { grounding: args.contentGrounding ?? "rich", ...(chosen.move ? { kicker: chosen.move } : {}) },
           strength: 1,
         }
@@ -893,17 +980,72 @@ export type MirrorSubject = {
 };
 
 /**
- * The read at three: one true, specific, slightly uncomfortable sentence about
- * the PERSON, written from their first three captures. Not what the items are
- * about — what the person is collecting. Three saves on mental training, the
- * law of attraction and SAT prep are not "an interest in self-improvement";
- * they are someone collecting techniques for controlling their own mind, and
- * the app can say so at N=3 where every other reflective surface (You,
- * terrain, wrapped) waits for 10, 15, 50 or a year.
+ * Material a read on a stranger must not be written across. The mirror
+ * pattern-matches three saves into one sentence about the person; when one
+ * of the three is a video on breaking a pornography addiction, that sentence
+ * can land somewhere no app should go in a first session. Matched against
+ * titles, gists and topic names; a hit returns null before any call is made.
+ * Broad on purpose — a null costs nothing, and the model is told the same
+ * rule for the cases a word list cannot see.
+ */
+const SENSITIVE_MATERIAL = [
+  // addiction
+  /\baddict\w*/i, /\bsobriety\b/i, /\bsober\b/i, /\brelapse\w*/i, /\brehab\b/i, /\balcoholi\w+/i,
+  /\b(drug|substance) abuse\b/i, /\bgambling\b/i, /\bporn\w*/i, /\bnofap\b/i, /\bquit(ting)? (smoking|drinking|vaping)\b/i,
+  // mental health
+  /\bdepress\w*/i, /\banxi(ety|ous)\b/i, /\bpanic attack/i, /\bsuicid\w*/i, /\bself[- ]harm/i, /\btherap(y|ist)\b/i,
+  /\btrauma\w*/i, /\bptsd\b/i, /\bbipolar\b/i, /\bocd\b/i, /\badhd\b/i, /\bautis\w+/i, /\beating disorder/i,
+  /\banorexi\w+/i, /\bbulimi\w+/i, /\bburnout\b/i, /\bmental (health|illness)\b/i, /\blonel\w+/i,
+  // sexuality
+  /\bsexualit\w+/i, /\bsexual\b/i, /\bsex\b/i, /\bintimacy\b/i, /\berectile\b/i, /\blibido\b/i, /\blgbt\w*/i,
+  /\bqueer\b/i, /\bgay\b/i, /\blesbian\b/i, /\bbisexual\b/i, /\btransgender\b/i, /\bnon-?binary\b/i, /\bcoming out\b/i,
+  // illness
+  /\bcancer\b/i, /\bchemo\w*/i, /\bdiagnos\w+/i, /\bchronic (illness|pain)\b/i, /\bdisease\b/i, /\btumou?r\b/i,
+  /\bterminal(ly)? ill/i, /\bhospice\b/i, /\bdementia\b/i, /\balzheimer\w*/i, /\bparkinson\w*/i, /\bsurgery\b/i,
+  /\bmiscarriage\b/i, /\binfertil\w+/i, /\bivf\b/i, /\bdisabilit\w+/i,
+  // grief
+  /\bgrie(f|ving|ve)\b/i, /\bbereave\w*/i, /\bmourning\b/i, /\bfuneral\b/i, /\bpassed away\b/i, /\bdied\b/i,
+  /\bdying\b/i, /\bwidow\w*/i, /\bdeath of (my|a|our|her|his|their)\b/i,
+  // harm
+  /\babuse\b/i, /\bassault\w*/i, /\brape\b/i, /\bdomestic violence\b/i,
+];
+
+/**
+ * True when any of the captures touches addiction, mental health, sexuality,
+ * illness or grief. Exported for its tests and for the caller, which skips
+ * the mirror entirely on a hit.
+ */
+export function isSensitiveMirrorMaterial(captures: MirrorSubject[]): boolean {
+  return captures.some((capture) => {
+    const text = [capture.title, capture.gist ?? "", ...capture.topics].join("\n");
+    return SENSITIVE_MATERIAL.some((pattern) => pattern.test(text));
+  });
+}
+
+/**
+ * The read at three: one true, specific sentence about the pattern in what a
+ * person collects, written from their first three captures. Not what the
+ * items are about — what they have in common that their topic labels miss.
+ * Coffee timing, "one day I'll study cinema" and a log of every game played
+ * are not "an interest in self-improvement"; they are three rituals for
+ * feeling in control of one's time, and the app can say so at N=3 where
+ * every other reflective surface (You, terrain, wrapped) waits for 10, 15,
+ * 50 or a year.
+ *
+ * The subject is the material, never the person's interior. Three of the
+ * first four mirrors written in production accused the user of something —
+ * "reveals a discomfort with genuine connection", "seeking validation
+ * without ever committing", "the endings you save are someone else's" — and
+ * the earlier contract had licensed exactly that: it asked for "the thing
+ * they keep reaching for (an excuse)" and "what is conspicuously missing".
+ * Banning sentence shapes while inviting the judgment got the judgment in a
+ * new shape. The contract now fixes the subject instead: every clause must be
+ * checkable by a stranger holding only the items.
  *
  * One call per user, ever (the caller guards on an existing MIRROR row).
  * Returns null when the model can't say one true thing — a null is the
- * honest outcome for three hashtag captions, and nothing is shown.
+ * honest outcome for three hashtag captions — and, without a call, when the
+ * material is sensitive (isSensitiveMirrorMaterial).
  */
 export async function generateMirror(args: {
   style: InsightStyle;
@@ -911,24 +1053,40 @@ export async function generateMirror(args: {
 }): Promise<{ headline: string; body: string } | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey || args.captures.length === 0) return null;
+  if (isSensitiveMirrorMaterial(args.captures)) return null;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   const systemPrompt = [
-    `You have seen exactly ${args.captures.length} things a person chose to save — the first of everything they will ever save. Write the read on the person.`,
+    `You have seen exactly ${args.captures.length} things a person chose to save — the first of everything they will ever save. Write the read: one sentence on the pattern in what they collect.`,
+    "",
+    "THE SUBJECT IS THE MATERIAL, NOT THE PERSON'S INTERIOR:",
+    "- The sentence describes a pattern that runs through these particular items — a shape, an angle, a question, a kind of thing — and must be supportable by the items alone. Test every clause with the stranger test: could someone holding only these items, who has never met this person, check it? If a clause needs to know what the person wants, lacks, fears, avoids, is trying to do, or has failed at, it is a guess about a stranger. Cut it.",
+    "- Forbidden outright: any claim about motive, need, fear, lack, avoidance, insecurity, failure, or what they 'keep seeking' or 'keep reaching for'; any 'as if', 'without ever', 'but you', 'reveals'; anything a therapist could have written. No diagnosis, however gentle.",
+    "- It is still about this person's collecting, in second person: 'you' is the one who chose these items, and what the sentence says about you is only what the items show. Say what the items are FOR, not what the person is like: 'three rituals for deciding how a day goes' is about the items and passes; 'you want control' is about the person and fails.",
+    "- Precision is where the discomfort comes from. A read that a list of the topics could have produced ('items about money and behaviour', 'guides to productivity') has failed: the point is what these three share that their labels do not say, said in words the labels would never use.",
+    "",
+    "THE MOVE — re-name the collection. The read's work is one act: call these items what they are, in a word none of them would use for itself — a word for the kind of act each one is (a ritual, a rehearsal, a measurement, a verdict, a permission slip, an audit, a confession, a map, an alibi, a dress rehearsal, a post-mortem, or one of your own) — and say what that kind of act is for in these particular cases. By their labels the items are three topics; what they ARE is three of the same kind of act, and the kind is the read. The re-naming is checkable item by item, and it is the thing the person would not have said about their own saves but cannot deny. That is the only discomfort wanted. The re-naming word must appear in none of the titles, gists or topics; if the best you can do is a label that is already there ('productivity methods', 'items about money'), you have not read them yet.",
+    "Ways to find the word — there is no template and no default; never reuse a sentence shape you have produced before:",
+    "- the kind of thing all of them are (instructions from people describing a system from inside it after it stopped working; measurements; permissions; rehearsals; verdicts)",
+    "- the position every item is taken from — the insider's, the auditor's, the beginner's, the one holding the stopwatch",
+    "- the question all of them are answers to, stated as a question about the world, not about you",
+    "- the one word that appears in all of them in different clothes",
+    "- the scale or horizon they share: one person vs a civilisation, the next week vs the next century",
+    "- the odd one out, and what it has in common with the others anyway",
+    "- the contrast: what these are instead of what their labels suggest — one shape among many, never the default, never a shape you have used before",
     "",
     "READ:",
-    "- One sentence, second person. True, specific, and a little uncomfortable: what this person is actually collecting, not what the items are about.",
-    "- It must be falsifiable — a sentence this person could push back on — and said in the terms these particular items give you, not generic ones.",
-    "- There is no template. Choose the move this set earns: name the thing they keep reaching for (a kind of control, permission, certainty, excuse); name what is conspicuously missing from saves like these; name the question all of them are trying to answer; name what the saving itself looks like (arming, bracing, escaping, rehearsing); or a move of your own. A contrast ('not X but Y') is one move among many — never open with 'You're not', and never use the 'you're not collecting X, you're collecting Y' construction at all; it has become a cliché. A flat declarative, a question, a noticed habit are equally good shapes.",
-    "- Horoscopes are banned: anything that would be true of anyone who saves anything. Banned words: 'insights', 'challenge', 'conventional', 'explore', 'complexities', 'perspectives', 'frameworks', 'curious', 'diverse', 'eclectic', 'wide-ranging', 'interested in', 'passionate', 'journey'.",
-    "- If the items genuinely share nothing, say what the range itself says about how this person reads — still specific to these items, never 'you have varied interests'.",
+    "- One sentence, second person: it is addressed to the person who saved these, so 'you' is in it. Specific to these items and falsifiable: the person could point at one item and say 'that one doesn't fit'. Uncomfortable only because it is accurate, never because it accuses. No dashes.",
+    "- Horoscopes are banned: anything that would be true of anyone who saves anything. Banned words: 'insights', 'challenge', 'conventional', 'explore', 'complexities', 'perspectives', 'frameworks', 'curious', 'diverse', 'eclectic', 'wide-ranging', 'interested in', 'passionate', 'journey', 'reveal', 'revealing', 'various', 'effectively'. Never open with 'You collect', 'You gather', 'Each item is', or any inventory of the items — the re-naming can sit anywhere in the sentence, and a flat declarative, a question or a noticed habit are all good shapes.",
+    "- If the items genuinely share nothing, say what the range itself shows — still in these items' terms, never 'you have varied interests'.",
     "- Do not name the items in the read; that is what BECAUSE is for.",
     "",
     "BECAUSE:",
-    "- One sentence of evidence, in your words, that names the items (short titles are fine) and shows the thread running through them. Do not quote the items back.",
+    "- One sentence of evidence, under thirty words, that names the items (short titles are fine) and shows the thread running through them. Do not quote the items back. No dashes.",
     "",
+    "SENSITIVE MATERIAL: if any item touches addiction, mental health, sexuality, illness or grief — this person's or anyone's — return {\"read\": null}. A read on a person is not the thing to write across material like that.",
     "If the material is only titles and hashtags with no substance to read, return {\"read\": null}. A null is better than a guess.",
     styleDirective(args.style),
     "",
@@ -973,8 +1131,8 @@ export async function generateMirror(args: {
     if (!content) return null;
 
     const parsed = JSON.parse(content) as { read?: unknown; because?: unknown };
-    const read = typeof parsed.read === "string" ? parsed.read.trim() : "";
-    const because = typeof parsed.because === "string" ? parsed.because.trim() : "";
+    const read = typeof parsed.read === "string" ? plainDashes(parsed.read) : "";
+    const because = typeof parsed.because === "string" ? plainDashes(parsed.because) : "";
     if (read.length === 0 || because.length === 0) return null;
     return { headline: read, body: because };
   } catch {

@@ -1,7 +1,7 @@
 import { InsightType } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InsightDraft } from "./insights";
-import { chooseReadingNote, generateMirror, identifyWork, polishInsights } from "./llm";
+import { chooseReadingNote, generateMirror, identifyWork, isSensitiveMirrorMaterial, plainDashes, polishInsights } from "./llm";
 
 const NOVELTY_DRAFT: InsightDraft = {
   type: InsightType.NOVELTY,
@@ -313,5 +313,131 @@ describe("identifyWork", () => {
     delete process.env.OPENAI_API_KEY;
     expect(await identifyWork({ kind: "film", title: "Heat", year: 1995 })).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("generateMirror — the subject is the material", () => {
+  const captures = [
+    { title: "The exact time to drink your coffee", gist: "Wait 90 minutes after waking; avoid afternoon doses.", topics: ["health", "habits"] },
+    { title: "One day I'll study cinema", gist: "Film history, the directors, the grammar of a shot. Not now.", topics: ["film"] },
+    { title: "I track every game I've played", gist: "Every game since 2015 with hours and why I stopped.", topics: ["video games"] },
+  ];
+
+  it("fixes the subject as the items and forbids claims about motive, lack or fear", async () => {
+    const fetchMock = mockChat({ read: "You keep rituals for deciding how a day gets spent.", because: "Coffee timing, a deferred cinema plan and a game log all fix when and how time goes." });
+    await generateMirror({ style: "DIRECT", captures });
+    const prompt = sentBody(fetchMock).messages[0].content;
+    expect(prompt).toMatch(/stranger test/i);
+    expect(prompt).toMatch(/motive, need, fear, lack, avoidance/i);
+    expect(prompt).toMatch(/never because it accuses/i);
+    // The two moves that licensed the accusations are gone.
+    expect(prompt).not.toMatch(/excuse/i);
+    expect(prompt).not.toMatch(/conspicuously missing/i);
+    // The escapes that worked stay.
+    expect(prompt).toMatch(/horoscopes are banned/i);
+    expect(prompt).toMatch(/null is better than a guess/i);
+    expect(prompt).toMatch(/sensitive material/i);
+  });
+
+  it("returns null without a call when any capture touches sensitive material", async () => {
+    const fetchMock = mockChat({ read: "x", because: "y" });
+    const sensitive = [
+      captures[0],
+      { title: "How I finally broke my porn addiction", gist: "The 90-day reboot and relapse patterns.", topics: ["self-improvement"] },
+      captures[2],
+    ];
+    expect(await generateMirror({ style: "DIRECT", captures: sensitive })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("matches sensitive material in the title, the gist, or a topic name", () => {
+    const ok = (title: string, gist: string | null, topics: string[]) => isSensitiveMirrorMaterial([{ title, gist, topics }]);
+    expect(ok("Coping with my mother's dementia", null, [])).toBe(true);
+    expect(ok("A quiet video", "She talks about her miscarriage and the months after.", [])).toBe(true);
+    expect(ok("Three habits", "Habit stacking.", ["mental health"])).toBe(true);
+    expect(ok("Why discipline beats motivation", "Cold showers and fixed wake times.", ["discipline"])).toBe(false);
+    expect(ok("The death of the author", "Barthes on reading without biography.", ["literary theory"])).toBe(false);
+    expect(ok("Transit maps of Europe", "Comparing metro diagrams.", ["design"])).toBe(false);
+  });
+});
+
+describe("polishInsights — connection insights are written from the related items' substance", () => {
+  const drafts: InsightDraft[] = [
+    {
+      type: InsightType.REINFORCES,
+      headline: "Reinforces an earlier capture: The Acceleration of Addictiveness.",
+      body: 'Sits near "The Acceleration of Addictiveness" in both subject and language.',
+      evidence: { capturedItemId: "addict", similarity: 0.62 },
+      strength: 0.62,
+    },
+    {
+      type: InsightType.TRAJECTORY,
+      headline: "Your attention is shifting toward work habits.",
+      body: "3 recent saves on work habits against 0 before.",
+      evidence: { topicId: "wh", name: "work habits", recentCount: 3, priorCount: 0, delta: 3 },
+      strength: 0.7,
+    },
+  ];
+  const neighborContext = [
+    { capturedItemId: "addict", title: "The Acceleration of Addictiveness", edgeType: "REINFORCES", similarity: 0.62, gist: "Technological progress makes products steadily more addictive." },
+    { capturedItemId: "other", title: "Thinking, Fast and Slow", edgeType: "RELATED", similarity: 0.4, gist: "Two systems of thought." },
+  ];
+  const topicContext = { topic: "work habits", count: 3, items: [{ title: "How to Do Great Work", gist: "Choose a field that matches aptitude and interest." }] };
+
+  it("hands each draft the gist of the save it was drafted from, and the topic record to a trajectory", async () => {
+    const fetchMock = mockChat({ reading: null, insights: [] });
+    await polishInsights({ style: "DIRECT", itemTitle: "Deep Work", contentGrounding: "thin", drafts, neighborContext, topicContext, recentInsights: [{ move: "what follows", opened_with: "If is right that" }] });
+    const user = JSON.parse(sentBody(fetchMock).messages[1].content) as {
+      drafts: { relation: string; fact: string; evidence: { related?: { title: string; gist: string }[]; topic_record?: { topic: string } } }[];
+      recent_insights: unknown[];
+    };
+    expect(user.drafts[0].relation).toBe("REINFORCES");
+    expect(user.drafts[0].evidence.related).toEqual([
+      { title: "The Acceleration of Addictiveness", relationship: "REINFORCES", similarity: 0.62, gist: "Technological progress makes products steadily more addictive." },
+    ]);
+    expect(user.drafts[1].evidence.topic_record?.topic).toBe("work habits");
+    expect(user.recent_insights).toEqual([{ move: "what follows", opened_with: "If is right that" }]);
+    const prompt = sentBody(fetchMock).messages[0].content;
+    expect(prompt).toMatch(/hinge/i);
+    expect(prompt).toMatch(/never open with 'Both'/i);
+  });
+
+  it("stores the move as the kicker and never pads a polished headline with the draft's bare fact", async () => {
+    mockChat({
+      reading: null,
+      insights: [
+        { index: 0, move: "What follows.", headline: "If resisting addictive technology is what matters, Deep Work is the manual for it." },
+        { index: 1, move: "what changed", headline: "Great Work and Deep Work both treat attention as the scarce input.", body: "Graham on choosing the field, Newport on holding it." },
+      ],
+    });
+    const result = await polishInsights({ style: "DIRECT", itemTitle: "Deep Work", contentGrounding: "thin", drafts, neighborContext, topicContext });
+    expect(result.insights[0].evidence).toMatchObject({ capturedItemId: "addict", kicker: "what follows" });
+    expect(result.insights[0].body).toBe("");
+    expect(result.insights[1].body).toBe("Graham on choosing the field, Newport on holding it.");
+    expect(result.insights[1].evidence).toMatchObject({ kicker: "what changed" });
+  });
+
+  it("keeps the short draft when the model skips an index", async () => {
+    mockChat({ reading: null, insights: [{ index: 1, move: "what changed", headline: "x", body: "y" }] });
+    const result = await polishInsights({ style: "DIRECT", itemTitle: "Deep Work", contentGrounding: "thin", drafts, neighborContext, topicContext });
+    expect(result.insights[0]).toEqual(drafts[0]);
+    expect(result.insights[0].evidence).not.toHaveProperty("kicker");
+  });
+});
+
+describe("plainDashes", () => {
+  it("turns the dashes every model keeps writing into commas, without doubling punctuation", () => {
+    expect(plainDashes("not just a distraction—it's a direct obstacle")).toBe("not just a distraction, it's a direct obstacle");
+    expect(plainDashes("the edge of this story — most never return")).toBe("the edge of this story, most never return");
+    expect(plainDashes("one rule: — and only one")).toBe("one rule: and only one");
+    expect(plainDashes("a well-known hyphen stays")).toBe("a well-known hyphen stays");
+  });
+
+  it("is applied to the mirror and to polished insights", async () => {
+    mockChat({ read: "You keep scripts — not plans.", because: "Each item rehearses the day—coffee, study, games." });
+    expect(await generateMirror({ style: "DIRECT", captures: [{ title: "a", gist: "b", topics: [] }] })).toEqual({
+      headline: "You keep scripts, not plans.",
+      body: "Each item rehearses the day, coffee, study, games.",
+    });
   });
 });

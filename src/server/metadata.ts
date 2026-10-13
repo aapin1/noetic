@@ -1033,13 +1033,31 @@ export async function fetchMetadata(
   // when the plain result is missing a title or body: when the polite fetch
   // already produced a full read, a slow browser-UA response can't improve it
   // (it was never consulted in that case) and shouldn't hold the capture.
-  const plainPromise = fetchWithTimeout(normalized, {
+  // The normalised form is the canonical key, not necessarily a fetchable
+  // address: the normaliser strips a trailing slash, and Letterboxd (among
+  // others) answers the slashless path with a 403, which read as "this film
+  // couldn't be placed" on every film page a user pasted. Fetch the path the
+  // user actually had; canonicalUrl stays normalised.
+  const fetchTarget = (() => {
+    try {
+      const original = new URL(url);
+      if (original.pathname.length > 1 && original.pathname.endsWith("/") && !new URL(normalized).pathname.endsWith("/")) {
+        const target = new URL(normalized);
+        target.pathname = `${target.pathname}/`;
+        return target.toString();
+      }
+    } catch {
+      // fall through to the normalised form
+    }
+    return normalized;
+  })();
+  const plainPromise = fetchWithTimeout(fetchTarget, {
     headers: {
       "user-agent": "MNEME/1.0 (+https://mneme.app)",
       accept: "text/html,application/xhtml+xml",
     },
   }, 8000).catch(() => undefined);
-  const browserPromise = fetchWithTimeout(normalized, {
+  const browserPromise = fetchWithTimeout(fetchTarget, {
     headers: { ...YT_HEADERS, accept: "text/html,application/xhtml+xml" },
   }, 8000).catch(() => undefined);
 
@@ -1087,7 +1105,7 @@ export async function fetchMetadata(
     try {
       if (session.viaProxy) {
         const res = await session.fetch(
-          normalized,
+          fetchTarget,
           { headers: { ...YT_HEADERS, accept: "text/html,application/xhtml+xml" } },
           12000,
         );
