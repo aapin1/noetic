@@ -3,7 +3,6 @@ import { NotificationStatus, NotificationType } from "@prisma/client";
 import { getEnv } from "@/lib/env";
 import type { DbClient } from "@/server/db";
 import { emailIsConfigured, sendEmail, type EmailMessage } from "@/server/services/email";
-import { GROWTH_TARGET } from "@/server/services/resurface";
 
 /**
  * The first-capture email: the one channel that reaches someone who signed up
@@ -95,7 +94,7 @@ export function firstCaptureEmailFor(args: {
       "",
       "You joined Mneme but haven't saved anything yet, so this is the last reminder we'll send about it.",
       "",
-      `Mneme works best with things you actually spent time on: an article you finished, a film you keep thinking about, a podcast that changed your mind. Save one and your map begins. Around ${GROWTH_TARGET}, it starts showing you how your ideas connect.`,
+      "Mneme works best with things you actually spent time on: an article you finished, a film you keep thinking about, a podcast that changed your mind. Save one and your map begins.",
       "",
       `Open Mneme: ${args.openUrl}`,
       "",
