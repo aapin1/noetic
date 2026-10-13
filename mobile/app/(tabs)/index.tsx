@@ -72,7 +72,7 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { hasAskedForPush, markPushPromptSpent, recordPushDeclined, shouldOfferPush } from '@/lib/storage';
 import { maybeRequestReview, noteCaptureForReview } from '@/lib/review';
 import { TopicPickerModal } from '@/components/ui/TopicPickerModal';
-import { failureReason, track } from '@/lib/analytics';
+import { failureReason, track, type PushAskSurface } from '@/lib/analytics';
 import { useTutorial, useTutorialTarget } from '@/contexts/TutorialContext';
 import { TUTORIAL_DEMO_NODE, TUTORIAL_EXAMPLE_LINK, TUTORIAL_TARGET } from '@/constants/tutorialSteps';
 import {
@@ -3943,11 +3943,11 @@ export default function MapScreen() {
    * requestPermission resolves denied without showing anything, and the only
    * way to the switch is the iOS Settings page for Mneme, so go there.
    */
-  const spendPushAsk = useCallback(() => {
+  const spendPushAsk = useCallback((surface: PushAskSurface) => {
     setPushAsked(true);
     setPushPrimerArmed(false);
     void markPushPromptSpent();
-    void requestPermission().then((ok) => {
+    void requestPermission(surface).then((ok) => {
       if (!ok) void Linking.openSettings();
     });
   }, [requestPermission]);
@@ -3960,9 +3960,16 @@ export default function MapScreen() {
   const [promiseArmed, setPromiseArmed] = useState(false);
 
   /** Arm the card if the ask policy says it is due. Safe to call often. */
-  const maybeAskForPush = useCallback(() => {
+  const pushArmTracked = useRef(false);
+  const maybeAskForPush = useCallback((trigger: 'capture' | 'launch' | 'share') => {
     void shouldOfferPush().then((due) => {
-      if (due) setPushPrimerArmed(true);
+      if (!due) return;
+      setPushPrimerArmed(true);
+      // Once a session: armed-but-never-shown is the gap this measures.
+      if (!pushArmTracked.current) {
+        pushArmTracked.current = true;
+        track('push_ask_armed', { trigger });
+      }
     });
   }, []);
 
@@ -3972,7 +3979,7 @@ export default function MapScreen() {
   // on the map re-arms it, and the policy decides whether it is actually due.
   useEffect(() => {
     if (pushGranted || totalCaptureCount < 1) return;
-    maybeAskForPush();
+    maybeAskForPush('launch');
   }, [pushGranted, totalCaptureCount, maybeAskForPush]);
 
   // Whether the map is the thing the user is currently looking at. The primer
@@ -4007,6 +4014,7 @@ export default function MapScreen() {
     const timer = setTimeout(() => {
       setShowPushPrimer(true);
       setPushPrimerArmed(false);
+      track('push_ask_shown', { surface: 'primer' });
     }, 3000);
     return () => clearTimeout(timer);
   }, [
@@ -4016,12 +4024,14 @@ export default function MapScreen() {
 
   const closePushPrimer = useCallback(() => {
     setShowPushPrimer(false);
+    track('push_ask_answered', { surface: 'primer', choice: 'decline' });
     declinePushAsk();
   }, [declinePushAsk]);
 
   const acceptPushPrimer = useCallback(() => {
     setShowPushPrimer(false);
-    spendPushAsk();
+    track('push_ask_answered', { surface: 'primer', choice: 'accept' });
+    spendPushAsk('primer');
   }, [spendPushAsk]);
 
   // ── the comeback promise ──────────────────────────────────────────────────
@@ -4034,12 +4044,14 @@ export default function MapScreen() {
 
   const closePromise = useCallback(() => {
     setPromiseState(null);
+    track('push_ask_answered', { surface: 'promise', choice: 'decline' });
     declinePushAsk();
   }, [declinePushAsk]);
 
   const acceptPromise = useCallback(() => {
     setPromiseState(null);
-    spendPushAsk();
+    track('push_ask_answered', { surface: 'promise', choice: 'accept' });
+    spendPushAsk('promise');
   }, [spendPushAsk]);
 
   // ── Feature hints for the summary strip ─────────────────────────
@@ -4153,7 +4165,7 @@ export default function MapScreen() {
       // A capture that came in through the OS share sheet is still a first
       // successful capture — without this, someone who starts that way is never
       // asked at all.
-      maybeAskForPush();
+      maybeAskForPush('share');
       noteCaptureForReview();
       setReviewArmed(true);
     });
@@ -4271,7 +4283,7 @@ export default function MapScreen() {
         // landed is the only point where "we'll tell you when something surfaces"
         // describes something the user has just seen work. On launch it would be
         // a stranger asking for a permission the app hasn't earned yet.
-        maybeAskForPush();
+        maybeAskForPush('capture');
         noteCaptureForReview();
         setReviewArmed(true);
         // First in-app link capture is the moment the share extension becomes
@@ -4700,6 +4712,7 @@ export default function MapScreen() {
       setPushPrimerArmed(false);
       disclosure.markSeen(EVENT_FLAGS.promiseOffered);
       setPromiseState({ fragments: graphData?.totalCount ?? 2 });
+      track('push_ask_shown', { surface: 'promise' });
     }, 3000);
     return () => clearTimeout(timer);
   }, [

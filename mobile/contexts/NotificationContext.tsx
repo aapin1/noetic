@@ -6,6 +6,7 @@ import { router } from 'expo-router';
 import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { markPushPromptSpent } from '@/lib/storage';
+import { failureReason, setPushStatus, track, type PushAskSurface } from '@/lib/analytics';
 
 /**
  * Push: permission, token registration, and what happens when a notification is
@@ -63,9 +64,10 @@ interface NotificationContextValue {
   granted: boolean;
   /**
    * Show the system prompt and, if granted, register this device.
-   * Returns whether permission ended up granted. Never throws.
+   * Returns whether permission ended up granted. Never throws. `surface` is
+   * where the ask came from, for analytics.
    */
-  requestPermission: () => Promise<boolean>;
+  requestPermission: (surface: PushAskSurface | 'settings') => Promise<boolean>;
   /**
    * Re-read the OS permission and register if it is now granted, without ever
    * prompting. For the trip out to iOS Settings and back: granting there only
@@ -91,6 +93,8 @@ function getProjectId(): string | undefined {
  * be minted (simulator, no network, revoked permission).
  */
 async function registerToken(): Promise<boolean> {
+  // Which step failed, so a granted-but-tokenless account is diagnosable.
+  let stage = 'token';
   try {
     if (Platform.OS === 'android') {
       // Android requires a channel before anything will display.
@@ -106,13 +110,19 @@ async function registerToken(): Promise<boolean> {
     const { data: token } = await Notifications.getExpoPushTokenAsync(
       projectId ? { projectId } : undefined,
     );
-    if (!token) return false;
+    if (!token) {
+      track('push_token_registered', { ok: false, reason: 'empty_token' });
+      return false;
+    }
 
+    stage = 'register';
     await api.devices.register(token, Platform.OS === 'android' ? 'ANDROID' : 'IOS');
+    track('push_token_registered', { ok: true });
     return true;
-  } catch {
+  } catch (e) {
     // Simulators have no APNs entitlement and always land here. Nothing to do:
     // the user simply doesn't receive pushes on that device.
+    track('push_token_registered', { ok: false, reason: `${stage}:${failureReason(e)}` });
     return false;
   }
 }
@@ -149,6 +159,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     void (async () => {
       try {
         const { status } = await Notifications.getPermissionsAsync();
+        setPushStatus(status);
         if (status !== 'granted') return;
         setGranted(true);
         // Permission is on, so there is nothing left to ask. Recorded here so
@@ -202,12 +213,16 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     return () => sub.remove();
   }, [navigate]);
 
-  const requestPermission = useCallback(async () => {
+  const requestPermission = useCallback(async (surface: PushAskSurface | 'settings') => {
     try {
       const existing = await Notifications.getPermissionsAsync();
+      // iOS only shows its prompt while the answer is still open.
+      const prompted = existing.status !== 'granted' && existing.canAskAgain;
       const status = existing.status === 'granted'
         ? existing.status
         : (await Notifications.requestPermissionsAsync()).status;
+      track('push_permission_result', { surface, status, prompted });
+      setPushStatus(status);
 
       if (status !== 'granted') {
         setGranted(false);
@@ -225,6 +240,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const refreshPermission = useCallback(async () => {
     try {
       const { status } = await Notifications.getPermissionsAsync();
+      setPushStatus(status);
       const isGranted = status === 'granted';
       setGranted(isGranted);
       // Deliberately not guarded by registeredRef: that guard exists to keep one

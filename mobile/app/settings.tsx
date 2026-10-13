@@ -120,7 +120,7 @@ export default function SettingsScreen() {
     // primer may already have spent it. After that requestPermissionsAsync
     // resolves "denied" without displaying anything, so the OS settings app is
     // the only way back — this row exists precisely to make that reachable.
-    const ok = await requestPermission();
+    const ok = await requestPermission('settings');
     if (!ok) await Linking.openSettings();
   };
 

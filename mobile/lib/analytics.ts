@@ -71,6 +71,8 @@ export type CaptureSource = 'composer' | 'share_extension' | 'recognition';
  *  historical dashboards still parse. New accounts only emit `guide`. */
 export type OnboardingStep = 'identity' | 'notifications' | 'walkthrough' | 'guide' | 'welcome-offer' | 'recognition';
 export type TabName = 'atlas' | 'mind' | 'archive' | 'pulse' | 'you';
+/** The two in-app cards that ask for push. */
+export type PushAskSurface = 'primer' | 'promise';
 /**
  * Where an insight was opened from. `unknown` is reachable and intentional:
  * notification deep links route through NotificationContext, which is under
@@ -122,6 +124,18 @@ type EventProps = {
   connection_linked: { provider: string };
   connection_link_failed: { provider: string; reason: string };
   connection_unlinked: { provider: string };
+  /**
+   * The push funnel, one step per event, because almost no account has a token
+   * and without these "never shown" and "shown and declined" look identical.
+   * Armed: the ask became due and is waiting for a quiet moment.
+   */
+  push_ask_armed: { trigger: 'capture' | 'launch' | 'share' };
+  push_ask_shown: { surface: PushAskSurface };
+  push_ask_answered: { surface: PushAskSurface; choice: 'accept' | 'decline' };
+  /** The OS answer. `prompted` false means iOS had already decided and showed nothing. */
+  push_permission_result: { surface: PushAskSurface | 'settings'; status: string; prompted: boolean };
+  /** Permission held, then minting or registering the token. `reason` only on failure. */
+  push_token_registered: { ok: boolean; reason?: string };
 };
 
 export type AnalyticsEvent = keyof EventProps;
@@ -270,6 +284,20 @@ export function track<E extends AnalyticsEvent>(event: E, props: EventProps[E]):
     }
   } catch (e) {
     log('track failed (ignored):', e);
+  }
+}
+
+/**
+ * Records the OS push permission as a person property, read on every
+ * authenticated launch, so "how many people can we reach" is one number in
+ * PostHog rather than a reconstruction from events.
+ */
+export function setPushStatus(status: string): void {
+  try {
+    client?.capture('$set', { $set: { push_status: status } });
+    log('push_status', status);
+  } catch (e) {
+    log('push_status failed (ignored):', e);
   }
 }
 
