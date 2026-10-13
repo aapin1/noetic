@@ -113,7 +113,7 @@ describe("getToday", () => {
 
     expect(first.capture).not.toBeNull();
     expect(first.capture!.id).not.toBe("young");
-    expect(first.capture!.whyNow).toMatch(/^saved \d+ days ago/);
+    expect(first.capture!.whyNow).toMatch(/^Saved \d+ days ago/);
     expect(second.capture!.id).toBe(first.capture!.id);
     expect(first.connection).toBeNull();
   });
@@ -129,7 +129,7 @@ describe("getToday", () => {
     const payload = await getToday({ userId: "u1", db, now: NOW });
 
     expect(payload.capture!.id).toBe("anniv");
-    expect(payload.capture!.whyNow).toBe("a month ago today, you saved this. does it still hold?");
+    expect(payload.capture!.whyNow).toBe("You saved this a month ago today. Does it still hold?");
   });
 
   it("surfaces the strongest edge in either direction with the neighbour's title", async () => {

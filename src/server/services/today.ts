@@ -164,12 +164,13 @@ async function getCollision(
 
 function whyNowLine(summary: CapturedItemSummary, daysAgo: number, anniversary: number | null): string {
   if (anniversary !== null) {
-    return `${anniversaryPhrase(anniversary)} today, you saved this. does it still hold?`;
+    const phrase = anniversaryPhrase(anniversary);
+    return `You saved this ${phrase} today. Does it still hold?`;
   }
   const topic = [...summary.topics].sort((a, b) => b.weight - a.weight)[0]?.name;
   return topic
-    ? `saved ${daysAgo} days ago · filed under ${topic.toLowerCase()}`
-    : `saved ${daysAgo} days ago`;
+    ? `Saved ${daysAgo} days ago, filed under ${topic}`
+    : `Saved ${daysAgo} days ago`;
 }
 
 export async function getToday(args: {
