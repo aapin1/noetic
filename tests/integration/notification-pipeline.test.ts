@@ -253,3 +253,84 @@ describe("the hourly job against a real database", () => {
     }
   });
 });
+
+describe("the first-capture email against a real database", () => {
+  /** Every email the run handed to Resend, parsed back. */
+  function resendSends(): { to: string[]; subject: string; text: string; headers?: Record<string, string> }[] {
+    return (global.fetch as unknown as { mock: { calls: [unknown, { body?: string }?][] } }).mock.calls
+      .filter(([url]) => String(url).includes("api.resend.com"))
+      .map(([, init]) => JSON.parse(String(init?.body)));
+  }
+
+  beforeEach(() => {
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.NEXTAUTH_SECRET ??= "integration-test-secret";
+    process.env.NEXTAUTH_URL ??= "https://mneme.test";
+    process.env.MNEME_BASE_URL ??= "https://mneme.test";
+  });
+
+  async function seedNewcomer(id: string, now: Date, daysAgo: number, withToken = false) {
+    await db.user.create({
+      data: { id, email: `${id}@example.test`, name: `${id} Person`, createdAt: new Date(now.getTime() - daysAgo * DAY) },
+    });
+    await db.userPreference.create({ data: { userId: id, tzOffsetMinutes: 0 } });
+    if (withToken) {
+      await db.deviceToken.create({
+        data: { userId: id, token: `ExponentPushToken[${id}]`, platform: "IOS", provider: "EXPO" },
+      });
+    }
+  }
+
+  it("emails a never-captured, tokenless account once per rung, and never as a push", async () => {
+    const now = sendHourUtc();
+    await seedNewcomer("fresh", now, 6);
+    await seedNewcomer("pushable", now, 6, true);
+
+    const first = await runNotificationJob({ db, now });
+    expect(first.firstCaptureEmail.sent).toBe(1);
+
+    const sends = resendSends();
+    expect(sends.map((s) => s.to[0])).toEqual(["fresh@example.test"]);
+    expect(sends[0]!.subject).toBe("One thing you read or watched lately?");
+    expect(sends[0]!.text).toMatch(/^Hi fresh,/);
+    expect(sends[0]!.headers?.["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
+
+    const ledger = await db.notification.findMany({ where: { recipientId: "fresh" } });
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0]!.status).toBe(NotificationStatus.SENT);
+    expect(ledger[0]!.payload).toEqual({ resurfaceKey: "email:first-capture:5", channel: "email" });
+
+    // The next morning: that rung is spent, and the account is past the last one.
+    await runNotificationJob({ db, now: sendHourUtc(1) });
+    expect(resendSends()).toHaveLength(1);
+  });
+
+  it("stops for good once the unsubscribe link is followed", async () => {
+    const now = sendHourUtc();
+    await seedNewcomer("quitter", now, 1);
+    const { unsubscribeUrl } = await import("@/server/services/first-capture-email");
+    const route = await import("@/app/api/email/unsubscribe/route");
+
+    // Opening the link (or a scanner prefetching it) changes nothing.
+    await route.GET(new Request(unsubscribeUrl("quitter")));
+    expect((await db.userPreference.findUnique({ where: { userId: "quitter" } }))!.emailNudges).toBe(true);
+
+    const res = await route.POST(new Request(unsubscribeUrl("quitter"), { method: "POST" }));
+    expect(res.status).toBe(200);
+    expect((await db.userPreference.findUnique({ where: { userId: "quitter" } }))!.emailNudges).toBe(false);
+
+    await runNotificationJob({ db, now });
+    expect(resendSends()).toHaveLength(0);
+  });
+
+  it("frees the rung when Resend refuses, so the next morning retries", async () => {
+    const now = sendHourUtc();
+    await seedNewcomer("bounced", now, 1);
+    global.fetch = vi.fn(async () => ({ ok: false, status: 403, text: async () => "domain not verified" })) as never;
+
+    const result = await runNotificationJob({ db, now });
+
+    expect(result.firstCaptureEmail.sent).toBe(0);
+    expect(await db.notification.count({ where: { recipientId: "bounced" } })).toBe(0);
+  });
+});

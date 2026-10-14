@@ -1,6 +1,6 @@
 import { InsightType } from "@prisma/client";
 import { describe, expect, it } from "vitest";
-import { draftInsights, NOVELTY_STRENGTH, recentReadingContext, sortInsights } from "./insights";
+import { draftInsights, NOVELTY_STRENGTH, recentInsightContext, recentReadingContext, sortInsights } from "./insights";
 
 /** The old NOVELTY bodies narrated the app's own emptiness and promised value
  * later. None of that language may come back. */
@@ -127,5 +127,65 @@ describe("draftInsights — the thin fallback", () => {
     expect(draft.body).toContain("Sinners (2025)");
     expect(draft.body).not.toContain("paywall");
     expect(draft.evidence).toEqual({ contentThin: true });
+  });
+});
+
+describe("draftInsights — a CONNECTION names saves no other draft covers", () => {
+  const neighbor = (id: string, title: string, edgeType: "REINFORCES" | "RELATED" | "RECURS", similarity: number) => ({
+    capturedItemId: id,
+    title,
+    similarity,
+    topicJaccard: 0.2,
+    edgeType,
+    capturedAt: new Date("2026-10-01"),
+  });
+  const base = {
+    style: "DIRECT" as const,
+    itemTitle: "Deep Work",
+    topicNames: ["work habits"],
+    topicCounts: [{ topicId: "t1", name: "work habits", count: 2 }],
+    shift: null,
+    isFirstCapture: false,
+  };
+
+  it("skips the CONNECTION when the only neighbour is the one REINFORCES already named", () => {
+    const drafts = draftInsights({ ...base, topNeighbors: [neighbor("a", "The Acceleration of Addictiveness", "REINFORCES", 0.62)] });
+    expect(drafts.map((d) => d.type)).toEqual([InsightType.REINFORCES]);
+  });
+
+  it("names only the uncovered neighbours, so two drafts are never about the same save", () => {
+    const drafts = draftInsights({
+      ...base,
+      topNeighbors: [
+        neighbor("a", "The Acceleration of Addictiveness", "REINFORCES", 0.62),
+        neighbor("b", "Thinking, Fast and Slow", "RELATED", 0.4),
+        neighbor("c", "The Scout Mindset", "RELATED", 0.35),
+      ],
+    });
+    const connection = drafts.find((d) => d.type === InsightType.CONNECTION);
+    expect(connection?.headline).toContain("Thinking, Fast and Slow");
+    expect(connection?.headline).not.toContain("Addictiveness");
+    const named = (connection?.evidence as { neighbors: { capturedItemId: string }[] }).neighbors.map((n) => n.capturedItemId);
+    expect(named).toEqual(["b", "c"]);
+  });
+
+  it("draft bodies are the bare fact, not the old three-sentence sermon", () => {
+    const drafts = draftInsights({ ...base, topNeighbors: [neighbor("a", "The Acceleration of Addictiveness", "RECURS", 0.7)] });
+    expect(drafts[0].body.split(/[.!?]\s/).length).toBeLessThanOrEqual(1);
+    expect(drafts[0].body).not.toMatch(/worth asking|unresolved question|echo/i);
+  });
+});
+
+describe("recentInsightContext", () => {
+  it("takes the opening from the headline with the named saves stripped, so two hinges on different titles read as one", () => {
+    const rows = [
+      { headline: "If 'The State of the Culture, 2024' is right that distraction won, then 'Deep Work' is resistance.", evidence: { kicker: "what follows" } },
+      { headline: 'If "Arrival" is right that language reshapes perception, then Whiplash shows discipline reshaping identity.', evidence: { kicker: "what follows" } },
+      { headline: "Because Whiplash shows ambition turning into self-destruction, it explains Great Work's insistence on interest.", evidence: {} },
+    ];
+    const context = recentInsightContext(rows);
+    expect(context[0]).toEqual({ move: "what follows", opened_with: "If is right that" });
+    expect(context[1].opened_with).toBe(context[0].opened_with);
+    expect(context[2]).toEqual({ opened_with: "Because Whiplash shows ambition" });
   });
 });

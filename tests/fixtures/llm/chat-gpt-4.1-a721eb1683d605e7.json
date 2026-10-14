@@ -1,0 +1,47 @@
+{
+  "request": {
+    "url": "https://api.openai.com/v1/chat/completions",
+    "endpoint": "chat",
+    "model": "gpt-4.1",
+    "summary": "{\"title\":\"Willpower is a poor foundation for change; environment design is a better one. M\",\"content_text\":\"Willpower is a poor foundation for change; environme"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "chatcmpl-EYdHRh1iu6HZweRLbfUXJBW2NAyzi",
+      "object": "chat.completion",
+      "created": 1791922853,
+      "model": "gpt-4.1-2025-04-14",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"reading\": {\"line\": \"Changing your surroundings shapes your habits more reliably than sheer effort ever will.\", \"options\": [{\"move\": \"the test\", \"note\": \"If environment really trumps willpower, then people who structure their spaces for success should see lasting behavior change even when their motivation fluctuates.\"}, {\"move\": \"the boundary\", \"note\": \"Environment design works best for habits with clear physical cues—internal habits like thought patterns resist this approach.\"}, {\"move\": \"the cost\", \"note\": \"Relying on environment design can make you dependent on external cues, so when the setting changes, the habit may fall apart.\"}], \"pick\": 0}, \"insights\": [{\"index\":0,\"move\":\"first of its kind\",\"headline\":\"Nothing else you’ve saved under psychology takes environment design as the main lever for behavior change.\"}]}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 2347,
+        "completion_tokens": 178,
+        "total_tokens": 2525,
+        "prompt_tokens_details": {
+          "cached_tokens": 1920,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "service_tier": "default",
+      "system_fingerprint": "fp_3d141faf3c"
+    }
+  }
+}

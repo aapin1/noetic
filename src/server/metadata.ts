@@ -76,6 +76,14 @@ export function scoreContentConfidence(args: {
  * "couldn't be read": the review lands in `reaction`, so a film whose
  * catalogue lookup missed had a paragraph of real writing and was told it had
  * nothing.
+ *
+ * `authored` is the structural signal that the capture IS the person's typed
+ * words (a TEXT or QUOTE capture): there was no source that could have failed
+ * to load, so the pipeline holds all of the content however short it is. The
+ * length thresholds measure how much of a scraped source came back; for typed
+ * text the answer is always "all of it", and the debris filter — built for a
+ * nav label masquerading as an article — would otherwise file "I think,
+ * therefore I am" as a failed scrape and give a first capture no reading.
  */
 export function scoreGrounding(args: {
   description?: string | null;
@@ -84,7 +92,11 @@ export function scoreGrounding(args: {
   caption?: string | null;
   reaction?: string | null;
   userContext?: string | null;
+  authored?: boolean;
 }): { contentThin: boolean; contentGrounding: ContentConfidence } {
+  if (args.authored && (args.text ?? "").trim().length > 0) {
+    return { contentThin: false, contentGrounding: "rich" };
+  }
   const own = [args.bodyText, args.userContext, args.text, args.reaction].filter(Boolean).join("\n");
   return {
     contentThin: !(args.description || args.bodyText || args.text || args.caption || args.reaction || args.userContext),
@@ -1033,13 +1045,31 @@ export async function fetchMetadata(
   // when the plain result is missing a title or body: when the polite fetch
   // already produced a full read, a slow browser-UA response can't improve it
   // (it was never consulted in that case) and shouldn't hold the capture.
-  const plainPromise = fetchWithTimeout(normalized, {
+  // The normalised form is the canonical key, not necessarily a fetchable
+  // address: the normaliser strips a trailing slash, and Letterboxd (among
+  // others) answers the slashless path with a 403, which read as "this film
+  // couldn't be placed" on every film page a user pasted. Fetch the path the
+  // user actually had; canonicalUrl stays normalised.
+  const fetchTarget = (() => {
+    try {
+      const original = new URL(url);
+      if (original.pathname.length > 1 && original.pathname.endsWith("/") && !new URL(normalized).pathname.endsWith("/")) {
+        const target = new URL(normalized);
+        target.pathname = `${target.pathname}/`;
+        return target.toString();
+      }
+    } catch {
+      // fall through to the normalised form
+    }
+    return normalized;
+  })();
+  const plainPromise = fetchWithTimeout(fetchTarget, {
     headers: {
       "user-agent": "MNEME/1.0 (+https://mneme.app)",
       accept: "text/html,application/xhtml+xml",
     },
   }, 8000).catch(() => undefined);
-  const browserPromise = fetchWithTimeout(normalized, {
+  const browserPromise = fetchWithTimeout(fetchTarget, {
     headers: { ...YT_HEADERS, accept: "text/html,application/xhtml+xml" },
   }, 8000).catch(() => undefined);
 
@@ -1087,7 +1117,7 @@ export async function fetchMetadata(
     try {
       if (session.viaProxy) {
         const res = await session.fetch(
-          normalized,
+          fetchTarget,
           { headers: { ...YT_HEADERS, accept: "text/html,application/xhtml+xml" } },
           12000,
         );

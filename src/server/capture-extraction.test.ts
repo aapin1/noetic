@@ -50,6 +50,39 @@ describe("scoreGrounding", () => {
     const grounding = scoreGrounding({ bodyText: "attention decays ".repeat(40), reaction: REVIEW }).contentGrounding;
     expect(grounding).toBe("rich");
   });
+
+  // Typed text is complete as given: there was no page that could have failed,
+  // so a one-line thought is the whole content, not debris from a bad scrape.
+  // Scoring it thin sent "I think, therefore I am" down the same path as a
+  // paywalled page and gave a first capture nothing but the NOVELTY footnote.
+  it("treats a typed one-liner as fully grounded", () => {
+    const { contentThin, contentGrounding } = scoreGrounding({ text: "I think, therefore I am", authored: true });
+    expect(contentThin).toBe(false);
+    expect(contentGrounding).toBe("rich");
+  });
+
+  it("treats a typed paragraph as fully grounded, not as an excerpt", () => {
+    const { contentGrounding } = scoreGrounding({ text: REVIEW, authored: true });
+    expect(contentGrounding).toBe("rich");
+  });
+
+  it("still scores a link whose body came back empty as thin", () => {
+    const { contentThin, contentGrounding } = scoreGrounding({ bodyText: "" });
+    expect(contentThin).toBe(true);
+    expect(contentGrounding).toBe("thin");
+  });
+
+  it("still scores a link whose body is scrape debris as thin", () => {
+    const { contentThin, contentGrounding } = scoreGrounding({
+      bodyText: "Subscribe Sign in Watch later Copy link Tap to unmute",
+    });
+    expect(contentThin).toBe(false);
+    expect(contentGrounding).toBe("thin");
+  });
+
+  it("does not let the authored flag rescue an empty text", () => {
+    expect(scoreGrounding({ text: "   ", authored: true }).contentGrounding).toBe("thin");
+  });
 });
 
 describe("JSON-LD extraction", () => {

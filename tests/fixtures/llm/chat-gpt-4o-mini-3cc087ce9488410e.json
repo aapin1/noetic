@@ -1,0 +1,47 @@
+{
+  "request": {
+    "url": "https://api.openai.com/v1/chat/completions",
+    "endpoint": "chat",
+    "model": "gpt-4o-mini",
+    "summary": "{\"title\":\"The measurement problem in quantum mechanics asks why a superposition collapses \",\"content_text\":\"The measurement problem in quantum mechanics asks wh"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "chatcmpl-EYcXaWkK1NZ36SRw8l8CgiALYjqIu",
+      "object": "chat.completion",
+      "created": 1791920010,
+      "model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"reading\":{\"line\":\"Decoherence describes how interactions with the environment create the appearance of measurement collapse but does not clarify the selection of a specific outcome.\",\"options\":[{\"move\":\"the boundary\",\"note\":\"Decoherence applies primarily to closed systems and does not account for the role of observers in selecting outcomes.\"},{\"move\":\"the counterexample\",\"note\":\"Decoherence cannot explain scenarios where measurement outcomes appear to contradict classical probabilities, such as in entangled states.\"},{\"move\":\"the sharper version\",\"note\":\"The real issue is not just why collapse occurs, but what fundamentally determines the specific outcome from a superposition.\"}],\"pick\":0},\"insights\":[{\"index\":0,\"headline\":\"Decoherence fails to address outcome selection in quantum measurement.\",\"body\":\"While decoherence explains the appearance of collapse, it does not clarify how a specific outcome is chosen. This raises questions about the role of the observer in the measurement process.\"}]}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 1765,
+        "completion_tokens": 190,
+        "total_tokens": 1955,
+        "prompt_tokens_details": {
+          "cached_tokens": 1664,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "service_tier": "default",
+      "system_fingerprint": "fp_ef9c31077e"
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "request": {
+    "url": "https://api.openai.com/v1/chat/completions",
+    "endpoint": "chat",
+    "model": "gpt-4.1",
+    "summary": "{\"title\":\"Epictetus argues that freedom comes not from controlling events but from correct\",\"content_text\":\"Epictetus argues that freedom comes not from control"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "chatcmpl-EYdGfyKzjfPbNcJQgFBKCVh3HGgQx",
+      "object": "chat.completion",
+      "created": 1791922805,
+      "model": "gpt-4.1-2025-04-14",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"reading\": {\"line\": \"Stoic freedom depends on seeing the limits of your power, not on changing the world.\", \"options\": [{\"move\": \"the older version\", \"note\": \"Epictetus’s dichotomy of control refines a theme from earlier Cynic philosophy, which also urged indifference to externals but lacked the Stoic distinction between what is and isn’t up to us.\"}, {\"move\": \"the sharper version\", \"note\": \"Taken strictly, the dichotomy of control means that any effort to change external events for their own sake is a distraction from freedom itself.\"}, {\"move\": \"the test\", \"note\": \"If Stoic freedom works, then people who accept the limits of their control should show less distress in the face of setbacks than those who try to control everything.\"}], \"pick\": 0}, \"insights\": [{\"index\": 0, \"move\": \"first of its kind\", \"headline\": \"No other save yet claims that freedom is a matter of judgment rather than control.\"}]}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 2281,
+        "completion_tokens": 214,
+        "total_tokens": 2495,
+        "prompt_tokens_details": {
+          "cached_tokens": 2048,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "service_tier": "default",
+      "system_fingerprint": "fp_3d141faf3c"
+    }
+  }
+}

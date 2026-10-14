@@ -30,7 +30,11 @@ interface Props {
  */
 export function InsightLine({ insight, compact = false }: Props) {
   const c = useThemeColors();
-  const rawKicker = insight.type === 'READING'
+  // Every polished insight names the move it made in evidence.kicker: the
+  // READING's note ("the catch", "where it comes from") and the graph-derived
+  // kinds too ("what it adds", "where they split"). The MIRROR carries none;
+  // its label is the type itself.
+  const rawKicker = insight.type !== 'MIRROR'
     ? (insight.evidence as { kicker?: unknown } | null)?.kicker
     : undefined;
   const noteKicker = typeof rawKicker === 'string' && rawKicker.trim() ? sentenceCase(rawKicker.trim()) : null;

@@ -1,0 +1,47 @@
+{
+  "request": {
+    "url": "https://api.openai.com/v1/chat/completions",
+    "endpoint": "chat",
+    "model": "gpt-4o-mini",
+    "summary": "{\"title\":\"Attention is the scarce resource, not time. Deep work is the practice of protect\",\"content_text\":\"Attention is the scarce resource, not time. Deep wor"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "chatcmpl-EYcXm6JaLFN0q9SHT0UlaIrJt7Iw5",
+      "object": "chat.completion",
+      "created": 1791920022,
+      "model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"reading\":{\"line\":\"Protecting attention is more crucial than managing time for productivity.\",\"options\":[{\"move\":\"the cost\",\"note\":\"Prioritizing deep work may lead to missed social interactions and opportunities.\"},{\"move\":\"the sharper version\",\"note\":\"Deep work implies that the quality of focus directly impacts the depth of understanding.\"},{\"move\":\"the missing step\",\"note\":\"Achieving deep work requires not just intention but also a supportive environment free from distractions.\"}],\"pick\":1},\"insights\":[{\"index\":0,\"headline\":\"Deep work emphasizes focus over time management.\",\"body\":\"This perspective reinforces the idea that quality of attention directly influences productivity and creativity.\"}]}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 1786,
+        "completion_tokens": 134,
+        "total_tokens": 1920,
+        "prompt_tokens_details": {
+          "cached_tokens": 1536,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "service_tier": "default",
+      "system_fingerprint": "fp_ef9c31077e"
+    }
+  }
+}
