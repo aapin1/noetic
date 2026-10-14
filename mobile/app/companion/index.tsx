@@ -50,11 +50,8 @@ function MessageBlock({ message }: { message: CompanionMessage }) {
   }
 
   return (
-    <View style={[styles.companionRow, { borderLeftColor: c.border }]}>
-      <Text variant="caption" color="muted" style={{ marginBottom: Spacing[2] }}>
-        Mneme
-      </Text>
-      <Text variant="serif" color="secondary" style={{ lineHeight: 26 }}>
+    <View style={styles.companionRow}>
+      <Text variant="body" color="secondary" style={{ lineHeight: 26 }}>
         {message.content}
       </Text>
     </View>
@@ -237,10 +234,7 @@ export default function CompanionScreen() {
               messages.map((msg) => <MessageBlock key={msg.id} message={msg} />)
             )}
             {sending && (
-              <View style={[styles.companionRow, { borderLeftColor: c.border }]}>
-                <Text variant="caption" color="muted" style={{ marginBottom: Spacing[2] }}>
-                  Mneme
-                </Text>
+              <View style={styles.companionRow}>
                 <LoadingDots />
               </View>
             )}
@@ -384,8 +378,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   companionRow: {
-    borderLeftWidth: 2,
-    paddingLeft: Spacing[4],
+    paddingRight: Spacing[6],
   },
   userRow: {
     alignItems: 'flex-end',

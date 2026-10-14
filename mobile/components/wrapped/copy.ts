@@ -139,36 +139,9 @@ export function timelineTitle(_seed: number): string {
 
 /* --------------------------------------------------------------- rhythm ---- */
 
-const HOUR_BANDS: { max: number; lines: readonly string[] }[] = [
-  {
-    max: 4,
-    lines: ['You save most in the small hours.', 'Most of your saves land after midnight.'],
-  },
-  {
-    max: 8,
-    lines: ['You save most early in the morning.', 'Most of your saves land before breakfast.'],
-  },
-  {
-    max: 11,
-    lines: ['You save most in the morning.', 'Most of your saves land before noon.'],
-  },
-  {
-    max: 16,
-    lines: ['You save most in the afternoon.', 'Most of your saves land after lunch.'],
-  },
-  {
-    max: 20,
-    lines: ['You save most in the evening.', 'Most of your saves land around dinner.'],
-  },
-  {
-    max: 23,
-    lines: ['You save most late at night.', 'Most of your saves land after 9pm.'],
-  },
-];
-
-export function rhythmLine(hour: number, weekday: string): string {
-  const band = HOUR_BANDS.find((b) => hour <= b.max) ?? HOUR_BANDS[HOUR_BANDS.length - 1];
-  return pick(band.lines, 'rhythm', hour, weekday);
+/** One sentence that names the hour, so the card does not print it twice. */
+export function rhythmLine(hour: number): string {
+  return `Most of your saves land around ${formatHourCompact(hour)}.`;
 }
 
 /* --------------------------------------------------------------- streak ---- */
@@ -225,32 +198,37 @@ export function dormantStreakLine(current: number): string {
 
 export type ArchetypeFormat = 'link' | 'text' | 'image';
 
-const ARCHETYPES: Record<ArchetypeFormat, { name: string; lines: readonly string[] }> = {
-  link: {
-    name: 'Link saver',
-    lines: ['Most of what you save is a link.', 'Links make up most of your saves.'],
-  },
-  text: {
-    name: 'Note taker',
-    lines: ['Most of what you save is written down.', 'Notes make up most of your saves.'],
-  },
-  image: {
-    name: 'Screenshotter',
-    lines: ['Most of what you save is an image.', 'Images make up most of your saves.'],
-  },
+const FORMAT_NOUN: Record<ArchetypeFormat, string> = {
+  link: 'links',
+  text: 'notes',
+  image: 'images',
 };
 
 function isArchetypeFormat(format: string): format is ArchetypeFormat {
-  return format in ARCHETYPES;
+  return format in FORMAT_NOUN;
 }
 
+/**
+ * The share of saves in the leading format, as one sentence. No persona name
+ * above it: "Link saver" and "Links make up most of your saves" said the same
+ * thing twice, and the percentage says more than either.
+ */
 export function archetypeFor(
   format: string | undefined,
-  seed: number,
-): { format: ArchetypeFormat; name: string; line: string } | null {
-  if (!format || !isArchetypeFormat(format)) return null;
-  const a = ARCHETYPES[format];
-  return { format, name: a.name, line: pick(a.lines, 'archetype', format, seed) };
+  count: number,
+  total: number,
+): { format: ArchetypeFormat; line: string } | null {
+  if (!format || !isArchetypeFormat(format) || total <= 0) return null;
+  const pct = Math.round((count / total) * 100);
+  const noun = FORMAT_NOUN[format];
+  const line = pct >= 99
+    ? `Everything you have saved so far is a ${noun.slice(0, -1)}.`
+    : `${capitalise(noun)} are ${pct}% of your saves.`;
+  return { format, line };
+}
+
+function capitalise(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /* --------------------------------------------------------------- social ---- */

@@ -385,12 +385,9 @@ export default function MindScreen() {
             >
               <View style={[styles.sheetHandle, { backgroundColor: c.border }]} />
               <View style={styles.sheetHead}>
-                <View style={styles.sheetHeadLeft}>
-                  <View style={[styles.sheetDot, { backgroundColor: ACCENT[selection.type === 'convergence' ? 'convergence' : 'threads'] }]} />
-                  <Text variant="caption" color="muted">
-                    {SHEET_LABEL[selection.type]}
-                  </Text>
-                </View>
+                <Text variant="headline">
+                  {SHEET_LABEL[selection.type]}
+                </Text>
                 <Pressable onPress={() => setSelection(null)} hitSlop={12} accessibilityLabel="Close">
                   <XIcon size={20} color={c.muted} />
                 </Pressable>
@@ -423,43 +420,45 @@ export default function MindScreen() {
           exiting={FadeOut.duration(200)}
           style={styles.threshold}
         >
-          <Text variant="h3" style={{ color: ink(0.94) }}>
-            What your saves are doing
-          </Text>
-          {/* No summary line here. It restated "3 threads, 2 quiet"
-              immediately above a list that names each instrument and prints
-              its own count on the right: the same numbers twice. */}
-          <View style={styles.thresholdList}>
+          {/* An inset grouped list, the way Settings or Health lists its
+              sections: name and one-line description, the count as a trailing
+              value, a chevron. No heading above it (the chrome band already
+              says Mind) and no colour ticks; each section's colour belongs to
+              its own screen. */}
+          <View style={[styles.group, { backgroundColor: c.surface, borderColor: c.borderSubtle }]}>
             {activeSections.map((s, i) => (
               <Pressable
                 key={s.key}
                 onPress={() => setView(s.key)}
-                style={[
-                  styles.thresholdRow,
-                  i < activeSections.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.borderSubtle },
-                ]}
+                style={({ pressed }) => [styles.row, pressed && { backgroundColor: c.elevated }]}
+                accessibilityRole="button"
                 accessibilityLabel={`Open ${s.name}`}
               >
-                <View style={[styles.thresholdTick, { backgroundColor: ACCENT[s.key] }]} />
-                <View style={{ flex: 1 }}>
-                  <Text variant="headline" style={{ color: ink(0.9) }}>{s.name}</Text>
-                  <Text variant="subheadline" color="secondary" style={{ marginTop: 1 }}>{s.subtitle}</Text>
+                <View style={[styles.rowInner, i < activeSections.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.borderSubtle }]}>
+                  <View style={styles.rowText}>
+                    <Text variant="headline" style={{ color: ink(0.9) }}>{s.name}</Text>
+                    <Text variant="subheadline" color="secondary" style={{ marginTop: 1 }}>{s.subtitle}</Text>
+                  </View>
+                  <Text variant="body" color="muted">{counts[s.key]}</Text>
+                  <ChevronRightIcon size={18} color={c.faint} />
                 </View>
-                <Text variant="caption" color="muted">{counts[s.key]}</Text>
-                <ChevronRightIcon size={16} color={c.muted} />
               </Pressable>
             ))}
           </View>
 
-          <Button
-            label="See all"
-            variant="secondary"
-            size="md"
-            fullWidth
-            onPress={() => setView('all')}
-            style={styles.seeAll}
-            accessibilityLabel="See all"
-          />
+          <View style={[styles.group, { backgroundColor: c.surface, borderColor: c.borderSubtle }]}>
+            <Pressable
+              onPress={() => setView('all')}
+              style={({ pressed }) => [styles.row, pressed && { backgroundColor: c.elevated }]}
+              accessibilityRole="button"
+              accessibilityLabel="See all"
+            >
+              <View style={styles.rowInner}>
+                <Text variant="body" style={[styles.rowText, { color: ink(0.9) }]}>See all</Text>
+                <ChevronRightIcon size={18} color={c.faint} />
+              </View>
+            </Pressable>
+          </View>
         </Animated.View>
       ) : (
         <Animated.View key={view} entering={FadeIn.duration(280)} style={styles.safe}>
@@ -511,16 +510,22 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  threshold: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing[6], paddingBottom: Spacing[12] },
-  thresholdList: { marginTop: Spacing[6] },
-  thresholdRow: {
+  threshold: { flex: 1, paddingHorizontal: Spacing[4], paddingTop: Spacing[5], gap: Spacing[5] },
+  group: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  row: { paddingLeft: Spacing[4] },
+  rowInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Spacing[3],
     gap: Spacing[3],
+    paddingVertical: Spacing[3],
+    paddingRight: Spacing[4],
+    minHeight: 44,
   },
-  thresholdTick: { width: 8, height: 22, borderRadius: 2 },
-  seeAll: { alignSelf: 'stretch', marginTop: Spacing[6] },
+  rowText: { flex: 1 },
 
   sectionSubtitle: {
     paddingHorizontal: Spacing[6],
@@ -536,6 +541,4 @@ const styles = StyleSheet.create({
   },
   sheetHandle: { alignSelf: 'center', width: 34, height: 3, borderRadius: 2, marginBottom: Spacing[3] },
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing[2] },
-  sheetHeadLeft: { flexDirection: 'row', alignItems: 'center' },
-  sheetDot: { width: 7, height: 7, borderRadius: 4, marginRight: Spacing[2] },
 });

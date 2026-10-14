@@ -49,7 +49,7 @@ function ChallengeCard({
 
   return (
     <View style={[styles.challengeCard, { borderColor: c.border }]}>
-      <Text variant="caption" color="muted">
+      <Text variant="bodyMedium">
         {captureTitle}
       </Text>
       <Text variant="body" color="secondary" style={styles.tensionText}>

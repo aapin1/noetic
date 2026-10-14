@@ -131,17 +131,13 @@ export default function TodayScreen() {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {challenge ? (
             <Section kicker="Your position, challenged" accent={Accents.clay}>
-              <Text variant="caption" color="muted" style={styles.whyNow}>
-                You staked this on {challenge.topicName}
-              </Text>
               <Text variant="h3" style={styles.title}>
                 “{challenge.statement}”
               </Text>
-              {challenge.capture ? (
-                <Text variant="caption" color="muted" style={styles.reaction}>
-                  Now colliding with {challenge.capture.title}
-                </Text>
-              ) : null}
+              <Text variant="subheadline" color="secondary" style={styles.whyNow}>
+                {`Your position on ${challenge.topicName}`}
+                {challenge.capture ? `, challenged by ${challenge.capture.title}` : ''}
+              </Text>
               <Text variant="body" color="muted" style={styles.idea}>
                 {challenge.tension}
               </Text>
@@ -164,7 +160,7 @@ export default function TodayScreen() {
               <Text variant="bodyMedium" numberOfLines={3}>
                 {collision.itemA.title}
               </Text>
-              <Text variant="caption" color="muted" style={styles.edgeType}>
+              <Text variant="subheadline" color="secondary" style={styles.edgeType}>
                 Pulls against
               </Text>
               <Text variant="bodyMedium" numberOfLines={3}>
@@ -181,11 +177,11 @@ export default function TodayScreen() {
 
           {capture ? (
           <Section kicker="Resurfaced" accent={Accents.amber}>
-            <Text variant="caption" color="muted" style={styles.whyNow}>
-              {capture.whyNow}
-            </Text>
             <Text variant="h3" style={styles.title}>
               {capture.title}
+            </Text>
+            <Text variant="subheadline" color="secondary" style={styles.whyNow}>
+              {capture.whyNow}
             </Text>
             {capture.keyIdea ? (
               <Text variant="body" color="muted" style={styles.idea}>
@@ -193,7 +189,7 @@ export default function TodayScreen() {
               </Text>
             ) : null}
             {capture.reaction ? (
-              <Text variant="caption" color="muted" style={styles.reaction}>
+              <Text variant="subheadline" color="secondary" style={styles.reaction}>
                 You said: {capture.reaction}
               </Text>
             ) : null}
@@ -218,7 +214,7 @@ export default function TodayScreen() {
               <Text variant="bodyMedium" numberOfLines={3}>
                 {capture.title}
               </Text>
-              <Text variant="caption" color="muted" style={styles.edgeType}>
+              <Text variant="subheadline" color="secondary" style={styles.edgeType}>
                 {EDGE_LABELS[connection.type] ?? 'Related'}
               </Text>
               <Text variant="bodyMedium" numberOfLines={3}>
@@ -256,8 +252,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing[4],
   },
   kicker: { marginBottom: Spacing[3] },
-  whyNow: { marginBottom: Spacing[2] },
-  title: { marginBottom: Spacing[2] },
+  whyNow: { marginBottom: Spacing[3] },
+  title: { marginBottom: Spacing[1] },
   idea: { marginBottom: Spacing[2], lineHeight: 22 },
   reaction: { marginBottom: Spacing[1] },
   actions: { marginTop: Spacing[3], flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[2] },

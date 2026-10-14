@@ -149,14 +149,9 @@ function TabsRoot() {
           // user can still read, not a disabled control — too far down and the
           // four inactive icons, which are most of the bar, all mumble.
           tabBarInactiveTintColor: c.deepInkMuted,
-          // Labelled, the way every iOS tab bar is. The icon sits on its
-          // rounded fill, the title underneath at the system's 10pt medium.
-          tabBarShowLabel: true,
-          tabBarLabelStyle: {
-            fontSize: 10,
-            fontWeight: '500',
-            marginTop: 1,
-          },
+          // Icons only. Each tab's name still reaches VoiceOver and the UI
+          // tests through tabBarAccessibilityLabel below.
+          tabBarShowLabel: false,
           tabBarStyle: {
             backgroundColor: c.tabBar,
             // A hairline, not a 1px rule. At 1px against the old neutral border
@@ -170,7 +165,7 @@ function TabsRoot() {
             // step with TAB_H in (tabs)/index.tsx — the Atlas lays its FAB and
             // summary strip out against this exact number.
             height: Platform.OS === 'ios' ? 84 : 68,
-            paddingTop: 6,
+            paddingTop: 10,
           },
           tabBarItemStyle: {
             paddingVertical: 0,
@@ -245,8 +240,8 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   iconSlot: {
-    width: 46,
-    height: 32,
+    width: 52,
+    height: 34,
     borderRadius: Radius.lg,
     alignItems: 'center',
     justifyContent: 'center',

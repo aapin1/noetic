@@ -22,6 +22,17 @@ second family, tracking, or capitals.
 | Big stat numbers | `hero` / `display` (bold, tabular) |
 | The brand mark only | `wordmark` |
 
+The tab bar shows icons only; each tab's name reaches VoiceOver through its
+accessibility label. A list of destinations (Mind's overview) is an inset
+grouped list: a rounded surface, hairline separators, a title and one-line
+description per row, a trailing value, a chevron. No heading above it when
+the chrome band already names the screen, and no colour ticks in the rows.
+
+A number, its stamp and a sentence about it are one fact, not three. A card
+states each fact once: the You page hero shows the count and the milestone
+stamp; the rhythm card shows one sentence with the hour and the dial; the
+format card is one sentence with the share.
+
 `mono`, `monoSmall`, `serif` and `serifLg` are historical names that now
 render in the system face (footnote, footnote, body, title 3) so old call
 sites fall into line; new code does not use them. The Times serif exists only
@@ -36,6 +47,22 @@ no dashes, no rhetorical openers). Anything the model wrote that reaches a
 screen goes through `lib/text.ts` on the way in: `plainProse` for sentences,
 `plainLabel` for a heading, `sentenceCase` for a topic name used as a title.
 That is what keeps cached, older generations in line with new ones.
+
+## Labels above content
+
+A small muted caption sitting above a bold line ("Reinforces" over an
+insight, "Mneme" over a message, "You staked this on X" over a quote) is the
+eyebrow pattern and is gone. Three replacements, by what the label was doing:
+
+- It named a category: a category row, a 14pt lucide glyph and the name in
+  `subheadline` semibold, secondary colour, then the content (`InsightLine`).
+- It explained the line under it: it moves below the title as a
+  `subheadline` in the secondary colour (Today's "Your position on X").
+- It named the speaker or the section: it goes; the layout already says it
+  (companion replies are plain text, user messages are bubbles).
+
+A note's lead ("The catch", "What it adds") runs into the note in bold,
+"The catch. If that were true...", never on its own line above it.
 
 ## Layout
 

@@ -30,38 +30,38 @@ describe('InsightLine', () => {
 
     expect(screen.getByText('Reading')).toBeTruthy();
     expect(screen.getByText(LINE)).toBeTruthy();
-    expect(screen.getByText('The test')).toBeTruthy();
-    expect(screen.getByText(NOTE)).toBeTruthy();
+    expect(screen.getByText('The test.', { exact: false })).toBeTruthy();
+    expect(screen.getByText(NOTE, { exact: false })).toBeTruthy();
   });
 
   it('shows whichever move the reading named — there is no fixed label', async () => {
     await renderScreen(<InsightLine insight={card('READING', { kicker: 'where it comes from' })} />);
 
-    expect(screen.getByText('Where it comes from')).toBeTruthy();
-    expect(screen.queryByText('The catch')).toBeNull();
-    expect(screen.queryByText('The test')).toBeNull();
+    expect(screen.getByText('Where it comes from.', { exact: false })).toBeTruthy();
+    expect(screen.queryByText('The catch', { exact: false })).toBeNull();
+    expect(screen.queryByText('The test', { exact: false })).toBeNull();
   });
 
   it('shows the note unlabelled when the reading named no move', async () => {
     await renderScreen(<InsightLine insight={card('READING', { grounding: 'rich' })} />);
 
     expect(screen.getByText(NOTE)).toBeTruthy();
-    expect(screen.queryByText('The catch')).toBeNull();
+    expect(screen.queryByText('The catch', { exact: false })).toBeNull();
   });
 
   it('labels the MIRROR as a read on the person and ignores any kicker on it', async () => {
     await renderScreen(<InsightLine insight={card('MIRROR', { kicker: 'the test' })} />);
 
     expect(screen.getByText('A read on you')).toBeTruthy();
-    expect(screen.queryByText('The test')).toBeNull();
+    expect(screen.queryByText('The test', { exact: false })).toBeNull();
   });
 
   it('labels a graph-derived kind with the move its polish named', async () => {
     await renderScreen(<InsightLine insight={card('CONNECTION', { kicker: 'what it adds' })} />);
 
     expect(screen.getByText('Connection')).toBeTruthy();
-    expect(screen.getByText('What it adds')).toBeTruthy();
-    expect(screen.getByText(NOTE)).toBeTruthy();
+    expect(screen.getByText('What it adds.', { exact: false })).toBeTruthy();
+    expect(screen.getByText(NOTE, { exact: false })).toBeTruthy();
   });
 
   it('shows a graph-derived kind unlabelled when its polish never landed', async () => {

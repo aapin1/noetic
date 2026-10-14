@@ -42,11 +42,9 @@ import {
   currentStreakLine,
   dormantStreakLine,
   fieldsTitle,
-  formatHourCompact,
   heroNoun,
   longestStreakLine,
   milestoneBadge,
-  milestoneLine,
   newTopicsTitle,
   noFollowLine,
   quietWeekLine,
@@ -414,13 +412,7 @@ function Hero({
           style={{ width }}
         >
           {stats.map((stat, i) => (
-            <StatPage key={stat.id} stat={stat} width={width} active={active && safePage === i}>
-              {i === 0 ? (
-                <Text variant="serif" color="secondary" style={styles.heroBody}>
-                  {milestoneLine(w.totalCaptures)}
-                </Text>
-              ) : null}
-            </StatPage>
+            <StatPage key={stat.id} stat={stat} width={width} active={active && safePage === i} />
           ))}
         </ScrollView>
       ) : (
@@ -1625,7 +1617,7 @@ export function WrappedSection({
   };
 
   const cardProps = { scrollY, sectionY, screenH };
-  const archetype = archetypeFor(w.formats[0]?.name, seed);
+  const archetype = archetypeFor(w.formats[0]?.name, w.formats[0]?.count ?? 0, w.totalCaptures);
   const hasRhythm =
     w.busiestHour !== null && w.busiestDayOfWeek !== null && w.hourHistogram?.length === 24;
   // A run of 1 is not a streak — it's just today. Below 2 the card falls back to
@@ -1696,14 +1688,12 @@ export function WrappedSection({
       key: 'rhythm',
       node: (
         <RevealCard {...cardProps} onReveal={() => setDialActive(true)} accent={cardAccentAt(4)}>
-          <View style={styles.rhythmHead}>
-            <Text variant="h3" style={{ color: hourAccent(w.busiestHour!) }}>
-              {formatHourCompact(w.busiestHour!)}
-            </Text>
-            <Text variant="subheadline" color="secondary" style={styles.rhythmHeadLine}>
-              {rhythmLine(w.busiestHour!, w.busiestDayOfWeek!)}
-            </Text>
-          </View>
+          <Text variant="h4" style={styles.cardTitle}>
+            When you save
+          </Text>
+          <Text variant="subheadline" color="secondary" style={styles.rhythmHeadLine}>
+            {rhythmLine(w.busiestHour!)}
+          </Text>
           <ClockFace hours={w.hourHistogram} peakHour={w.busiestHour!} active={dialActive} />
         </RevealCard>
       ),
@@ -1764,12 +1754,9 @@ export function WrappedSection({
                 strokeWidth: 1.5,
               })}
             </View>
-            <View style={styles.archetypeText}>
-              <Text variant="h3">{archetype.name}</Text>
-              <Text variant="subheadline" color="secondary" style={styles.archetypeLine}>
-                {archetype.line}
-              </Text>
-            </View>
+            <Text variant="body" style={styles.archetypeText}>
+              {archetype.line}
+            </Text>
           </View>
         </RevealCard>
       ),
@@ -1977,8 +1964,7 @@ const styles = StyleSheet.create({
   },
   tlHintPress: { flex: 1, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
 
-  rhythmHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing[4] },
-  rhythmHeadLine: { flex: 1, lineHeight: 24 },
+  rhythmHeadLine: { marginTop: Spacing[1] },
   dialWrap: {
     width: DIAL + DIAL_TICK_PAD * 2,
     height: DIAL + DIAL_TICK_PAD * 2,
@@ -2031,7 +2017,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   archetypeText: { flex: 1 },
-  archetypeLine: { marginTop: Spacing[1] },
 
   segmented: {
     flexDirection: 'row',

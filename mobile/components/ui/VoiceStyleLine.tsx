@@ -18,8 +18,8 @@ const CHOICES: { key: InsightStyle; label: string }[] = [
 
 /**
  * The insight-voice choice, moved out of onboarding and into the first place
- * it means anything: under an insight the user is actually reading. A label,
- * a segmented control, and a close button. Stays until acted on, then never
+ * it means anything: under an insight the user is actually reading. A title,
+ * one line on what it does, a segmented control, and a close button. Stays until acted on, then never
  * returns (DIRECT remains the server default when dismissed).
  */
 export function VoiceStyleLine() {
@@ -40,8 +40,8 @@ export function VoiceStyleLine() {
   if (chosen) {
     return (
       <View style={styles.wrap}>
-        <Text variant="caption" color="muted">
-          Insights set to {CHOICES.find((ch) => ch.key === chosen)?.label}
+        <Text variant="subheadline" color="secondary">
+          New insights will be written in the {CHOICES.find((ch) => ch.key === chosen)?.label.toLowerCase()} style.
         </Text>
       </View>
     );
@@ -50,13 +50,18 @@ export function VoiceStyleLine() {
   return (
     <View style={styles.wrap}>
       <View style={styles.head}>
-        <Text variant="caption" color="muted">Insight style</Text>
+        <View style={styles.headText}>
+          <Text variant="headline">Choose an insight style</Text>
+          <Text variant="subheadline" color="secondary" style={styles.headLine}>
+            Applies to the insights written from now on.
+          </Text>
+        </View>
         <Pressable
           onPress={() => markSeen(EVENT_FLAGS.voiceStyleChosen)}
           hitSlop={8}
           accessibilityLabel="Keep the current insight style"
         >
-          <XIcon size={16} color={c.faint} />
+          <XIcon size={18} color={c.faint} />
         </Pressable>
       </View>
       <SegmentedControl options={CHOICES} value={'DIRECT' as InsightStyle} onChange={choose} />
@@ -66,12 +71,15 @@ export function VoiceStyleLine() {
 
 const styles = StyleSheet.create({
   wrap: {
-    marginTop: Spacing[4],
-    gap: Spacing[2],
+    marginTop: Spacing[5],
+    gap: Spacing[3],
   },
   head: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    gap: Spacing[3],
   },
+  headText: { flex: 1 },
+  headLine: { marginTop: 2 },
 });
