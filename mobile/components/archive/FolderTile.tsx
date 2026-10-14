@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Spacing, accentForKey } from '@/constants/theme';
 import { Text } from '@/components/ui/Text';
+import { sentenceCase } from '@/lib/text';
 import { Badge } from '@/components/ui/Badge';
 import { FolderIcon } from '@/components/archive/FolderIcon';
 import type { ArchiveFolderSummary } from '@/types/api';
@@ -17,7 +18,7 @@ export function FolderTile({ folder, onPress }: { folder: ArchiveFolderSummary; 
         </View>
       </View>
       <Text variant="caption" color="primary" numberOfLines={1} style={styles.name}>
-        {folder.name}
+        {sentenceCase(folder.name)}
       </Text>
     </Pressable>
   );

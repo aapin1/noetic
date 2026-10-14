@@ -5670,17 +5670,6 @@ export default function MapScreen() {
                 <View style={[styles.dragZone, { paddingTop: insets.top + 14 }]}>
                   <View style={[styles.handle, { backgroundColor: c.border }]} />
                 </View>
-                <View style={styles.stepRow}>
-                  {([1, 2] as const).map((s) => (
-                    <React.Fragment key={s}>
-                      <View style={[styles.stepDot, { backgroundColor: step >= s ? c.text : 'transparent', borderColor: step >= s ? c.text : c.border }]} />
-                      {s < 2 && <View style={[styles.stepLine, { backgroundColor: step > s ? c.text : c.border }]} />}
-                    </React.Fragment>
-                  ))}
-                </View>
-                <Text variant="caption" style={[styles.stepLabel, { color: c.muted }]}>
-                  {step === 1 ? 'Step 1 of 2: Capture' : mode === 'work' ? 'Step 2 of 2: Confirm' : 'Step 2 of 2: Reaction'}
-                </Text>
                 <View style={styles.modalBody}>
                   {step === 1 && (
                     /* Hidden rather than unmounted while a quick save runs,

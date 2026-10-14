@@ -7,19 +7,20 @@ import { useThemeColors } from '@/contexts/ThemeContext';
 import { useDisclosure } from '@/contexts/DisclosureContext';
 import { EVENT_FLAGS } from '@/lib/disclosure';
 import type { InsightStyle } from '@/types/api';
+import { SegmentedControl } from './SegmentedControl';
 import { Text } from './Text';
 
-const CHOICES: { value: InsightStyle; label: string }[] = [
-  { value: 'DIRECT', label: 'Direct' },
-  { value: 'REFLECTIVE', label: 'Reflective' },
-  { value: 'ANALYTICAL', label: 'Analytical' },
+const CHOICES: { key: InsightStyle; label: string }[] = [
+  { key: 'DIRECT', label: 'Direct' },
+  { key: 'REFLECTIVE', label: 'Reflective' },
+  { key: 'ANALYTICAL', label: 'Analytical' },
 ];
 
 /**
  * The insight-voice choice, moved out of onboarding and into the first place
- * it means anything: under an insight the user is actually reading. One line,
- * three words to pick from, dismissible without choosing. Stays until acted
- * on, then never returns (DIRECT remains the server default when dismissed).
+ * it means anything: under an insight the user is actually reading. A label,
+ * a segmented control, and a close button. Stays until acted on, then never
+ * returns (DIRECT remains the server default when dismissed).
  */
 export function VoiceStyleLine() {
   const c = useThemeColors();
@@ -31,50 +32,46 @@ export function VoiceStyleLine() {
   const choose = (style: InsightStyle) => {
     setChosen(style);
     // Optimistic: the server default is DIRECT either way, and a lost PATCH
-    // costs one preference — never a blocked reading flow.
+    // costs one preference, never a blocked reading flow.
     void api.preferences.update({ insightStyle: style }).catch(() => {});
     setTimeout(() => markSeen(EVENT_FLAGS.voiceStyleChosen), 1600);
   };
 
   if (chosen) {
     return (
-      <View style={styles.row}>
+      <View style={styles.wrap}>
         <Text variant="caption" color="muted">
-          Insights set to {CHOICES.find((ch) => ch.value === chosen)?.label}
+          Insights set to {CHOICES.find((ch) => ch.key === chosen)?.label}
         </Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.row}>
-      <Text variant="caption" color="muted">
-        Insight style
-      </Text>
-      {CHOICES.map((choice) => (
-        <Pressable key={choice.value} onPress={() => choose(choice.value)} hitSlop={6}>
-          <Text variant="caption" style={{ color: c.text, textDecorationLine: 'underline' }}>
-            {choice.label}
-          </Text>
+    <View style={styles.wrap}>
+      <View style={styles.head}>
+        <Text variant="caption" color="muted">Insight style</Text>
+        <Pressable
+          onPress={() => markSeen(EVENT_FLAGS.voiceStyleChosen)}
+          hitSlop={8}
+          accessibilityLabel="Keep the current insight style"
+        >
+          <XIcon size={16} color={c.faint} />
         </Pressable>
-      ))}
-      <Pressable
-        onPress={() => markSeen(EVENT_FLAGS.voiceStyleChosen)}
-        hitSlop={8}
-        accessibilityLabel="Keep the current insight voice"
-      >
-        <XIcon size={14} color={c.faint} />
-      </Pressable>
+      </View>
+      <SegmentedControl options={CHOICES} value={'DIRECT' as InsightStyle} onChange={choose} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: {
+  wrap: {
+    marginTop: Spacing[4],
+    gap: Spacing[2],
+  },
+  head: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: Spacing[3],
-    marginTop: Spacing[4],
+    justifyContent: 'space-between',
   },
 });

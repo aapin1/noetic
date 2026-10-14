@@ -171,7 +171,7 @@ export default function NotificationSettingsScreen() {
             />
             <PrefRow
               label="Resurfacing"
-              description="When something you saved disagrees, picks up, or has gone quiet."
+              description="When two saves disagree, a topic picks up, or a topic goes quiet."
               rightElement={
                 <OnOff
                   value={view.pushResurface}
@@ -182,7 +182,7 @@ export default function NotificationSettingsScreen() {
             />
             <PrefRow
               label="Streaks"
-              description="An evening reminder when a run has nothing on it yet, and the note when a freeze held it."
+              description="An evening reminder if you haven't saved anything yet, and a note when a freeze protects your streak."
               rightElement={
                 <OnOff
                   value={view.pushStreak}
@@ -210,7 +210,7 @@ export default function NotificationSettingsScreen() {
             />
             <PrefRow
               label="Until"
-              description="Anything held overnight arrives after this hour."
+              description="Notifications held overnight arrive after this hour."
               rightElement={
                 <HourStepper
                   value={view.quietHoursEndHour}

@@ -53,7 +53,7 @@ describe('today screen', () => {
     await renderScreen(<TodayScreen />);
 
     expect(await screen.findByText('Nothing to revisit yet')).toBeOnTheScreen();
-    expect(screen.getByText(/a week of saves is enough/i)).toBeOnTheScreen();
+    expect(screen.getByText(/a week of saves/i)).toBeOnTheScreen();
   });
 
   it('renders the resurfaced capture with its reason and key idea', async () => {

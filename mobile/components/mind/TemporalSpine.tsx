@@ -13,6 +13,7 @@ import Animated, {
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { plainProse, sentenceCase } from '@/lib/text';
 import { Button } from '@/components/ui/Button';
 import type { ThreadSynthesis } from '@/types/api';
 import { DETAIL_PAGE_BOTTOM, DetailShell, useStageInk } from './DetailShell';
@@ -218,7 +219,7 @@ export function TemporalSpine({
       <Animated.ScrollView onScroll={onScroll} scrollEventThrottle={16} showsVerticalScrollIndicator={false}>
         {/* Thread header */}
         <View style={styles.head}>
-          <Text variant="h2" style={{ color: ink(0.94) }}>{data.topicName}</Text>
+          <Text variant="h2" style={{ color: ink(0.94) }}>{sentenceCase(data.topicName)}</Text>
           <Text variant="subheadline" color="secondary" style={{ marginTop: Spacing[1] }}>
             {data.captureCount} captures, oldest first
           </Text>
@@ -309,13 +310,13 @@ export function TemporalSpine({
             <View style={[styles.endMarker, { backgroundColor: color }]} />
             <Text variant="h4" style={{ color: ink(0.94) }}>Where you've landed</Text>
             <Text variant="serifLg" style={{ color: ink(0.94), marginTop: Spacing[3] }}>
-              {data.position}
+              {plainProse(data.position)}
             </Text>
             <Text variant="h4" style={{ color: ink(0.94), marginTop: Spacing[6] }}>
               Open question
             </Text>
             <Text variant="body" style={{ color: ink(0.78), marginTop: Spacing[2] }}>
-              {data.openQuestion}
+              {plainProse(data.openQuestion)}
             </Text>
             <View style={[styles.ctaRow, { borderTopColor: ink(0.18) }]}>
               <Button label="Continue in companion" variant="secondary" size="sm" onPress={onContinueCompanion} />

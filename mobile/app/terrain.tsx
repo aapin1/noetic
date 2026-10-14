@@ -9,6 +9,7 @@ import { useApiQuery } from '@/hooks/useApiQuery';
 import { AccentList, Radius, Spacing, accentFor } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { plainProse } from '@/lib/text';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import type { TerrainCount, TerrainResponse } from '@/types/api';
@@ -44,7 +45,7 @@ export default function TerrainScreen() {
         ) : (
           <EmptyState
             title="Not yet"
-            body="Terrain opens once you have saved enough to have a past to look back on."
+            body="Terrain opens once you have enough saves to compare over time."
           />
         )
       ) : (
@@ -55,9 +56,8 @@ export default function TerrainScreen() {
 
           {data.arc ? (
             <View style={styles.arcWrap}>
-              <View style={[styles.arcRule, { backgroundColor: accent }]} />
               <Text variant="serif" style={styles.arc}>
-                {data.arc}
+                {plainProse(data.arc)}
               </Text>
             </View>
           ) : null}
@@ -142,7 +142,7 @@ function Forming({ data, accent }: { data: TerrainResponse; accent: string }) {
       ) : null}
 
       <Text variant="caption" color="muted" style={styles.footnote}>
-        An early sketch. The full terrain compares your first era to your latest.
+        This is an early version. The full view compares your earliest saves with your latest.
       </Text>
     </ScrollView>
   );
@@ -379,7 +379,7 @@ function Bridges({ data, accent }: { data: TerrainResponse; accent: string }) {
         {data.bridgeCount === 1 ? 'A new connection' : `${data.bridgeCount} new connections`}
       </Text>
       <Text variant="serif" color="secondary" style={styles.body}>
-        Threads you have recently drawn between things that used to sit apart.
+        Recent connections between topics that used to be separate.
       </Text>
       <View style={styles.bridgeList}>
         {data.bridges.map((b) => (

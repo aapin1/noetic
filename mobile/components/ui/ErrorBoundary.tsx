@@ -51,8 +51,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
       <View style={[styles.root, { backgroundColor: c.bg }]}>
         <Text style={[styles.title, { color: c.text }]}>Something went wrong</Text>
         <Text style={[styles.body, { color: c.muted }]}>
-          That screen hit an error it couldn&apos;t recover from. Your captures are
-          safe. They live on the server, not in the app.
+          That screen hit an error it couldn&apos;t recover from. Your saves are
+          safe on the server.
         </Text>
         <Pressable
           onPress={() => this.setState({ error: null })}

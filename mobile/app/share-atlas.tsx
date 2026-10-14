@@ -138,7 +138,7 @@ export default function ShareAtlasScreen() {
       ) : nodes.length === 0 ? (
         <View style={styles.emptyWrap}>
           <Text variant="subheadline" color="secondary" style={{ textAlign: 'center' }}>
-            Save something first. Your atlas appears as you capture.
+            Save something first. Your atlas builds as you capture.
           </Text>
         </View>
       ) : (

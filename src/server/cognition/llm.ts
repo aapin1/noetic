@@ -708,6 +708,7 @@ export async function polishInsights(args: PolishContext): Promise<PolishResult>
   const wantReading = args.contentGrounding !== "thin" || Boolean(args.mediaContext);
 
   const systemPrompt = [
+    STYLE_RULES,
     "You are a knowledge analyst in a personal memory graph.",
     "Rewrite each insight draft to be genuinely useful and CONCISE. Say something smart — do not perform being smart. Plain, direct language beats erudition. If a phrase only exists to sound clever, cut it.",
     "",
@@ -916,6 +917,7 @@ export async function generateMirror(args: {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   const systemPrompt = [
+    STYLE_RULES,
     `You have seen exactly ${args.captures.length} things a person chose to save — the first of everything they will ever save. Write the read on the person.`,
     "",
     "READ:",
@@ -1088,6 +1090,18 @@ const SPECIFICITY_RULES = [
   "- Banned words: 'interesting', 'fascinating', 'highlights', 'underscores', 'reflects', 'interplay', 'delve', 'explore further', 'consider reflecting'.",
 ].join("\n");
 
+/**
+ * House style for anything the app prints verbatim. Every user-facing
+ * generator gets this: the screens are set in sentence case, and an em dash
+ * is the one punctuation mark that makes a line read as machine-written.
+ */
+const STYLE_RULES = [
+  "STYLE:",
+  "- Sentence case: every sentence and every short label starts with a capital letter. Never write in all lowercase.",
+  "- No em dashes or en dashes anywhere. Use a period, a comma, a colon, or parentheses instead.",
+  "- No rhetorical questions as openers, no 'not just X but Y', no lists of three for rhythm, no aphorisms.",
+].join("\n");
+
 export type ContradictionInsight = {
   tension: string;
   /** The question at stake, ≤ 8 words — rendered inside the fracture UI. */
@@ -1130,6 +1144,7 @@ export async function generateContradictionTension(args: {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   const systemPrompt = [
+    STYLE_RULES,
     "Two things a user saved hold opposing positions on the same question. You have read both; the user may not have noticed the collision.",
     "",
     CONTRADICTION_OUTPUT_RULES,
@@ -1195,6 +1210,7 @@ export async function generateTopicTension(args: {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   const systemPrompt = [
+    STYLE_RULES,
     "You are given a numbered list of things a user has saved under one topic.",
     "Find the single sharpest UNRESOLVED TENSION between two of them.",
     "This need NOT be a direct logical contradiction ('X is opposed to Y').",
@@ -1293,6 +1309,7 @@ export async function generateThreadSynthesis(args: {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   const systemPrompt = [
+    STYLE_RULES,
     "A user has been circling the same topic from multiple angles. Captures are listed in the order they were saved (oldest first). You can see the whole arc; they only saw one item at a time.",
     "Your job is diagnosis, not summary: where has their thinking actually landed, how did it move, and what should they do next.",
     "",
@@ -1302,7 +1319,7 @@ export async function generateThreadSynthesis(args: {
     "- Address the user directly as 'you'.",
     "",
     "HEADING rules:",
-    "- The position compressed to 3-6 words, lowercase, no ending period — the direction of travel, e.g. 'toward embodied cognition', 'against measurement optimism'.",
+    "- The position compressed to 3-6 words, sentence case, no ending period: the direction of travel, e.g. 'Toward embodied cognition', 'Against measurement optimism'.",
     "",
     "OPEN_QUESTION rules:",
     "- One question the user hasn't yet asked themselves but that follows naturally from this position.",
@@ -1419,10 +1436,11 @@ export async function generateConvergenceSignal(args: {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   const systemPrompt = [
+    STYLE_RULES,
     "A user has arrived at the same intellectual territory from completely different sources. They probably haven't noticed — you can see all the paths at once.",
     "",
     "Return three fields, addressing the user directly as 'you':",
-    "- arrival: the destination idea compressed to ≤ 8 words, lowercase — the single thought all paths lead to. Not the topic name; the idea itself.",
+    "- arrival: the destination idea compressed to ≤ 8 words, sentence case: the single thought all paths lead to. Not the topic name; the idea itself.",
     "- signal: 1-2 sentences naming what each source's DISTINCT path was (grounded in the actual captures, by shortened title or source) and the precise idea where they meet. The value is the triangulation: independent routes to one point is evidence the idea matters to you.",
     "- act: one concrete direction this convergence points to — e.g. a capture pair worth re-reading side by side, the converged idea worth putting in your own words, or a specific named next thing worth reading that extends it. Phrase it as an invitation ('worth…', 'you could…'), never as a command.",
     "",
@@ -1498,6 +1516,7 @@ export async function evaluatePositionTension(args: {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   const systemPrompt = [
+    STYLE_RULES,
     `A user has stated a position on "${args.topicName}". They just captured something new on the same topic.`,
     "Determine if the new capture genuinely challenges, complicates, or undermines the stated position.",
     "If yes: name the specific tension in 1-2 sentences — what exactly in the capture conflicts with what exactly in the position.",
@@ -1576,6 +1595,7 @@ export async function generateSocraticOpening(args: {
     : "The user has not yet stated a position. Identify what their captures reveal about where their thinking is heading.";
 
   const systemPrompt = [
+    STYLE_RULES,
     `You are Mneme, an intelligent knowledge companion with full access to the user's captured ideas on "${args.topicName}".`,
     "Open with a direct, useful observation — surface what's genuinely interesting or non-obvious from their data.",
     "",
@@ -1657,6 +1677,7 @@ export async function generateSocraticResponse(args: {
     : "The user has not yet stated a position.";
 
   const systemPrompt = [
+    STYLE_RULES,
     `You are Mneme, an intelligent knowledge companion with full access to the user's captured ideas on "${args.topicName}".`,
     positionNote,
     "You have read all their captures and can draw connections between them.",
@@ -1730,6 +1751,7 @@ export async function generateCompanionResponse(args: {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   const systemPrompt = [
+    STYLE_RULES,
     "You are Mneme's knowledge companion — a personal AI with access to the user's knowledge map.",
     "You know every topic they've explored, every capture they've saved (numbered newest-first), their stated intellectual positions, and the connections between captures.",
     "",
@@ -1826,10 +1848,11 @@ export async function generateTerrainNarrative(args: {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   const systemPrompt = [
+    STYLE_RULES,
     "You are writing the closing 'arc' of a person's intellectual self-portrait, drawn from how their captured thinking has moved between an early era and a recent one.",
     "You are given ONLY pre-computed measurements and topic names — treat them as ground truth and do not invent specifics beyond them.",
     "",
-    "Write 2–3 sentences, addressing the user directly as 'you', lowercase-leaning, quietly observational — the tone of a perceptive reader of one's own notebooks, not a hype summary.",
+    "Write 2–3 sentences, addressing the user directly as 'you', in plain sentence case: direct and observational, the tone of a perceptive reader of one's own notebooks, not a hype summary.",
     "Say what actually MOVED and what HELD: name the enduring core (what stayed) alongside the drift (what changed), because the constancy is half the portrait. If a toward/away field or a widening/deepening verdict is given, let it shape the sentence rather than being listed.",
     "Do not restate the raw numbers (no '17 degrees'); render them as meaning.",
     "",

@@ -8,6 +8,7 @@ import { useApiQuery } from '@/hooks/useApiQuery';
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { sentenceCase } from '@/lib/text';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
@@ -72,7 +73,7 @@ export default function ArchiveFolderScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
-      <ScreenHeader title={data.name} />
+      <ScreenHeader title={sentenceCase(data.name)} />
 
       <ScrollView
         contentContainerStyle={styles.content}

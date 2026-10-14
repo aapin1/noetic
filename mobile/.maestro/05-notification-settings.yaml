@@ -61,7 +61,7 @@ appId: app.mneme.mobile
       text: "Quiet hours"
     timeout: 20000
 - assertVisible: "Resurfacing"
-- assertVisible: "An evening reminder when a run has nothing on it yet, and the note when a freeze held it."
+- assertVisible: "An evening reminder if you haven't saved anything yet, and a note when a freeze protects your streak."
 - assertVisible: ".*21:00 to 09:00.*"
 - takeScreenshot: screenshots/05-notification-settings
 

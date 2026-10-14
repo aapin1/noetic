@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { plainProse, sentenceCase } from '@/lib/text';
 import type { InsightCard, InsightType } from '@/types/api';
 
 const TYPE_LABEL: Record<InsightType, string> = {
@@ -20,11 +21,6 @@ const TYPE_LABEL: Record<InsightType, string> = {
 interface Props {
   insight: InsightCard;
   compact?: boolean;
-}
-
-/** The model writes its kicker in lowercase ("the catch"); the screen prints it as a title. */
-function sentenceCase(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /**
@@ -47,7 +43,7 @@ export function InsightLine({ insight, compact = false }: Props) {
         {TYPE_LABEL[insight.type]}
       </Text>
       <Text variant={compact ? 'bodyMedium' : 'bodySemiBold'} color="primary">
-        {insight.headline}
+        {plainProse(insight.headline)}
       </Text>
       {!compact && insight.body && noteKicker ? (
         <Text variant="subheadline" color="muted" style={styles.noteLabel}>
@@ -56,7 +52,7 @@ export function InsightLine({ insight, compact = false }: Props) {
       ) : null}
       {!compact && insight.body ? (
         <Text variant="body" color="secondary" style={styles.body}>
-          {insight.body}
+          {plainProse(insight.body)}
         </Text>
       ) : null}
     </View>

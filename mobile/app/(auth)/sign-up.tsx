@@ -91,7 +91,7 @@ export default function SignUpScreen() {
               Create an account
             </Text>
             <Text variant="subheadline" color="secondary" style={styles.subtitle}>
-              Two minutes, then it starts remembering.
+              It takes about two minutes.
             </Text>
           </View>
 

@@ -245,7 +245,7 @@ export default function ConnectionsScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <Text variant="subheadline" color="secondary" style={styles.intro}>
-            What you write elsewhere, landing on your map on its own.
+            Link an account and what you write there is added to your map automatically.
           </Text>
 
           {linked.map(({ meta, conn }) => (
@@ -417,7 +417,7 @@ export default function ConnectionsScreen() {
                     style={sheetStyles.cta}
                   />
                   <Text variant="caption" color="muted" style={sheetStyles.hint}>
-                    You sign in as usual, on your phone. Mneme reads it once.
+                    Sign in as usual. Mneme reads your account once.
                   </Text>
                 </>
               )}
@@ -426,7 +426,7 @@ export default function ConnectionsScreen() {
                 <>
                   <Text variant="headline">Mneme Plus</Text>
                   <Text variant="subheadline" color="secondary">
-                    Free keeps two accounts in sync. Plus keeps them all.
+                    Free syncs two accounts. Plus syncs all of them.
                   </Text>
                   <Button
                     label="Get Mneme Plus"

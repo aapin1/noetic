@@ -30,9 +30,20 @@ in `wordmark` and the share-card artwork. Do not add `letterSpacing`,
 `.toLowerCase()` to UI text. Do not use `FontFamily.mono` or
 `FontFamily.serif` for anything that is not code or the share cards.
 
-Copy the server sends for display (Today's "why now" line, push bodies,
-insight kickers) follows the same rules; the client sentence-cases a model
-kicker before printing it.
+Copy the server sends for display follows the same rules. Every user-facing
+prompt in `src/server/cognition/llm.ts` carries `STYLE_RULES` (sentence case,
+no dashes, no rhetorical openers). Anything the model wrote that reaches a
+screen goes through `lib/text.ts` on the way in: `plainProse` for sentences,
+`plainLabel` for a heading, `sentenceCase` for a topic name used as a title.
+That is what keeps cached, older generations in line with new ones.
+
+## Layout
+
+A screen is a list or a stack of cards on the canvas, one level deep. No
+progress strips or step labels on sheets, no blockquote bars down the side of
+a paragraph, no meters or strength bars beside a line of text, no accent dot
+in a card corner. Primary actions are full-width buttons; secondary actions
+are rows with a chevron or small secondary buttons in a wrapping row.
 
 ## Copy
 

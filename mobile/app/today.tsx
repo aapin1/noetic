@@ -125,7 +125,7 @@ export default function TodayScreen() {
       ) : !capture && !challenge && !collision ? (
         <ScreenIntro
           title="Nothing to revisit yet"
-          body="Today opens once your map has a little history. A week of saves is enough."
+          body="Today opens after about a week of saves."
         />
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>

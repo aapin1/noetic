@@ -285,12 +285,12 @@ export default function SettingsScreen() {
           />
           <SettingRow
             label="Connections"
-            description="Letterboxd, Goodreads, Readwise. What you write there lands here."
+            description="Sync reviews and notes from Letterboxd, Goodreads, Readwise and more."
             onPress={() => router.push('/connections' as never)}
           />
           <SettingRow
             label="Export my data"
-            description="Every capture you’ve saved, as a file you keep."
+            description="Download everything you've saved as a file."
             onPress={() => void handleExport()}
           />
           <SettingRow
@@ -339,7 +339,7 @@ export default function SettingsScreen() {
               who follows you. Say what actually happens. */}
           <SettingRow
             label="Who can see your captures"
-            description="Only you, except that people who follow you see your titles in Pulse."
+            description="Only you. People who follow you can see the titles of your saves in Pulse."
           />
           <SettingRow
             label="Blocked accounts"

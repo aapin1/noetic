@@ -412,7 +412,7 @@ export default function PulseScreen() {
         visible={infoVisible}
         onClose={() => setInfoVisible(false)}
         title="About Pulse"
-        body="Follow people by their handle and watch a small version of their map, and their latest logs, appear here. Search is always open at the top to find more."
+        body="Follow people by handle to see a small version of their map and their latest saves here. Use the search bar to find more people."
       />
 
       {/* The page proper. The safe-area container above is `deep` for the

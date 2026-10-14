@@ -69,7 +69,7 @@ export function AtlasShareCard({ p, width, handle, nodes, edges, clusters, showL
         <View style={styles.header}>
           <View style={styles.headerRow}>
             <Text style={[styles.headline, { color: p.text }]} numberOfLines={1}>
-              my mind, mapped
+              My mind, mapped
             </Text>
             <Text variant="monoSmall" style={[styles.stamp, { color: p.faint }]}>
               {atlasMonthStamp(new Date())}
@@ -163,7 +163,7 @@ export function AtlasShareCard({ p, width, handle, nodes, edges, clusters, showL
             adjustsFontSizeToFit
             minimumFontScale={0.8}
           >
-            dots are things I saved, lines are related ideas
+            Dots are things I saved. Lines are related ideas.
           </Text>
           <View style={styles.ctaRow}>
             <Text variant="monoSmall" style={{ color: p.textSecondary }} numberOfLines={1}>

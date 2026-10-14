@@ -15,6 +15,7 @@ import Animated, {
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { plainProse } from '@/lib/text';
 import { Button } from '@/components/ui/Button';
 import type { ContradictionCard, IntelNode } from '@/types/api';
 import { DETAIL_PAGE_BOTTOM, DetailShell, useStageInk } from './DetailShell';
@@ -243,19 +244,19 @@ export function FractureZone({
             variant={data.crux ? 'serifLg' : 'body'}
             style={{ color: ink(0.94), marginTop: Spacing[2] }}
           >
-            {data.crux ?? data.tension}
+            {plainProse(data.crux ?? data.tension)}
           </Text>
         </View>
         {data.crux ? (
           <Text variant="body" style={{ color: ink(0.75), marginTop: Spacing[4] }}>
-            {data.tension}
+            {plainProse(data.tension)}
           </Text>
         ) : null}
         {data.test ? (
-          <View style={[styles.testRow, { borderLeftColor: color }]}>
+          <View style={styles.testRow}>
             <Text variant="headline" style={{ color: ink(0.94) }}>One way to settle it</Text>
             <Text variant="body" style={{ color: ink(0.9), marginTop: 2 }}>
-              {data.test}
+              {plainProse(data.test)}
             </Text>
           </View>
         ) : null}
@@ -334,7 +335,7 @@ const styles = StyleSheet.create({
   },
   testRow: {
     marginTop: Spacing[4],
-    borderLeftWidth: 2,
+    borderLeftWidth: 0,
     paddingLeft: Spacing[4],
     paddingVertical: Spacing[1],
   },

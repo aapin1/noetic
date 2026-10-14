@@ -16,6 +16,7 @@ import Animated, {
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { plainLabel, plainProse, sentenceCase } from '@/lib/text';
 import { Button } from '@/components/ui/Button';
 import type { ConvergenceSignal, IntelNode } from '@/types/api';
 import { DETAIL_PAGE_BOTTOM, DetailShell, useStageInk } from './DetailShell';
@@ -144,7 +145,7 @@ export function KeystoneBridge({
         <Animated.View style={[styles.keyLabel, labelStyle]} pointerEvents="none">
           <View style={[styles.keyChip, { backgroundColor: c.surface }]}>
             <Text variant="caption" style={{ color, textAlign: 'center' }}>
-              {data.topicName}
+              {sentenceCase(data.topicName)}
             </Text>
           </View>
         </Animated.View>
@@ -170,19 +171,19 @@ export function KeystoneBridge({
         </Text>
         {data.arrival ? (
           <Text variant="serifLg" style={{ color: ink(0.94), marginTop: Spacing[3] }}>
-            {data.arrival}
+            {plainLabel(data.arrival)}
           </Text>
         ) : null}
-        <View style={[styles.signal, { borderLeftColor: color }]}>
+        <View style={styles.signal}>
           <Text variant="body" style={{ color: ink(0.88) }}>
-            {data.signal}
+            {plainProse(data.signal)}
           </Text>
         </View>
         {data.act ? (
-          <View style={[styles.signal, { borderLeftColor: color, marginTop: Spacing[4] }]}>
+          <View style={[styles.signal, { marginTop: Spacing[4] }]}>
             <Text variant="headline" style={{ color: ink(0.94) }}>Where this points</Text>
             <Text variant="body" style={{ color: ink(0.9), marginTop: 2 }}>
-              {data.act}
+              {plainProse(data.act)}
             </Text>
           </View>
         ) : null}
@@ -343,7 +344,7 @@ const styles = StyleSheet.create({
   footer: { paddingHorizontal: Spacing[6], paddingTop: Spacing[5] },
   signal: {
     marginTop: Spacing[3],
-    borderLeftWidth: 2,
+    borderLeftWidth: 0,
     paddingLeft: Spacing[4],
     paddingVertical: Spacing[1],
   },

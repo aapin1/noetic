@@ -148,7 +148,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'welcome',
     title: 'Welcome to Mneme',
-    body: 'Save anything that catches your mind and Mneme plots it on this map, spatially, the way your brain organizes concepts.',
+    body: 'Save anything that catches your attention and Mneme places it on this map, next to related ideas.',
     target: { kind: 'card' },
   },
   {
@@ -161,7 +161,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'capture-next',
     title: 'The source',
-    body: 'Mneme reads the page itself and understands it: an article, a video, a paper, anything you give it. The tedious part of saving is never yours.',
+    body: "Mneme reads the page for you: an article, a video, a paper, anything you give it. You don't have to summarise it yourself.",
     target: { kind: 'registered', id: TUTORIAL_TARGET.captureNext },
     hint: 'Tap Next',
   },
@@ -175,20 +175,20 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'seven-seconds',
     title: 'Under 7 seconds',
-    body: 'Mneme is reading the page right now. Everything you save takes under 7 seconds, start to finish.',
+    body: 'Mneme is reading the page right now. Saving takes under 7 seconds.',
     target: { kind: 'card' },
     autoAdvance: true,
   },
   {
     id: 'atlas',
     title: 'Your first node',
-    body: 'There it lands. As you save more, related ideas settle close together, and the connections, contradictions, and tensions between them surface as insights for you to review.',
+    body: 'Your first node is on the map. As you save more, related ideas land close together, and the connections and contradictions between them show up as insights.',
     target: { kind: 'card' },
   },
   {
     id: 'node-manage-prompt',
     title: 'Open a node',
-    body: 'Every node keeps everything Mneme learned about that save.',
+    body: 'Each node holds everything Mneme learned about that save.',
     target: { kind: 'registered', id: TUTORIAL_TARGET.nodeTap },
     hint: 'Tap your new node',
   },
@@ -230,7 +230,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'done',
     title: "That's Mneme",
-    body: "You're on your own now. Replay this tour any time from the help button. The map grows from whatever catches you next.",
+    body: "That's the tour. You can replay it any time from the help button.",
     target: { kind: 'card' },
     deferUntilAtlas: true,
   },

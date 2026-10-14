@@ -48,7 +48,7 @@ export function ComebackPromise({ visible, fragmentCount, onDecline, onAccept }:
           </Text>
 
           <Text variant="body" style={{ marginTop: Spacing[4] }}>
-            Turn on notifications to stay on track with what you're learning?
+            Want a reminder when your streak needs a save?
           </Text>
 
           <Text variant="caption" color="muted" style={{ marginTop: Spacing[5] }}>

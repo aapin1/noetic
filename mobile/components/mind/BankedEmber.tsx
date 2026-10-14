@@ -13,6 +13,7 @@ import Animated, {
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { sentenceCase } from '@/lib/text';
 import { Button } from '@/components/ui/Button';
 import type { DormantThread } from '@/types/api';
 import { emberHeat } from './overviewSections';
@@ -168,7 +169,7 @@ export function BankedEmber({
                 numberOfLines={2}
                 style={{ color, textAlign: 'center' }}
               >
-                {data.topicName}
+                {sentenceCase(data.topicName)}
               </Text>
             </View>
           </View>

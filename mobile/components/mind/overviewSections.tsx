@@ -4,6 +4,7 @@ import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
+import { plainLabel, sentenceCase } from '@/lib/text';
 import type {
   ContradictionCard,
   ConvergenceSignal,
@@ -99,7 +100,7 @@ export function ThreadStrand({
       {/* Title first, larger, so each strand clearly belongs to its name */}
       <View style={styles.strandTitleRow}>
         <Text variant="headline" numberOfLines={1} style={{ color: ink(0.92), flex: 1 }}>
-          {data.topicName}
+          {sentenceCase(data.topicName)}
         </Text>
         <Text variant="caption" color="muted">{data.captureCount} captures</Text>
       </View>
@@ -127,7 +128,7 @@ export function ThreadStrand({
       </Svg>
       {data.heading ? (
         <Text variant="caption" numberOfLines={1} style={{ color, marginTop: Spacing[1] }}>
-          {data.heading}
+          {plainLabel(data.heading)}
         </Text>
       ) : null}
     </Pressable>

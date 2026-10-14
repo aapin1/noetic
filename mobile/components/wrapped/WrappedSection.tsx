@@ -33,6 +33,7 @@ import { useApiQuery } from '@/hooks/useApiQuery';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { SectionKicker } from '@/components/ui/SectionKicker';
+import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { Avatar } from '@/components/ui/Avatar';
 import { Confetti } from '@/components/ui/Confetti';
 import { SponsoredCard } from '@/components/ui/SponsoredCard';
@@ -272,7 +273,6 @@ function RevealCard({
           louder than the cards it was meant to distinguish. A dot is the same
           mark the Atlas and the archive already use for "this belongs to
           something", at the size those use it. */}
-      {accent && <View style={[styles.cardDot, { backgroundColor: accent }]} />}
       {children}
     </Animated.View>
   );
@@ -1259,26 +1259,11 @@ function Timeline({
       <Text variant="h4" style={styles.cardTitle}>
         {timelineTitle(seed)}
       </Text>
-      <View style={[styles.segmented, { borderColor: c.border }]}>
-        {RANGES.map((r) => {
-          const on = r.key === range;
-          return (
-            <Pressable
-              key={r.key}
-              onPress={() => select(r.key)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: on }}
-              // The accents are mid-tone, so an 11px label on one lands under
-              // 4.5:1 either way. The selected pill stays monochrome.
-              style={[styles.segment, on && { backgroundColor: c.text }]}
-            >
-              <Text variant="caption" style={{ color: on ? c.inverseText : c.muted }}>
-                {r.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      <SegmentedControl
+        options={RANGES.map((r) => ({ key: r.key, label: r.label }))}
+        value={range}
+        onChange={select}
+      />
 
       {total === 0 ? (
         <Text variant="caption" color="faint" style={styles.timelineEmpty}>
@@ -1738,11 +1723,8 @@ export function WrappedSection({
               {/* The number is meaningless without saying which streak it IS.
                   Leading with the all-time record and describing it in the
                   present tense claimed a run that had already lapsed. */}
-              <Text variant="caption" color="faint" style={styles.streakCaption}>
+              <Text variant="subheadline" color="secondary" style={styles.streakCaption}>
                 {streakLive ? 'days in a row right now' : 'days, your longest streak'}
-              </Text>
-              <Text variant="subheadline" color="secondary" style={styles.streakLine}>
-                {streakLive ? currentStreakLine(w.currentStreak) : longestStreakLine(w.longestStreak)}
               </Text>
             </View>
           </View>

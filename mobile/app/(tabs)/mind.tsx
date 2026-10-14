@@ -263,7 +263,7 @@ export default function MindScreen() {
         <ScreenIntro
           art="brain"
           title="Patterns from your saves"
-          body="Mind reads everything you save and reports what it finds: threads you keep pulling, ideas that clash, topics going quiet. Save 2 or 3 related things and the first patterns appear here."
+          body="Mind looks for patterns across your saves: recurring threads, ideas that disagree, and topics going quiet. Save two or three related things and the first patterns appear here."
           actions={[
             { label: 'Open Atlas', onPress: () => router.push('/(tabs)' as never) },
           ]}
@@ -454,7 +454,8 @@ export default function MindScreen() {
           <Button
             label="See all"
             variant="secondary"
-            size="sm"
+            size="md"
+            fullWidth
             onPress={() => setView('all')}
             style={styles.seeAll}
             accessibilityLabel="See all"
@@ -519,7 +520,7 @@ const styles = StyleSheet.create({
     gap: Spacing[3],
   },
   thresholdTick: { width: 8, height: 22, borderRadius: 2 },
-  seeAll: { alignSelf: 'flex-start', marginTop: Spacing[6] },
+  seeAll: { alignSelf: 'stretch', marginTop: Spacing[6] },
 
   sectionSubtitle: {
     paddingHorizontal: Spacing[6],

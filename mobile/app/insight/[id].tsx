@@ -321,7 +321,7 @@ export default function InsightDetailScreen() {
               ))}
             <Button
               label="Move to another topic"
-              variant="tertiary"
+              variant="secondary"
               size="sm"
               onPress={() => setMovePickerVisible(true)}
               accessibilityLabel="Move to another topic"
