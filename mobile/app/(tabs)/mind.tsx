@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { ChevronLeftIcon, ChevronRightIcon, InfoIcon, XIcon } from 'lucide-react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Spacing } from '@/constants/theme';
@@ -26,7 +25,7 @@ import {
   SectionHeader,
   ThreadStrand,
 } from '@/components/mind/overviewSections';
-import { useStageInk } from '@/components/mind/DetailShell';
+import { FadeInView, useStageInk } from '@/components/mind/DetailShell';
 import type {
   ContradictionCard,
   ConvergenceSignal,
@@ -434,8 +433,8 @@ export default function MindScreen() {
 
           {/* ── Small sheet (pre-visualization fallbacks) ───────────────── */}
           {selection && !immersive && (
-            <Animated.View
-              entering={FadeIn.duration(200)}
+            <FadeInView
+              duration={200}
               style={[styles.sheet, { backgroundColor: c.surface, borderColor: c.border }]}
             >
               <View style={[styles.sheetHandle, { backgroundColor: c.border }]} />
@@ -456,7 +455,7 @@ export default function MindScreen() {
                   {selection.d.signal}
                 </Text>
               ) : null}
-            </Animated.View>
+            </FadeInView>
           )}
 
           <InfoModal
@@ -469,12 +468,7 @@ export default function MindScreen() {
       }
     >
       {view === 'threshold' ? (
-        <Animated.View
-          key="threshold"
-          entering={FadeIn.duration(300)}
-          exiting={FadeOut.duration(200)}
-          style={styles.threshold}
-        >
+        <FadeInView key="threshold" duration={300} style={styles.threshold}>
           {/* An inset grouped list: the section's own mark in its colour,
               name and one-line description, the count as a trailing value, a
               chevron. The mark is a miniature of the screen behind the row. */}
@@ -513,9 +507,9 @@ export default function MindScreen() {
               </View>
             </Pressable>
           </View>
-        </Animated.View>
+        </FadeInView>
       ) : (
-        <Animated.View key={view} entering={FadeIn.duration(280)} style={styles.safe}>
+        <FadeInView key={view} duration={280} style={styles.safe}>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
             {view === 'all' ? (
               activeSections.map((s) => (
@@ -539,7 +533,7 @@ export default function MindScreen() {
                 readings. Auto tone: Mind's stage follows the app theme. */}
             <SponsoredCard />
           </ScrollView>
-        </Animated.View>
+        </FadeInView>
       )}
     </MindStage>
   );

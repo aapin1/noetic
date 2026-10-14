@@ -1,7 +1,6 @@
-import React from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
 import { XIcon } from 'lucide-react-native';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -30,6 +29,45 @@ export function useStageInk(): (o: number) => string {
 // with the tab bar height in (tabs)/_layout.tsx.
 export const DETAIL_PAGE_BOTTOM = Platform.OS === 'ios' ? 98 : 82;
 
+/**
+ * A mount fade on the core Animated API, used wherever Mind used to lean on
+ * Reanimated's `entering` layout animations. Those ran on the UI thread
+ * through a snapshot of the subtree, and on the new architecture a
+ * ScrollView mounted inside one would sometimes keep missing touches after
+ * the snapshot went away, and the page under it ghosted through. A plain
+ * opacity and translate on the real view has neither problem.
+ */
+export function FadeInView({
+  children,
+  style,
+  duration = 220,
+  rise = 0,
+  delay = 0,
+}: {
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+  duration?: number;
+  /** Start this many points lower and settle up, for a body sliding in. */
+  rise?: number;
+  delay?: number;
+}) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(rise)).current;
+  useEffect(() => {
+    const anim = Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration, delay, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration, delay, useNativeDriver: true }),
+    ]);
+    anim.start();
+    return () => anim.stop();
+  }, [opacity, translateY, duration, delay]);
+  return (
+    <Animated.View style={[style, { opacity, transform: [{ translateY }] }]}>
+      {children}
+    </Animated.View>
+  );
+}
+
 export function DetailShell({
   typeLabel,
   accent,
@@ -45,11 +83,7 @@ export function DetailShell({
 }) {
   const ink = useStageInk();
   return (
-    <Animated.View
-      entering={FadeIn.duration(220)}
-      exiting={FadeOut.duration(160)}
-      style={[StyleSheet.absoluteFill, { backgroundColor: background }]}
-    >
+    <FadeInView style={[StyleSheet.absoluteFill, { backgroundColor: background }]}>
       <SafeAreaView edges={['top']} style={styles.safe}>
         <View style={styles.header}>
           <Pressable
@@ -68,11 +102,11 @@ export function DetailShell({
             </Text>
           </View>
         </View>
-        <Animated.View entering={FadeInDown.duration(340).delay(60)} style={styles.body}>
+        <FadeInView style={styles.body} duration={340} delay={60} rise={14}>
           {children}
-        </Animated.View>
+        </FadeInView>
       </SafeAreaView>
-    </Animated.View>
+    </FadeInView>
   );
 }
 

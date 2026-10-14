@@ -31,7 +31,11 @@ row is never a stock icon on a coloured tile; it is a 36pt miniature of the
 screen the row opens, drawn in that screen's colour (`SectionMark`).
 
 Decorative SVG inside a scrolling list carries `pointerEvents="none"`, or
-it swallows the drag and the list will not scroll from that spot. Close
+it swallows the drag and the list will not scroll from that spot. No
+Reanimated `entering`/`exiting` layout animation wraps a ScrollView or a
+full-screen overlay: on the new architecture the subtree behind the
+animation's snapshot intermittently stopped taking touches and the page
+beneath ghosted through. Mount fades use `FadeInView` (core Animated). Close
 and back controls are 44pt targets on a header with `zIndex` above the body.
 
 The capture sheet offers Link, Note, Image and Title on one row; Title
