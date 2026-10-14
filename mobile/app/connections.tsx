@@ -44,7 +44,7 @@ function ago(iso: string | null): string {
 }
 
 function statusLine(conn: Connection): string {
-  if (conn.syncing) return 'Reading your account';
+  if (conn.syncing) return 'Reading your account…';
   if (conn.status === 'error' && conn.lastError) return conn.lastError;
   const parts = [ago(conn.lastSyncedAt)];
   if (conn.mapped > 0) parts.push(`${conn.mapped} on your map`);
@@ -241,7 +241,7 @@ export default function ConnectionsScreen() {
       <ScreenHeader title="Connections" variant="title" />
 
       {connections === null ? (
-        <AsciiLoader fill size={90} message="Loading" />
+        <AsciiLoader fill size={90} message="Loading…" />
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <Text variant="subheadline" color="secondary" style={styles.intro}>
@@ -286,7 +286,7 @@ export default function ConnectionsScreen() {
                     hitSlop={8}
                     accessibilityRole="button"
                   >
-                    <Text variant="caption" color="primary">{addingFor === conn.provider ? 'Adding' : 'Add them'}</Text>
+                    <Text variant="caption" color="primary">{addingFor === conn.provider ? 'Adding…' : 'Add them'}</Text>
                   </Pressable>
                   <Pressable onPress={() => void answerPending(conn.provider, 'decline')} hitSlop={8} accessibilityRole="button">
                     <Text variant="caption" color="muted">Skip</Text>
@@ -378,7 +378,7 @@ export default function ConnectionsScreen() {
                     testID={`connect-${sheet.meta.key}`}
                   />
                   <Button
-                    label={busy === sheet.meta.key ? 'Checking' : 'Connect'}
+                    label={busy === sheet.meta.key ? 'Checking…' : 'Connect'}
                     variant="secondary"
                     size="sm"
                     accent={sheet.meta.accent}

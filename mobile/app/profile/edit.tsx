@@ -140,7 +140,7 @@ export default function EditProfileScreen() {
           />
 
           <Button
-            label={saving ? 'Saving' : 'Save changes'}
+            label={saving ? 'Saving…' : 'Save changes'}
             onPress={handleSave}
             variant="primary"
             size="lg"

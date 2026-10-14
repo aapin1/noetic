@@ -1091,7 +1091,7 @@ const WORK_KINDS: { key: RecognizeKind; label: string }[] = [
   { key: 'album', label: 'Album' },
 ];
 
-const MODE_LABELS: Record<CaptureMode, string> = { link: 'Link', text: 'Note', image: 'Image', work: 'Work' };
+const MODE_LABELS: Record<CaptureMode, string> = { link: 'Link', text: 'Note', image: 'Image', work: 'Title' };
 
 /** The node panel's kind line: "Link", "Note", "Image". */
 function kindLabel(kind: string): string {
@@ -1150,12 +1150,12 @@ function StepOne({
       <Text variant="h4" color="primary" style={sh.heading}>
         What are you saving?
       </Text>
-      <Text variant="caption" color="muted" style={sh.sub}>
-        A link, a note, an image, or something you finished.
-      </Text>
       <Divider c={c} />
+      {/* Four kinds on one row. Title is the finished-work path: picking it
+          opens the row of work kinds underneath, so a book or a film is one
+          tap deeper rather than six chips competing with the first three. */}
       <View style={sh.modeRow}>
-        {(['link', 'text', 'image'] as CaptureMode[]).map((m) => {
+        {(['link', 'text', 'image', 'work'] as CaptureMode[]).map((m) => {
           const active = mode === m;
           return (
             <Pressable
@@ -1163,31 +1163,31 @@ function StepOne({
               onPress={() => setMode(m)}
               style={[sh.modeChip, { borderColor: active ? c.text : c.borderSubtle, backgroundColor: active ? c.elevated : 'transparent' }]}
             >
-              <Text variant="caption" style={{ color: active ? c.text : c.muted, fontWeight: active ? '600' : '400' }}>
+              <Text variant="subheadline" style={[sh.modeChipLabel, { color: active ? c.text : c.muted }]}>
                 {MODE_LABELS[m]}
               </Text>
             </Pressable>
           );
         })}
       </View>
-      {/* The finished-work kinds, first-class on the form: naming a book or
-          film IS a capture, and it has no URL to paste. */}
-      <View style={sh.modeRow}>
-        {WORK_KINDS.map((k) => {
-          const active = mode === 'work' && workKind === k.key;
-          return (
-            <Pressable
-              key={k.key}
-              onPress={() => setWorkKind(k.key)}
-              style={[sh.modeChip, { borderColor: active ? c.text : c.borderSubtle, backgroundColor: active ? c.elevated : 'transparent' }]}
-            >
-              <Text variant="caption" style={{ color: active ? c.text : c.muted, fontWeight: active ? '600' : '400' }}>
-                {k.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      {mode === 'work' ? (
+        <View style={sh.modeRow}>
+          {WORK_KINDS.map((k) => {
+            const active = workKind === k.key;
+            return (
+              <Pressable
+                key={k.key}
+                onPress={() => setWorkKind(k.key)}
+                style={[sh.modeChip, { borderColor: active ? c.text : c.borderSubtle, backgroundColor: active ? c.elevated : 'transparent' }]}
+              >
+                <Text variant="subheadline" style={[sh.modeChipLabel, { color: active ? c.text : c.muted }]}>
+                  {k.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
       {/* Wrapped as one region so the tutorial's spotlight (and its tap
           passthrough) covers the whole visible form, not just the button.
           collapsable={false} is load-bearing: this View carries no style, so
@@ -1196,7 +1196,6 @@ function StepOne({
       <View ref={nextTarget.ref} onLayout={nextTarget.onLayout} collapsable={false}>
         {mode === 'image' ? (
           <View style={[sh.inputBox, { borderColor: c.border }]}>
-            <Text variant="caption" style={[sh.inputLabel, { color: c.muted }]}>Image</Text>
             {imageUri ? (
               <Image source={{ uri: imageUri }} style={sh.thumb} contentFit="cover" />
             ) : (
@@ -1209,19 +1208,16 @@ function StepOne({
               <Button label={imageUri ? 'Replace' : 'Choose from library'} variant="secondary" size="sm" onPress={() => onPickImage('library')} />
             </View>
             {uploading && (
-              <Text variant="caption" style={{ color: c.muted, marginTop: Spacing[3] }}>Reading image</Text>
+              <Text variant="caption" style={{ color: c.muted, marginTop: Spacing[3] }}>Reading image…</Text>
             )}
           </View>
         ) : (
           <View style={[sh.inputBox, { borderColor: c.border }]}>
-            <Text variant="caption" style={[sh.inputLabel, { color: c.muted }]}>
-              {mode === 'link' ? 'Link' : mode === 'work' ? 'Title' : 'Note'}
-            </Text>
             <TextInput
               style={[sh.inputField, { color: c.text, fontFamily: FontFamily.sans, fontSize: FontSize.md }]}
               value={payload}
               onChangeText={setPayload}
-              placeholder={mode === 'link' ? 'https://' : mode === 'work' ? 'The title is enough' : 'A thought, a quote, a fragment'}
+              placeholder={mode === 'link' ? 'https://' : mode === 'work' ? 'Title of the work' : 'A thought, a quote, a fragment'}
               placeholderTextColor={c.faint}
               multiline={mode === 'text'}
               autoCapitalize={mode === 'link' ? 'none' : mode === 'work' ? 'words' : 'sentences'}
@@ -1282,7 +1278,7 @@ function StepOne({
             /* A named work is looked up first: find shows the match to
                confirm, and the save happens on that screen. */
             <Button
-              label={finding ? 'Finding' : 'Find'}
+              label={finding ? 'Finding…' : 'Find'}
               size="sm"
               onPress={onFind}
               disabled={finding || !payload.trim() || !workKind}
@@ -1293,7 +1289,7 @@ function StepOne({
                the share-sheet path treats the insight — an offer, not a toll. */
             <View style={sh.actionsRight}>
               <Button label="Add reaction" variant="tertiary" size="sm" onPress={() => { onNext(); }} disabled={busy} />
-              <Button label={busy ? 'Saving' : 'Save'} size="sm" onPress={onQuickSave} disabled={busy} />
+              <Button label={busy ? 'Saving…' : 'Save'} size="sm" onPress={onQuickSave} disabled={busy} />
             </View>
           )}
         </View>
@@ -1414,7 +1410,7 @@ function StepTwo({
               expects commit next, not a return to the form. */}
           <Button label="Back" variant="tertiary" size="sm" onPress={onBack} disabled={commitTarget.isActive} />
           <Button
-            label={busy ? 'Saving' : 'Save'}
+            label={busy ? 'Saving…' : 'Save'}
             size="sm"
             // The walkthrough advances from the parent's commit flow AFTER the
             // demo node actually lands, not on the press itself.
@@ -1537,7 +1533,7 @@ function StepVerify({
       <Divider c={c} />
       <View style={sh.actions}>
         <Button label="Back" variant="tertiary" size="sm" onPress={onBack} />
-        <Button label={busy ? 'Saving' : 'Save'} size="sm" onPress={onCommit} disabled={busy || finding} />
+        <Button label={busy ? 'Saving…' : 'Save'} size="sm" onPress={onCommit} disabled={busy || finding} />
       </View>
     </View>
   );
@@ -1548,9 +1544,14 @@ const sh = StyleSheet.create({
   heading: { marginTop: Spacing[6], marginBottom: Spacing[2] },
   sub: { opacity: 0.7 },
   modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[2], marginBottom: Spacing[4] },
-  modeChip: { paddingVertical: Spacing[2], paddingHorizontal: Spacing[3], borderRadius: Radius.xs, borderWidth: 1 },
+  modeChip: { paddingVertical: Spacing[2], paddingHorizontal: Spacing[4], borderRadius: Radius.xs, borderWidth: 1 },
+  // One weight for every chip: the selected one is told by its border and
+  // fill, so no label ever reads a size smaller than its neighbours.
+  modeChipLabel: { fontWeight: '500' },
   thumb: { width: '100%', height: 180, borderRadius: Radius.xs, marginBottom: Spacing[2] },
-  inputBox: { borderWidth: 1, borderRadius: Radius.xs, padding: Spacing[4], marginTop: Spacing[2] },
+  // One height for every kind, so switching between a link, a note, an
+  // image and a title never resizes the sheet under the thumb.
+  inputBox: { borderWidth: 1, borderRadius: Radius.xs, padding: Spacing[4], marginTop: Spacing[2], minHeight: 150, justifyContent: 'center' },
   workCard: { flexDirection: 'row', borderWidth: 1, borderRadius: Radius.xs, padding: Spacing[4], gap: Spacing[4], marginTop: Spacing[2] },
   workCover: { width: 72, height: 104, borderRadius: Radius.xs },
   workCardBody: { flex: 1 },
@@ -3659,7 +3660,7 @@ export default function MapScreen() {
   // Shared by "next" (reaction step) and the one-tap quick save.
   const validatePayload = useCallback((): boolean => {
     if (mode === 'image') {
-      if (uploading) { setCaptureError('Still reading the image.'); return false; }
+      if (uploading) { setCaptureError('Still reading the image…'); return false; }
       if (!mediaUrl) { setCaptureError('Add an image first.'); return false; }
     } else if (!payload.trim()) {
       setCaptureError('Enter a URL or thought first.'); return false;
@@ -3817,8 +3818,8 @@ export default function MapScreen() {
         if (importing) activitySaw.current.add('import');
         if (!activityMuted.current) {
           const line = importing
-            ? 'Reading your file'
-            : `Reading your ${syncing.map((conn) => conn.provider).slice(0, 2).join(' and ')}`;
+            ? 'Reading your file…'
+            : `Reading your ${syncing.map((conn) => conn.provider).slice(0, 2).join(' and ')}…`;
           const sub = importing
             ? `${importing.done} of ${importing.total} on your map`
             : 'Finds land as points while it reads';
@@ -5255,7 +5256,7 @@ export default function MapScreen() {
                 color="rgba(240,232,214,0.77)"
               />
               <Text style={[styles.discoveryCount, { color: 'rgba(240,232,214,0.69)', flex: 1 }]}>
-                {savedPill.phase === 'logging' ? 'Reading and mapping'
+                {savedPill.phase === 'logging' ? 'Reading and mapping…'
                   : totalCaptureCount <= 1 ? 'Your map has begun' : 'Saved'}
               </Text>
               <Pressable onPress={() => setSavedPill(null)} hitSlop={10} accessibilityLabel="Dismiss" accessibilityRole="button">
@@ -5423,7 +5424,7 @@ export default function MapScreen() {
             <AsciiLoader
               size={110}
               color="rgba(240,232,214,0.65)"
-              message="Drawing your map"
+              message={['Drawing your map…', 'Plotting your ideas…', 'Charting the territory…']}
             />
           </View>
         )}
@@ -5613,7 +5614,7 @@ export default function MapScreen() {
                     >
                       <Trash2Icon size={13} color={c.danger} />
                       <Text variant="subheadline" color="danger">
-                        {deletingNode ? 'Deleting' : 'Delete'}
+                        {deletingNode ? 'Deleting…' : 'Delete'}
                       </Text>
                     </Pressable>
                   </View>
@@ -5717,15 +5718,15 @@ export default function MapScreen() {
                       message={
                         mode === 'link'
                           ? [
-                              'Reading the source',
-                              'Placing it on your map',
-                              'Writing your insight',
-                              'Big source. This can take a moment',
+                              'Reading the source…',
+                              'Placing it on your map…',
+                              'Writing your insight…',
+                              'Big source, this can take a moment…',
                             ]
                           : [
-                              'Placing it on your map',
-                              'Writing your insight',
-                              'Still working',
+                              'Placing it on your map…',
+                              'Writing your insight…',
+                              'Still working…',
                             ]
                       }
                       schedule={mode === 'link' ? [6000, 5000, 6000] : [6000, 7000]}

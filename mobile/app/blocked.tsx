@@ -60,7 +60,7 @@ export default function BlockedAccountsScreen() {
       <ScreenHeader title="Blocked" variant="title" />
 
       {loading && !data ? (
-        <AsciiLoader fill size={90} message="Loading" />
+        <AsciiLoader fill size={90} message="Loading…" />
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {error ? (

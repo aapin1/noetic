@@ -37,7 +37,7 @@ export default function TerrainScreen() {
         <AsciiLoader
           variant="cat"
           size={72}
-          message="Loading"
+          message="Loading…"
         />
       ) : !data || !data.unlocked ? (
         data?.forming ? (

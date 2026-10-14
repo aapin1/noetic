@@ -136,7 +136,7 @@ export default function NotificationSettingsScreen() {
       <ScreenHeader title="Notifications" variant="title" />
 
       {loading && !data ? (
-        <AsciiLoader fill size={90} message="Loading" />
+        <AsciiLoader fill size={90} message="Loading…" />
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {!pushGranted && (

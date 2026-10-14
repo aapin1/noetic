@@ -127,7 +127,7 @@ export default function ImportScreen() {
           <View style={[styles.jobCard, { borderColor: c.border, backgroundColor: c.surface }]}>
             {running ? (
               <>
-                <AsciiLoader size={64} message={`Mapping ${job.formats[0] ?? 'your file'}, ${progress} of ${job.total}`} />
+                <AsciiLoader size={64} message={`Mapping ${job.formats[0] ?? 'your file'}… ${progress} of ${job.total}`} />
                 <Text variant="caption" color="faint" style={styles.jobNote}>
                   Safe to leave. This keeps going.
                 </Text>
@@ -184,7 +184,7 @@ export default function ImportScreen() {
             )}
             <View style={{ flexDirection: 'row', gap: Spacing[3], marginTop: Spacing[2] }}>
               <Button
-                label={busy ? 'Starting' : 'Map it'}
+                label={busy ? 'Starting…' : 'Map it'}
                 onPress={() => void start({ ...picked.payload, includeBare })}
                 loading={busy}
                 disabled={busy || picked.inspect.withWords + (includeBare ? picked.inspect.bare : 0) === 0}
@@ -198,7 +198,7 @@ export default function ImportScreen() {
         {!running && !picked && (
           <>
             <SectionKicker label="A file" style={styles.sectionHeader} />
-            <Button label={busy ? 'Reading' : 'Choose a file'} variant="secondary" onPress={() => void pickFile()} disabled={busy} loading={busy} fullWidth />
+            <Button label={busy ? 'Reading…' : 'Choose a file'} variant="secondary" onPress={() => void pickFile()} disabled={busy} loading={busy} fullWidth />
             <Text variant="caption" color="faint" style={styles.hint}>
               CSV, ZIP, TXT, JSON, MD, HTML, XML or ENEX. Up to 200 rows map per import; anything already on your map is skipped.
             </Text>
@@ -216,7 +216,7 @@ export default function ImportScreen() {
               accessibilityLabel="Paste a list of links"
               testID="import-paste"
             />
-            <Button label={busy ? 'Reading' : 'Map these links'} onPress={() => void start({ content: text })} disabled={busy || text.trim().length === 0} loading={busy} fullWidth style={styles.mapBtn} />
+            <Button label={busy ? 'Reading…' : 'Map these links'} onPress={() => void start({ content: text })} disabled={busy || text.trim().length === 0} loading={busy} fullWidth style={styles.mapBtn} />
 
             <Button label="Connect an account instead" variant="tertiary" onPress={() => router.push('/connections' as never)} fullWidth style={styles.hint} />
           </>

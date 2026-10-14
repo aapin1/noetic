@@ -222,7 +222,7 @@ export default function SignUpScreen() {
       </KeyboardAvoidingView>
       {loading && (
         <View style={[StyleSheet.absoluteFill, styles.loadingOverlay, { backgroundColor: c.background }]}>
-          <AsciiLoader fill size={110} message="Creating your account" />
+          <AsciiLoader fill size={110} message={['Growing a brain…', 'Carving out your corner…', 'Almost there…']} />
         </View>
       )}
     </SafeAreaView>

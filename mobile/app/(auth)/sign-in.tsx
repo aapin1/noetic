@@ -160,7 +160,7 @@ export default function SignInScreen() {
       </KeyboardAvoidingView>
       {loading && (
         <View style={[StyleSheet.absoluteFill, styles.loadingOverlay, { backgroundColor: c.background }]}>
-          <AsciiLoader fill size={110} message="Signing you in" />
+          <AsciiLoader fill size={110} message={['Waking your brain…', 'Finding your map…']} />
         </View>
       )}
     </SafeAreaView>

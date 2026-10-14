@@ -158,12 +158,15 @@ export function FractureZone({
           side === 'A'
             ? { left: Spacing[4], right: SW / 2 + CHASM_HALF + Spacing[3], alignItems: 'flex-start' }
             : { right: Spacing[4], left: SW / 2 + CHASM_HALF + Spacing[3], alignItems: 'flex-end' },
-          { bottom: STAGE_H - mass.cy + POLE_R + 10 },
+          // Bounded above by the stage top: a long title used to run up
+          // under the header and across the close button.
+          { bottom: STAGE_H - mass.cy + POLE_R + 10, maxHeight: mass.cy - POLE_R - 14, justifyContent: 'flex-end' },
         ]}
         pointerEvents="none"
       >
         <Text
           variant="bodyMedium"
+          numberOfLines={3}
           style={{ color: ink(0.85), textAlign: side === 'A' ? 'left' : 'right' }}
         >
           {mass.pole.label}

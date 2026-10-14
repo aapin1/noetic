@@ -24,13 +24,62 @@ const BRAIN_SIZE = Math.min(SCREEN_W * 0.8, 340);
 
 const TAGLINE = 'Save. Connect. Remember.';
 const RETURNING = 'Welcome back';
+const TYPE_MS = 55;
 
 /** Once the intro has handed off, the haze drops back so it never competes with the CTA. */
 const HAZE_SETTLED = 0.6;
 
-/** A fast profile fetch used to cut the welcome line off. Hold the redirect
- * long enough for it to be read. */
-const WELCOME_MS = 1200;
+/** A fast profile fetch used to cut the welcome line off mid-word. Hold the
+ * redirect until it has finished typing, plus a beat to read it. */
+const WELCOME_MS = RETURNING.length * TYPE_MS + 420;
+
+/** Types a line out one character at a time, then blinks a cursor. The
+ * typing is the landing page's one piece of theatre and stays; only the
+ * face changed, from the terminal mono to the system type. */
+function TypedTagline({
+  start,
+  text = TAGLINE,
+}: {
+  start: boolean;
+  text?: string;
+}) {
+  const c = useThemeColors();
+  const [chars, setChars] = useState(0);
+  const cursor = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!start) return;
+    const t = setInterval(() => {
+      setChars((n) => {
+        if (n >= text.length) { clearInterval(t); return n; }
+        return n + 1;
+      });
+    }, TYPE_MS);
+    return () => clearInterval(t);
+  }, [start, text]);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(cursor, { toValue: 0, duration: 90, delay: 420, useNativeDriver: true }),
+        Animated.timing(cursor, { toValue: 1, duration: 90, delay: 420, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [cursor]);
+
+  return (
+    <View style={styles.taglineRow}>
+      <Text variant="subheadline" color="secondary">
+        {text.slice(0, chars)}
+      </Text>
+      <Animated.Text style={{ fontSize: 15, lineHeight: 20, color: c.textSecondary, opacity: cursor }}>
+        _
+      </Animated.Text>
+    </View>
+  );
+}
 
 export default function LandingScreen() {
   const c = useThemeColors();
@@ -149,9 +198,7 @@ export default function LandingScreen() {
             <Animated.View style={{ transform: [{ scale: breathScale }, { rotate: swayRotate }] }}>
               <Brain size={BRAIN_SIZE} density={72} intensity={0.85} />
             </Animated.View>
-            <Text variant="subheadline" color="secondary" style={styles.tagline}>
-              {returning ? RETURNING : TAGLINE}
-            </Text>
+            <TypedTagline start={contentIn} text={returning ? RETURNING : TAGLINE} />
           </Animated.View>
 
           {!returning && (
@@ -214,7 +261,11 @@ const styles = StyleSheet.create({
     left: Spacing[6],
   },
   brain: { alignItems: 'center', marginBottom: Spacing[8] },
-  tagline: { marginTop: Spacing[4] },
+  taglineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Spacing[4],
+  },
   line: { textAlign: 'center' },
   cta: { marginTop: Spacing[10] },
   secondary: { marginTop: Spacing[4], alignSelf: 'center' },

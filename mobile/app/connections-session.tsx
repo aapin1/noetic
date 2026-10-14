@@ -81,7 +81,7 @@ export default function ConnectionSessionScreen() {
       ran.current = false;
     }
     if (msg.type === 'file' && msg.text) {
-      setMessage('Handing it to Mneme');
+      setMessage('Handing it to Mneme…');
       try {
         await api.importer.start({ content: msg.text, filename: msg.filename, includeBare: true });
         track('connection_linked', { provider: `session:${target?.key ?? key}` });
@@ -114,7 +114,7 @@ export default function ConnectionSessionScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
       <ScreenHeader title={target?.name ?? 'Sign in'} variant="title" />
       {phase === 'loading' || !target ? (
-        <AsciiLoader fill size={90} message={phase === 'error' ? message : 'Loading'} />
+        <AsciiLoader fill size={90} message={phase === 'error' ? message : 'Loading…'} />
       ) : (
         <>
           <View style={[styles.banner, { borderColor: c.border, backgroundColor: c.surface }]}>

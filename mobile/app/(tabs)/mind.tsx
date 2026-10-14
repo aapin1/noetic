@@ -2,18 +2,8 @@ import React, { useCallback, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  InfoIcon,
-  LayersIcon,
-  MergeIcon,
-  MoonIcon,
-  ScaleIcon,
-  WaypointsIcon,
-  XIcon,
-  type LucideIcon,
-} from 'lucide-react-native';
+import { ChevronLeftIcon, ChevronRightIcon, InfoIcon, XIcon } from 'lucide-react-native';
+import Svg, { Circle, Path } from 'react-native-svg';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
@@ -83,12 +73,65 @@ function useMindAccents(): Record<SectionKey, string> {
 
 type ViewState = 'threshold' | 'all' | SectionKey;
 
-const SECTION_META: { key: SectionKey; name: string; subtitle: string; icon: LucideIcon }[] = [
-  { key: 'threads', name: 'Threads', subtitle: 'Where your thinking is heading', icon: WaypointsIcon },
-  { key: 'contradictions', name: 'Contradictions', subtitle: 'Where your saves disagree', icon: ScaleIcon },
-  { key: 'convergence', name: 'Convergence', subtitle: 'Different sources reaching one idea', icon: MergeIcon },
-  { key: 'dormant', name: 'Quiet topics', subtitle: "Topics you haven't added to in a while", icon: MoonIcon },
+const SECTION_META: { key: SectionKey; name: string; subtitle: string }[] = [
+  { key: 'threads', name: 'Threads', subtitle: 'Where your thinking is heading' },
+  { key: 'contradictions', name: 'Contradictions', subtitle: 'Where your saves disagree' },
+  { key: 'convergence', name: 'Convergence', subtitle: 'Different sources reaching one idea' },
+  { key: 'dormant', name: 'Quiet topics', subtitle: "Topics you haven't added to in a while" },
 ];
+
+const MARK = 36;
+
+/**
+ * Each section's mark is a miniature of its own instrument, drawn in its
+ * colour: the strand with beads and an arrowhead (Threads), two masses
+ * across a rift (Contradictions), streams meeting at a point (Convergence),
+ * an ember with its rings of heat (Quiet topics). Not a stock glyph: the
+ * row shows the thing the screen behind it draws large.
+ */
+function SectionMark({ section, color }: { section: SectionKey; color: string }) {
+  switch (section) {
+    case 'threads':
+      return (
+        <Svg width={MARK} height={MARK} viewBox="0 0 36 36" pointerEvents="none">
+          <Path d="M3,20 C9,12 14,26 20,18 S28,13 31,17" fill="none" stroke={color} strokeOpacity={0.55} strokeWidth={1.5} />
+          <Circle cx={6} cy={17} r={2} fill={color} fillOpacity={0.55} />
+          <Circle cx={17} cy={21} r={2.6} fill={color} fillOpacity={0.7} />
+          <Circle cx={27} cy={15.5} r={3.4} fill={color} />
+          <Path d="M30,13 L34,17 L30,21" fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+        </Svg>
+      );
+    case 'contradictions':
+      return (
+        <Svg width={MARK} height={MARK} viewBox="0 0 36 36" pointerEvents="none">
+          <Path d="M19,2 L15,10 L20,17 L15,25 L19,34" fill="none" stroke={color} strokeOpacity={0.25} strokeWidth={5} />
+          <Path d="M19,2 L15,10 L20,17 L15,25 L19,34" fill="none" stroke={color} strokeWidth={1.4} />
+          <Circle cx={8} cy={13} r={5.5} fill={color} fillOpacity={0.9} />
+          <Circle cx={28} cy={23} r={5.5} fill={color} fillOpacity={0.9} />
+        </Svg>
+      );
+    case 'convergence':
+      return (
+        <Svg width={MARK} height={MARK} viewBox="0 0 36 36" pointerEvents="none">
+          <Path d="M4,8 C16,8 18,18 28,18" fill="none" stroke={color} strokeOpacity={0.5} strokeWidth={1.4} />
+          <Path d="M4,28 C16,28 18,18 28,18" fill="none" stroke={color} strokeOpacity={0.5} strokeWidth={1.4} />
+          <Circle cx={4} cy={8} r={2.4} fill={color} fillOpacity={0.6} />
+          <Circle cx={4} cy={28} r={2.4} fill={color} fillOpacity={0.6} />
+          <Circle cx={28} cy={18} r={8} fill={color} fillOpacity={0.14} />
+          <Circle cx={28} cy={18} r={4} fill={color} />
+        </Svg>
+      );
+    case 'dormant':
+      return (
+        <Svg width={MARK} height={MARK} viewBox="0 0 36 36" pointerEvents="none">
+          <Circle cx={18} cy={18} r={15} fill={color} fillOpacity={0.08} />
+          <Circle cx={18} cy={18} r={10} fill={color} fillOpacity={0.16} />
+          <Circle cx={18} cy={18} r={5} fill={color} fillOpacity={0.8} />
+          <Circle cx={18} cy={18} r={2} fill={color} />
+        </Svg>
+      );
+  }
+}
 
 type Selection =
   | { type: 'thread'; d: ThreadSynthesis }
@@ -301,9 +344,10 @@ export default function MindScreen() {
     <>
       <Pressable
         onPress={() => setView('threshold')}
-        hitSlop={12}
+        hitSlop={16}
         style={styles.backBtn}
         accessibilityLabel="Back to Mind overview"
+        accessibilityRole="button"
       >
         <ChevronLeftIcon size={22} color={c.deepInk} />
       </Pressable>
@@ -431,10 +475,9 @@ export default function MindScreen() {
           exiting={FadeOut.duration(200)}
           style={styles.threshold}
         >
-          {/* An inset grouped list, the way Settings lists its sections: a
-              coloured tile with the section's glyph, name and one-line
-              description, the count as a trailing value, a chevron. The tile
-              carries the section's colour, the same one its own screen uses. */}
+          {/* An inset grouped list: the section's own mark in its colour,
+              name and one-line description, the count as a trailing value, a
+              chevron. The mark is a miniature of the screen behind the row. */}
           <View style={[styles.group, { backgroundColor: c.surface, borderColor: c.borderSubtle }]}>
             {activeSections.map((s, i) => (
               <Pressable
@@ -445,9 +488,7 @@ export default function MindScreen() {
                 accessibilityLabel={`Open ${s.name}`}
               >
                 <View style={[styles.rowInner, i < activeSections.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.borderSubtle }]}>
-                  <View style={[styles.tile, { backgroundColor: ACCENT[s.key] }]}>
-                    <s.icon size={18} color="#FFFFFF" strokeWidth={2} />
-                  </View>
+                  <SectionMark section={s.key} color={ACCENT[s.key]} />
                   <View style={styles.rowText}>
                     <Text variant="headline" style={{ color: ink(0.9) }}>{s.name}</Text>
                     <Text variant="subheadline" color="secondary" style={{ marginTop: 1 }}>{s.subtitle}</Text>
@@ -467,9 +508,6 @@ export default function MindScreen() {
               accessibilityLabel="See all"
             >
               <View style={styles.rowInner}>
-                <View style={[styles.tile, { backgroundColor: c.muted }]}>
-                  <LayersIcon size={18} color="#FFFFFF" strokeWidth={2} />
-                </View>
                 <Text variant="body" style={[styles.rowText, { color: ink(0.9) }]}>See all</Text>
                 <ChevronRightIcon size={18} color={c.faint} />
               </View>
@@ -515,9 +553,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: Spacing[6], paddingVertical: Spacing[2],
     borderBottomWidth: StyleSheet.hairlineWidth,
+    zIndex: 2,
   },
   body: { flex: 1 },
-  backBtn: { padding: Spacing[1], marginLeft: -Spacing[2] },
+  backBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginLeft: -Spacing[3] },
 
   stateBlock: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing[8], paddingBottom: Spacing[16] },
   stateBody: {
@@ -532,7 +571,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
-  row: { paddingLeft: Spacing[3] },
+  row: { paddingLeft: Spacing[4] },
   rowInner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -542,13 +581,6 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   rowText: { flex: 1 },
-  tile: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 
   sectionSubtitle: {
     paddingHorizontal: Spacing[6],

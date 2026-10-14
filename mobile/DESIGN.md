@@ -25,10 +25,18 @@ second family, tracking, or capitals.
 
 The tab bar shows icons only; each tab's name reaches VoiceOver through its
 accessibility label. A list of destinations (Mind's overview) is an inset
-grouped list in the Settings grammar: a rounded surface, hairline
-separators, a 32pt coloured tile with a white glyph, a title and one-line
-description per row, a trailing value, a chevron. No heading above it when
-the chrome band already names the screen.
+grouped list: a rounded surface, hairline separators, a title and one-line
+description per row, a trailing value, a chevron. The mark at the left of a
+row is never a stock icon on a coloured tile; it is a 36pt miniature of the
+screen the row opens, drawn in that screen's colour (`SectionMark`).
+
+Decorative SVG inside a scrolling list carries `pointerEvents="none"`, or
+it swallows the drag and the list will not scroll from that spot. Close
+and back controls are 44pt targets on a header with `zIndex` above the body.
+
+The capture sheet offers Link, Note, Image and Title on one row; Title
+reveals the work kinds beneath it. The input box keeps one height across
+kinds and carries no label of its own, only a placeholder.
 
 A list of insights shows the first one open and the rest as their category
 and line (two lines at most); a tap opens one. The note is `subheadline`
@@ -91,9 +99,11 @@ are rows with a chevron or small secondary buttons in a wrapping row.
   the user what will happen. No aphorisms, no second-person flattery, no
   rhetorical questions.
 - One register. No "whispers", "kickers" or "eyebrows" above headings.
-- Loading: a single plain line ("Loading your diary") or none. Empty states
-  go through `ScreenIntro` with a title, one or two sentences, and real
-  buttons.
+- Loading keeps its character: the landing line types itself out with a
+  blinking cursor, and every loader caption ends in an ellipsis and may
+  rotate through short lines ("Drawing your map…", "Plotting your ideas…").
+  Sentence case, system face. Empty states go through `ScreenIntro` with a
+  title, one or two sentences, and real buttons.
 - Buttons are verbs with their object: "Open in Atlas", "Continue in
   companion", "Load earlier". Never "see everything ↓".
 

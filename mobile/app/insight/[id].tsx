@@ -210,7 +210,7 @@ export default function InsightDetailScreen() {
         </View>
         {/* The loader gets the page tone, not the band's. */}
         <View style={{ flex: 1, backgroundColor: c.background }}>
-          <AsciiLoader fill size={96} message="Loading" />
+          <AsciiLoader fill size={96} message="Loading…" />
         </View>
       </SafeAreaView>
     );
@@ -401,7 +401,7 @@ export default function InsightDetailScreen() {
             {saving ? (
               <View style={styles.savingRow}>
                 <LoadingDots size={4} />
-                <Text variant="caption" color="muted">Updating connections</Text>
+                <Text variant="caption" color="muted">Updating connections…</Text>
               </View>
             ) : editing ? (
               <View style={[styles.editBox, { borderColor: c.border }]}>

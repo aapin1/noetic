@@ -97,14 +97,23 @@ export function ThreadStrand({
 
   return (
     <Pressable onPress={onPress} style={styles.strandRow} accessibilityLabel={`Open thread: ${data.topicName}`}>
-      {/* Title first, larger, so each strand clearly belongs to its name */}
+      {/* The name, then where the thread is heading as its subtitle, in the
+          same ink as any list row. The strand below is the only colour, and
+          nothing rules a line between one thread and the next. */}
       <View style={styles.strandTitleRow}>
-        <Text variant="headline" numberOfLines={1} style={{ color: ink(0.92), flex: 1 }}>
-          {sentenceCase(data.topicName)}
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text variant="headline" numberOfLines={1} style={{ color: ink(0.92) }}>
+            {sentenceCase(data.topicName)}
+          </Text>
+          {data.heading ? (
+            <Text variant="subheadline" numberOfLines={1} style={{ color: ink(0.6), marginTop: 1 }}>
+              {plainLabel(data.heading)}
+            </Text>
+          ) : null}
+        </View>
         <Text variant="caption" color="muted">{data.captureCount} captures</Text>
       </View>
-      <Svg width={INNER_W} height={STRAND_H}>
+      <Svg width={INNER_W} height={STRAND_H} pointerEvents="none">
         <Path d={path} fill="none" stroke={color} strokeOpacity={0.45} strokeWidth={thickness} />
         {beads.map((b) => {
           const newest = b.i === b.n - 1;
@@ -126,11 +135,6 @@ export function ThreadStrand({
           strokeWidth={1.4}
         />
       </Svg>
-      {data.heading ? (
-        <Text variant="caption" numberOfLines={1} style={{ color, marginTop: Spacing[1] }}>
-          {plainLabel(data.heading)}
-        </Text>
-      ) : null}
     </Pressable>
   );
 }
@@ -166,7 +170,9 @@ export function FaultWall({
 
   return (
     <View style={{ height }}>
-      <Svg width={SW} height={height} style={StyleSheet.absoluteFill}>
+      {/* Decorative only: left touchable, the crack swallowed any drag that
+          began on it and the list would not scroll from that spot. */}
+      <Svg width={SW} height={height} style={StyleSheet.absoluteFill} pointerEvents="none">
         {/* strata lines — the rows are layers the crack runs through */}
         {cards.map((c, i) => (
           <React.Fragment key={c.itemAId + c.itemBId}>
@@ -229,7 +235,7 @@ export function ConfluenceRow({
 
   return (
     <Pressable onPress={onPress} style={styles.confRow} accessibilityLabel={`Open convergence: ${data.topicName}`}>
-      <Svg width={CONF_SVG_W} height={CONF_H}>
+      <Svg width={CONF_SVG_W} height={CONF_H} pointerEvents="none">
         {startYs.slice(0, n).map((sy, i) => (
           <React.Fragment key={i}>
             <Path
@@ -300,7 +306,7 @@ export function EmberRow({
 const styles = StyleSheet.create({
   sectionHead: { paddingHorizontal: PAD, marginTop: Spacing[8], marginBottom: Spacing[4] },
 
-  strandRow: { paddingHorizontal: PAD, marginBottom: Spacing[10] },
+  strandRow: { paddingHorizontal: PAD, marginBottom: Spacing[7] },
   strandTitleRow: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing[3], marginBottom: Spacing[2] },
 
   faultRow: {

@@ -121,7 +121,7 @@ export default function TodayScreen() {
       <ScreenHeader title="Today" variant="title" />
 
       {loading && !data ? (
-        <AsciiLoader fill size={72} message="Loading" />
+        <AsciiLoader fill size={72} message="Loading…" />
       ) : !capture && !challenge && !collision ? (
         <ScreenIntro
           title="Nothing to revisit yet"

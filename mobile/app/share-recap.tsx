@@ -97,7 +97,7 @@ export default function ShareRecapScreen() {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={['top']}>
         <Header onClose={() => router.back()} />
-        <AsciiLoader fill variant="cat" size={80} message="Loading" />
+        <AsciiLoader fill variant="cat" size={80} message="Loading…" />
       </SafeAreaView>
     );
   }

@@ -47,7 +47,7 @@ export function PendingFindsPill({ top, finds, phase, added, onAdd, onDecline, o
 
   const firstTitle = finds.groups[0]?.titles[0];
   const line =
-    phase === 'adding' ? 'Reading and mapping' : phase === 'done' ? `${added} on your map` : describe(finds);
+    phase === 'adding' ? 'Reading and mapping…' : phase === 'done' ? `${added} on your map` : describe(finds);
 
   return (
     <Animated.View

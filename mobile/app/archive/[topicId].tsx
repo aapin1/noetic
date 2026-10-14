@@ -48,7 +48,7 @@ export default function ArchiveFolderScreen() {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
         <ScreenHeader title="Folder" />
-        <AsciiLoader fill variant="cat" size={80} message="Loading folder" />
+        <AsciiLoader fill variant="cat" size={80} message="Loading folder…" />
       </SafeAreaView>
     );
   }

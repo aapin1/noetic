@@ -65,7 +65,7 @@ export default function PositionCreateScreen() {
             style={styles.doneBtn}
           >
             <Text variant="bodyMedium" color={canSubmit ? 'primary' : 'muted'}>
-              {saving ? 'Saving' : 'Done'}
+              {saving ? 'Saving…' : 'Done'}
             </Text>
           </Pressable>
         </View>

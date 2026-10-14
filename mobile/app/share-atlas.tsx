@@ -134,7 +134,7 @@ export default function ShareAtlasScreen() {
       </View>
 
       {loading && !graph ? (
-        <AsciiLoader fill variant="cat" size={80} message="Loading" />
+        <AsciiLoader fill variant="cat" size={80} message="Loading…" />
       ) : nodes.length === 0 ? (
         <View style={styles.emptyWrap}>
           <Text variant="subheadline" color="secondary" style={{ textAlign: 'center' }}>

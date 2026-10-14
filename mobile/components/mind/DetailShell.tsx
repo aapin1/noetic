@@ -52,7 +52,13 @@ export function DetailShell({
     >
       <SafeAreaView edges={['top']} style={styles.safe}>
         <View style={styles.header}>
-          <Pressable onPress={onClose} hitSlop={12} accessibilityLabel="Close detail view">
+          <Pressable
+            onPress={onClose}
+            hitSlop={16}
+            style={styles.close}
+            accessibilityLabel="Close detail view"
+            accessibilityRole="button"
+          >
             <XIcon size={22} color={ink(0.7)} />
           </Pressable>
           <View style={styles.headLeft}>
@@ -77,7 +83,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing[6],
-    paddingVertical: Spacing[3],
+    paddingVertical: Spacing[1],
+    // Above the body: a stage label that overflows its stage must never
+    // land on top of the close button.
+    zIndex: 2,
+  },
+  close: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: -Spacing[3],
   },
   headLeft: { flexDirection: 'row', alignItems: 'center' },
   dot: { width: 7, height: 7, borderRadius: 4, marginRight: Spacing[2] },
