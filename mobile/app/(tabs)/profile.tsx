@@ -108,7 +108,7 @@ export default function YouScreen() {
           The safe-area strip above takes the same colour, so the notch region
           reads as part of the header rather than as a pale sliver over it. */}
       <View style={[styles.header, { borderBottomColor: c.deepBorder, backgroundColor: c.deep }]}>
-        <Text variant="headline" style={{ color: c.deepInk }}>You</Text>
+        <Text variant="pageTitle" style={{ color: c.deepInk }}>You</Text>
         <Pressable onPress={() => router.push('/settings')} accessibilityLabel="Settings">
           <SettingsIcon size={22} color={c.deepInkMuted} />
         </Pressable>

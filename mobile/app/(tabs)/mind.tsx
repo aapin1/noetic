@@ -2,7 +2,18 @@ import React, { useCallback, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { ChevronLeftIcon, ChevronRightIcon, InfoIcon, XIcon } from 'lucide-react-native';
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  InfoIcon,
+  LayersIcon,
+  MergeIcon,
+  MoonIcon,
+  ScaleIcon,
+  WaypointsIcon,
+  XIcon,
+  type LucideIcon,
+} from 'lucide-react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { api } from '@/lib/api';
 import { useApiQuery } from '@/hooks/useApiQuery';
@@ -72,11 +83,11 @@ function useMindAccents(): Record<SectionKey, string> {
 
 type ViewState = 'threshold' | 'all' | SectionKey;
 
-const SECTION_META: { key: SectionKey; name: string; subtitle: string }[] = [
-  { key: 'threads', name: 'Threads', subtitle: 'Where your thinking is heading' },
-  { key: 'contradictions', name: 'Contradictions', subtitle: 'Where your saves disagree' },
-  { key: 'convergence', name: 'Convergence', subtitle: 'Different sources reaching one idea' },
-  { key: 'dormant', name: 'Quiet topics', subtitle: "Topics you haven't added to in a while" },
+const SECTION_META: { key: SectionKey; name: string; subtitle: string; icon: LucideIcon }[] = [
+  { key: 'threads', name: 'Threads', subtitle: 'Where your thinking is heading', icon: WaypointsIcon },
+  { key: 'contradictions', name: 'Contradictions', subtitle: 'Where your saves disagree', icon: ScaleIcon },
+  { key: 'convergence', name: 'Convergence', subtitle: 'Different sources reaching one idea', icon: MergeIcon },
+  { key: 'dormant', name: 'Quiet topics', subtitle: "Topics you haven't added to in a while", icon: MoonIcon },
 ];
 
 type Selection =
@@ -233,7 +244,7 @@ export default function MindScreen() {
     }
   };
 
-  const wordmark = <Text variant="headline" style={{ color: c.deepInk }}>Mind</Text>;
+  const wordmark = <Text variant="pageTitle" style={{ color: c.deepInk }}>Mind</Text>;
 
   // ── Loading / error / empty ──────────────────────────────────────────────
   if (loading && !data) {
@@ -420,11 +431,10 @@ export default function MindScreen() {
           exiting={FadeOut.duration(200)}
           style={styles.threshold}
         >
-          {/* An inset grouped list, the way Settings or Health lists its
-              sections: name and one-line description, the count as a trailing
-              value, a chevron. No heading above it (the chrome band already
-              says Mind) and no colour ticks; each section's colour belongs to
-              its own screen. */}
+          {/* An inset grouped list, the way Settings lists its sections: a
+              coloured tile with the section's glyph, name and one-line
+              description, the count as a trailing value, a chevron. The tile
+              carries the section's colour, the same one its own screen uses. */}
           <View style={[styles.group, { backgroundColor: c.surface, borderColor: c.borderSubtle }]}>
             {activeSections.map((s, i) => (
               <Pressable
@@ -435,6 +445,9 @@ export default function MindScreen() {
                 accessibilityLabel={`Open ${s.name}`}
               >
                 <View style={[styles.rowInner, i < activeSections.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.borderSubtle }]}>
+                  <View style={[styles.tile, { backgroundColor: ACCENT[s.key] }]}>
+                    <s.icon size={18} color="#FFFFFF" strokeWidth={2} />
+                  </View>
                   <View style={styles.rowText}>
                     <Text variant="headline" style={{ color: ink(0.9) }}>{s.name}</Text>
                     <Text variant="subheadline" color="secondary" style={{ marginTop: 1 }}>{s.subtitle}</Text>
@@ -454,6 +467,9 @@ export default function MindScreen() {
               accessibilityLabel="See all"
             >
               <View style={styles.rowInner}>
+                <View style={[styles.tile, { backgroundColor: c.muted }]}>
+                  <LayersIcon size={18} color="#FFFFFF" strokeWidth={2} />
+                </View>
                 <Text variant="body" style={[styles.rowText, { color: ink(0.9) }]}>See all</Text>
                 <ChevronRightIcon size={18} color={c.faint} />
               </View>
@@ -516,7 +532,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
-  row: { paddingLeft: Spacing[4] },
+  row: { paddingLeft: Spacing[3] },
   rowInner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -526,6 +542,13 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   rowText: { flex: 1 },
+  tile: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   sectionSubtitle: {
     paddingHorizontal: Spacing[6],

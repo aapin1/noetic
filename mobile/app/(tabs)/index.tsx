@@ -5030,7 +5030,7 @@ export default function MapScreen() {
           <View style={styles.headerLeft} pointerEvents="box-none">
             <View pointerEvents="box-none">
               <View style={styles.headerTitleRow} pointerEvents="box-none">
-                <Text variant="headline" style={{ color: 'rgba(246,242,233,0.96)' }}>Atlas</Text>
+                <Text variant="pageTitle" style={{ color: 'rgba(246,242,233,0.96)' }}>Atlas</Text>
                 <Pressable
                   onPress={() => setInfoVisible(true)}
                   hitSlop={12}

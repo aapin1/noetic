@@ -1,7 +1,9 @@
-import React, { useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import {
   BookOpenIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   CompassIcon,
   GitForkIcon,
   LayersIcon,
@@ -48,6 +50,12 @@ const TYPE_ICON: Record<InsightType, LucideIcon> = {
 interface Props {
   insight: InsightCard;
   compact?: boolean;
+  /**
+   * Whether the note shows at first. Collapsed, the row is the category and
+   * the line, clamped to two lines, and a tap opens it. Defaults to open so
+   * a lone insight never hides its note.
+   */
+  defaultExpanded?: boolean;
 }
 
 /**
@@ -56,8 +64,9 @@ interface Props {
  * runs into the note as a bold lead-in rather than sitting above it as a
  * label, so the block reads as a title and a paragraph.
  */
-export function InsightLine({ insight, compact = false }: Props) {
+export function InsightLine({ insight, compact = false, defaultExpanded = true }: Props) {
   const c = useThemeColors();
+  const [expanded, setExpanded] = useState(defaultExpanded);
   // Every polished insight names the move it made in evidence.kicker: the
   // READING's note ("the catch", "where it comes from") and the graph-derived
   // kinds too ("what it adds", "where they split"). The MIRROR carries none;
@@ -69,33 +78,43 @@ export function InsightLine({ insight, compact = false }: Props) {
 
   const border = useMemo(() => ({ borderTopColor: c.borderSubtle }), [c]);
   const Icon = TYPE_ICON[insight.type];
+  const hasNote = !compact && !!insight.body;
+  const open = hasNote && expanded;
+  const Chevron = open ? ChevronUpIcon : ChevronDownIcon;
 
   return (
-    <View style={[styles.container, compact && styles.compact, border]}>
+    <Pressable
+      onPress={hasNote ? () => setExpanded((v) => !v) : undefined}
+      disabled={!hasNote}
+      accessibilityRole={hasNote ? 'button' : undefined}
+      accessibilityState={hasNote ? { expanded: open } : undefined}
+      style={[styles.container, compact && styles.compact, border]}
+    >
       <View style={styles.category}>
         <Icon size={14} color={c.textSecondary} strokeWidth={2} />
         <Text variant="subheadline" color="secondary" style={styles.categoryText}>
           {TYPE_LABEL[insight.type]}
         </Text>
+        {hasNote ? <Chevron size={16} color={c.faint} /> : null}
       </View>
-      <Text variant={compact ? 'bodyMedium' : 'bodySemiBold'} color="primary">
+      <Text variant="bodyMedium" color="primary" numberOfLines={open || compact ? undefined : 2}>
         {plainProse(insight.headline)}
       </Text>
-      {!compact && insight.body ? (
-        <Text variant="body" color="secondary" style={styles.body}>
+      {open ? (
+        <Text variant="subheadline" color="secondary" style={styles.body}>
           {noteKicker ? (
-            <Text variant="bodySemiBold" color="secondary">{`${noteKicker}. `}</Text>
+            <Text variant="subheadline" color="secondary" style={styles.lead}>{`${noteKicker}. `}</Text>
           ) : null}
           {plainProse(insight.body)}
         </Text>
       ) : null}
-    </View>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: Spacing[4],
+    paddingVertical: Spacing[3],
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   compact: {
@@ -108,9 +127,14 @@ const styles = StyleSheet.create({
     marginBottom: Spacing[1],
   },
   categoryText: {
+    flex: 1,
+    fontWeight: '600',
+  },
+  lead: {
     fontWeight: '600',
   },
   body: {
     marginTop: Spacing[1],
+    lineHeight: 21,
   },
 });

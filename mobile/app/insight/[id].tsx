@@ -319,12 +319,12 @@ export default function InsightDetailScreen() {
                   selected={t.kind === 'general'}
                 />
               ))}
-            <Button
+            {/* A chip among chips: the same height and type as the topics
+                beside it, so it reads as part of that row. */}
+            <Badge
               label="Move to another topic"
-              variant="secondary"
-              size="sm"
+              variant="pill"
               onPress={() => setMovePickerVisible(true)}
-              accessibilityLabel="Move to another topic"
             />
           </View>
           {editingTitle ? (
@@ -463,8 +463,10 @@ export default function InsightDetailScreen() {
               <Text variant="caption" color="muted">Reading</Text>
             </View>
           ) : null}
-          {data.insights.map((ins) => (
-            <InsightLine key={ins.id} insight={ins} />
+          {/* The first insight opens; the rest show their line and open on a
+              tap, so the section reads as a list rather than a wall. */}
+          {data.insights.map((ins, i) => (
+            <InsightLine key={ins.id} insight={ins} defaultExpanded={i === 0} />
           ))}
           {/* The old onboarding voice picker, relocated to the first moment it
               refers to something the user can see. */}

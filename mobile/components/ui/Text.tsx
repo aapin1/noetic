@@ -35,6 +35,7 @@ type Variant =
   | 'h2'
   | 'h3'
   | 'h4'
+  | 'pageTitle'
   | 'headline'
   | 'body'
   | 'bodyMedium'
@@ -71,6 +72,9 @@ const variantStyles: Record<Variant, object> = {
   h2: sans(FontSize['2xl'], '700', LineHeight.snug),
   h3: sans(FontSize.xl, '700', LineHeight.snug),
   h4: sans(FontSize.lg, '600', LineHeight.snug),
+  // The name of a tab, in its chrome band: the iOS large title, one step
+  // down so it clears the band's controls.
+  pageTitle: sans(FontSize['2xl'], '700', LineHeight.tight),
   headline: sans(FontSize.md, '600'),
   body: sans(FontSize.md, '400', LineHeight.relaxed),
   bodyMedium: sans(FontSize.md, '500'),

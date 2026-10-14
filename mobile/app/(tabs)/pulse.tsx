@@ -394,7 +394,7 @@ export default function PulseScreen() {
           The safe-area strip above takes the same colour, so the notch region
           reads as part of the header rather than as a pale sliver over it. */}
       <View style={[styles.header, { borderBottomColor: c.deepBorder, backgroundColor: c.deep }]}>
-        <Text variant="headline" style={{ color: c.deepInk }}>Pulse</Text>
+        <Text variant="pageTitle" style={{ color: c.deepInk }}>Pulse</Text>
         {/* First touch of the social surface: the one moment a generated
             handle is worth a line, since here it's about to be seen. */}
         <Whisper

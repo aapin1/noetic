@@ -135,7 +135,7 @@ export default function ArchiveScreen() {
           The safe-area strip above takes the same colour, so the notch region
           reads as part of the header rather than as a pale sliver over it. */}
       <View style={[styles.header, { borderBottomColor: c.deepBorder, backgroundColor: c.deep }]}>
-        <Text variant="headline" style={{ color: c.deepInk }}>Archive</Text>
+        <Text variant="pageTitle" style={{ color: c.deepInk }}>Archive</Text>
         <View style={styles.headerRight}>
           {folders && folders.length > 0 && (
             <Text variant="caption" style={{ color: c.deepInkMuted, marginRight: Spacing[3] }}>

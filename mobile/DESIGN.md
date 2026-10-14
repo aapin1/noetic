@@ -11,7 +11,8 @@ second family, tracking, or capitals.
 
 | Use | Variant |
 |---|---|
-| Screen title in the chrome band | `headline` (17 semibold) |
+| Tab title in the chrome band | `pageTitle` (28 bold) |
+| Pushed screen title, centred | `headline` (17 semibold) |
 | Section header on a page | `h4` via `SectionKicker` (20 semibold) |
 | Row title, card title | `headline` or `bodySemiBold` |
 | Body copy | `body` |
@@ -24,9 +25,14 @@ second family, tracking, or capitals.
 
 The tab bar shows icons only; each tab's name reaches VoiceOver through its
 accessibility label. A list of destinations (Mind's overview) is an inset
-grouped list: a rounded surface, hairline separators, a title and one-line
+grouped list in the Settings grammar: a rounded surface, hairline
+separators, a 32pt coloured tile with a white glyph, a title and one-line
 description per row, a trailing value, a chevron. No heading above it when
-the chrome band already names the screen, and no colour ticks in the rows.
+the chrome band already names the screen.
+
+A list of insights shows the first one open and the rest as their category
+and line (two lines at most); a tap opens one. The note is `subheadline`
+under a `bodyMedium` line, never a run of bold paragraphs.
 
 A number, its stamp and a sentence about it are one fact, not three. A card
 states each fact once: the You page hero shows the count and the milestone
