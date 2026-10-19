@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { clearQueryCache } from '@/hooks/useApiQuery';
-import { clearAuth, getToken, storeToken, storeUserId } from '@/lib/storage';
+import { clearAuth, getToken, mirrorTokenForShareExtension, storeToken, storeUserId } from '@/lib/storage';
 import { identifyUser, resetIdentity, track } from '@/lib/analytics';
 import type { OwnerProfile } from '@/types/api';
 
@@ -111,6 +111,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     getToken().then((token) => {
       if (token) {
+        // Sessions that predate the share extension's own capture path have
+        // no copy of the token where the extension can read it. Mirror on
+        // every boot: idempotent, and it costs nothing.
+        void mirrorTokenForShareExtension(token);
         setState((prev) => ({ ...prev, token, isAuthenticated: true }));
         void loadProfile();
       } else {
