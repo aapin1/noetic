@@ -2,8 +2,9 @@ import { Readability } from "@mozilla/readability";
 import { load } from "cheerio";
 import { parseHTML } from "linkedom";
 import slugify from "slugify";
-import { extractText, getDocumentProxy, getMeta } from "unpdf";
+import { getDocumentProxy, getMeta } from "unpdf";
 import { BROWSER_UA, condenseToBudget, fetchWithTimeout } from "@/server/extract-util";
+import { extractPdfTextSampled } from "@/server/pdf-text";
 import { createProxySession, type ProxySession } from "@/server/proxyFetch";
 import { fetchInstagramMetadata, fetchTikTokMetadata, isInstagramHost, isSocialVideoUrl, isTikTokHost } from "@/server/social";
 import { fetchSupadataTranscript } from "@/server/supadata";
@@ -794,6 +795,10 @@ async function fetchTweetMetadata(normalized: string, originalUrl: string): Prom
 const PDF_MAX_BYTES = 15 * 1024 * 1024;
 /** Hard cap on parse time — a malformed PDF must degrade to thin, not hang. */
 const PDF_PARSE_TIMEOUT_MS = 15000;
+/** Soft budget for reading pages. Long or slow documents stop here and keep
+ * what they have (opening and closing pages first — see pdf-text.ts), so a
+ * 300-page book yields a gist instead of tripping the hard cap with nothing. */
+const PDF_TEXT_SOFT_BUDGET_MS = 8000;
 
 function isPdfUrl(parsed: URL): boolean {
   return parsed.pathname.toLowerCase().endsWith(".pdf");
@@ -835,11 +840,12 @@ function pdfFilenameTitle(url: string): string | undefined {
 async function parsePdfMetadata(buffer: ArrayBuffer, url: string): Promise<ExtractedMetadata | undefined> {
   if (buffer.byteLength < 512 || buffer.byteLength > PDF_MAX_BYTES) return undefined;
   try {
+    const deadlineAt = Date.now() + PDF_TEXT_SOFT_BUDGET_MS;
     const result = await Promise.race([
       (async () => {
         const pdf = await getDocumentProxy(new Uint8Array(buffer));
         const [{ text }, meta] = await Promise.all([
-          extractText(pdf, { mergePages: true }),
+          extractPdfTextSampled(pdf, { deadlineAt }),
           getMeta(pdf).catch(() => undefined),
         ]);
         return { text, meta };
