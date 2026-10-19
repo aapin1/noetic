@@ -32,6 +32,7 @@ jest.mock('expo-haptics', () => ({
 }));
 
 jest.mock('expo-secure-store', () => ({
+  AFTER_FIRST_UNLOCK: 'AFTER_FIRST_UNLOCK',
   getItemAsync: jest.fn(async () => null),
   setItemAsync: jest.fn(async () => undefined),
   deleteItemAsync: jest.fn(async () => undefined),

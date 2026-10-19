@@ -121,7 +121,12 @@ export default function InsightDetailScreen() {
   // the box just sits there until the user taps in to start typing.
   const [focusEdit, setFocusEdit] = useState(false);
 
+  // True while the open editor is the auto-prompt and the user hasn't touched
+  // it — not after a pencil tap, typing, or a voice note.
+  const autoOpenedRef = useRef(false);
+
   const startEdit = useCallback((current: string, focus = true) => {
+    autoOpenedRef.current = false;
     setContextDraft(current);
     setEditError('');
     setFocusEdit(focus);
@@ -145,6 +150,14 @@ export default function InsightDetailScreen() {
     const legacyDesc =
       desc.length > 0 && desc.length <= 400 && !/^https?:\/\//i.test(desc) ? desc : null;
     const hasAbout = !!(data.userContext?.trim() || data.summary?.trim() || legacyDesc);
+    // A fresh capture can land without a summary and have the background
+    // excerpt repair fill it in seconds later. If the auto-prompt is still
+    // open and untouched when it arrives, the question has been answered:
+    // take it back rather than leave "use voice or type" under a real summary.
+    if (hasAbout && autoOpenedRef.current) {
+      autoOpenedRef.current = false;
+      setEditing(false);
+    }
     if (hasAbout || autoPromptedForRef.current === data.id) return;
     autoPromptedForRef.current = data.id;
     // Defer past the push transition: VoiceNoteButton mounts a real
@@ -153,7 +166,10 @@ export default function InsightDetailScreen() {
     // function has failed") when this screen is reached fresh off a capture.
     // Landing on the editor a beat after the screen settles reads the same
     // to the user but keeps native module setup off the transition.
-    const task = InteractionManager.runAfterInteractions(() => startEdit('', false));
+    const task = InteractionManager.runAfterInteractions(() => {
+      startEdit('', false);
+      autoOpenedRef.current = true;
+    });
     return () => task.cancel();
   }, [data, startEdit]);
 
@@ -413,7 +429,7 @@ export default function InsightDetailScreen() {
                 <TextInput
                   style={[styles.editInput, { color: c.text, fontFamily: FontFamily.sans, fontSize: FontSize.md }]}
                   value={contextDraft}
-                  onChangeText={setContextDraft}
+                  onChangeText={(t) => { autoOpenedRef.current = false; setContextDraft(t); }}
                   placeholder="Use voice or type"
                   placeholderTextColor={c.muted}
                   multiline
@@ -424,7 +440,7 @@ export default function InsightDetailScreen() {
                 )}
                 <View style={styles.editActions}>
                   <VoiceNoteButton
-                    onText={(t) => setContextDraft((prev) => (prev.trim() ? `${prev.trim()} ${t}` : t))}
+                    onText={(t) => { autoOpenedRef.current = false; setContextDraft((prev) => (prev.trim() ? `${prev.trim()} ${t}` : t)); }}
                     onError={setEditError}
                   />
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing[2] }}>
