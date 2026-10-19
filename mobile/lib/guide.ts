@@ -51,4 +51,4 @@ export function tourOfferFlag(userId: string): string {
   return `welcome:tour:${userId}`;
 }
 
-export const TOUR_OFFER_LINE = "want the full tour?";
+export const TOUR_OFFER_LINE = "Welcome to mneme! Want the full tour?";

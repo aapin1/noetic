@@ -111,6 +111,16 @@ are rows with a chevron or small secondary buttons in a wrapping row.
 - Buttons are verbs with their object: "Open in Atlas", "Continue in
   companion", "Load earlier". Never "see everything ↓".
 
+## Accounts and first run
+
+A new session starts on an empty cache: `clearQueryCache()` runs on every
+sign-in and sign-up as well as sign-out, so the Atlas never mounts on the
+last account's graph. A new account lands on the empty map ("Your map is
+waiting", the plus button, the service marks) and the tour offer
+("Welcome to mneme! Want the full tour?"); the demo constellation is off.
+Auth screens carry a title and the form, no subtitle, and Sign in with
+Apple sits on the first screen without a scroll.
+
 ## Dates
 
 Use `lib/dates.ts`. Group headers use `dayLabel` ("Today", "Yesterday",

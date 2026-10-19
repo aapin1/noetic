@@ -72,9 +72,6 @@ export default function SignInScreen() {
             <Text variant="h1" style={styles.title}>
               Welcome back
             </Text>
-            <Text variant="subheadline" color="secondary" style={styles.subtitle}>
-              Sign in to pick up where you left off.
-            </Text>
           </View>
 
           <View style={styles.form}>
@@ -176,22 +173,19 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing[8],
   },
   back: {
-    marginTop: Spacing[4],
-    marginBottom: Spacing[2],
+    marginTop: Spacing[2],
+    marginBottom: Spacing[1],
     alignSelf: 'flex-start',
     padding: Spacing[2],
   },
   header: {
-    marginTop: Spacing[6],
-    marginBottom: Spacing[8],
+    marginTop: Spacing[2],
+    marginBottom: Spacing[5],
   },
   mark: {
-    marginBottom: Spacing[8],
+    marginBottom: Spacing[5],
   },
-  title: {
-    marginBottom: Spacing[2],
-  },
-  subtitle: {},
+  title: {},
   form: {
     flex: 1,
   },

@@ -90,9 +90,6 @@ export default function SignUpScreen() {
             <Text variant="h1" style={styles.title}>
               Create an account
             </Text>
-            <Text variant="subheadline" color="secondary" style={styles.subtitle}>
-              It takes about two minutes.
-            </Text>
           </View>
 
           <View style={styles.form}>
@@ -238,20 +235,21 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing[8],
   },
   back: {
-    marginTop: Spacing[4],
-    marginBottom: Spacing[2],
+    marginTop: Spacing[2],
+    marginBottom: Spacing[1],
     alignSelf: 'flex-start',
     padding: Spacing[2],
   },
+  // Tight enough that the whole form, the legal line and Sign in with Apple
+  // sit on one screen without a scroll.
   header: {
-    marginTop: Spacing[6],
-    marginBottom: Spacing[8],
+    marginTop: Spacing[2],
+    marginBottom: Spacing[5],
   },
   mark: {
-    marginBottom: Spacing[8],
+    marginBottom: Spacing[5],
   },
-  title: { marginBottom: Spacing[2] },
-  subtitle: {},
+  title: {},
   form: {},
   errorBanner: {
     borderWidth: 1,
@@ -273,6 +271,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: Spacing[8],
+    marginTop: Spacing[5],
   },
 });

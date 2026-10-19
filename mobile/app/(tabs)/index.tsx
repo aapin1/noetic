@@ -2298,6 +2298,10 @@ export default function MapScreen() {
   // The ghost's exit is owned by the welcome flow below: once the tour offer
   // is answered (either way), the constellation fades out and never returns.
   // 'pending' = offer not yet answered, 'fading' = bowing out right now.
+  // The demo constellation is off: a new account lands on the empty map and
+  // its tour offer, with nothing drawn and then withdrawn in between. The
+  // machinery stays so it can be switched back on.
+  const GHOST_MAP_ENABLED = false;
   const [ghostExit, setGhostExit] = useState<'pending' | 'fading' | 'gone' | null>(null);
   const ghostFade = useRef(new RNAnimated.Value(1)).current;
   useEffect(() => {
@@ -2306,7 +2310,7 @@ export default function MapScreen() {
   }, [welcomeUid]);
   useEffect(() => {
     if (!disclosure.ready || !welcomeUid || ghostExit !== null) return;
-    setGhostExit(disclosure.hasSeen(welcomeOfferFlag(welcomeUid)) ? 'gone' : 'pending');
+    setGhostExit(!GHOST_MAP_ENABLED || disclosure.hasSeen(welcomeOfferFlag(welcomeUid)) ? 'gone' : 'pending');
   }, [disclosure, ghostExit, welcomeUid]);
   const ghostActive =
     (ghostExit === 'pending' || ghostExit === 'fading') &&
@@ -4701,8 +4705,11 @@ export default function MapScreen() {
   useEffect(() => {
     if (!disclosure.ready || !welcomeUid || tourOfferArmed || tourOfferPill) return;
     if (disclosure.hasSeen(tourOfferFlag(welcomeUid))) return;
-    const count = graphData?.totalCount ?? 0;
-    if (count < 1 || count >= GUIDE_MAX_CORPUS) return;
+    // Offered on the empty map too: with the demo constellation off, this
+    // pill is the first thing a new account hears, and the walkthrough ends
+    // by opening the composer when there is still nothing on the map.
+    if (!graphData) return;
+    if ((graphData.totalCount ?? 0) >= GUIDE_MAX_CORPUS) return;
     if (ghostExit !== 'gone') return;
     setTourOfferArmed(true);
   }, [disclosure, tourOfferArmed, tourOfferPill, welcomeUid, graphData, ghostExit]);
@@ -5329,7 +5336,7 @@ export default function MapScreen() {
             ask. A landed capture (or ✕) retires the ghost constellation. */}
         {welcomePill === 'intro' && (
           <GuidePill
-            frame={{ top: insets.top + 58, right: Spacing[4] }}
+            frame={{ top: insets.top + 84, right: Spacing[4] }}
             enter="right"
             art="cat"
             text={WELCOME_INTRO_LINE}
@@ -5340,7 +5347,7 @@ export default function MapScreen() {
         )}
         {welcomePill === 'offer' && (
           <GuidePill
-            frame={{ top: insets.top + 58, right: Spacing[4] }}
+            frame={{ top: insets.top + 84, right: Spacing[4] }}
             enter="right"
             art="cat"
             text={WELCOME_OFFER_LINE}
@@ -5360,7 +5367,7 @@ export default function MapScreen() {
             quiet moment after the first captures exist. */}
         {tourOfferPill && !savedPill && !showCapture && !drawerVisible && welcomePill === null && (
           <GuidePill
-            frame={{ top: insets.top + 58, right: Spacing[4] }}
+            frame={{ top: insets.top + 84, right: Spacing[4] }}
             enter="right"
             art="cat"
             text={TOUR_OFFER_LINE}
@@ -5442,37 +5449,33 @@ export default function MapScreen() {
             <Text variant="subheadline" style={{ color: 'rgba(240,232,214,0.5)', textAlign: 'center' }}>
               Tap + to add your first thought
             </Text>
-            {/* The services themselves, drawn small — the option is shown,
-                not explained. One line of words underneath; import and the
-                rest live behind the same door. */}
+            {/* The services, drawn small and nothing said about them: the
+                row is the offer, and the connections screen explains it.
+                Every mark is a drawn letter, never an emoji, so none can
+                fall back to a tofu box. */}
             <Pressable
               onPress={() => router.push('/connections' as never)}
               hitSlop={10}
               accessibilityRole="button"
-              accessibilityLabel="Bring over what you write on Letterboxd, Goodreads, Readwise and more"
-              style={{ marginTop: Spacing[5], alignItems: 'center', gap: Spacing[2] }}
+              accessibilityLabel="Bring over what you write on Letterboxd, Goodreads, Readwise and Bluesky"
+              style={{ marginTop: Spacing[5], flexDirection: 'row', gap: Spacing[2] }}
             >
-              <View style={{ flexDirection: 'row', gap: Spacing[2] }}>
-                <View style={styles.emptyChip}>
-                  <View style={{ flexDirection: 'row' }}>
-                    {['#FF8000', '#00E054', '#40BCF4'].map((d) => (
-                      <View key={d} style={{ width: 10, height: 10, borderRadius: 5, marginHorizontal: -1.5, backgroundColor: d }} />
-                    ))}
-                  </View>
-                </View>
-                <View style={styles.emptyChip}>
-                  <Text style={{ fontFamily: FontFamily.serif, fontSize: 16, color: '#D9B36C' }}>g</Text>
-                </View>
-                <View style={styles.emptyChip}>
-                  <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 14, color: '#7FA8D9' }}>R</Text>
-                </View>
-                <View style={styles.emptyChip}>
-                  <Text style={{ fontSize: 13 }}>🦋</Text>
+              <View style={styles.emptyChip}>
+                <View style={{ flexDirection: 'row' }}>
+                  {['#FF8000', '#00E054', '#40BCF4'].map((d) => (
+                    <View key={d} style={{ width: 10, height: 10, borderRadius: 5, marginHorizontal: -1.5, backgroundColor: d }} />
+                  ))}
                 </View>
               </View>
-              <Text variant="caption" style={{ color: 'rgba(240,232,214,0.6)' }}>
-                Or bring over what you write elsewhere
-              </Text>
+              <View style={styles.emptyChip}>
+                <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 15, color: '#D9B36C' }}>g</Text>
+              </View>
+              <View style={styles.emptyChip}>
+                <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 15, color: '#7FA8D9' }}>R</Text>
+              </View>
+              <View style={styles.emptyChip}>
+                <Text style={{ fontFamily: FontFamily.sansMedium, fontSize: 15, color: '#5AA7F0' }}>b</Text>
+              </View>
             </Pressable>
           </View>
         )}

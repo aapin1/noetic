@@ -121,6 +121,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(async (identifier: string, password: string) => {
     const result = await api.auth.token({ identifier, password });
+    // The cache is per install, not per account. Left in place, the Atlas
+    // mounted on the last account's graph for a frame and read its count as
+    // this account's, which retired the welcome before it began.
+    clearQueryCache();
     await storeToken(result.token);
     await storeUserId(result.userId ?? result.user.id);
     setState((prev) => ({ ...prev, token: result.token, isAuthenticated: true }));
@@ -130,6 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithApple = useCallback(
     async ({ identityToken, fullName }: { identityToken: string; fullName?: string }) => {
       const result = await api.auth.apple({ identityToken, fullName });
+      clearQueryCache();
       await storeToken(result.token);
       await storeUserId(result.userId);
       if (result.isNewUser) {
@@ -147,6 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = useCallback(async (name: string, email: string, password: string) => {
     const { token, user } = await api.auth.register({ name, email, password });
+    clearQueryCache();
     await storeToken(token);
     await storeUserId(user.id);
     // Identify before the event so `signup` lands against the person rather
