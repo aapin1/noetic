@@ -46,6 +46,11 @@ class ShareViewController: UIViewController {
   private var cardBottom: NSLayoutConstraint?
   private var started = false
   private var finished = false
+  /// The sheet gives up after this long so nobody is left staring at a
+  /// spinner; the server finishes the capture on its own either way.
+  private let saveTimeout: TimeInterval = 10
+  private var timedOut = false
+  private var timeoutWork: DispatchWorkItem?
 
   private let paper = UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.10, green: 0.09, blue: 0.08, alpha: 1) : UIColor(red: 0.953, green: 0.937, blue: 0.902, alpha: 1) }
   private let ink = UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.93, green: 0.91, blue: 0.87, alpha: 1) : UIColor(red: 0.145, green: 0.129, blue: 0.098, alpha: 1) }
@@ -81,18 +86,18 @@ class ShareViewController: UIViewController {
     card.layer.shadowOffset = CGSize(width: 0, height: 8)
     view.addSubview(card)
 
+    // Type follows the app (mobile/DESIGN.md): the system face at Apple's text
+    // styles, and the serif only for the wordmark.
     let brand = UILabel()
-    brand.text = "MNEME"
-    brand.font = UIFont.monospacedSystemFont(ofSize: 11, weight: .medium)
-    brand.textColor = muted
-    brand.attributedText = NSAttributedString(string: "MNEME", attributes: [.kern: 2.2, .font: brand.font as Any, .foregroundColor: muted])
+    let brandFont = UIFont(name: "Times New Roman", size: 15) ?? UIFont.systemFont(ofSize: 15)
+    brand.attributedText = NSAttributedString(string: "mneme", attributes: [.font: brandFont, .foregroundColor: muted, .kern: 0.8])
 
-    statusLabel.font = UIFont.systemFont(ofSize: 17, weight: .regular)
+    statusLabel.font = UIFont.preferredFont(forTextStyle: .body)
     statusLabel.textColor = ink
     statusLabel.numberOfLines = 2
-    statusLabel.text = "saving to your map…"
+    statusLabel.text = "don't leave this screen, taking a second to log"
 
-    detailLabel.font = UIFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    detailLabel.font = UIFont.preferredFont(forTextStyle: .footnote)
     detailLabel.textColor = muted
     detailLabel.numberOfLines = 2
     detailLabel.isHidden = true
@@ -166,9 +171,34 @@ class ShareViewController: UIViewController {
   }
 
   private func fail(_ message: String) {
-    NSLog("[mneme-share] failed: %@", message)
-    setStatus("couldn't save that", detail: message, busy: false)
-    finish(after: 4.5)
+    settle {
+      NSLog("[mneme-share] failed: %@", message)
+      self.setStatus("couldn't save that", detail: message, busy: false)
+      self.finish(after: 4.5)
+    }
+  }
+
+  /// Starts the clock on the save. When it runs out the card says so and
+  /// dismisses; any result that arrives later is ignored.
+  private func armTimeout() {
+    let work = DispatchWorkItem { [weak self] in
+      guard let self, !self.finished else { return }
+      self.timedOut = true
+      NSLog("[mneme-share] gave up after %.0fs", self.saveTimeout)
+      self.setStatus("sorry, try logging in the app.", busy: false)
+      self.finish(after: 3.0)
+    }
+    timeoutWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + saveTimeout, execute: work)
+  }
+
+  /// Applies a save outcome on the main thread, unless the sheet already gave up.
+  private func settle(_ outcome: @escaping () -> Void) {
+    DispatchQueue.main.async {
+      guard !self.timedOut else { return }
+      self.timeoutWork?.cancel()
+      outcome()
+    }
   }
 
   // MARK: Flow
@@ -179,6 +209,7 @@ class ShareViewController: UIViewController {
       finish(after: 3.0)
       return
     }
+    armTimeout()
     loadPayload { [weak self] result in
       guard let self else { return }
       switch result {
@@ -196,8 +227,10 @@ class ShareViewController: UIViewController {
         let result = try self.upload(payload, token: token)
         var detail = result.title
         if let limit = result.limitMessage, !limit.isEmpty { detail += "\n" + limit }
-        self.setStatus("saved to your map ✓", detail: detail, busy: false)
-        self.finish(after: 1.4)
+        self.settle {
+          self.setStatus("saved to your map ✓", detail: detail, busy: false)
+          self.finish(after: 1.4)
+        }
       } catch {
         self.fail(error.localizedDescription)
       }
