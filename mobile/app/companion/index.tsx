@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 
 import { api } from '@/lib/api';
 import { track } from '@/lib/analytics';
-import { ArrowUpIcon } from 'lucide-react-native';
+import { ArrowUpIcon, SquarePenIcon } from 'lucide-react-native';
 import { FontFamily, FontSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Text } from '@/components/ui/Text';
@@ -189,9 +189,47 @@ export default function CompanionScreen() {
     }
   }, [reply, sending, thread?.id, contextItemIds]);
 
+  // "New chat": a long conversation drags its history into every reply, so
+  // this lets the user start clean. The map itself is never touched.
+  const [resetting, setResetting] = useState(false);
+  const handleReset = useCallback(() => {
+    Alert.alert('Start a new chat?', 'This clears the conversation. Your map stays as it is.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'New chat',
+        style: 'destructive',
+        onPress: () => {
+          setResetting(true);
+          void api.companion.reset()
+            .then((data) => {
+              setThread(data);
+              setMessages(data.messages);
+              setSendError(null);
+              turnRef.current = 0;
+            })
+            .catch((e) => setSendError(e instanceof Error ? e.message : 'Could not start a new chat'))
+            .finally(() => setResetting(false));
+        },
+      },
+    ]);
+  }, []);
+  const canReset = !loading && !error && !sending && !resetting && messages.length > 1;
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
-      <ScreenHeader title="Companion" />
+      <ScreenHeader
+        title="Companion"
+        right={canReset ? (
+          <Pressable
+            onPress={handleReset}
+            hitSlop={10}
+            accessibilityLabel="New chat"
+            accessibilityRole="button"
+          >
+            <SquarePenIcon size={20} color={c.deepInk} />
+          </Pressable>
+        ) : null}
+      />
 
       {loading && (
         <View style={styles.centered}>

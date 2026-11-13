@@ -601,6 +601,10 @@ export const api = {
     getThread() {
       return request<CompanionThread>('/api/companion');
     },
+    /** Clears the conversation and returns the fresh thread. The map is untouched. */
+    reset() {
+      return request<CompanionThread>('/api/companion', { method: 'DELETE' });
+    },
     reply(content: string, contextItemIds?: string[]) {
       return request<{ userMessage: CompanionMessage; companionMessage: CompanionMessage }>(
         '/api/companion/reply',
