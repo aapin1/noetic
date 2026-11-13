@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/Button';
 import { EditableAvatar } from '@/components/profile/EditableAvatar';
 import { ScreenIntro } from '@/components/ui/ScreenIntro';
 import { WrappedSection, wrappedAccent } from '@/components/wrapped/WrappedSection';
-import { Mark } from '@/components/ui/ProviderGrid';
+import { ProviderTile } from '@/components/ui/ProviderTile';
 import { linkableMeta } from '@/lib/connectionProviders';
 import { ShareAtlasEntry, ShareRecapEntry } from '@/components/share/ShareRecapEntry';
 import type { OwnerProfile } from '@/types/api';
@@ -168,12 +168,7 @@ export default function YouScreen() {
             {(linkedAccounts ?? []).map((conn) => {
               const meta = linkableMeta(conn.provider);
               return (
-                <View
-                  key={conn.provider}
-                  style={[styles.connTile, { borderColor: `${meta?.accent ?? '#888888'}55`, backgroundColor: `${meta?.accent ?? '#888888'}1C` }]}
-                >
-                  <Mark mark={conn.provider} color={meta?.accent ?? c.text} />
-                </View>
+                <ProviderTile key={conn.provider} name={meta?.name ?? conn.provider} accent={meta?.accent ?? '#888888'} size={44} />
               );
             })}
             {Array.from({ length: Math.max(1, 4 - (linkedAccounts?.length ?? 0)) }).map((_, i) => (
