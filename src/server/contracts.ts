@@ -244,6 +244,13 @@ export const capturePreflightSchema = z.object({
   url: z.string().url().max(2048),
 });
 
+export const captureScreenshotSchema = z.object({
+  // A phone screenshot at picker quality 0.6 is well under 2MB; ~6MB of base64
+  // leaves room without letting a huge body through.
+  imageBase64: z.string().min(100).max(8_000_000),
+  mimeType: z.string().min(3).max(80).optional(),
+});
+
 export const captureTranscribeSchema = z.object({
   audioBase64: z.string().min(100).max(12_000_000),
   mimeType: z.string().min(3).max(80).optional(),

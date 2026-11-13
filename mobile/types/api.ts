@@ -151,6 +151,8 @@ export interface CapturePreflight {
   title?: string;
   excerpt?: string;
   bodySource?: string;
+  /** Which wall a thin read hit (paywall, Facebook/LinkedIn login, …), when the server can tell. */
+  blocked?: { reason: string; message: string };
   /** Present when a free-plan cap degraded this read. */
   usageLimit?: UsageLimitNotice;
 }

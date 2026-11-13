@@ -450,6 +450,12 @@ export const api = {
         body: JSON.stringify({ audioBase64, mimeType }),
       });
     },
+    readScreenshot(imageBase64: string, mimeType?: string) {
+      return request<{ text: string }>('/api/captures/read-screenshot', {
+        method: 'POST',
+        body: JSON.stringify({ imageBase64, mimeType }),
+      });
+    },
     updateContext(id: string, userContext: string) {
       return request<CaptureDetail>(`/api/captures/${id}`, {
         method: 'PATCH',
