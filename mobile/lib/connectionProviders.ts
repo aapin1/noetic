@@ -1,7 +1,7 @@
 import type { ConnectionProvider } from '@/types/api';
 
 /**
- * Everything the Connections grid can show, organised by what the CONTENT is
+ * Everything the Connections list can show, organised by what the CONTENT is
  * (films, books, saves…), never by how mneme reaches it. Linkable providers
  * and in-app sign-in targets sit side by side; the modal explains the
  * difference only once one is chosen.
@@ -29,7 +29,7 @@ export const GROUP_ORDER: ContentGroup[] = [
 export type LinkableMeta = {
   key: ConnectionProvider;
   name: string;
-  /** Brand-ish accent for the drawn mark — one colour, never an asset. */
+  /** Brand-ish colour for the service's tile. */
   accent: string;
   group: ContentGroup;
   /** What comes over, in one clause. */
@@ -78,16 +78,16 @@ export const LINKABLE: LinkableMeta[] = [
 ];
 
 /**
- * Grid placement for the in-app sign-in targets (the list itself comes from
- * the server). Tile names stay short; the server's `name`/`what` speak in the
- * modal.
+ * List placement for the in-app sign-in targets (which ones exist comes from
+ * the server). The name and the one-line `what` are written here so a row
+ * reads like its linkable neighbours.
  */
-export const SESSION_TILES: Record<string, { name: string; accent: string; group: ContentGroup }> = {
-  netflix: { name: 'Netflix', accent: '#E50914', group: 'Film & TV' },
-  'youtube-liked': { name: 'YouTube likes', accent: '#FF0000', group: 'Film & TV' },
-  kindle: { name: 'Kindle', accent: '#FF9900', group: 'Books' },
-  goodreads: { name: 'Goodreads (full)', accent: '#553B08', group: 'Books' },
-  crunchyroll: { name: 'Crunchyroll', accent: '#F47521', group: 'Anime & manga' },
+export const SESSION_TILES: Record<string, { name: string; accent: string; group: ContentGroup; what: string }> = {
+  netflix: { name: 'Netflix', accent: '#E50914', group: 'Film & TV', what: 'Your viewing history' },
+  'youtube-liked': { name: 'YouTube likes', accent: '#FF0000', group: 'Film & TV', what: 'Videos you liked' },
+  kindle: { name: 'Kindle', accent: '#FF9900', group: 'Books', what: 'Your highlights and notes' },
+  goodreads: { name: 'Goodreads library', accent: '#553B08', group: 'Books', what: 'Your whole library, private shelves too' },
+  crunchyroll: { name: 'Crunchyroll', accent: '#F47521', group: 'Anime & manga', what: 'Your watch history' },
 };
 
 export function linkableMeta(key: string): LinkableMeta | null {

@@ -63,7 +63,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useDisclosure } from '@/contexts/DisclosureContext';
 import { ARCHIVE_REVEAL_COUNT, EVENT_FLAGS } from '@/lib/disclosure';
 import { Whisper } from '@/components/ui/Whisper';
-import { useSocratic } from '@/contexts/SocraticContext';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { SearchField } from '@/components/ui/SearchField';
@@ -1605,35 +1604,15 @@ function Toolbar({
   const recenterVisible = !!onRecenter && showRecenter !== false;
 
   // Companion — moved here from the floating FAB that used to sit above the tab
-  // bar on every screen (app/(tabs)/_layout.tsx). Behaviour is carried over
-  // verbatim: resolve a topic, falling back to the strongest current theme and
-  // then to the untargeted companion. Only the affordance changed.
+  // bar on every screen (app/(tabs)/_layout.tsx). Always the one map-wide
+  // companion: it used to route to the topic dialogue of whichever theme led
+  // trends at that moment, so the thread you landed in changed under you.
   const router = useRouter();
-  const { topicId } = useSocratic();
   const companionTarget = useTutorialTarget(TUTORIAL_TARGET.companionFab);
-
-  // Resolve the fallback theme AHEAD of the tap so opening the companion never
-  // blocks on a network round-trip. Without an active topic, the tap used to
-  // await trends() before it could even navigate — the multi-second open.
-  const fallbackTopicRef = useRef<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    api.memory.trends()
-      .then((t) => { if (alive) fallbackTopicRef.current = t.themes[0]?.topicId ?? null; })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, []);
 
   const openCompanion = () => {
     companionTarget.press();
-    const tid = topicId ?? fallbackTopicRef.current;
-    if (tid) {
-      router.push({ pathname: '/socratic/[topicId]' as never, params: { topicId: tid } });
-    } else {
-      // Prefetch hasn't landed (or there's no theme yet) — open the untargeted
-      // companion immediately rather than stalling the tap on the network.
-      router.push('/companion' as never);
-    }
+    router.push('/companion' as never);
   };
 
   return (

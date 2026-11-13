@@ -11,6 +11,8 @@ import { Text } from '@/components/ui/Text';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
+import { SESSION_TILES } from '@/lib/connectionProviders';
+import { plainProse, plainPunctuation } from '@/lib/text';
 import type { SessionTarget } from '@/types/api';
 
 /**
@@ -55,7 +57,7 @@ export default function ConnectionSessionScreen() {
       })
       .catch((e) => {
         setPhase('error');
-        setMessage(e instanceof Error ? e.message : 'Something went wrong');
+        setMessage(e instanceof Error ? plainProse(e.message) : 'Something went wrong');
       });
   }, [key]);
 
@@ -63,7 +65,7 @@ export default function ConnectionSessionScreen() {
     if (!target || !webview.current || ran.current) return;
     ran.current = true;
     setPhase('working');
-    setMessage(target.working);
+    setMessage(plainProse(target.working));
     webview.current.injectJavaScript(target.script);
   };
 
@@ -74,10 +76,10 @@ export default function ConnectionSessionScreen() {
     } catch {
       return;
     }
-    if (msg.type === 'progress') setMessage(msg.message ?? '');
+    if (msg.type === 'progress') setMessage(plainProse(msg.message));
     if (msg.type === 'error') {
       setPhase('error');
-      setMessage(msg.message ?? 'Something went wrong');
+      setMessage(plainProse(msg.message) || 'Something went wrong');
       ran.current = false;
     }
     if (msg.type === 'file' && msg.text) {
@@ -89,7 +91,7 @@ export default function ConnectionSessionScreen() {
         router.replace('/import' as never);
       } catch (e) {
         setPhase('error');
-        setMessage(e instanceof Error ? e.message : 'Could not start the import');
+        setMessage(e instanceof Error ? plainProse(e.message) : 'Could not start the import');
       }
     }
   };
@@ -112,7 +114,7 @@ export default function ConnectionSessionScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.background }]} edges={[]}>
-      <ScreenHeader title={target?.name ?? 'Sign in'} variant="title" />
+      <ScreenHeader title={(key && SESSION_TILES[key]?.name) || 'Sign in'} variant="title" />
       {phase === 'loading' || !target ? (
         <AsciiLoader fill size={90} message={phase === 'error' ? message : 'Loading…'} />
       ) : (
@@ -125,8 +127,8 @@ export default function ConnectionSessionScreen() {
                 {phase === 'error'
                   ? message
                   : phase === 'ready'
-                    ? `You're in. Mneme will read ${target.what}`
-                    : `Sign in as you normally would. Your password never reaches Mneme, only ${target.what}`}
+                    ? `You're in. Mneme will read ${plainPunctuation(target.what)}`
+                    : `Sign in as you normally would. Your password never reaches Mneme, only ${plainPunctuation(target.what)}`}
               </Text>
             )}
             {phase === 'ready' || phase === 'error' ? (
@@ -160,7 +162,7 @@ export default function ConnectionSessionScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', padding: Spacing[8] },
-  banner: { flexDirection: 'row', alignItems: 'center', margin: Spacing[4], padding: Spacing[4], borderWidth: 1, borderRadius: Radius.lg },
+  banner: { flexDirection: 'row', alignItems: 'center', margin: Spacing[4], padding: Spacing[4], borderWidth: StyleSheet.hairlineWidth, borderRadius: Radius.lg },
   web: { flex: 1 },
   cancel: { alignSelf: 'center', padding: Spacing[3] },
 });

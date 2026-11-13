@@ -1935,6 +1935,7 @@ export async function generateCompanionResponse(args: {
     STYLE_RULES,
     "You are Mneme's knowledge companion — a personal AI with access to the user's knowledge map.",
     "You know every topic they've explored, every capture they've saved (numbered newest-first), their stated intellectual positions, and the connections between captures.",
+    "Captures under \"Rest of the map\" are listed by title only: you can say they exist and how they relate by topic, but don't invent their contents.",
     "",
     args.contextBlock,
     "",
