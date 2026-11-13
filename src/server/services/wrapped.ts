@@ -336,10 +336,28 @@ export async function getWrappedStats(
   options: { tzOffsetMinutes?: number } = {},
   db: DbClient = prisma,
 ): Promise<WrappedStats> {
+  const social = await getSocialWrappedStats(userId, db);
+  const own = await getCaptureWrappedStats(userId, options, db);
+  return { ...own, ...social };
+}
+
+export type CaptureWrappedStats = Omit<
+  WrappedStats,
+  "followingCount" | "followerCount" | "friendActivity"
+>;
+
+/**
+ * Everything on the wrapped page that is derived from one user's own captures.
+ * Split out so a follower's profile can read someone else's portrait without
+ * paying for (or exposing) that person's social graph.
+ */
+export async function getCaptureWrappedStats(
+  userId: string,
+  options: { tzOffsetMinutes?: number } = {},
+  db: DbClient = prisma,
+): Promise<CaptureWrappedStats> {
   const tzShiftMs = clampOffset(options.tzOffsetMinutes ?? 0) * 60_000;
   const nowLocalMs = Date.now() + tzShiftMs;
-
-  const social = await getSocialWrappedStats(userId, db);
 
   const captures = await db.capturedItem.findMany({
     where: { userId },
@@ -371,7 +389,6 @@ export async function getWrappedStats(
       longestStreak: 0,
       streakHeldDays: 0,
       arcs: buildArcs([], nowLocalMs),
-      ...social,
     };
   }
 
@@ -456,6 +473,5 @@ export async function getWrappedStats(
     longestStreak: longest,
     streakHeldDays: held,
     arcs: buildArcs(localMsList, nowLocalMs),
-    ...social,
   };
 }

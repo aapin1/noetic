@@ -815,8 +815,65 @@ export interface PersonCapturesResponse {
     identitySummary: string | null;
   };
   captureCount: number;
+  followerCount: number;
+  followingCount: number;
   captures: PersonCapture[];
   nextCursor: string | null;
+}
+
+/** Someone in a followed person's followers or following list. */
+export interface PersonFollow {
+  id: string;
+  handle: string;
+  displayName: string;
+  avatarUrl: string | null;
+  /** The row is the viewer's own account. */
+  isViewer: boolean;
+  /** Person pages are followers-only, so this decides whether a tap opens one. */
+  viewerFollows: boolean;
+}
+
+export interface PersonFollowsResponse {
+  users: PersonFollow[];
+  nextCursor: string | null;
+}
+
+/**
+ * One of a followed person's captures, opened from their profile. Content only:
+ * the person's own notes, reaction, and readings never cross the wire.
+ */
+export interface PersonCaptureDetail {
+  id: string;
+  kind: CaptureKind;
+  title: string;
+  capturedAt: string;
+  author: string | null;
+  source: string | null;
+  url: string | null;
+  imageUrl: string | null;
+  /** The source's own excerpt, when one was extracted. */
+  excerpt: string | null;
+  /** A quote capture's text (someone else's words). Null for everything else. */
+  quote: string | null;
+  topics: { id: string; name: string; kind: 'general' | 'specific' }[];
+}
+
+/** A followed person's identity cards, plus where they overlap with the viewer. */
+export interface PersonWrapped {
+  totalCaptures: number;
+  topFields: { name: string; count: number }[];
+  topTopics: { name: string; count: number }[];
+  recentNewTopics: string[];
+  /** On the person's own clock. */
+  busiestHour: number | null;
+  hourHistogram: number[];
+  formats: { name: string; count: number }[];
+  overlap: {
+    topics: string[];
+    /** Up to three things you've both saved — ids are the person's captures. */
+    saves: { id: string; title: string }[];
+    saveCount: number;
+  };
 }
 
 export interface PersonalIntelligenceResponse {

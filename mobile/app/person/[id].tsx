@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
@@ -14,6 +14,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { Button } from '@/components/ui/Button';
+import { PersonWrapped } from '@/components/wrapped/PersonWrapped';
 import type { CaptureKind, PersonCapture } from '@/types/api';
 
 const KIND_LABELS: Record<CaptureKind, string> = {
@@ -27,17 +28,29 @@ function kindLabel(kind: CaptureKind): string {
   return KIND_LABELS[kind] ?? 'Note';
 }
 
+/** Stable per-person seed, so their topic bubbles settle the same way each visit. */
+function seedFor(key: string): number {
+  let h = 0;
+  for (let i = 0; i < key.length; i += 1) h = (h * 31 + key.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
 /**
  * One capture in the person's history. Deliberately just the bibliography —
  * kind and date, the title, then author, source. What the person *thought*
  * about it (their key idea, their reaction) is theirs and never rendered here.
+ * A tap opens the thing itself (person/capture/[captureId]), under the same rule.
  */
-function CaptureRow({ item }: { item: PersonCapture }) {
+function CaptureRow({ item, onPress }: { item: PersonCapture; onPress: () => void }) {
   const c = useThemeColors();
   const detail = [item.author, item.source].filter(Boolean).join(', ');
 
   return (
-    <View style={[styles.row, { borderTopColor: c.borderSubtle }]}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.row, { borderTopColor: c.borderSubtle, opacity: pressed ? 0.6 : 1 }]}
+    >
       <View style={styles.rowMeta}>
         <Text variant="caption" color="muted">{kindLabel(item.kind)}</Text>
         <Text variant="caption" color="faint">{shortDate(item.capturedAt)}</Text>
@@ -50,7 +63,23 @@ function CaptureRow({ item }: { item: PersonCapture }) {
           {detail}
         </Text>
       )}
-    </View>
+    </Pressable>
+  );
+}
+
+/** "120 followers": the number carries the weight, the word stays secondary. */
+function FollowCount({ count, label, onPress }: { count: number; label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={`${count} ${label}`}
+      style={({ pressed }) => [styles.followCount, { opacity: pressed ? 0.6 : 1 }]}
+    >
+      <Text variant="subheadline" color="primary" style={styles.followNumber}>{count}</Text>
+      <Text variant="subheadline" color="secondary">{label}</Text>
+    </Pressable>
   );
 }
 
@@ -75,6 +104,16 @@ export default function PersonScreen() {
     [id],
     { cacheKey: `social.person:${id}` },
   );
+
+  // The portrait is a second, independent read: the capture list never waits
+  // on it, and a failure just leaves the cards out.
+  const { data: wrapped, refetch: refetchWrapped } = useApiQuery(
+    () => api.social.personWrapped(id),
+    [id],
+    { cacheKey: `social.person.wrapped:${id}` },
+  );
+
+
 
   // Pages past the first live outside the query cache: `extra` accumulates
   // them, and a refetch (which resets `data`) clears the accumulation too.
@@ -106,16 +145,26 @@ export default function PersonScreen() {
   const onPullRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await refetch();
+      await Promise.all([refetch(), refetchWrapped()]);
     } finally {
       setRefreshing(false);
     }
-  }, [refetch]);
+  }, [refetch, refetchWrapped]);
 
   const handle = data?.user.handle ?? params.handle ?? '';
   const displayName = data?.user.displayName ?? params.displayName ?? '';
   const avatarUrl = data?.user.avatarUrl ?? (params.avatarUrl || null);
   const identitySummary = data?.user.identitySummary ?? (params.identitySummary || null);
+  const openCapture = useCallback(
+    (captureId: string) =>
+      router.push({ pathname: '/person/capture/[captureId]', params: { captureId, userId: id, handle } }),
+    [router, id, handle],
+  );
+  const openFollows = useCallback(
+    (list: 'followers' | 'following') =>
+      router.push({ pathname: '/person/follows', params: { userId: id, handle, list } }),
+    [router, id, handle],
+  );
   const captureCount = data?.captureCount ?? Number(params.captureCount ?? 0);
   const stats = [
     `${captureCount} ${captureCount === 1 ? 'point' : 'points'}`,
@@ -154,6 +203,14 @@ export default function PersonScreen() {
               )}
             </View>
           </View>
+          {/* Counts arrive with the first read rather than riding the nav
+              params, so they appear once instead of flashing "0 followers". */}
+          {data && (
+            <View style={styles.follows}>
+              <FollowCount count={data.followerCount} label={data.followerCount === 1 ? 'follower' : 'followers'} onPress={() => openFollows('followers')} />
+              <FollowCount count={data.followingCount} label="following" onPress={() => openFollows('following')} />
+            </View>
+          )}
           {!!identitySummary && (
             <Text variant="serif" color="muted" style={styles.identity}>
               {identitySummary}
@@ -161,10 +218,22 @@ export default function PersonScreen() {
           )}
         </View>
 
+        {wrapped && wrapped.totalCaptures > 0 && (
+          <View style={styles.portrait}>
+            <PersonWrapped
+              stats={wrapped}
+              name={displayName.split(' ')[0] || `@${handle}`}
+              accent={accentForKey(id)}
+              seed={seedFor(id)}
+              onOpenCapture={openCapture}
+            />
+          </View>
+        )}
+
         <View style={styles.list}>
           <Text variant="h4" style={styles.listLabel}>Captures</Text>
           {captures.map((item) => (
-            <CaptureRow key={item.id} item={item} />
+            <CaptureRow key={item.id} item={item} onPress={() => openCapture(item.id)} />
           ))}
           {loading && captures.length === 0 && (
             <View style={styles.centered}><LoadingDots /></View>
@@ -198,6 +267,10 @@ const styles = StyleSheet.create({
   mastRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
   mastMeta: { flex: 1, gap: 2 },
   identity: { marginTop: Spacing[4] },
+  follows: { flexDirection: 'row', gap: Spacing[5], marginTop: Spacing[4] },
+  followCount: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  followNumber: { fontWeight: '600' },
+  portrait: { paddingHorizontal: Spacing[4], paddingTop: Spacing[5] },
   list: { paddingHorizontal: Spacing[6], paddingTop: Spacing[5] },
   listLabel: { marginBottom: Spacing[1] },
   row: { paddingTop: Spacing[3], marginTop: Spacing[1], borderTopWidth: StyleSheet.hairlineWidth },

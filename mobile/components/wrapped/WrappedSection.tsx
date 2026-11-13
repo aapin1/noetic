@@ -59,11 +59,11 @@ import type { ArcBucket, TerrainResponse, WrappedArcs, WrappedStats } from '@/ty
 // capture one. A card appears only when BOTH its data guard and its capture-count
 // gate pass. Kept ≤ 10 so the page feels alive within the first week; the hero
 // and social cards have no gate (you can always follow someone).
-const GATE_FIELDS = 3;
-const GATE_TOPICS = 3;
-const GATE_NEW_TOPICS = 5;
-const GATE_RHYTHM = 5;
-const GATE_ARCHETYPE = 5;
+export const GATE_FIELDS = 3;
+export const GATE_TOPICS = 3;
+export const GATE_NEW_TOPICS = 5;
+export const GATE_RHYTHM = 5;
+export const GATE_ARCHETYPE = 5;
 const GATE_TIMELINE = 7;
 /** The flagship "terrain" self-portrait needs real history behind it. */
 const GATE_TERRAIN = 50;
@@ -118,7 +118,7 @@ function spiced<T extends { key: string }>(cards: T[]): T[] {
   return [first, ...middle, last];
 }
 
-const ARCHETYPE_ICONS: Record<ArchetypeFormat, typeof Link2> = {
+export const ARCHETYPE_ICONS: Record<ArchetypeFormat, typeof Link2> = {
   link: Link2,
   text: PenLine,
   image: ImageIcon,
@@ -458,7 +458,7 @@ function Dots({
 /* ---------------------------------------------------------------- fields --- */
 
 /** One rounded bar split by share, so the leader is a length rather than a chip. */
-function Spectrum({ items }: { items: { name: string; count: number }[] }) {
+export function Spectrum({ items }: { items: { name: string; count: number }[] }) {
   const c = useThemeColors();
   const total = items.reduce((sum, it) => sum + it.count, 0) || 1;
 
@@ -683,7 +683,7 @@ function Bubble({
  * and the walls. The physics runs entirely on the UI thread and only while the
  * card is on screen and the tab is focused, so it costs nothing in the background.
  */
-function TopicBubbles({
+export function TopicBubbles({
   items,
   accent,
   seed,
@@ -941,7 +941,7 @@ function ScrollRightHint({
  * scrolls sideways if there are more than fit, and an arrow — tappable to
  * jump to the end — fades out as the user scrolls toward it.
  */
-function DiscoveryTimeline({ items, accent }: { items: string[]; accent: string }) {
+export function DiscoveryTimeline({ items, accent }: { items: string[]; accent: string }) {
   const c = useThemeColors();
   const scrollRef = useRef<ScrollView>(null);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -1032,7 +1032,7 @@ const WEEKDAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
  * by whether that hour is night, morning, afternoon, or evening. The peak hour
  * is stated once in the card header, so the dial itself stays clean.
  */
-function ClockFace({
+export function ClockFace({
   hours,
   peakHour,
   active,
