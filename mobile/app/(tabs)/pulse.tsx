@@ -112,7 +112,6 @@ function FriendCard({
         handle: user.handle,
         displayName: user.displayName,
         avatarUrl: user.avatarUrl ?? '',
-        identitySummary: user.identitySummary ?? '',
         captureCount: String(captureCount),
         regions: topRegions,
       },

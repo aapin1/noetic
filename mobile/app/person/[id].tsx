@@ -93,7 +93,6 @@ export default function PersonScreen() {
     handle?: string;
     displayName?: string;
     avatarUrl?: string;
-    identitySummary?: string;
     captureCount?: string;
     regions?: string;
   }>();
@@ -154,7 +153,6 @@ export default function PersonScreen() {
   const handle = data?.user.handle ?? params.handle ?? '';
   const displayName = data?.user.displayName ?? params.displayName ?? '';
   const avatarUrl = data?.user.avatarUrl ?? (params.avatarUrl || null);
-  const identitySummary = data?.user.identitySummary ?? (params.identitySummary || null);
   const openCapture = useCallback(
     (captureId: string) =>
       router.push({ pathname: '/person/capture/[captureId]', params: { captureId, userId: id, handle } }),
@@ -205,16 +203,11 @@ export default function PersonScreen() {
           </View>
           {/* Counts arrive with the first read rather than riding the nav
               params, so they appear once instead of flashing "0 followers". */}
-          {data && (
+          {typeof data?.followerCount === 'number' && (
             <View style={styles.follows}>
               <FollowCount count={data.followerCount} label={data.followerCount === 1 ? 'follower' : 'followers'} onPress={() => openFollows('followers')} />
               <FollowCount count={data.followingCount} label="following" onPress={() => openFollows('following')} />
             </View>
-          )}
-          {!!identitySummary && (
-            <Text variant="serif" color="muted" style={styles.identity}>
-              {identitySummary}
-            </Text>
           )}
         </View>
 
@@ -266,7 +259,6 @@ const styles = StyleSheet.create({
   mastAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
   mastRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
   mastMeta: { flex: 1, gap: 2 },
-  identity: { marginTop: Spacing[4] },
   follows: { flexDirection: 'row', gap: Spacing[5], marginTop: Spacing[4] },
   followCount: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
   followNumber: { fontWeight: '600' },
