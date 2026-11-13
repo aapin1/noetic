@@ -34,6 +34,8 @@ export type ExtractedMetadata = {
   usedProxy?: boolean;
   /** True when a paid Supadata call produced the body (credit-burn telemetry). */
   usedSupadata?: boolean;
+  /** True when the page declares itself paywalled (JSON-LD `isAccessibleForFree: false`). */
+  paywalled?: boolean;
 };
 
 export type ContentConfidence = "rich" | "partial" | "thin";
@@ -170,9 +172,10 @@ async function textCapped(res: Response, maxBytes = HTML_BYTE_CAP): Promise<stri
  * `description` (podcast episode pages — Apple Podcasts and most podcast hosts
  * publish real show notes here even when og:description is a stub).
  */
-function extractJsonLd($: ReturnType<typeof load>): { articleBody?: string; description?: string } {
+function extractJsonLd($: ReturnType<typeof load>): { articleBody?: string; description?: string; paywalled: boolean } {
   let articleBody: string | undefined;
   let description: string | undefined;
+  let paywalled = false;
 
   const visit = (node: unknown) => {
     if (Array.isArray(node)) {
@@ -181,6 +184,8 @@ function extractJsonLd($: ReturnType<typeof load>): { articleBody?: string; desc
     }
     if (!node || typeof node !== "object") return;
     const obj = node as Record<string, unknown>;
+    // Google's paywall markup; publishers send both the boolean and the string.
+    if (obj.isAccessibleForFree === false || String(obj.isAccessibleForFree).toLowerCase() === "false") paywalled = true;
     if (typeof obj.articleBody === "string" && obj.articleBody.trim().length >= 200) {
       const text = obj.articleBody.replace(/\s+/g, " ").trim();
       if (!articleBody || text.length > articleBody.length) articleBody = text;
@@ -190,6 +195,7 @@ function extractJsonLd($: ReturnType<typeof load>): { articleBody?: string; desc
       if (!description || text.length > description.length) description = text;
     }
     if (obj["@graph"]) visit(obj["@graph"]);
+    if (obj.hasPart) visit(obj.hasPart);
   };
 
   $("script[type='application/ld+json']").each((_, el) => {
@@ -206,6 +212,7 @@ function extractJsonLd($: ReturnType<typeof load>): { articleBody?: string; desc
   return {
     articleBody,
     description: description?.slice(0, 6000),
+    paywalled,
   };
 }
 
@@ -354,6 +361,7 @@ export function parseMetadataFromHtml(html: string, originalUrl: string): Extrac
     sourceName,
     sourceDomain,
     contentType,
+    paywalled: jsonLd.paywalled || undefined,
   };
 }
 

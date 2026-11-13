@@ -6,6 +6,7 @@ import type { DbClient } from "@/server/db";
 import { isSocialVideoUrl, resolveSocialPostKey } from "@/server/social";
 import { fetchMetadata, isPdfContentUrl, scoreContentConfidence, sourceSlug, type ContentConfidence } from "@/server/metadata";
 import { cleanContentMetadata } from "@/server/cognition/llm";
+import { diagnoseBlockedSource, type BlockedSource } from "@/server/blocked-source";
 import { upsertTopics } from "@/server/topics";
 import { assertPublicHttpUrl } from "@/server/ssrf";
 import { normalizeUrl } from "@/server/url";
@@ -378,6 +379,7 @@ export async function ingestUrl(url: string, db: DbClient = prisma, opts: Ingest
       contentItem: await serializeContentItem(db, created.id),
       bodyText: metadata.bodyText,
       usedSupadata: Boolean(metadata.usedSupadata),
+      paywalled: metadata.paywalled,
     };
   }
 
@@ -388,6 +390,7 @@ export async function ingestUrl(url: string, db: DbClient = prisma, opts: Ingest
     bodyText: metadata.bodyText,
     cleaned,
     usedSupadata: Boolean(metadata.usedSupadata),
+    paywalled: metadata.paywalled,
   };
 }
 
@@ -402,6 +405,8 @@ export async function preflightUrl(url: string, db: DbClient = prisma, opts: Ing
   title?: string;
   excerpt?: string;
   bodySource?: string;
+  /** Which wall a thin read hit, when we can tell — the sheet names it. */
+  blocked?: BlockedSource;
   /** True when this preflight spent a Supadata credit — the caller meters it. */
   usedSupadata?: boolean;
 }> {
@@ -409,26 +414,35 @@ export async function preflightUrl(url: string, db: DbClient = prisma, opts: Ing
   try {
     ingest = await ingestUrl(url, db, opts);
   } catch {
-    return { confidence: "thin" };
+    return { confidence: "thin", blocked: diagnoseBlockedSource({ url, confidence: "thin" }) };
   }
 
   if ("contentItem" in ingest && ingest.contentItem) {
     const item = ingest.contentItem;
+    const confidence = scoreContentConfidence({ bodyText: item.bodyText, description: item.description });
     return {
-      confidence: scoreContentConfidence({ bodyText: item.bodyText, description: item.description }),
+      confidence,
       title: item.title,
       excerpt: item.description ?? undefined,
       bodySource: item.bodySource ?? undefined,
+      blocked: diagnoseBlockedSource({
+        url,
+        confidence,
+        contentType: item.contentType?.slug,
+        paywalled: "paywalled" in ingest ? ingest.paywalled : undefined,
+      }),
       usedSupadata: "usedSupadata" in ingest ? ingest.usedSupadata : undefined,
     };
   }
 
   const partial = "metadata" in ingest ? ingest.metadata : undefined;
+  const confidence = scoreContentConfidence({ bodyText: partial?.bodyText, description: partial?.description });
   return {
-    confidence: scoreContentConfidence({ bodyText: partial?.bodyText, description: partial?.description }),
+    confidence,
     title: partial?.title,
     excerpt: partial?.description,
     bodySource: partial?.bodySource,
+    blocked: diagnoseBlockedSource({ url, confidence, contentType: partial?.contentType, paywalled: partial?.paywalled }),
   };
 }
 

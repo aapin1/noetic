@@ -105,6 +105,7 @@ import {
 import { LoadingDots } from '@/components/ui/LoadingDots';
 import { AsciiLoader } from '@/components/ui/AsciiLoader';
 import { MapBackdrop } from '@/components/ui/MapBackdrop';
+import { ScreenshotButton } from '@/components/ui/ScreenshotButton';
 import { VoiceNoteButton } from '@/components/ui/VoiceNoteButton';
 import type { AppThemeColors } from '@/constants/theme';
 import type {
@@ -1384,12 +1385,18 @@ function StepTwo({
           <View style={[sh.inputBox, { borderColor: c.border }]}>
             <View style={sh.contextHeader}>
               <Text variant="subheadline" style={[sh.contextPrompt, { color: c.muted }]}>
-                We couldn't read this source well. Tell Mneme what it's about.
+                {preflight?.blocked?.message ?? "We couldn't read this source well. Tell Mneme what it's about."}
               </Text>
-              <VoiceNoteButton
-                onText={(t) => setUserContext(userContext ? `${userContext.trim()} ${t}` : t)}
-                onError={onVoiceError}
-              />
+              <View style={sh.contextButtons}>
+                <ScreenshotButton
+                  onText={(t) => setUserContext(userContext ? `${userContext.trim()}\n\n${t}` : t)}
+                  onError={onVoiceError}
+                />
+                <VoiceNoteButton
+                  onText={(t) => setUserContext(userContext ? `${userContext.trim()} ${t}` : t)}
+                  onError={onVoiceError}
+                />
+              </View>
             </View>
             <TextInput
               style={[sh.inputField, { color: c.text, fontFamily: FontFamily.sans, fontSize: FontSize.md }]}
@@ -1559,6 +1566,7 @@ const sh = StyleSheet.create({
   inputLabel: { marginBottom: Spacing[2] },
   preflightRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2], marginTop: Spacing[3] },
   contextHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing[3] },
+  contextButtons: { flexDirection: 'row', gap: Spacing[2] },
   // Same size as the field below it — a small label over big input text was
   // the thing that made this box read as two unrelated pieces.
   contextPrompt: { flex: 1, fontSize: FontSize.base, lineHeight: FontSize.base * 1.5 },
