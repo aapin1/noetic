@@ -227,6 +227,27 @@ export function archetypeFor(
   return { format, line };
 }
 
+/** `archetypeFor`, said about someone else on their profile. */
+export function personArchetypeLine(
+  name: string,
+  format: string | undefined,
+  count: number,
+  total: number,
+): { format: ArchetypeFormat; line: string } | null {
+  if (!format || !isArchetypeFormat(format) || total <= 0) return null;
+  const pct = Math.round((count / total) * 100);
+  const noun = FORMAT_NOUN[format];
+  const line = pct >= 99
+    ? `Everything ${name} has saved so far is a ${noun.slice(0, -1)}.`
+    : `${capitalise(noun)} are ${pct}% of ${name}'s saves.`;
+  return { format, line };
+}
+
+/** `rhythmLine`, said about someone else, on their clock. */
+export function personRhythmLine(name: string, hour: number): string {
+  return `Most of ${name}'s saves land around ${formatHourCompact(hour)}, their time.`;
+}
+
 function capitalise(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

@@ -8,6 +8,8 @@ import { applyTopicWeights, getPublicTopicIdsForUser, incrementTasteProfileVersi
 import { blockedUserIds } from "@/server/services/moderation";
 import { recomputeProfileSummary } from "@/server/services/profile";
 import { getMemoryGraph, nodeLabel } from "@/server/services/memory";
+import { getCaptureWrappedStats } from "@/server/services/wrapped";
+import { isGeneralTopic } from "@/server/cognition/generalTopics";
 
 export async function followUser(userId: string, targetUserId: string, db: DbClient = prisma) {
   if (userId === targetUserId) {
@@ -532,6 +534,28 @@ function sourceHost(url: string | null): string | null {
  * crosses the wire. Nothing the pipeline or the owner wrote about the content
  * (keyIdea, summary, reaction, userContext) does.
  */
+/**
+ * Everything under /api/social/users/[id] is followers-only, and a block in
+ * either direction hides the person entirely. Both cases answer the same 404 so
+ * the response never says which one it was.
+ */
+async function assertCanViewPerson(userId: string, targetUserId: string, db: DbClient) {
+  const hidden = await blockedUserIds(userId, db);
+  const follow = hidden.includes(targetUserId)
+    ? null
+    : await db.follow.findUnique({
+        where: {
+          followerId_followingId: {
+            followerId: userId,
+            followingId: targetUserId,
+          },
+        },
+      });
+  if (!follow) {
+    throw new AppError("PERSON_NOT_FOUND", "Person not found", 404);
+  }
+}
+
 export async function getPersonCaptures(args: {
   userId: string;
   targetUserId: string;
@@ -540,20 +564,7 @@ export async function getPersonCaptures(args: {
 }) {
   const db = args.db ?? prisma;
 
-  const hidden = await blockedUserIds(args.userId, db);
-  const follow = hidden.includes(args.targetUserId)
-    ? null
-    : await db.follow.findUnique({
-        where: {
-          followerId_followingId: {
-            followerId: args.userId,
-            followingId: args.targetUserId,
-          },
-        },
-      });
-  if (!follow) {
-    throw new AppError("PERSON_NOT_FOUND", "Person not found", 404);
-  }
+  await assertCanViewPerson(args.userId, args.targetUserId, db);
 
   const target = await db.user.findUnique({
     where: { id: args.targetUserId },
@@ -573,8 +584,10 @@ export async function getPersonCaptures(args: {
     throw new AppError("PERSON_NOT_FOUND", "Person not found", 404);
   }
 
-  const [captureCount, rows] = await Promise.all([
+  const [captureCount, followerCount, followingCount, rows] = await Promise.all([
     db.capturedItem.count({ where: { userId: args.targetUserId } }),
+    db.follow.count({ where: { followingId: args.targetUserId } }),
+    db.follow.count({ where: { followerId: args.targetUserId } }),
     db.capturedItem.findMany({
       where: { userId: args.targetUserId },
       orderBy: [{ capturedAt: "desc" }, { id: "desc" }],
@@ -624,9 +637,277 @@ export async function getPersonCaptures(args: {
       identitySummary: target.profile?.identitySummary ?? null,
     },
     captureCount,
+    followerCount,
+    followingCount,
     captures,
     nextCursor: rows.length > PERSON_CAPTURES_PAGE ? page[page.length - 1]!.id : null,
   };
+}
+
+const PERSON_FOLLOWS_PAGE = 50;
+
+/**
+ * Who a followed person follows, or who follows them, so the viewer can find
+ * people through people. Each row says whether the viewer already follows that
+ * account (person pages are followers-only, so that decides whether a tap can
+ * open one). Anyone blocked in either direction with the VIEWER is left out.
+ */
+export async function getPersonFollows(args: {
+  userId: string;
+  targetUserId: string;
+  list: "followers" | "following";
+  cursor?: string;
+  db?: DbClient;
+}) {
+  const db = args.db ?? prisma;
+
+  await assertCanViewPerson(args.userId, args.targetUserId, db);
+
+  const hidden = await blockedUserIds(args.userId, db);
+  const profileSelect = {
+    id: true,
+    profile: { select: { handle: true, displayName: true, avatarUrl: true } },
+  } as const;
+  const rows = await db.follow.findMany({
+    where:
+      args.list === "followers"
+        ? { followingId: args.targetUserId, followerId: { notIn: hidden } }
+        : { followerId: args.targetUserId, followingId: { notIn: hidden } },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: PERSON_FOLLOWS_PAGE + 1,
+    ...(args.cursor ? { cursor: { id: args.cursor }, skip: 1 } : {}),
+    select: {
+      id: true,
+      follower: { select: profileSelect },
+      following: { select: profileSelect },
+    },
+  });
+
+  const page = rows.slice(0, PERSON_FOLLOWS_PAGE);
+  const people = page.map((row) => (args.list === "followers" ? row.follower : row.following));
+  const followed = new Set(
+    (
+      await db.follow.findMany({
+        where: { followerId: args.userId, followingId: { in: people.map((p) => p.id) } },
+        select: { followingId: true },
+      })
+    ).map((row) => row.followingId),
+  );
+
+  return {
+    users: people.map((person) => ({
+      id: person.id,
+      handle: person.profile?.handle ?? person.id,
+      displayName: person.profile?.displayName ?? "Unknown",
+      avatarUrl: person.profile?.avatarUrl ?? null,
+      isViewer: person.id === args.userId,
+      viewerFollows: followed.has(person.id),
+    })),
+    nextCursor: rows.length > PERSON_FOLLOWS_PAGE ? page[page.length - 1]!.id : null,
+  };
+}
+
+/** Longer than this, a description is a scraped body, not an excerpt. */
+const PERSON_EXCERPT_MAX = 400;
+
+/**
+ * One of a followed person's captures, opened from their profile.
+ *
+ * Content only, the same words-only rule as the list: what the thing IS (cover,
+ * title, author, source, link, the source's own excerpt, the topics it sits in)
+ * and never what the person or the pipeline made of it — keyIdea, summary,
+ * reaction, userContext and insights stay with the owner. A typed note's full
+ * text is the owner's thinking, so only quotes (someone else's words) carry
+ * their body; a note shows the title the list already showed.
+ */
+export async function getPersonCapture(args: {
+  userId: string;
+  targetUserId: string;
+  captureId: string;
+  db?: DbClient;
+}) {
+  const db = args.db ?? prisma;
+
+  await assertCanViewPerson(args.userId, args.targetUserId, db);
+
+  const row = await db.capturedItem.findUnique({
+    where: { id: args.captureId },
+    select: {
+      id: true,
+      userId: true,
+      kind: true,
+      capturedAt: true,
+      userTitle: true,
+      rawText: true,
+      caption: true,
+      mediaUrl: true,
+      contentItem: {
+        select: {
+          title: true,
+          description: true,
+          authorName: true,
+          siteName: true,
+          canonicalUrl: true,
+          imageUrl: true,
+        },
+      },
+      topics: {
+        orderBy: { weight: "desc" },
+        select: { topic: { select: { id: true, name: true } } },
+      },
+    },
+  });
+  // Someone else's capture id under this person's URL is the same "not found".
+  if (!row || row.userId !== args.targetUserId) {
+    throw new AppError("CAPTURE_NOT_FOUND", "Capture not found", 404);
+  }
+
+  const description = row.contentItem?.description?.trim() ?? "";
+  const excerpt =
+    (row.kind === "LINK" || row.kind === "IMAGE") &&
+    description.length > 0 &&
+    description.length <= PERSON_EXCERPT_MAX &&
+    !/^https?:\/\//i.test(description)
+      ? description
+      : null;
+
+  return {
+    id: row.id,
+    kind: row.kind,
+    title: nodeLabel({
+      userTitle: row.userTitle,
+      contentTitle: row.contentItem?.title ?? null,
+      rawText: row.rawText,
+      caption: row.caption,
+      kind: row.kind,
+    }),
+    capturedAt: row.capturedAt.toISOString(),
+    author: row.contentItem?.authorName ?? null,
+    source: row.contentItem?.siteName ?? sourceHost(row.contentItem?.canonicalUrl ?? null),
+    url: row.contentItem?.canonicalUrl ?? null,
+    imageUrl: row.contentItem?.imageUrl ?? (row.kind === "IMAGE" ? row.mediaUrl : null),
+    excerpt,
+    quote: row.kind === "QUOTE" ? row.rawText?.trim() || null : null,
+    topics: row.topics.map(({ topic }) => ({
+      id: topic.id,
+      name: topic.name,
+      kind: isGeneralTopic(topic.name) ? ("general" as const) : ("specific" as const),
+    })),
+  };
+}
+
+const OVERLAP_TOPICS = 6;
+const OVERLAP_SAVES = 3;
+
+/**
+ * A followed person's "wrapped" portrait — only the cards that say who someone
+ * is (the fields they live in, what they dig into, where they've just gone,
+ * when they save, what they save) — plus where it overlaps with the viewer.
+ * Counts and streaks stay on the owner's own page.
+ *
+ * The rhythm is bucketed on the PERSON's clock (their last-seen offset), so
+ * "around 1am" means 1am where they are, not where the viewer is.
+ */
+export async function getPersonWrapped(args: {
+  userId: string;
+  targetUserId: string;
+  db?: DbClient;
+}) {
+  const db = args.db ?? prisma;
+
+  await assertCanViewPerson(args.userId, args.targetUserId, db);
+
+  const prefs = await db.userPreference.findUnique({
+    where: { userId: args.targetUserId },
+    select: { tzOffsetMinutes: true },
+  });
+  const stats = await getCaptureWrappedStats(
+    args.targetUserId,
+    { tzOffsetMinutes: prefs?.tzOffsetMinutes ?? 0 },
+    db,
+  );
+
+  const [theirTopics, myTopics, theirContent, myContent] = await Promise.all([
+    topicTally(args.targetUserId, db),
+    topicTally(args.userId, db),
+    db.capturedItem.findMany({
+      where: { userId: args.targetUserId, contentItemId: { not: null } },
+      orderBy: { capturedAt: "desc" },
+      select: {
+        id: true,
+        contentItemId: true,
+        userTitle: true,
+        rawText: true,
+        caption: true,
+        kind: true,
+        contentItem: { select: { title: true } },
+      },
+    }),
+    db.capturedItem.findMany({
+      where: { userId: args.userId, contentItemId: { not: null } },
+      select: { contentItemId: true },
+    }),
+  ]);
+
+  // Ranked by the smaller side's count: a topic you've each saved five times is
+  // more shared ground than one they've saved forty times and you once.
+  const sharedTopics = [...theirTopics.entries()]
+    .filter(([name]) => myTopics.has(name))
+    .map(([name, theirs]) => ({
+      name,
+      general: isGeneralTopic(name),
+      weight: Math.min(theirs, myTopics.get(name)!),
+    }))
+    // Specific sub-topics say more than "both of you save philosophy".
+    .sort((a, b) => Number(a.general) - Number(b.general) || b.weight - a.weight)
+    .slice(0, OVERLAP_TOPICS)
+    .map((entry) => entry.name);
+
+  const mine = new Set(myContent.map((row) => row.contentItemId));
+  const seen = new Set<string>();
+  const sharedSaves: { id: string; title: string }[] = [];
+  let sharedSaveCount = 0;
+  for (const row of theirContent) {
+    if (!row.contentItemId || !mine.has(row.contentItemId) || seen.has(row.contentItemId)) continue;
+    seen.add(row.contentItemId);
+    sharedSaveCount += 1;
+    if (sharedSaves.length < OVERLAP_SAVES) {
+      sharedSaves.push({
+        id: row.id,
+        title: nodeLabel({
+          userTitle: row.userTitle,
+          contentTitle: row.contentItem?.title ?? null,
+          rawText: row.rawText,
+          caption: row.caption,
+          kind: row.kind,
+        }),
+      });
+    }
+  }
+
+  return {
+    totalCaptures: stats.totalCaptures,
+    topFields: stats.topFields,
+    topTopics: stats.topTopics,
+    recentNewTopics: stats.recentNewTopics,
+    busiestHour: stats.busiestHour,
+    hourHistogram: stats.hourHistogram,
+    formats: stats.formats,
+    overlap: { topics: sharedTopics, saves: sharedSaves, saveCount: sharedSaveCount },
+  };
+}
+
+/** How many of a user's captures sit in each topic, by topic name. */
+async function topicTally(userId: string, db: DbClient): Promise<Map<string, number>> {
+  const rows = await db.capturedItemTopic.findMany({
+    where: { capturedItem: { userId } },
+    select: { topic: { select: { name: true } } },
+  });
+  const tally = new Map<string, number>();
+  for (const row of rows) {
+    tally.set(row.topic.name, (tally.get(row.topic.name) ?? 0) + 1);
+  }
+  return tally;
 }
 
 export async function commentOnReview(args: {
